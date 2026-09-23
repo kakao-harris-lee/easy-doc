@@ -53,6 +53,14 @@ READABILITY_UNSET = 0
 # 참조가 된다).
 NEEDS_CONFIRMATION_MARKER = "[확인 필요]"
 
+# `easy_dict.index.json`의 `v` 키가 가질 수 있는 **유일한** 값. 사람이
+# `entries.definition_reviewed_at`/`definition_reviewed_by`를 채운 뜻풀이에만
+# 붙는다(§3.2, `definition_review.py`). Kotlin의 DefinitionReviewStatus(core)가
+# 같은 문자열을 REVIEWED로 읽고, 키가 없으면 UNVERIFIED, 그 밖의 값이면
+# 기동을 거부한다 — 그래서 값 목록이 아니라 상수 하나다. 값을 늘리려면 Kotlin
+# 쪽 enum과 tools/check_invariants.py를 같은 변경 단위로 고쳐야 한다.
+DEFINITION_REVIEW_MARK = "reviewed"
+
 # 태그 표준값 (§3.3): name -> (label, kind)
 TAG_CATALOG: dict[str, tuple[str, str]] = {
     "admin": ("행정", "domain"),

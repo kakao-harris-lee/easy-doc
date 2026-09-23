@@ -25,7 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import SCHEMA_VERSION, TAG_CATALOG
+from .definition_review import is_definition_reviewed
+from .models import DEFINITION_REVIEW_MARK, SCHEMA_VERSION, TAG_CATALOG
 from .normalize import JOSA
 
 # index.json의 엔트리당 예문(x) 개수 상한. lookup.py의 from_sqlite 로더도
@@ -290,6 +291,8 @@ def export_index(conn: sqlite3.Connection, out: Path) -> Path:
     - 표제어 + 모든 변형형(`variants.surface`)을 `surface_index`에 평탄화한다.
       Kotlin 쪽이 파이썬 `EasyDict`와 동일한 트라이를 구성할 수 있도록
       `entries` 딕셔너리는 `t/e/d/s/r/p/g/c/x` 1글자 키로 축약한다.
+      `v`(뜻풀이 검수 이력)만 **선택 키**로, 사람이 검수를 표시한 엔트리에만
+      `"reviewed"`로 붙는다 — 아래 「`v` …」 절 참고.
     - `indent` 없이(`separators=(",", ":")`) 최소 크기로 쓴다.
     - `josa` 목록을 동봉해 Kotlin처럼 `normalize.josa_pattern()`이 없는
       언어에서도 조사 경계 판정을 재현할 수 있게 한다.
@@ -317,6 +320,17 @@ def export_index(conn: sqlite3.Connection, out: Path) -> Path:
     배열이고(저위험 substitute 엔트리는 거의 없음), 예문은 엔트리당
     최대 3개로 캡을 씌워 상한을 둔다(`_MAX_EXAMPLES_PER_ENTRY`). 실측은
     `export_index` 실행 후 파일 크기로 확인하라.
+
+    ### `v` — 사람이 검수한 뜻풀이만 표시한다 (2026-09-23)
+
+    `d`(뜻풀이)는 대부분 자동 수집물이라 그대로 LLM 생성 재료로 쓸 수 없다.
+    사람이 `entries.definition_reviewed_at`/`definition_reviewed_by`를 채운
+    엔트리에만 `v="reviewed"`를 싣고, 표시가 없으면 **키 자체를 만들지
+    않는다**(`null`이 아니다). Kotlin의 `DefinitionReviewStatus`가 키 없음을
+    UNVERIFIED로 읽고 R3 생성 컨텍스트·R6 설명 패널에서 제외한다. 판정은
+    `definition_review.is_definition_reviewed()` 한 곳에만 있고, `status`나
+    `risk_level` 같은 다른 신호에서 파생시키지 않는다 — 근거는 그 모듈의
+    docstring 참고.
 
     사용 예:
         >>> export_index(conn, Path("dist/easy_dict.index.json"))
@@ -374,6 +388,21 @@ def export_index(conn: sqlite3.Connection, out: Path) -> Path:
             # 분리, review_notes.py 모듈 docstring 참고). export_full(감사 추적용
             # 전체 덤프)에만 남긴다.
         }
+
+        # `v`(뜻풀이 검수 이력, 2026-09-23)는 **사람이 표시한 엔트리에만** 붙는
+        # 선택 키다 — 표시가 없으면 `null`이 아니라 키 자체를 만들지 않는다.
+        # 그래야 아무도 검수하지 않은 지금의 산출물이 이 기능 도입 전과 바이트가
+        # 같고(export-neutral), Kotlin의 DefinitionReviewStatus도 "키 없음 =
+        # UNVERIFIED"라는 같은 약속을 읽는다. 판정 규칙은
+        # definition_review.is_definition_reviewed() 한 곳에만 있다.
+        # `row.get`을 쓰는 이유: 이 컬럼이 없던 시절 만들어진 DB(뷰에 컬럼이
+        # 없는 경우)에서도 익스포트가 죽지 않고 "표시 없음"으로 동작해야 한다.
+        if is_definition_reviewed(
+            row["definition"],
+            row.get("definition_reviewed_at"),
+            row.get("definition_reviewed_by"),
+        ):
+            entries_out[str(entry_id)]["v"] = DEFINITION_REVIEW_MARK
 
         _add_surface(row["term"], entry_id)
         for vrow in conn.execute(

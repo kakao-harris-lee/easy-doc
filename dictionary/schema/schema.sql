@@ -77,6 +77,25 @@ CREATE TABLE IF NOT EXISTS entries (
     -- (2026-09-06 caution/review_note 분리 — dictionary/DESIGN.md §3.2 참고).
     review_note       TEXT,
 
+    -- definition_reviewed_at / definition_reviewed_by: 이 뜻풀이(definition)를
+    -- **사람이 실제로 읽고** "생성 재료로 써도 된다"고 판단한 이력. 둘 다
+    -- 사람만 채운다 — build.py도, 어떤 자동 경로도 이 값을 쓰지 않는다.
+    -- data/reviews/*.sql의 검수 결정으로만 들어온다(README 「검수된 정의
+    -- (v=reviewed) 공급」).
+    --
+    -- export_index()는 두 값이 모두 있고 definition이 비어 있지 않은 엔트리에만
+    -- easy_dict.index.json의 `v` 키를 "reviewed"로 싣는다. Kotlin의
+    -- DefinitionReviewStatus가 그 키를 읽어 R3 생성 컨텍스트·R6 설명 패널에
+    -- 쓸 뜻풀이를 고른다. 표시가 없으면 키 자체가 없다(= UNVERIFIED).
+    --
+    -- **status·risk_level·replace_strategy·원천·review_note에서 파생시키지
+    -- 않는다.** 'active'는 "자동 치환에 써도 된다"는 뜻이지 "사람이 이 뜻풀이를
+    -- 읽었다"는 뜻이 아니고, review_note는 빌드 이력이지 검수 완료 표시가
+    -- 아니다. 자동 승격은 읽지 않은 문장을 LLM 생성 재료로 밀어 넣는 사고다
+    -- (docs/reports/2026-09-21-r3-implementation.md 「리뷰 리스크」).
+    definition_reviewed_at  TEXT,
+    definition_reviewed_by  TEXT,
+
     -- readability: 1(가장 쉬움) ~ 3(여전히 조금 어려움).
     readability       INTEGER NOT NULL
                         CHECK (readability BETWEEN 1 AND 3),
@@ -294,6 +313,8 @@ SELECT
     e.risk_level,
     e.caution,
     e.review_note,
+    e.definition_reviewed_at,
+    e.definition_reviewed_by,
     e.readability,
     e.confidence,
     e.priority,
