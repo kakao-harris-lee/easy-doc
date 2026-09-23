@@ -93,8 +93,17 @@ subprojects {
                 excludeTags("llm")
             }
         }
+        // api 의 기본 `test` 만 표준 출력을 함께 남긴다. 소유권 404 시간 판정 요약(1차·확인·합산)은
+        // 통과한 실행에서만 찍히는데, failed·skipped 만 로깅하면 그 줄이 CI 로그에 닿지 못해
+        // 「문턱에 얼마나 붙어 있었나」를 사람이 볼 수 없다. api 테스트의 println 호출부는
+        // 11 곳뿐이라 이 완화가 로그를 덮지 않는다.
+        val logsStandardOut = project.name == "api" && name == "test"
         testLogging {
-            events("failed", "skipped")
+            if (logsStandardOut) {
+                events("failed", "skipped", "standard_out")
+            } else {
+                events("failed", "skipped")
+            }
             exceptionFormat = TestExceptionFormat.FULL
         }
         // Testcontainers 컨테이너 재사용 — 테스트 클래스마다 새 PostgreSQL을 띄우면

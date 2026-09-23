@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.OwnershipConcealment
+import kr.easydoc.api.support.TimingUniformity
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -18,7 +19,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
-import kotlin.random.Random
 
 /** `DELETE /documents/{document_id}` 의 실측 계약 — 명세 §5 의 C-R·C-I 계층. */
 @SpringBootTest(
@@ -134,23 +134,24 @@ class DocumentDeleteReachTest {
         OwnershipConcealment.assertIndistinguishable("DELETE $ITEM_PATH", absent, others)
     }
 
-    /** 소유권 은닉의 셋째 축 — 응답 시간. */
+    /**
+     * 소유권 은닉의 셋째 축 — 응답 시간. 표본 설계와 이 축이 무엇의 보조인지는
+     * [TimingUniformity] KDoc 에 있다. 여기 companion 상수가 그 설계의 값이다.
+     */
     @Test
     @DisplayName("소유권 404 의 응답 시간이 「없음」과 「타인 것」 사이에서 갈리지 않는다")
     fun `소유권 404 의 응답 시간이 갈리지 않는다`() {
         val mine = newAccount()
         val theirDocument = createDocument(newAccount())
 
-        val (absent, others) = interleavedNotFoundMedians(mine, theirDocument)
+        val outcome = TimingUniformity.judge(TIMING_SPEC) { arm -> timeNotFoundRequest(mine, theirDocument, arm) }
+        val description = TimingUniformity.describe(outcome)
+        println(description)
 
-        val ratio = maxOf(absent, others) / maxOf(minOf(absent, others), MIN_MEASURABLE_MILLIS)
-        assertThat(ratio)
+        assertThat(outcome.ratio)
             .withFailMessage(
-                "없는 문서 %.3fms 대 타인 문서 %.3fms — 비 %.3f 가 문턱 %.1f 를 넘었다. " +
-                    "일하는 양이 갈리면 존재 여부가 시간으로 샌다",
-                absent,
-                others,
-                ratio,
+                "%s — 문턱 %.1f 를 넘었다. 일하는 양이 갈리면 존재 여부가 시간으로 샌다",
+                description,
                 MAX_TIMING_RATIO,
             ).isLessThan(MAX_TIMING_RATIO)
     }
@@ -220,33 +221,31 @@ class DocumentDeleteReachTest {
         assertThat(documentRows(subjectOf(token))).isEqualTo(1)
     }
 
-    private fun interleavedNotFoundMedians(
+    /**
+     * 소유권 404 시간 판정 한 표본. [arm] 이 [ABSENT] 면 없는 식별자를, 아니면 남의 문서를 잰다.
+     *
+     * 요청 조립(계약에서 경로 변수 이름 읽기·URL 파싱·헤더 붙이기)은 괄호 **밖**이고, 잰 구간은
+     * [client] 의 왕복 하나뿐이다. 종전에는 `HttpClient.newHttpClient()` 와 요청 조립이 모두 괄호
+     * 안에 있어, 두 팔의 차이를 재는 자리에 두 팔과 무관한 비용(클라이언트 생성·연결 수립·계약
+     * 파일 조회)이 표본마다 섞였다. 그 비용이 종전 중앙값을 지배했는지는 재지 않았다 — 공유로
+     * 바꾼 뒤에도 중앙값은 5~6ms 대다. 고친 이유는 크기가 아니라 「재는 구간은 두 팔의 차이만
+     * 담아야 한다」는 것이고, 그래서 클라이언트는 클래스 하나로 공유한다.
+     */
+    private fun timeNotFoundRequest(
         token: String,
         othersId: String,
-    ): Pair<Double, Double> {
-        val samples = mutableMapOf(ABSENT to mutableListOf<Double>(), OTHERS to mutableListOf())
-        val order =
-            (List(TIMING_SAMPLES + 1) { ABSENT } + List(TIMING_SAMPLES + 1) { OTHERS })
-                .shuffled(Random(TIMING_SEED))
-        val warmed = mutableSetOf<String>()
+        arm: TimingUniformity.Arm,
+    ): Double {
+        val target = if (arm == ABSENT) UUID.randomUUID().toString() else othersId
+        val request = deleteRequest(token, target).build()
 
-        order.forEach { path ->
-            val target = if (path == ABSENT) UUID.randomUUID().toString() else othersId
-            val elapsed = measureMillis { delete(token, target) }
-
-            if (warmed.add(path)) return@forEach
-            samples.getValue(path) += elapsed
-        }
-        return median(samples.getValue(ABSENT)) to median(samples.getValue(OTHERS))
-    }
-
-    private fun measureMillis(block: () -> Unit): Double {
         val started = System.nanoTime()
-        block()
-        return (System.nanoTime() - started) / NANOS_PER_MILLI
-    }
+        val status = client.send(request, HttpResponse.BodyHandlers.ofString(Charsets.UTF_8)).statusCode()
+        val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
 
-    private fun median(values: List<Double>): Double = values.sorted()[values.size / 2]
+        check(status == NOT_FOUND) { "404 가 아니면 잰 것이 다른 경로다: $status" }
+        return elapsed
+    }
 
     private fun newAccount(): String {
         val email = "documentdelete${counter++}@example.test"
@@ -282,7 +281,7 @@ class DocumentDeleteReachTest {
         token: String?,
         documentId: String,
     ): HttpResponse<ByteArray> =
-        HttpClient.newHttpClient().send(
+        client.send(
             deleteRequest(token, documentId).build(),
             HttpResponse.BodyHandlers.ofByteArray(),
         )
@@ -312,7 +311,7 @@ class DocumentDeleteReachTest {
     }
 
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
-        HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
+        client.send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
     /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
     private fun itemPath(documentId: String): String =
@@ -424,24 +423,56 @@ class DocumentDeleteReachTest {
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
 
-        private const val ABSENT = "absent"
-        private const val OTHERS = "others"
+        private val ABSENT = TimingUniformity.Arm("absent", "없음")
+        private val OTHERS = TimingUniformity.Arm("others", "타인")
 
-        /** 경로당 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
+        /** 1차 회차의 경로당 표본 수. 홀수라 확인 없이 끝날 때 중앙값이 표본 하나로 정해진다. */
         private const val TIMING_SAMPLES = 21
+
+        /** 1차가 문턱 이상일 때만 더 재는 표본 수 — 합산이 홀수가 되게 짝수다. 근거는 [TimingUniformity] KDoc. */
+        private const val CONFIRMATION_SAMPLES = TIMING_SAMPLES * 2
 
         /** 두 경로를 섞는 순서. 고정 시드라 실패가 재현된다. */
         private const val TIMING_SEED = 20260821L
 
-        /** 명세는 KDoc 에 있다 — `WorkspaceEndpointReachTest` 와 같은 값이다. */
+        /** 확인 회차의 시드. 1차와 다른 배치를 써 확인이 1차의 자리 배열을 되풀이하지 않게 한다. */
+        private const val CONFIRMATION_SEED = TIMING_SEED + 1
+
+        /**
+         * 1차와 확인 사이에 재우는 시간(ms). `AesGcmContentCipherTest.TIMING_ATTEMPT_GAP_MILLIS`
+         * 와 같은 값·같은 이유다 — 두 회차가 하나의 스케줄러·GC 잡음 구간에 붙어 있지 않게 한다.
+         */
+        private const val CONFIRMATION_GAP_MILLIS = 50L
+
+        /**
+         * 명세는 [TimingUniformity] KDoc 에 있다. 문턱 값 자체는 `WorkspaceEndpointReachTest` ·
+         * `AuthEndpointReachTest` 의 로그인 게이트와 같지만, 판정은 auth 와 다르다 —
+         * auth 는 한 회차로 끝내고 여기는 1차·확인을 합산한다.
+         */
         private const val MAX_TIMING_RATIO = 1.5
 
         /** 0 으로 나누지 않기 위한 바닥. 이보다 짧은 응답은 측정 분해능 밖이다. */
         private const val MIN_MEASURABLE_MILLIS = 0.05
 
+        /** 위 상수들이 곧 이 판정의 표본 설계다. */
+        private val TIMING_SPEC =
+            TimingUniformity.TimingSpec(
+                arms = listOf(ABSENT, OTHERS),
+                samples = TIMING_SAMPLES,
+                confirmationSamples = CONFIRMATION_SAMPLES,
+                seed = TIMING_SEED,
+                confirmationSeed = CONFIRMATION_SEED,
+                gapMillis = CONFIRMATION_GAP_MILLIS,
+                threshold = MAX_TIMING_RATIO,
+                minMeasurableMillis = MIN_MEASURABLE_MILLIS,
+            )
+
         private const val NANOS_PER_MILLI = 1_000_000.0
 
         private var counter = 0
+
+        /** 모든 요청이 쓰는 클라이언트 하나. 요청마다 새로 만들면 그 생성 비용이 시간 판정에 얹힌다. */
+        private val client: HttpClient = HttpClient.newHttpClient()
 
         /** 이 테스트만 쓰는 DB. 다른 테스트의 행과 섞이면 행 수 단언이 무너진다. */
         val database: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("document_delete") }
