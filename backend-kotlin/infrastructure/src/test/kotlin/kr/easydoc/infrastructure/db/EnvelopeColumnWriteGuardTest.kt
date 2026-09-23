@@ -402,6 +402,9 @@ class EnvelopeColumnWriteGuardTest {
             listOf(
                 "api/src/test/kotlin/kr/easydoc/api/AdminReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionExportReachTest.kt",
+                // 새 변환 하위 라우트의 소유권 은닉 실측도 완료 상태를 SQL 로 심는다 — 그
+                // 문장이 봉투를 함께 쓴다.
+                "api/src/test/kotlin/kr/easydoc/api/ConversionFeatureRouteReachTest.kt",
                 // 피드백 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를 함께 쓴다.
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
@@ -520,7 +523,11 @@ class EnvelopeColumnWriteGuardTest {
          *   않아 여전히 안 잡힌다).
          * ⑸ `ConversionFeedbackStorageTest`의 구버전 쓰기 호환 테스트가 심는 옛 upsert SQL —
          *   같은 이유로 새로 `EXPECTED_FILES`에 들어왔다.
+         *
+         * 37 → 38 은 `ConversionFeatureRouteReachTest` 가 새 변환 하위 라우트의 소유권 은닉을
+         * 실제 스택에서 재려고 심는 완료 상태 문장 하나다 — 「남의 것」팔에 내줄 것이
+         * 실재해야 판정이 공회전하지 않는다. 결과 열과 봉투 두 값을 같은 문장에서 쓴다.
          */
-        const val EXPECTED_STATEMENTS = 37
+        const val EXPECTED_STATEMENTS = 38
     }
 }
