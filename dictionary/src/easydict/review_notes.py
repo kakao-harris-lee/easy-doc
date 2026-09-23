@@ -262,7 +262,18 @@ def ensure_v_entry_full_view(conn: sqlite3.Connection, schema_sql: Path = _SCHEM
     뷰는 그대로라 `SELECT * FROM v_entry_full`에 review_note가 나오지
     않는다 — `ensure_review_note_column(conn)`을 먼저 호출해 컬럼이 있어야
     한다(없으면 뷰 재생성이 "no such column: e.review_note"로 실패한다).
+
+    같은 이유로 `definition_reviewed_at`/`definition_reviewed_by`(2026-09-23,
+    definition_review.py)도 뷰가 참조한다 — `CREATE VIEW`는 SQLite가 컬럼
+    존재를 지연 검증하므로 이 함수 자체는 컬럼이 없어도 "성공"하지만, 그
+    뒤 `SELECT definition_reviewed_at FROM v_entry_full`이 "no such column"으로
+    죽는다(PR #147 독립 리뷰 실측). 그래서 DROP/CREATE보다 먼저
+    `definition_review.ensure_definition_review_columns()`를 불러 컬럼부터
+    채운다 — 재실행해도 안전하다.
     """
+    from .definition_review import ensure_definition_review_columns
+
+    ensure_definition_review_columns(conn)
     conn.executescript(schema_sql.read_text(encoding="utf-8"))
 
 

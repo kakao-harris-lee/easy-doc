@@ -28,6 +28,7 @@ from easydict.models import (
     TAG_CATALOG,
     SCHEMA_VERSION,
 )
+from easydict.definition_review import ensure_definition_review_columns
 from easydict.review_notes import classify_caution
 from easydict.normalize import (
     clean,
@@ -1052,6 +1053,21 @@ def create_db(db_path: Path, schema_sql: Path, reset: bool) -> sqlite3.Connectio
             "schema/schema.sql이 먼저 준비되어야 합니다 (작업 A)."
         )
     conn = sqlite3.connect(str(db_path))
+    # --reset 없이 기존 DB에 스키마를 재적용하는 경로(실측 회귀, PR #147 독립
+    # 리뷰): entries.definition_reviewed_at/definition_reviewed_by(2026-09-23)가
+    # 없던 시절 만들어진 DB라면, 곧이어 실행할 executescript()의 DROP+CREATE
+    # VIEW가 그 컬럼을 참조하는 v_entry_full을 다시 만든다 — SQLite가 뷰
+    # 컬럼 참조를 지연 검증해서 CREATE 자체는 "성공"하지만, 실제 조회 시점에
+    # "no such column: e.definition_reviewed_at"로 죽는다. entries 테이블이
+    # 이미 있을 때만(=CREATE TABLE IF NOT EXISTS가 스킵될 때만) 컬럼을 먼저
+    # ALTER TABLE로 채운다 — 테이블 자체가 없는 첫 빌드는 곧 실행될 CREATE
+    # TABLE이 이미 두 컬럼을 선언하므로 이 보정이 필요 없고, 없는 테이블에
+    # ALTER TABLE을 시도하면 그 자체가 에러가 된다.
+    has_entries_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='entries'"
+    ).fetchone() is not None
+    if has_entries_table:
+        ensure_definition_review_columns(conn)
     conn.executescript(schema_sql.read_text(encoding="utf-8"))
     return conn
 

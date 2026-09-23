@@ -10,7 +10,9 @@
 """
 from __future__ import annotations
 
+import functools
 import sqlite3
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -18,6 +20,21 @@ from easydict import review_notes
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_SQL_PATH = REPO_ROOT / "schema" / "schema.sql"
+
+# PR #147(정의 검수 이력 도입, 2026-09-23) 직전 스키마 — entries에
+# definition_reviewed_at/definition_reviewed_by가 없던 마지막 커밋. 회귀
+# 재현(TestEnsureVEntryFullView)에 실물 구버전 스키마가 필요해서 손으로
+# 다시 옮겨 적는 대신 git 이력에서 그대로 읽는다.
+_PRE_DEFINITION_REVIEW_COMMIT = "927a13f9"
+
+
+@functools.lru_cache(maxsize=1)
+def _pre_definition_review_schema_sql() -> str:
+    result = subprocess.run(
+        ["git", "show", f"{_PRE_DEFINITION_REVIEW_COMMIT}:dictionary/schema/schema.sql"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+    )
+    return result.stdout
 
 
 def _minimal_entry_sql(checksum: str) -> str:
@@ -226,6 +243,32 @@ class TestEnsureVEntryFullView(unittest.TestCase):
 
             # 예외 없이 review_note를 선택할 수 있어야 한다.
             conn.execute("SELECT review_note FROM v_entry_full").fetchall()
+        finally:
+            conn.close()
+
+    def test_recreates_view_when_definition_review_columns_are_missing_too(self) -> None:
+        """실측 회귀(PR #147 독립 리뷰): review_note는 있지만(927a13f9)
+        definition_reviewed_at/by는 없던 옛 DB(실제 그 커밋의 schema.sql로 만듦)에서
+        이 함수를 부르면, 뷰의 DROP+CREATE 자체는 SQLite가 컬럼 존재를 지연
+        검증하므로 일단 "성공"하지만 실제 SELECT 시점에 "no such column:
+        e.definition_reviewed_at"로 죽는다.
+        ensure_v_entry_full_view()가 definition_review.ensure_definition_review_columns()를
+        먼저 불러 컬럼부터 채워야 한다."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.executescript(_pre_definition_review_schema_sql())
+            before = {row[1] for row in conn.execute("PRAGMA table_info(entries)")}
+            self.assertNotIn("definition_reviewed_at", before)
+
+            with self.assertRaises(sqlite3.OperationalError):
+                conn.execute("SELECT definition_reviewed_at FROM v_entry_full LIMIT 1").fetchall()
+
+            review_notes.ensure_v_entry_full_view(conn, schema_sql=SCHEMA_SQL_PATH)
+
+            # 예외 없이 정의 검수 이력 컬럼도 선택할 수 있어야 한다.
+            conn.execute(
+                "SELECT definition_reviewed_at, definition_reviewed_by FROM v_entry_full LIMIT 1"
+            ).fetchall()
         finally:
             conn.close()
 
