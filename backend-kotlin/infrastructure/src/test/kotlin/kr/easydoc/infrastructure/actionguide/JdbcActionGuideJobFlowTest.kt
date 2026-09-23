@@ -65,7 +65,7 @@ class JdbcActionGuideJobFlowTest {
         createIdempotently(job)
         createIdempotently(job)
 
-        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
         val executionId = UUID.randomUUID()
         tx.executeWithoutResult {
             val held = jobs.lockIfHeld(lease)!!
@@ -92,7 +92,7 @@ class JdbcActionGuideJobFlowTest {
         val fixture = seed()
         val job = fixture.job()
         createIdempotently(job)
-        val first = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        val first = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
         assertThat(first.jobId).isEqualTo(job.jobId)
         val executionId = UUID.randomUUID()
         tx.executeWithoutResult {
@@ -105,7 +105,7 @@ class JdbcActionGuideJobFlowTest {
             .param("id", job.jobId)
             .update()
 
-        val recovered = tx.execute { jobs.acquire("worker-b", Duration.ofMinutes(2)) }
+        val recovered = tx.execute { acquire("worker-b") }
         assertThat(recovered).isInstanceOf(ActionGuideJobAcquire.RecoverUnknown::class.java)
         val lease = (recovered as ActionGuideJobAcquire.RecoverUnknown).lease
         tx.executeWithoutResult {
@@ -219,7 +219,7 @@ class JdbcActionGuideJobFlowTest {
         val job = fixture.job().copy(reservedCredits = BigDecimal("0.1"))
         createIdempotently(job)
 
-        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
         tx.executeWithoutResult {
             val held = jobs.lockIfHeld(lease)!!
             assertThat(jobs.markSucceeded(lease, NOW.plusSeconds(1))).isTrue()
@@ -243,6 +243,85 @@ class JdbcActionGuideJobFlowTest {
         assertThat(consume.second).isEqualByComparingTo("-0.1")
     }
 
+    @Test
+    @DisplayName("provider를 시작하지 못한 작업이 리스 상한을 넘으면 다시 넘기지 않고 실패로 정산한다")
+    fun `상한을 넘긴 미시작 작업은 dead letter로 끝난다`() {
+        val fixture = seed()
+        val job = fixture.job()
+        createIdempotently(job)
+        // 시작 트랜잭션이 매번 깨지는 작업을 흉내 낸다 — 상한까지는 지금처럼 다시 넘어간다.
+        repeat(MAX_LEASE_ATTEMPTS) {
+            assertThat(tx.execute { acquire("worker-a") }).isInstanceOf(ActionGuideJobAcquire.Held::class.java)
+            expireLease(job.jobId)
+        }
+
+        val acquired = tx.execute { acquire("worker-b") }
+
+        assertThat(acquired).isInstanceOf(ActionGuideJobAcquire.DeadLettered::class.java)
+        val lease = (acquired as ActionGuideJobAcquire.DeadLettered).lease
+        tx.executeWithoutResult {
+            val held = jobs.lockIfHeld(lease)!!
+            assertThat(jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, NOW.plusSeconds(1)))
+                .isTrue()
+            credits.release(held)
+        }
+
+        val settled = jobs.findOwned(fixture.ownerId, fixture.conversionId, job.jobId)!!
+        assertThat(settled.status).isEqualTo(ActionGuideJobStatus.FAILED)
+        assertThat(settled.failureCode).isEqualTo(ActionGuideJobFailureCode.GENERATION_FAILED)
+        // 호출을 시작한 적이 없으므로 원장도 문서당 시도 상한(D04)도 건드리지 않는다.
+        assertThat(settled.providerStartedAt).isNull()
+        assertThat(providerAttempts(job.jobId)).isZero()
+        assertThat(llmCallCount(job.jobId)).isZero()
+        assertThat(settlement(job.jobId)).isEqualTo("released")
+        assertThat(isNullColumn(job.jobId, "lease_owner")).isTrue()
+        assertThat(isNullColumn(job.jobId, "lease_until")).isTrue()
+        assertThat(isNullColumn(job.jobId, "worker_slot")).isTrue()
+        assertThat(transactionCount(job.jobId, "release")).isEqualTo(1)
+        assertThat(accountReserved(fixture.workspaceId)).isZero()
+        assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("10")
+        // 활성 작업 자리가 풀려 같은 계정이 다시 접수할 수 있다.
+        assertThat(tx.execute { jobs.insert(fixture.job()) })
+            .isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+    }
+
+    @Test
+    @DisplayName("상한까지의 만료된 미시작 작업은 지금처럼 다시 획득한다")
+    fun `상한 안의 만료 작업은 다시 획득한다`() {
+        val fixture = seed()
+        val job = fixture.job()
+        createIdempotently(job)
+        repeat(MAX_LEASE_ATTEMPTS - 1) {
+            assertThat(tx.execute { acquire("worker-a") }).isInstanceOf(ActionGuideJobAcquire.Held::class.java)
+            expireLease(job.jobId)
+        }
+
+        val acquired = tx.execute { acquire("worker-b") }
+
+        assertThat(acquired).isInstanceOf(ActionGuideJobAcquire.Held::class.java)
+        assertThat(jobs.findOwned(fixture.ownerId, fixture.conversionId, job.jobId)?.status)
+            .isEqualTo(ActionGuideJobStatus.RUNNING)
+    }
+
+    @Test
+    @DisplayName("상한을 넘겨도 provider를 시작한 작업은 불명확 회수 경로를 그대로 탄다")
+    fun `상한을 넘긴 시작 작업은 unknown 경로다`() {
+        val fixture = seed()
+        val job = fixture.job()
+        createIdempotently(job)
+        val first = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
+        tx.executeWithoutResult { assertThat(jobs.markProviderStarted(first, UUID.randomUUID(), NOW)).isTrue() }
+        jdbc
+            .sql("UPDATE action_guide_jobs SET attempts = :attempts WHERE id = :id")
+            .param("attempts", MAX_LEASE_ATTEMPTS + 1)
+            .param("id", job.jobId)
+            .update()
+        expireLease(job.jobId)
+
+        assertThat(tx.execute { acquire("worker-b") })
+            .isInstanceOf(ActionGuideJobAcquire.RecoverUnknown::class.java)
+    }
+
     private fun createIdempotently(job: StoredActionGuideJob) {
         tx.executeWithoutResult {
             if (jobs.findByRequestId(job.ownerId, job.conversionId, job.requestId) == null) {
@@ -263,7 +342,7 @@ class JdbcActionGuideJobFlowTest {
     /** 접수 → 획득 → provider 시작 → 성공까지 실제 경로로 한 번의 시도를 끝낸다. */
     private fun startAndSucceed(job: StoredActionGuideJob) {
         assertThat(tx.execute { jobs.insert(job) }).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
-        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
         tx.executeWithoutResult { assertThat(jobs.markProviderStarted(lease, UUID.randomUUID(), NOW)).isTrue() }
         tx.executeWithoutResult { assertThat(jobs.markSucceeded(lease, NOW.plusSeconds(1))).isTrue() }
     }
@@ -271,7 +350,7 @@ class JdbcActionGuideJobFlowTest {
     /** 입력이 바뀐 작업처럼 provider를 시작하지 않고 superseded로 끝낸다. */
     private fun supersedeWithoutStart(job: StoredActionGuideJob) {
         assertThat(tx.execute { jobs.insert(job) }).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
-        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
         tx.executeWithoutResult { assertThat(jobs.markSuperseded(lease, NOW.plusSeconds(1))).isTrue() }
     }
 
@@ -384,6 +463,40 @@ class JdbcActionGuideJobFlowTest {
             .query { rs, _ -> rs.getInt(1) }
             .single()
 
+    private fun acquire(owner: String): ActionGuideJobAcquire =
+        jobs.acquire(owner, Duration.ofMinutes(2), MAX_LEASE_ATTEMPTS)
+
+    private fun expireLease(jobId: UUID) {
+        jdbc
+            .sql("UPDATE action_guide_jobs SET lease_until = now() - interval '1 second' WHERE id = :id")
+            .param("id", jobId)
+            .update()
+    }
+
+    private fun llmCallCount(jobId: UUID): Int =
+        jdbc
+            .sql("SELECT count(*) FROM llm_calls WHERE action_guide_job_id=:id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getInt(1) }
+            .single()
+
+    private fun settlement(jobId: UUID): String =
+        jdbc
+            .sql("SELECT settlement FROM action_guide_jobs WHERE id=:id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
+    private fun isNullColumn(
+        jobId: UUID,
+        column: String,
+    ): Boolean =
+        jdbc
+            .sql("SELECT $column IS NULL FROM action_guide_jobs WHERE id=:id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getBoolean(1) }
+            .single()
+
     private fun providerAttempts(jobId: UUID): Int =
         jdbc
             .sql("SELECT provider_attempts FROM action_guide_jobs WHERE id=:id")
@@ -423,6 +536,9 @@ class JdbcActionGuideJobFlowTest {
 
         /** D04(개선 로드맵 §6) — 문서당 provider 호출을 시작한 작업은 3건까지다. */
         const val MAX_ATTEMPTS_PER_CONVERSION = 3
+
+        /** `easydoc.action-guide.max-lease-attempts` 기본값 — 이 횟수까지만 worker에 다시 넘긴다. */
+        const val MAX_LEASE_ATTEMPTS = 5
         const val BLOCKED_MILLIS = 300L
         const val HANDOFF_SECONDS = 10L
     }

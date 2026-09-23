@@ -205,8 +205,12 @@ class SensitiveToStringReachTest {
          *
          * +1: 같은 `StartResult` 에 `PreparationFailed`(`data object`)를 더했다 — 입력을
          * 만들지 못한 실패를 provider 시작 없이 끝내는 갈래다.
+         *
+         * 342 → 343 은 `ActionGuideJobAcquire.DeadLettered` 하나다(2026-09-23). 리스 재획득
+         * 상한을 넘긴 미시작 작업을 worker에 다시 넘기지 않고 실패로 정산하는 획득 결과이며,
+         * 기존 `Held`·`RecoverUnknown` 과 같은 `ActionGuideJobLease` 하나만 담는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 342
+        const val EXPECTED_SOURCE_DECLARATIONS = 343
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

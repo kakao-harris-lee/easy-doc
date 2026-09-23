@@ -1,5 +1,6 @@
 package kr.easydoc.worker
 
+import kr.easydoc.application.actionguide.ActionGuideJobWorkerPolicy
 import kr.easydoc.application.actionguide.ProcessActionGuideJob
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -29,7 +30,16 @@ class ActionGuideWorkerStartupTest {
         assertThat(context.getBean(ActionGuideJobPoller::class.java)).isNotNull()
     }
 
+    @Test
+    fun `리스 재획득 상한이 worker 설정 기본값으로 묶인다`() {
+        assertThat(context.getBean(ActionGuideJobWorkerPolicy::class.java).maxLeaseAttempts)
+            .isEqualTo(DEFAULT_MAX_LEASE_ATTEMPTS)
+    }
+
     companion object {
+        /** worker `application.yml` 의 `easydoc.action-guide.max-lease-attempts` 기본값. */
+        private const val DEFAULT_MAX_LEASE_ATTEMPTS = 5
+
         private val database: DatabaseHandle by lazy {
             PostgresTestSupport.createEmptyDatabase("action_guide_worker_startup")
         }

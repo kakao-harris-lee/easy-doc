@@ -75,6 +75,37 @@ class ProcessActionGuideJobTest {
     }
 
     @Test
+    fun `리스 재획득 상한에 닿은 미시작 작업은 runner 없이 실패로 끝내고 예약을 되돌린다`() {
+        val world = World()
+        world.jobs.acquired = ActionGuideJobAcquire.DeadLettered(world.lease)
+        var calls = 0
+        world.runner =
+            ActionGuideJobRunner {
+                calls += 1
+                ActionGuideProviderCall { validResult() }
+            }
+
+        assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.DEAD_LETTERED)
+        assertThat(calls).isZero()
+        assertThat(world.ledger.starts).isZero()
+        assertThat(world.ledger.unknowns).isZero()
+        assertThat(world.credits.releases).isEqualTo(1)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.FAILED)
+        assertThat(world.jobs.rows[JOB]?.failureCode).isEqualTo(ActionGuideJobFailureCode.GENERATION_FAILED)
+        assertThat(world.jobs.rows[JOB]?.providerStartedAt).isNull()
+    }
+
+    @Test
+    fun `기능을 끈 drain에서는 상한에 닿은 작업도 미시작 예약 반환으로 끝낸다`() {
+        val world = World()
+        world.jobs.acquired = ActionGuideJobAcquire.DeadLettered(world.lease)
+
+        assertThat(world.processor().drainNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.SUPERSEDED)
+        assertThat(world.credits.releases).isEqualTo(1)
+    }
+
+    @Test
     fun `terminal fencing 갱신 실패는 credit과 ledger side effect를 만들지 않는다`() {
         val world = World()
         world.jobs.terminalWriteSucceeds = false
@@ -247,11 +278,14 @@ class ProcessActionGuideJobTest {
                 cipher,
                 runner,
                 transaction,
-                ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30)),
+                ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30), MAX_LEASE_ATTEMPTS),
                 Clock.fixed(NOW, ZoneOffset.UTC),
             )
     }
 }
+
+/** 이 단위 테스트는 상한 판정을 저장소에 맡기므로 값 자체는 중요하지 않다. */
+private const val MAX_LEASE_ATTEMPTS: Int = 5
 
 private fun validResult() =
     ActionGuideRunResult.Valid(

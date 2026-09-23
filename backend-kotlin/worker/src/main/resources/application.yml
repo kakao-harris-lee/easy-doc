@@ -35,6 +35,8 @@ easydoc:
     worker-enabled: ${EASYDOC_ACTION_GUIDE_WORKER_ENABLED:false}
     owner: ${EASYDOC_ACTION_GUIDE_WORKER_OWNER:}
     lease-duration-seconds: ${EASYDOC_ACTION_GUIDE_LEASE_DURATION_SECONDS:120}
+    # 만료된 리스를 다시 넘기는 횟수 상한. 넘으면 호출 없이 실패로 정산해 예약과 slot을 돌려준다.
+    max-lease-attempts: ${EASYDOC_ACTION_GUIDE_MAX_LEASE_ATTEMPTS:5}
     poll-interval-ms: ${EASYDOC_ACTION_GUIDE_POLL_INTERVAL_MS:500}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
