@@ -109,6 +109,32 @@ class JdbcRetentionPurgeTest {
     }
 
     @Test
+    @DisplayName("만료 파기가 V28~V34 파생 행(검수·행동 안내·표 구조·이력·그림 배치)을 함께 지운다")
+    fun `만료 파기가 파생 행을 남기지 않는다`() {
+        val seeded = seedDocument()
+        val jobId = seedDerivedRows(seeded)
+        DERIVED_TABLES.forEach { (table, column) ->
+            assertThat(countIn(table, column, if (column == DOCUMENT_ID) seeded.documentId else seeded.conversionId))
+                .withFailMessage("%s 에 파생 행을 심지 못했다 — 이 테스트가 아무것도 재지 못한다", table)
+                .isEqualTo(1)
+        }
+        expire(seeded.documentId)
+
+        val result = purge(dryRun = false).run()
+
+        assertThat(result.purgedDocuments).isEqualTo(1)
+        DERIVED_TABLES.forEach { (table, column) ->
+            assertThat(countIn(table, column, if (column == DOCUMENT_ID) seeded.documentId else seeded.conversionId))
+                .withFailMessage("%s 의 파생 행이 문서와 함께 사라지지 않았다 — 파기 범위가 새고 있다", table)
+                .isZero()
+        }
+        // 작업 감사행에는 일부러 FK 가 없다(V29 주석) — 청구 근거로 남는다.
+        assertThat(countIn("action_guide_jobs", "id", jobId))
+            .withFailMessage("작업 감사행이 사라졌다 — 문서가 지워져도 정산 근거는 남아야 한다")
+            .isEqualTo(1)
+    }
+
+    @Test
     @DisplayName("아직 만료되지 않은 문서는 그대로 둔다")
     fun `유효 문서는 남긴다`() {
         val seeded = seedDocument()
@@ -215,6 +241,182 @@ class JdbcRetentionPurgeTest {
         return Seeded(documentId, conversionId, owner, workspace)
     }
 
+    /**
+     * V28~V34 가 문서·변환에 매단 파생 행을 한 벌 심는다. 반환값은 행동 안내 작업 id —
+     * 그 표만 FK 가 없어(V29 주석: 청구 근거 보존) 파기 뒤에도 남는지 따로 본다.
+     */
+    private fun seedDerivedRows(seeded: Seeded): UUID {
+        val jobId = UUID.randomUUID()
+        seedReviewSupportRow(seeded.conversionId)
+        seedTableStructureRow(seeded.documentId)
+        seedReviewHistoryRows(seeded)
+        seedIllustrationPlacementRow(seeded.conversionId)
+        insertActionGuideJob(seeded, jobId, status = "succeeded", settlement = "consumed")
+        seedActionGuideContentRows(seeded.conversionId, jobId)
+        return jobId
+    }
+
+    /** 이름 있는 파라미터를 한 번에 묶는다 — 파생 행 SQL 이 전부 같은 모양이라 반복을 줄인다. */
+    private fun insertRow(
+        sql: String,
+        params: Map<String, Any>,
+    ) {
+        var spec = jdbc.sql(sql.trimIndent())
+        params.forEach { (name, value) -> spec = spec.param(name, value) }
+        spec.update()
+    }
+
+    private fun seedReviewSupportRow(conversionId: UUID) =
+        insertRow(
+            """
+            INSERT INTO review_assessments
+                (id, conversion_id, content_revision, analyzer_version,
+                 payload_encrypted, encryption_scheme, key_version)
+            VALUES (:id, :conversion, 1, 'fact-preservation-v1', :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "id" to UUID.randomUUID(),
+                "conversion" to conversionId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+
+    private fun seedTableStructureRow(documentId: UUID) =
+        insertRow(
+            """
+            INSERT INTO document_table_structures
+                (document_id, payload_encrypted, encryption_scheme, key_version)
+            VALUES (:document, :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "document" to documentId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+
+    private fun seedReviewHistoryRows(seeded: Seeded) {
+        val snapshotId = UUID.randomUUID()
+        insertRow(
+            """
+            INSERT INTO review_snapshots
+                (id, conversion_id, content_revision, kind, payload_encrypted, encryption_scheme, key_version)
+            VALUES (:id, :conversion, 1, 'review_assessment', :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "id" to snapshotId,
+                "conversion" to seeded.conversionId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+        insertRow(
+            """
+            INSERT INTO review_events
+                (id, conversion_id, event_type, actor_user_id, created_at, content_revision, snapshot_id)
+            VALUES (:id, :conversion, 'item_confirmed', :actor, now(), 1, :snapshot)
+            """,
+            mapOf(
+                "id" to UUID.randomUUID(),
+                "conversion" to seeded.conversionId,
+                "actor" to seeded.ownerId,
+                "snapshot" to snapshotId,
+            ),
+        )
+    }
+
+    private fun seedIllustrationPlacementRow(conversionId: UUID) =
+        insertRow(
+            """
+            INSERT INTO illustration_placements
+                (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
+            VALUES (:id, :conversion, 1, :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "id" to UUID.randomUUID(),
+                "conversion" to conversionId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+
+    private fun seedActionGuideContentRows(
+        conversionId: UUID,
+        jobId: UUID,
+    ) {
+        insertRow(
+            """
+            INSERT INTO action_guide_candidates
+                (id, job_id, conversion_id, based_on_content_revision,
+                 payload_encrypted, encryption_scheme, key_version)
+            VALUES (:id, :job, :conversion, 1, :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "id" to UUID.randomUUID(),
+                "job" to jobId,
+                "conversion" to conversionId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+        insertRow(
+            """
+            INSERT INTO action_guides
+                (id, conversion_id, based_on_content_revision, guide_revision, status,
+                 payload_encrypted, encryption_scheme, key_version)
+            VALUES (:id, :conversion, 1, 1, 'draft', :bytes, :scheme, 1)
+            """,
+            mapOf(
+                "id" to UUID.randomUUID(),
+                "conversion" to conversionId,
+                "bytes" to PAYLOAD,
+                "scheme" to EncryptionScheme.AES_256_GCM_V1,
+            ),
+        )
+    }
+
+    private fun insertActionGuideJob(
+        seeded: Seeded,
+        jobId: UUID,
+        status: String,
+        settlement: String,
+        reservedCredits: BigDecimal = BigDecimal.ONE,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO action_guide_jobs
+                    (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                     expected_content_revision, based_on_content_revision, input_fingerprint,
+                     status, reserved_credits, settlement)
+                VALUES (:id, :request, :owner, :workspace, :document, :conversion,
+                        1, 1, :fingerprint, :status, :credits, :settlement)
+                """.trimIndent(),
+            ).param("id", jobId)
+            .param("request", UUID.randomUUID())
+            .param("owner", seeded.ownerId)
+            .param("workspace", seeded.workspaceId)
+            .param("document", seeded.documentId)
+            .param("conversion", seeded.conversionId)
+            .param("fingerprint", FINGERPRINT)
+            .param("status", status)
+            .param("credits", reservedCredits)
+            .param("settlement", settlement)
+            .update()
+    }
+
+    private fun countIn(
+        table: String,
+        column: String,
+        value: UUID,
+    ): Int =
+        jdbc
+            .sql("SELECT count(*) FROM $table WHERE $column = :value")
+            .param("value", value)
+            .query { rs, _ -> rs.getInt(1) }
+            .single()
+
     private fun expire(documentId: UUID) {
         jdbc
             .sql("UPDATE documents SET retention_expires_at = now() - INTERVAL '1 second' WHERE id = :id")
@@ -290,5 +492,29 @@ class JdbcRetentionPurgeTest {
         const val BATCH: Int = 100
         const val LEASE_MINUTES: Long = 2
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
+
+        const val DOCUMENT_ID = "document_id"
+        const val CONVERSION_ID = "conversion_id"
+
+        /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
+        const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+        val PAYLOAD: ByteArray = byteArrayOf(1, 2, 3, 4)
+
+        /**
+         * V28~V34 가 문서·변환에 매단 표와 그 결속 열. 전부 `ON DELETE CASCADE` 라 문서
+         * 파기 한 번으로 사라져야 한다 — FK 를 일부러 두지 않은 `action_guide_jobs` 는
+         * 여기 없다.
+         */
+        val DERIVED_TABLES: List<Pair<String, String>> =
+            listOf(
+                "review_assessments" to CONVERSION_ID,
+                "document_table_structures" to DOCUMENT_ID,
+                "review_snapshots" to CONVERSION_ID,
+                "review_events" to CONVERSION_ID,
+                "illustration_placements" to CONVERSION_ID,
+                "action_guide_candidates" to CONVERSION_ID,
+                "action_guides" to CONVERSION_ID,
+            )
     }
 }
