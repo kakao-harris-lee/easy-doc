@@ -2,7 +2,7 @@
 
 ## 2026-09-18 쉬운글 품질 개선 추가 backlog
 
-**2026-09-23 갱신: 아래 R0~R7의 제품 코드(ER-00~ER-16)는 모두 main에 병합됐고 토글은 기본 OFF다.** 남은 것은 ER-09의 R3 유료 평가와 사람·운영 검증이며 [사람 검증 착수 계획](plans/2026-09-23-human-verification-kickoff.md)의 V1~V6으로 추적한다. 표는 작업 ID 대응표로 유지한다. [로드맵](plans/2026-09-18-easy-read-improvement-roadmap.md)과 [실행 계획](plans/2026-09-18-easy-read-delivery-plan.md)의 순서·작업 ID를 따른다. 기존 기능 완료 목록과 구분한다.
+**2026-09-23 갱신: 아래 R0~R7의 제품 코드(ER-00~ER-16)는 모두 main에 병합됐고 토글은 기본 OFF다.** ER-09의 R3 유료 평가는 개발 표본 6건 1회 실행했다(2026-09-23, [R3 평가 보고서](reports/2026-09-23-r3-model-evaluation.md)). 남은 것은 보류 표본 평가와 사람·운영 검증이며 [사람 검증 착수 계획](plans/2026-09-23-human-verification-kickoff.md)의 V1~V6으로 추적한다. 표는 작업 ID 대응표로 유지한다. [로드맵](plans/2026-09-18-easy-read-improvement-roadmap.md)과 [실행 계획](plans/2026-09-18-easy-read-delivery-plan.md)의 순서·작업 ID를 따른다. 기존 기능 완료 목록과 구분한다.
 
 | 단계 | 작업(코드 병합 완료) | 작업 ID |
 |---|---|---|

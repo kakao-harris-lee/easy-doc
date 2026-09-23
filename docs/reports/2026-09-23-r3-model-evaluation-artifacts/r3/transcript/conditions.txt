@@ -1,0 +1,1 @@
+variant=r3 · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/r3-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20
