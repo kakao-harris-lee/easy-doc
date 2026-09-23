@@ -53,9 +53,11 @@ class GoldenCorpusLlmEvaluationTest {
             } catch (exc: ConfigurationException) {
                 fail<Int>(exc.message)
             }
-        // 사전 컨텍스트는 **문서 목록을 안 뒤** 정한다 — 몇 건에 실렸는지가 측정 조건의 일부라
-        // 요약 문자열을 만들기 전에 알아야 한다.
-        val documents = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
+        // 어떤 문서를 돌지도 유료 호출 전에 정한다 — 승인이 표본 몇 건이어도 코퍼스 전건을 사게
+        // 되는 자리를 막는다(LaneDocuments KDoc). 사전·변환문·리포트는 모두 **고른 문서만** 보며,
+        // 사전을 그 뒤에 정하는 이유는 몇 건에 실렸는지가 측정 조건의 일부이기 때문이다.
+        val selection = selectDocuments()
+        val documents = selection.documents
         val dictionary =
             when (
                 val plan =
@@ -83,7 +85,7 @@ class GoldenCorpusLlmEvaluationTest {
         val conditions =
             "variant=${variant.wireName} · " +
                 "${ready.description} · ${dictionary.description} · ${transcript.description} · " +
-                "runs=$runs cap_usd=$budgetUsd"
+                "${selection.description} · runs=$runs cap_usd=$budgetUsd"
         val report = LaneReport(conditions, journal, ready.options.maxTokens)
         // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
         // 같은 문자열을 유료 호출을 시작하기 전에 써 둔다(LaneTranscript.writeConditions KDoc).
@@ -130,6 +132,16 @@ class GoldenCorpusLlmEvaluationTest {
             is LaneTranscriptPlan.Ready -> plan.transcript
             is LaneTranscriptPlan.Unusable -> fail<LaneTranscript>(plan.reason)
         }
+
+    /** 코퍼스를 읽고 이번에 돌 문서를 고른다 — 잘못 적은 id 는 유료 호출 전에 실패다. */
+    private fun selectDocuments(): LaneDocumentSelection {
+        val corpus = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
+        return try {
+            LaneDocuments.select(System::getenv, corpus)
+        } catch (exc: ConfigurationException) {
+            fail<LaneDocumentSelection>(exc.message)
+        }
+    }
 
     private fun resolveVariant(): GoldenLaneVariant =
         try {
