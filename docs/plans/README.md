@@ -10,13 +10,14 @@
 4. 내용 손실 조사·개선 계획: [`2026-09-09-content-loss.md`](2026-09-09-content-loss.md)
 5. 완료된 전환 기록: [`archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`](archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md)
 
-## 쉬운글 품질 개선 (2026-09-18, 구현 미착수)
+## 쉬운글 품질 개선 (2026-09-18 계획 · 2026-09-23 R0~R7 구현 병합, 사람 검증 착수)
 
 1. [로드맵·우선순위·단계별 완료 기준](2026-09-18-easy-read-improvement-roadmap.md)
 2. [실행 계획·작업 분할·PR 절차](2026-09-18-easy-read-delivery-plan.md)
 3. [구현 명세·API·데이터·비용·동시성](2026-09-18-easy-read-implementation-spec.md)
 4. [UX·화면 상태·문구·접근성](2026-09-18-easy-read-ux-spec.md)
 5. [검증·품질 평가·출시·롤백](2026-09-18-easy-read-validation-release.md)
+6. [사람 검증 착수 계획 — 배포 전환·파일럿·R3 평가·사전 검수 데이터](2026-09-23-human-verification-kickoff.md)
 
 ## 상태 규칙
 
