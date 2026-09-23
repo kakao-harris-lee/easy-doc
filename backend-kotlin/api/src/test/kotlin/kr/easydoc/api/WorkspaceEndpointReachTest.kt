@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.OwnershipConcealment
+import kr.easydoc.api.support.TimingUniformity
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -19,7 +20,6 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
-import kotlin.random.Random
 
 /** `/workspaces` 의 실측 계약 — 명세 §5 의 C-R·C-I 계층. */
 @SpringBootTest(
@@ -178,18 +178,42 @@ class WorkspaceEndpointReachTest {
         OwnershipConcealment.assertIndistinguishable("PATCH $ITEM_PATH", absent, others)
     }
 
-    /** 소유권 은닉의 셋째 축 — 응답 시간. */
+    /**
+     * 소유권 은닉의 셋째 축 — 응답 시간. 1차 21표본이 문턱을 넘으면 [CONFIRMATION_SAMPLES]
+     * 표본으로 한 번 더 재 그 결과로 판정한다([TimingUniformity] KDoc 참고 — CI 잡음 대응).
+     */
     @Test
     @DisplayName("소유권 404 의 응답 시간이 「없음」과 「타인 것」 사이에서 갈리지 않는다")
     fun `소유권 404 의 응답 시간이 갈리지 않는다`() {
         val mine = newAccount()
         val othersId = idOf(create(newAccount(), uniqueName()))
 
-        val (absent, others) = interleavedNotFoundMedians(mine, othersId)
-        val ratio = maxOf(absent, others) / minOf(absent, others).coerceAtLeast(MIN_MEASURABLE_MILLIS)
+        val outcome =
+            TimingUniformity.measureWithConfirmation(
+                threshold = MAX_TIMING_RATIO,
+                minMeasurableMillis = MIN_MEASURABLE_MILLIS,
+                firstPass = {
+                    TimingUniformity.interleavedMedians(listOf(ABSENT, OTHERS), TIMING_SAMPLES, TIMING_SEED) { arm ->
+                        timeNotFoundRequest(mine, othersId, arm)
+                    }
+                },
+                confirmationPass = {
+                    TimingUniformity.interleavedMedians(
+                        listOf(ABSENT, OTHERS),
+                        CONFIRMATION_SAMPLES,
+                        TIMING_SEED + 1,
+                    ) { arm -> timeNotFoundRequest(mine, othersId, arm) }
+                },
+            )
+        val description = TimingUniformity.describe(outcome, "없음" to "타인", MIN_MEASURABLE_MILLIS)
+        println(description)
 
-        println("소유권 404 응답 시간 중앙값: 없음=${absent}ms 타인=${others}ms 비=$ratio")
-        assertThat(ratio).isLessThan(MAX_TIMING_RATIO)
+        assertThat(outcome.ratio)
+            .withFailMessage(
+                "%s — 문턱 %.1f 를 넘었다. 일하는 양이 갈리면 존재 여부가 시간으로 샌다",
+                description,
+                MAX_TIMING_RATIO,
+            ).isLessThan(MAX_TIMING_RATIO)
     }
 
     @Test
@@ -332,33 +356,17 @@ class WorkspaceEndpointReachTest {
         assertDeclaredStatus(delete(token, id), NOT_FOUND, ITEM_PATH, DELETE)
     }
 
-    private fun interleavedNotFoundMedians(
+    /** 소유권 404 시간 판정 한 표본. [arm] 이 [ABSENT] 면 없는 식별자를, 아니면 남의 작업 공간을 잰다. */
+    private fun timeNotFoundRequest(
         token: String,
         othersId: String,
-    ): Pair<Double, Double> {
-        val samples = mutableMapOf(ABSENT to mutableListOf<Double>(), OTHERS to mutableListOf())
-        val order =
-            (List(TIMING_SAMPLES + 1) { ABSENT } + List(TIMING_SAMPLES + 1) { OTHERS })
-                .shuffled(Random(TIMING_SEED))
-        val warmed = mutableSetOf<String>()
-
-        order.forEach { path ->
-            val target = if (path == ABSENT) UUID.randomUUID().toString() else othersId
-            val elapsed = measureMillis { patch(token, target, uniqueName()) }
-
-            if (warmed.add(path)) return@forEach
-            samples.getValue(path) += elapsed
-        }
-        return median(samples.getValue(ABSENT)) to median(samples.getValue(OTHERS))
-    }
-
-    private fun measureMillis(block: () -> Unit): Double {
+        arm: String,
+    ): Double {
+        val target = if (arm == ABSENT) UUID.randomUUID().toString() else othersId
         val started = System.nanoTime()
-        block()
+        patch(token, target, uniqueName())
         return (System.nanoTime() - started) / NANOS_PER_MILLI
     }
-
-    private fun median(values: List<Double>): Double = values.sorted()[values.size / 2]
 
     /** 가입하고 로그인해 토큰을 받는다. 가입은 기본 작업 공간을 함께 만든다. */
     private fun newAccount(): String {
@@ -530,6 +538,13 @@ class WorkspaceEndpointReachTest {
 
         /** 경로당 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
         private const val TIMING_SAMPLES = 21
+
+        /**
+         * 1차가 문턱을 넘었을 때만 도는 확인 표본 수 — 1차의 3배. 짧은 CI 스톨 하나로는
+         * 이 더 큰 표본에서 비가 다시 문턱을 넘기 어렵지만, 실제로 일하는 양이 갈리는
+         * 회귀는 표본을 늘려도 그대로 남는다.
+         */
+        private const val CONFIRMATION_SAMPLES = TIMING_SAMPLES * 3
 
         /** 두 경로를 섞는 순서. 고정 시드라 실패가 재현된다. */
         private const val TIMING_SEED = 20260819L
