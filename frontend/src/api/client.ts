@@ -23,6 +23,8 @@ import type {
   ExplanationsResponse,
   ExportFormat,
   IllustrationCatalogResponse,
+  IllustrationPlacementsRequest,
+  IllustrationPlacementsResponse,
   ReconvertUnitRequest,
   ReconvertUnitResponse,
   ReviewHistoryResponse,
@@ -485,6 +487,31 @@ export function getIllustrations(signal?: AbortSignal): Promise<IllustrationCata
  */
 export function illustrationImageUrl(imageUrl: string): string {
   return `${BASE_URL}${imageUrl}`
+}
+
+/** GET /conversions/{id}/illustration-placements — 저장된 그림 배치를 읽는다(ER-16). */
+export function getIllustrationPlacements(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationPlacementsResponse> {
+  return requestJson<IllustrationPlacementsResponse>(
+    `/conversions/${conversionId}/illustration-placements`,
+    { signal },
+  )
+}
+
+/**
+ * PUT /conversions/{id}/illustration-placements — 그림 배치를 저장한다(ER-16, CAS).
+ * `placements`가 빈 배열이면 저장돼 있던 배치를 모두 지운다.
+ */
+export function putIllustrationPlacements(
+  conversionId: string,
+  request: IllustrationPlacementsRequest,
+): Promise<IllustrationPlacementsResponse> {
+  return requestJson<IllustrationPlacementsResponse>(
+    `/conversions/${conversionId}/illustration-placements`,
+    { method: 'PUT', body: request },
+  )
 }
 
 /** GET /conversions/{id}/action-guide — 저장된 안내문과 재방문용 작업 ID를 읽는다. */

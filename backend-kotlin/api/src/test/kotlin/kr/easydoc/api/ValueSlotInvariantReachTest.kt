@@ -536,6 +536,8 @@ class ValueSlotInvariantReachTest {
                 "AdminInvoiceRequestHandleRequest" to """{"status":"issued"}""",
                 "AnnouncementCreateRequest" to """{"body":"가"}""",
                 "AnnouncementUpdateRequest" to """{"active":true}""",
+                // ER-16 그림 배치 — 이 표본도 경로 값 자리 해석 여부만 잰다.
+                "IllustrationPlacementsRequest" to """{"expected_content_revision":1,"placements":[]}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

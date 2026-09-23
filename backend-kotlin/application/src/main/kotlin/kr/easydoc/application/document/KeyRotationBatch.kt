@@ -128,6 +128,13 @@ class KeyRotationBatch(
                             rotateOne = rotation::rotateReviewAssessment,
                         )
                     },
+                    stores.illustrationPlacements?.let { repository ->
+                        rotateFamily(
+                            family = FAMILY_ILLUSTRATION_PLACEMENTS,
+                            fetch = { after, limit -> repository.idsOlderThan(target, after, limit) },
+                            rotateOne = rotation::rotateIllustrationPlacement,
+                        )
+                    },
                 )
         return KeyRotationResult(families)
     }
@@ -180,6 +187,7 @@ class KeyRotationBatch(
         const val FAMILY_CONVERSIONS = "conversions"
         const val FAMILY_CONVERSION_FEEDBACK = "conversion_feedback"
         const val FAMILY_REVIEW_ASSESSMENTS = "review_assessments"
+        const val FAMILY_ILLUSTRATION_PLACEMENTS = "illustration_placements"
 
         /** 가장 작은 UUID — 각 가족 순회의 시작 커서. */
         val ZERO_UUID: UUID = UUID(0L, 0L)

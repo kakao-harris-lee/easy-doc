@@ -28,6 +28,7 @@ import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
+import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 import { IllustrationsPanel } from './IllustrationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
 import { TableRelationsPanel } from './TableRelationsPanel'
@@ -185,6 +186,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [contentRevision, setContentRevision] = useState(conversion.content_revision)
   /** 다른 화면의 저장과 충돌해 현재 revision으로는 더 쓸 수 없는 상태. */
   const [contentConflict, setContentConflict] = useState(false)
+  /**
+   * ER-16 — 저장된 그림 배치 개수와 stale 여부. `IllustrationPlacementPanel`이 조회·저장
+   * 직후 알려 준다. 배치가 있고(count > 0) stale이 아닐 때만 내려받기 버튼 근처에
+   * "파일에는 들어가지 않는다"는 안내를 보여준다(AC-R7-b).
+   */
+  const [illustrationPlacementCount, setIllustrationPlacementCount] = useState(0)
+  const [illustrationPlacementsStale, setIllustrationPlacementsStale] = useState(false)
   /**
    * 이 변환에 의견을 보낸 시각. 아래 피드백 폼이 보내는 즉시 여기로 올라온다.
    *
@@ -1468,6 +1476,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           preservation={preservation}
         />
         <PdfExportNotice conversion={conversion} />
+        {/* ER-16 AC-R7-b — 그림을 배치해 뒀다면 내려받기 바로 위에서 "파일에는 안 담긴다"는
+            사실을 명시한다. stale이면 미리보기 자체가 그림을 숨기므로 함께 감춘다. */}
+        {illustrationsEnabled && illustrationPlacementCount > 0 && !illustrationPlacementsStale && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.
+          </p>
+        )}
 
         {/* 저장·내려받기 결과는 방금 누른 버튼 바로 위에 남긴다. 실패는 즉시(alert)
             알리고, 성공은 하던 일을 끊지 않게(status) 알리되 저장 성공은 위 상태
@@ -1583,6 +1598,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         )}
 
         {illustrationsEnabled && <IllustrationsPanel />}
+
+        {illustrationsEnabled && (
+          <IllustrationPlacementPanel
+            conversionId={conversion.id}
+            contentRevision={contentRevision}
+            dirty={dirty}
+            units={draft.split('\n')}
+            onPlacementsChange={(count, stale) => {
+              setIllustrationPlacementCount(count)
+              setIllustrationPlacementsStale(stale)
+            }}
+          />
+        )}
       </div>
 
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를

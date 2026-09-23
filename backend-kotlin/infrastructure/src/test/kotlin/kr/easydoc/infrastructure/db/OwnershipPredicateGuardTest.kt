@@ -393,6 +393,7 @@ class OwnershipPredicateGuardTest {
         private const val AUTH = "$MAIN/auth"
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
+        private const val ILLUSTRATION = "$MAIN/illustration"
 
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
@@ -572,6 +573,17 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/TableStructureKeyRotation.kt | SELECT [document_table_structures]",
                 "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
                 "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
+                // ER-16 그림 배치. 조회·저장(upsert)·삭제는 사용자 경로라 소유·보존 술어를 SQL
+                // 자체에 건다(WHERE EXISTS 서브쿼리 포함). 뒤의 세 문장만 운영자 키 회전 경로다.
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | " +
+                    "SELECT [conversions, documents, illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | " +
+                    "INSERT [conversions, documents, illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | " +
+                    "DELETE [conversions, documents, illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -688,6 +700,11 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/TableStructureKeyRotation.kt | SELECT [document_table_structures]",
                 "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
                 "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
+                // ER-16 그림 배치 payload 키 회전의 잠금·재봉인·후보 커서. 조회·저장·삭제 세
+                // 문장은 소유·보존 술어를 SQL 자체에 둬 이 목록에 없다.
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
+                "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -766,10 +783,16 @@ class OwnershipPredicateGuardTest {
          * (`TableStructureKeyRotation` 셋, `JdbcReviewHistoryRepository`의 스냅샷 회전
          * 셋). `rotate-keys` 운영 배치라 위 회전 배치들과 같은 사유로 소유자를 받을
          * 자리가 없다.
+         *
+         * 64 → 67 은 ER-16 그림 배치(`JdbcIllustrationPlacementRepository`)의 키 회전
+         * 잠금 SELECT·재봉인 UPDATE·후보 커서 SELECT 셋이다. `rotate-keys` 운영 배치라
+         * 위 회전 배치들과 같은 사유로 소유자를 받을 자리가 없다 — 조회·저장(upsert)·
+         * 삭제 세 문장은 사용자 요청 경로라 소유·보존 술어를 SQL 자체에 둬 이 상한을
+         * 먹지 않았다.
          */
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
 
         // 52 → 58: R2 암호문 가족 둘의 회전 커서·잠금·재봉인 여섯 문장.
-        const val MAX_UNGUARDED_STATEMENTS = 64
+        const val MAX_UNGUARDED_STATEMENTS = 67
     }
 }
