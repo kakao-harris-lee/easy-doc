@@ -54,5 +54,45 @@ class TestCheckCautionFreeOfReviewNotes(unittest.TestCase):
         self.assertEqual(ci.check_caution_free_of_review_notes(doc), [])
 
 
+class TestCheckDefinitionReviewMarks(unittest.TestCase):
+    """`v`(뜻풀이 검수 이력, 2026-09-23) 산출물 불변식.
+
+    Kotlin의 `DefinitionReviewStatus`는 `"reviewed"` 외의 값을 만나면 기동을
+    거부하고, 뜻풀이가 빈 엔트리의 `v`는 "검수했다는데 검수할 내용이 없다"는
+    모순이다. 둘 다 산출물에서 먼저 잡는다.
+    """
+
+    def test_no_v_key_passes(self) -> None:
+        doc = _index_doc({"1": {"t": "내방", "e": "방문", "d": "찾아오는 일입니다."}})
+        self.assertEqual(ci.check_definition_review_marks(doc), [])
+
+    def test_reviewed_with_definition_passes(self) -> None:
+        doc = _index_doc({
+            "1": {"t": "내방", "e": "방문", "d": "찾아오는 일입니다.", "v": "reviewed"}
+        })
+        self.assertEqual(ci.check_definition_review_marks(doc), [])
+
+    def test_unknown_v_value_is_flagged(self) -> None:
+        doc = _index_doc({
+            "1": {"t": "내방", "e": "방문", "d": "찾아오는 일입니다.", "v": "unverified"}
+        })
+        violations = ci.check_definition_review_marks(doc)
+        self.assertEqual(len(violations), 1)
+        self.assertIn("unverified", violations[0].detail)
+
+    def test_v_on_empty_definition_is_flagged(self) -> None:
+        doc = _index_doc({
+            "1": {"t": "내방", "e": "방문", "d": None, "v": "reviewed"},
+            "2": {"t": "거치", "e": "미룸", "d": "   ", "v": "reviewed"},
+        })
+        violations = ci.check_definition_review_marks(doc)
+        self.assertEqual(len(violations), 2)
+
+    def test_null_v_is_flagged(self) -> None:
+        """표시가 없으면 키 자체가 없어야 한다 — `v: null`도 규약 위반이다."""
+        doc = _index_doc({"1": {"t": "내방", "e": "방문", "d": "찾아오는 일입니다.", "v": None}})
+        self.assertEqual(len(ci.check_definition_review_marks(doc)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

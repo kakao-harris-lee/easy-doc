@@ -31,6 +31,11 @@
   risk_level이 다른 후보보다 높으면, `surface_index`의 승자(첫 원소)는
   risk가 더 낮은 후보가 되면 안 된다(§6.8 키①, `export.winner_sort_key`가
   이미 구현한 규칙을 산출물에서 다시 확인한다 — 37건이 지던 사고)
+- **`v`(뜻풀이 검수 이력) 규약** (2026-09-23) — 배포 색인의 `v`는 값이
+  `"reviewed"`(`models.DEFINITION_REVIEW_MARK`) 하나뿐이고(Kotlin
+  `DefinitionReviewStatus`가 다른 값을 만나면 기동을 거부한다), 뜻풀이(`d`)가
+  빈 엔트리에는 붙을 수 없다. 표시가 없다는 뜻으로 `v: null`을 쓰는 것도
+  위반이다 — 키 자체가 없어야 한다
 - **엔트리 귀속 불변** — `sources` 테이블의 모든 행은 최소 1개 이상의
   `entries.source_id`가 가리켜야 한다. 예문 전용 원천(`--source-role
   examples`)은 애초에 `sources`에 등록되지 않으므로(build.py 설계), 등록된
@@ -58,7 +63,7 @@ if str(_SRC_DIR) not in sys.path:
 
 from easydict.export import _RISK_WINNER_RANK, SOURCE_TRUST_TIER  # noqa: E402  (읽기 전용 재사용 — 새 순위표를 만들지 않는다)
 from easydict.lookup import EasyDict  # noqa: E402  (읽기 전용 — dist/를 조회만 한다)
-from easydict.models import NEEDS_CONFIRMATION_MARKER  # noqa: E402
+from easydict.models import DEFINITION_REVIEW_MARK, NEEDS_CONFIRMATION_MARKER  # noqa: E402
 from easydict.review_notes import REVIEW_NOTE_PATTERN  # noqa: E402  (판정 규칙 재사용 — 새 패턴을 만들지 않는다)
 
 DEFAULT_DB_PATH = REPO_ROOT / "dist" / "easy_dict.sqlite3"
@@ -298,6 +303,43 @@ def check_caution_free_of_review_notes(index_doc: dict) -> list[Violation]:
     return out
 
 
+def check_definition_review_marks(index_doc: dict) -> list[Violation]:
+    """배포 색인(`index.json`)의 `v`(뜻풀이 검수 이력) 규약 (2026-09-23).
+
+    두 가지만 본다.
+
+    - **값은 `"reviewed"` 하나뿐이다.** Kotlin의 `DefinitionReviewStatus`(core)는
+      키가 없으면 UNVERIFIED, `"reviewed"`면 REVIEWED, **그 밖의 값이면 기동을
+      거부**한다. 배포 색인에 오타나 새 값("unverified", "pending" 등)이 섞이면
+      제품이 뜨지 않는다 — 여기서 먼저 잡는다. 표시가 없다는 뜻으로 `v: null`을
+      쓰는 것도 규약 위반이다(키 자체가 없어야 한다).
+    - **뜻풀이가 빈 엔트리에 `v`가 있으면 안 된다.** "이 뜻풀이를 사람이 읽었다"는
+      표시인데 읽을 뜻풀이가 없다는 모순이고, R3 프롬프트가 빈 문자열을 생성
+      재료로 집어 들 수 있다. `export.export_index()`가 애초에 이런 조합을 만들지
+      않지만(`definition_review.is_definition_reviewed()`), 이 검사는 그 게이트를
+      우회하는 경로(수동 JSON 편집 등)가 생겨도 산출물에서 다시 잡는다.
+    """
+    out = []
+    for entry_id, entry in index_doc.get("entries", {}).items():
+        if "v" not in entry:
+            continue
+        mark = entry["v"]
+        if mark != DEFINITION_REVIEW_MARK:
+            out.append(Violation(
+                "v 값 규약(index.json)",
+                f"entry_id={entry_id} v={mark!r} — 허용값은 {DEFINITION_REVIEW_MARK!r} 하나뿐이고, "
+                "표시가 없으면 키 자체가 없어야 한다",
+            ))
+            continue
+        definition = entry.get("d")
+        if not isinstance(definition, str) or not definition.strip():
+            out.append(Violation(
+                "빈 뜻풀이에 v 표시(index.json)",
+                f"entry_id={entry_id} d={definition!r} — 검수했다는 표시인데 검수할 뜻풀이가 없다",
+            ))
+    return out
+
+
 def check_source_attribution(conn: sqlite3.Connection) -> list[Violation]:
     """등록된 원천 중 `export.SOURCE_TRUST_TIER`에 없는 원천이 엔트리를 소유하는가.
 
@@ -362,6 +404,7 @@ def run(db_path: Path, index_json_path: Path, simple_jsonl_path: Path) -> list[V
     violations += check_reachability(entries, db_path)
     violations += check_protected_entry_wins(entries, index_doc)
     violations += check_caution_free_of_review_notes(index_doc)
+    violations += check_definition_review_marks(index_doc)
     violations += check_source_attribution(conn)
     conn.close()
     return violations
