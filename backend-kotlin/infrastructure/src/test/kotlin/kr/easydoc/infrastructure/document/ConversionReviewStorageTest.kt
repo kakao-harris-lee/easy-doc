@@ -8,9 +8,11 @@ import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.StoredReviewAssessment
+import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.exceptions.DecryptionFailedException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -21,6 +23,7 @@ import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.DisplayName
@@ -179,6 +182,39 @@ class ConversionReviewStorageTest {
     }
 
     @Test
+    @DisplayName("검수 지원 payload 는 다른 행 id·다른 필드로 열리지 않는다 — AAD 가 행과 필드에 결속된다")
+    fun `옮겨 붙인 검수 지원 암호문은 복호화에 실패한다`() {
+        val (owner, conversionId) = doneConversion()
+        val assessmentId = UUID.randomUUID()
+        val movedId = UUID.randomUUID()
+        val plain = PlainBody("원문 인용: 30,000원 / 사유: 원문에 해당 조건이 없음")
+        val payload = cipher.encrypt(plain, assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD)
+        assessments.insert(
+            owner,
+            StoredReviewAssessment(assessmentId, conversionId, 1, ANALYZER_VERSION, 0, payload),
+        )
+        // 같은 암호문을 같은 변환의 **다른 행**에 그대로 옮겨 붙인다 — `analyzer_version` 만
+        // 달라 `uq_review_assessments_snapshot` 을 지키면서 행 id 만 갈린다.
+        assessments.insert(
+            owner,
+            StoredReviewAssessment(movedId, conversionId, 1, MOVED_ANALYZER_VERSION, 0, payload),
+        )
+
+        val moved = storedPayload(movedId)
+
+        assertThat(moved).isEqualTo(payload)
+        assertThatThrownBy { cipher.decrypt(moved, movedId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD) }
+            .withFailMessage("다른 행으로 옮긴 암호문이 그 행 id 로 열렸다 — AAD 가 행 id 에 결속돼 있지 않다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+        assertThatThrownBy { cipher.decrypt(moved, assessmentId, EncryptedField.CONVERSION_EASY_TEXT) }
+            .withFailMessage("다른 필드 이름으로 열렸다 — AAD 가 필드에 결속돼 있지 않다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+        assertThat(cipher.decrypt(moved, assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD))
+            .withFailMessage("원래 행 id·필드로도 열리지 않는다 — 위 두 실패가 AAD 때문이 아니다")
+            .isEqualTo(plain)
+    }
+
+    @Test
     @DisplayName("검수 지원 조회와 갱신 SQL 자체가 소유권과 보존 기간을 강제한다")
     fun `검수 지원 저장소가 소유권과 보존 기간을 강제한다`() {
         val (owner, conversionId) = doneConversion()
@@ -261,6 +297,21 @@ class ConversionReviewStorageTest {
             .update()
     }
 
+    /** 저장된 행에서 암호문과 봉투를 그대로 읽는다 — 옮겨 붙은 값을 DB 왕복 뒤에 본다. */
+    private fun storedPayload(assessmentId: UUID): EncryptedContent =
+        jdbc
+            .sql(
+                "SELECT payload_encrypted, encryption_scheme, key_version " +
+                    "FROM review_assessments WHERE id = :id",
+            ).param("id", assessmentId)
+            .query { rs, _ ->
+                EncryptedContent(
+                    rs.getBytes("payload_encrypted"),
+                    rs.getString("encryption_scheme"),
+                    rs.getInt("key_version"),
+                )
+            }.single()
+
     private fun editedTextOf(conversionId: UUID): ByteArray? =
         jdbc
             .sql("SELECT edited_text_encrypted FROM conversions WHERE id = :id")
@@ -300,6 +351,10 @@ class ConversionReviewStorageTest {
         const val DRAFT_BODY = "쉬운 글 초안입니다."
         const val EDITED_BODY = "담당자가 다듬은 문장입니다."
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=1,t=1,p=1\$c2FsdA\$aGFzaA"
+        const val ANALYZER_VERSION = "fact-preservation-v1"
+
+        /** 같은 변환에 두 번째 행을 만들기 위한 이름 — `uq_review_assessments_snapshot` 의 세 번째 열이다. */
+        const val MOVED_ANALYZER_VERSION = "fact-preservation-moved"
 
         /** 봉투를 암호문과 **같은 문장에서** SET 한다(`EnvelopeColumnWriteGuardTest` 규약). */
         val MARK_DONE_SQL =

@@ -6,10 +6,12 @@ import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.exceptions.DecryptionFailedException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -138,6 +140,64 @@ class JdbcActionGuideContentRepositoryTest {
     }
 
     @Test
+    fun `후보와 안내문 암호문은 다른 레코드 id나 다른 필드로 열리지 않는다`() {
+        val fixture = seed()
+        val firstJob = fixture.job()
+        val secondJob = fixture.job()
+        insertJob(firstJob)
+        val candidate = fixture.candidate(firstJob)
+        val guide = fixture.guide()
+        succeed(firstJob.jobId)
+        assertThat(repository.insertCandidate(firstJob, candidate)).isTrue()
+        assertThat(repository.saveGuide(fixture.ownerId, 1, null, guide)).isTrue()
+        // 첫 후보의 암호문을 **다른 작업의 후보 행**에 그대로 옮겨 붙인다 — 봉투 두 값은
+        // 그대로 따라가고 결속 인자(후보 id)만 갈린다.
+        insertJob(secondJob)
+        succeed(secondJob.jobId)
+        val moved =
+            StoredActionGuideCandidate(
+                UUID.randomUUID(),
+                secondJob.jobId,
+                fixture.conversionId,
+                1,
+                candidate.payload,
+                NOW,
+            )
+        assertThat(repository.insertCandidate(secondJob, moved)).isTrue()
+
+        val storedMoved =
+            repository.findCandidateOwned(fixture.ownerId, fixture.conversionId, moved.candidateId)!!
+        val storedGuide = repository.findGuideOwned(fixture.ownerId, fixture.conversionId)!!
+
+        assertThatThrownBy {
+            cipher.decrypt(storedMoved.payload, moved.candidateId, EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD)
+        }.withFailMessage("다른 후보 행으로 옮긴 암호문이 그 행 id 로 열렸다 — AAD 가 후보 id 에 결속돼 있지 않다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+        assertThatThrownBy {
+            cipher.decrypt(storedMoved.payload, candidate.candidateId, EncryptedField.ACTION_GUIDE_PAYLOAD)
+        }.withFailMessage("후보 암호문이 안내문 필드 이름으로 열렸다 — 두 payload 가 같은 AAD 를 쓴다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+        val reopened =
+            cipher.decrypt(
+                storedMoved.payload,
+                candidate.candidateId,
+                EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
+            )
+        assertThat(reopened.value)
+            .withFailMessage("원래 후보 id 로도 열리지 않는다 — 위 실패가 AAD 때문이 아니다")
+            .isEqualTo("후보 본문")
+
+        assertThatThrownBy {
+            cipher.decrypt(storedGuide.payload, candidate.candidateId, EncryptedField.ACTION_GUIDE_PAYLOAD)
+        }.withFailMessage("안내문 암호문이 후보 id 로 열렸다 — AAD 가 안내문 id 에 결속돼 있지 않다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+        assertThatThrownBy {
+            cipher.decrypt(storedGuide.payload, guide.guideId, EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD)
+        }.withFailMessage("안내문 암호문이 후보 필드 이름으로 열렸다 — 두 payload 가 같은 AAD 를 쓴다")
+            .isInstanceOf(DecryptionFailedException::class.java)
+    }
+
+    @Test
     fun `키 회전은 후보와 안내문을 각각의 AAD로 재봉인한다`() {
         val fixture = seed()
         val job = fixture.job()
@@ -233,6 +293,14 @@ class JdbcActionGuideContentRepositoryTest {
             .param("bytes", byteArrayOf(2))
             .update()
         return fixture
+    }
+
+    /** 결과를 저장할 수 있는 상태로 만든다 — `insertCandidate` 는 완료된 작업만 받는다. */
+    private fun succeed(jobId: UUID) {
+        jdbc
+            .sql("UPDATE action_guide_jobs SET status='succeeded',settlement='consumed' WHERE id=:id")
+            .param("id", jobId)
+            .update()
     }
 
     private fun insertJob(job: StoredActionGuideJob) {
