@@ -29,10 +29,11 @@
 두 컬럼을 채우는 경로는 사람이 쓰는 검수 SQL(`data/reviews/*.sql`) 하나다.
 빌드 파이프라인(`build.py`)은 이 컬럼에 아무 값도 쓰지 않는다.
 
-**의존성 없음**: 표준 라이브러리(`sqlite3`)만 쓴다.
+**의존성 없음**: 표준 라이브러리(`sqlite3`, `re`)만 쓴다.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 
 # 사람이 채우는 컬럼. 순서는 ALTER TABLE 적용 순서이자 문서상의 (시각, 사람) 순서다.
@@ -40,6 +41,13 @@ DEFINITION_REVIEW_COLUMNS: tuple[str, ...] = (
     "definition_reviewed_at",
     "definition_reviewed_by",
 )
+
+# definition_reviewed_at의 정본 형식(ISO-8601): `YYYY-MM-DD` 또는
+# `YYYY-MM-DDTHH:MM:SSZ` (schema.sql 컬럼 주석·검수 SQL 틀과 같은 규칙). 이
+# 형식이 아니면 검수 완료로 보지 않는다(fail closed) — 따옴표 없이
+# `2026-09-30`처럼 쓰면 SQLite가 이를 산술식(2026-9-30=1987)으로 평가해
+# 정수를 저장하는데, 그 값은 애초에 문자열이 아니라서 여기서도 걸린다.
+REVIEWED_AT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}Z)?$")
 
 
 def is_definition_reviewed(
@@ -49,12 +57,18 @@ def is_definition_reviewed(
 ) -> bool:
     """이 뜻풀이가 "사람이 읽고 생성 재료로 승인한" 것인가.
 
-    세 값이 모두 공백이 아닌 문자열일 때만 참이다(모듈 docstring 「규칙」).
+    세 값이 모두 공백이 아닌 문자열이고, `reviewed_at`이 ISO-8601
+    (`REVIEWED_AT_PATTERN`)일 때만 참이다(모듈 docstring 「규칙」). 형식이
+    어긋나면 조용히 "미검수"로 fail-close한다 — `tools/check_invariants.py`가
+    형식은 있지만 이 패턴에 안 맞는 값을 별도로 잡아 오타가 조용히 묻히지
+    않게 한다.
     """
-    return all(
+    if not all(
         isinstance(value, str) and value.strip() != ""
         for value in (definition, reviewed_at, reviewed_by)
-    )
+    ):
+        return False
+    return bool(REVIEWED_AT_PATTERN.match(reviewed_at.strip()))
 
 
 def ensure_definition_review_columns(conn: sqlite3.Connection) -> bool:
@@ -82,3 +96,33 @@ def ensure_definition_review_columns(conn: sqlite3.Connection) -> bool:
     if added:
         conn.commit()
     return added
+
+
+if __name__ == "__main__":
+    import argparse
+    from pathlib import Path
+
+    from . import review_notes
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "entries에 definition_reviewed_at/definition_reviewed_by 컬럼이 없으면 "
+            "추가하고 v_entry_full 뷰를 재생성한다(review_notes.py의 __main__과 같은 "
+            "처방, 재실행 안전). 이 컬럼이 없던 시절(2026-09-23 이전) 만들어진 DB를 "
+            "메울 때 쓴다."
+        )
+    )
+    parser.add_argument("--db", type=Path, default=Path("dist/easy_dict.sqlite3"))
+    args = parser.parse_args()
+
+    if not args.db.exists():
+        raise SystemExit(f"DB가 없습니다: {args.db}")
+
+    _conn = sqlite3.connect(str(args.db))
+    try:
+        _added = ensure_definition_review_columns(_conn)
+        print(f"definition_reviewed_at/definition_reviewed_by 컬럼 {'추가함' if _added else '이미 있음'}")
+        review_notes.ensure_v_entry_full_view(_conn)
+        print("v_entry_full 뷰 재생성함")
+    finally:
+        _conn.close()

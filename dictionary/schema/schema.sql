@@ -93,6 +93,15 @@ CREATE TABLE IF NOT EXISTS entries (
     -- 읽었다"는 뜻이 아니고, review_note는 빌드 이력이지 검수 완료 표시가
     -- 아니다. 자동 승격은 읽지 않은 문장을 LLM 생성 재료로 밀어 넣는 사고다
     -- (docs/reports/2026-09-21-r3-implementation.md 「리뷰 리스크」).
+    --
+    -- definition_reviewed_at의 형식은 ISO-8601 `YYYY-MM-DD`(예: '2026-09-30')
+    -- 또는 `YYYY-MM-DDTHH:MM:SSZ`이며, 값을 넣을 때 반드시 작은따옴표로 감싼
+    -- 문자열이어야 한다 — 따옴표 없이 `2026-09-30`처럼 쓰면 SQLite가 이를
+    -- 산술식(2026-9-30=1987)으로 평가해 정수를 저장한다.
+    -- definition_review.is_definition_reviewed()는 이 형식(REVIEWED_AT_PATTERN)이
+    -- 아니면 검수 완료로 보지 않고(fail closed), tools/check_invariants.py가
+    -- 형식은 있지만 이 패턴에 안 맞는 값을 별도로 잡아 오타가 조용히 묻히지
+    -- 않게 한다.
     definition_reviewed_at  TEXT,
     definition_reviewed_by  TEXT,
 

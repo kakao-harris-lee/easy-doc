@@ -235,6 +235,23 @@ class IsDefinitionReviewedTestCase(unittest.TestCase):
         self.assertFalse(f("  ", "2026-09-23", "검수자A"))
         self.assertFalse(f("뜻풀이입니다.", "  ", "검수자A"))
 
+    def test_reviewed_at_accepts_iso8601_date_and_datetime(self) -> None:
+        """정본 규약(schema.sql 컬럼 주석, 검수 SQL 틀): `YYYY-MM-DD` 또는
+        `YYYY-MM-DDTHH:MM:SSZ`."""
+        f = definition_review.is_definition_reviewed
+        self.assertTrue(f("뜻풀이입니다.", "2026-09-23", "검수자A"))
+        self.assertTrue(f("뜻풀이입니다.", "2026-09-23T10:30:00Z", "검수자A"))
+
+    def test_reviewed_at_rejects_malformed_dates_fail_closed(self) -> None:
+        """형식이 ISO-8601이 아니면 검수 완료로 보지 않는다(fail closed) — 오타나
+        따옴표 누락으로 SQLite가 날짜를 산술식(예: `2026-09-30` -> `1987`)으로
+        평가한 값도 문자열이 아니거나(정수) 이 형식에 안 맞으므로 여기서 걸린다."""
+        f = definition_review.is_definition_reviewed
+        self.assertFalse(f("뜻풀이입니다.", "2026/09/23", "검수자A"))
+        self.assertFalse(f("뜻풀이입니다.", "2026-9-23", "검수자A"), "월/일 두 자리가 아니면 거부")
+        self.assertFalse(f("뜻풀이입니다.", "1987", "검수자A"), "따옴표 없이 쓴 날짜가 산술식으로 평가된 값")
+        self.assertFalse(f("뜻풀이입니다.", "검수함", "검수자A"))
+
 
 if __name__ == "__main__":
     unittest.main()
