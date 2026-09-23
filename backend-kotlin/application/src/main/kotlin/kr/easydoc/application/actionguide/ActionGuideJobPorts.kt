@@ -199,8 +199,17 @@ sealed interface ActionGuideRunResult {
     data class ProviderFailed(override val record: LlmCallRecord) : ActionGuideRunResult
 }
 
+/** 확정된 입력으로 provider를 한 번 호출한다. 호출 자체는 트랜잭션 밖에서 실행한다. */
+fun interface ActionGuideProviderCall {
+    fun call(): ActionGuideRunResult
+}
+
 fun interface ActionGuideJobRunner {
-    fun run(job: StoredActionGuideJob): ActionGuideRunResult
+    /**
+     * 시작 트랜잭션 안에서 생성 입력을 확정한다. 입력이 더 이상 유효하지 않으면 `null`이며,
+     * 호출자는 provider 시작 표시 없이 superseded로 정산한다 — 시작하지 않은 호출은 시도가 아니다.
+     */
+    fun prepare(job: StoredActionGuideJob): ActionGuideProviderCall?
 }
 
 data class ActionGuideJobWorkerPolicy(

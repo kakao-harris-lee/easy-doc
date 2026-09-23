@@ -47,23 +47,35 @@ object DerivedRows {
         )
 
     /**
+     * 인구조사가 비면 「전부 지워졌다」가 빈 집합에서 참이 되어, 부르는 시험들이 아무것도
+     * 재지 않으면서 초록으로 남는다 — `EnvelopeColumnWriteGuardTest` 의
+     * `Scanner.requireNonEmpty` 와 같은 이유로 끊는다. 「위반 0건」과 「검사 대상 0건」은
+     * 완전히 다른 상태다.
+     */
+    fun requireNonEmptyCensus() {
+        check(CENSUS.isNotEmpty()) {
+            "파생 표 인구조사가 비어 있다 — 검사 대상 0건은 통과가 아니라 미검사다."
+        }
+    }
+
+    /**
      * [CENSUS] 의 모든 표에 행 하나씩과, `action_guide_candidates` 가 FK 로 요구하는 행동
      * 안내 작업 행 하나를 심는다. 반환값은 그 작업 id 다 — 그 표만 파기 뒤에도 남는지
      * 따로 보게 된다.
      *
-     * [jobStatus]·[jobSettlement] 기본값은 **끝난 작업**이다. V29 의 문서 삭제 트리거가
-     * 정산하는 대상은 `queued`·`running` 뿐이라, 기본값으로는 그 갈래를 건드리지 않고
-     * CASCADE 범위만 잰다.
+     * 작업은 **끝난 상태**(`succeeded`/`consumed`)로 심는다. V29 의 문서 삭제 트리거가
+     * 정산하는 대상은 `queued`·`running` 뿐이라 이 fixture 는 그 갈래를 건드리지 않고
+     * CASCADE 범위만 잰다. 활성 작업은 lease·worker slot·provider 시작 시각과 예약 원장
+     * 행까지 맞아야 V29 의 CHECK 제약을 통과하므로, 그 조립은
+     * `JdbcAccountDeletionRepositoryTest` 의 `insertActionGuideJob` 한 곳에 둔다 — 이리로
+     * 옮기면 그 시험이 재는 대상을 이 fixture 가 대신 만들게 된다.
      */
-    @Suppress("LongParameterList") // 심을 행이 매다는 축의 수다 — 도메인 입력 복잡도가 아니다.
     fun seed(
         dataSource: DataSource,
         ownerId: UUID,
         workspaceId: UUID,
         documentId: UUID,
         conversionId: UUID,
-        jobStatus: String = "succeeded",
-        jobSettlement: String = "consumed",
     ): UUID {
         val jobId = UUID.randomUUID()
         dataSource.connection.use { connection ->
@@ -73,9 +85,6 @@ object DerivedRows {
             seedIllustrationPlacements(connection, conversionId)
             seedActionGuideJob(connection, JobRow(jobId, ownerId, workspaceId, documentId, conversionId))
             seedActionGuideContent(connection, conversionId, jobId)
-            if (jobStatus != "succeeded" || jobSettlement != "consumed") {
-                moveJob(connection, jobId, jobStatus, jobSettlement)
-            }
         }
         return jobId
     }
@@ -200,7 +209,7 @@ object DerivedRows {
         )
     }
 
-    /** 결과 행을 먼저 심을 수 있도록 끝난 상태로 넣는다 — 필요하면 [moveJob] 이 옮긴다. */
+    /** 결과 행(`action_guide_candidates`)을 매달 수 있도록 끝난 상태로 넣는다. */
     private fun seedActionGuideJob(
         connection: Connection,
         job: JobRow,
@@ -221,19 +230,6 @@ object DerivedRows {
         job.conversionId,
         ACTION_GUIDE_FINGERPRINT,
         RESERVED_CREDITS,
-    )
-
-    private fun moveJob(
-        connection: Connection,
-        jobId: UUID,
-        status: String,
-        settlement: String,
-    ) = update(
-        connection,
-        "UPDATE action_guide_jobs SET status = ?, settlement = ? WHERE id = ?",
-        status,
-        settlement,
-        jobId,
     )
 
     private fun count(

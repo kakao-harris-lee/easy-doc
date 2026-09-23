@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
-import java.math.BigDecimal
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -153,16 +154,91 @@ class JdbcAccountDeletionRepositoryTest {
     }
 
     /**
+     * 활성 행동 안내 작업(`action_guide_jobs` queued/reserved)이 있는 계정의 탈퇴 — `users`
+     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V29 의 BEFORE DELETE trigger 가 해제 거래를
+     * 적는다. 그 거래의 `workspace_id`·`owner_user_id` 가 **같은 문장에서 이미 사라진 뒤**면
+     * FK 위반으로 탈퇴 전체가 실패한다 — 문서를 사용자보다 먼저 지워야 하는 이유다.
+     */
+    @Test
+    @DisplayName("대기 중 행동 안내 작업이 있어도 탈퇴되고 예약이 해제된다")
+    fun `대기 중 행동 안내 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        DerivedRows.requireNonEmptyCensus()
+        DerivedRows.seed(dataSource(), userId, workspaceId, documentId, conversionId)
+        val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = false)
+        // 픽스처가 운영과 같은 상태인지 먼저 못박는다 — 활성 작업에는 예약 원장 한 행이 있다.
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isEqualTo(1)
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행을 심지 못한 표가 있다 — 아래 0건 단언이 아무것도 재지 못한다")
+            .isEqualTo(everyDerivedTable(1))
+
+        // 서비스가 하는 순서 그대로 — 피드백을 먼저, 사용자를 나중에.
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("workspaces", "user_id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("conversions", "document_id", documentId)).isZero()
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("V28~V34 파생 행이 탈퇴 뒤에도 남았다 — 파기 범위가 새고 있다")
+            .isEqualTo(everyDerivedTable(0))
+        // 해제 거래는 trigger 가 적고, 곧이어 `users` CASCADE 로 함께 사라진다.
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
+        // 작업 행 자체는 설계상 남는다(FK 가 SET NULL) — 정산 상태만 종결로 바뀐다.
+        assertThat(jobStateOf(jobId)).isEqualTo("superseded|released")
+        assertThat(jobOwnerAndWorkspaceOf(jobId)).containsExactly(null, null)
+    }
+
+    /**
+     * 실행 중(`running`) 작업은 해제 거래에 더해 진행 중 호출 원장을 `outcome_unknown` 으로
+     * 정리한다(V29 함수의 마지막 두 문장). 그 정리도 문서 삭제 시점에 일어나야 한다.
+     */
+    @Test
+    @DisplayName("실행 중 행동 안내 작업이 있어도 탈퇴되고 진행 중 호출이 outcome_unknown 이 된다")
+    fun `실행 중 행동 안내 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = true)
+        val llmCallId = insertInProgressActionGuideLlmCall(userId, workspaceId, documentId, conversionId, jobId)
+
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
+        assertThat(jobStateOf(jobId)).isEqualTo("superseded|released")
+
+        // 호출 원장 행은 남고(V14 청구 근거) outcome 만 정리되며 user_id 는 null 이다(V19).
+        val call =
+            jdbcClient
+                .sql("SELECT outcome, user_id FROM llm_calls WHERE id = :id")
+                .param("id", llmCallId)
+                .query { rs, _ -> rs.getString("outcome") to rs.getObject("user_id") }
+                .single()
+        assertThat(call.first).isEqualTo("outcome_unknown")
+        assertThat(call.second).isNull()
+    }
+
+    /**
      * 수용 기준 5·6·7 의 V28~V34 확장 — 검수 지원(V28)·행동 안내 후보와 안내문(V30)·표
      * 구조(V32)·검수 이력(V33)·그림 배치(V34)는 전부 `documents`/`conversions` 에
      * `ON DELETE CASCADE` 로 매달려 있으니 탈퇴 한 번으로 사라져야 한다.
      *
-     * 행동 안내 작업은 [DerivedRows.seed] 의 기본값인 **끝난 상태**(`succeeded`/`consumed`)로
-     * 둔다. `queued`·`running` + `settlement = 'reserved'` 인 작업을 쥔 계정은 지금 탈퇴가
-     * FK 위반으로 실패한다 — `users` CASCADE 가 `workspaces` 를 먼저 지운 뒤 `documents`
-     * CASCADE 의 V29 `BEFORE DELETE` 트리거가 이미 사라진 작업 공간·사용자를 가리키는
-     * `credit_transactions` 행을 INSERT 하기 때문이다. 그 갈래의 수정과 재현 테스트는
-     * 브랜치 `fix/account-deletion-active-action-guide` 의 몫이라 여기서 재지 않는다.
+     * 활성 작업이 없는 갈래를 여기서 잰다 — [DerivedRows.seed] 가 심는 작업은 끝난 상태다.
+     * 활성(`queued`/`running`) 작업을 쥔 계정의 탈퇴는 위 두 시험이 따로 잰다.
      */
     @Test
     @DisplayName("문서 있는 계정을 탈퇴하면 V28~V34 파생 행이 전부 0건이 된다")
@@ -171,7 +247,8 @@ class JdbcAccountDeletionRepositoryTest {
         val workspaceId = insertWorkspace(userId)
         val documentId = insertDocument(userId, workspaceId)
         val conversionId = insertConversion(documentId)
-        insertCreditAccount(workspaceId)
+        insertCreditAccount(workspaceId, reserved = 0)
+        DerivedRows.requireNonEmptyCensus()
         val jobId = DerivedRows.seed(dataSource(), userId, workspaceId, documentId, conversionId)
         assertThat(derivedCounts(documentId, conversionId))
             .withFailMessage("파생 행을 심지 못한 표가 있다 — 이 테스트가 아무것도 재지 못한다")
@@ -190,9 +267,9 @@ class JdbcAccountDeletionRepositoryTest {
         assertThat(countWhere("action_guide_jobs", "id", jobId))
             .withFailMessage("작업 감사행이 사라졌다 — FK 를 일부러 두지 않은 청구 근거다(V29)")
             .isEqualTo(1)
-        assertThat(jobOwnerText(jobId))
-            .withFailMessage("남은 작업 감사행이 아직 탈퇴한 사용자를 가리킨다 — V29 의 SET NULL 이 닿지 않았다")
-            .isEqualTo(NO_OWNER)
+        assertThat(jobOwnerAndWorkspaceOf(jobId))
+            .withFailMessage("남은 작업 감사행이 아직 탈퇴한 사용자·작업 공간을 가리킨다 — V29 의 SET NULL 이 닿지 않았다")
+            .containsExactly(null, null)
         assertThat(countWhere("credit_transactions", "owner_user_id", userId))
             .withFailMessage("탈퇴한 사용자를 가리키는 거래가 남았다 — FK CASCADE 가 닿지 않았다")
             .isZero()
@@ -211,19 +288,6 @@ class JdbcAccountDeletionRepositoryTest {
     private fun everyDerivedTable(rows: Int): Map<String, Int> =
         DerivedRows.CENSUS.associate { (table, _) -> table to rows }
 
-    /**
-     * 남은 작업 감사행의 소유자를 문자열로 읽는다. V29 의 FK 가 `ON DELETE SET NULL` 이라
-     * 탈퇴 뒤에는 [NO_OWNER] 여야 한다 — `null` 을 그대로 매핑하면 `single()` 이 끊으므로
-     * SQL 에서 미리 [NO_OWNER] 로 바꾸고, 남아 있으면 그 id 가 실패 메시지에 그대로 나온다.
-     */
-    private fun jobOwnerText(jobId: UUID): String =
-        jdbcClient
-            .sql("SELECT coalesce(owner_user_id::text, :none) FROM action_guide_jobs WHERE id = :id")
-            .param("none", NO_OWNER)
-            .param("id", jobId)
-            .query { rs, _ -> rs.getString(1) }
-            .single()
-
     @Test
     @DisplayName("소셜 전용 계정(비밀번호 없음)도 탈퇴된다")
     fun `비밀번호 없는 계정도 탈퇴된다`() {
@@ -233,6 +297,144 @@ class JdbcAccountDeletionRepositoryTest {
         repository.deleteUser(userId)
 
         assertThat(countWhere("users", "id", userId)).isZero()
+    }
+
+    /** `action_guide_jobs` 의 종결 상태 — 상태와 정산을 한 값으로 읽는다. */
+    private fun jobStateOf(jobId: UUID): String =
+        jdbcClient
+            .sql("SELECT status || '|' || settlement FROM action_guide_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
+    /** 탈퇴 뒤 작업 행에 남는 소유 연결 — 둘 다 `SET NULL` 이라 끊겨야 한다. */
+    private fun jobOwnerAndWorkspaceOf(jobId: UUID): List<Any?> =
+        jdbcClient
+            .sql("SELECT owner_user_id, workspace_id FROM action_guide_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> listOf(rs.getObject("owner_user_id"), rs.getObject("workspace_id")) }
+            .single()
+
+    private fun insertCreditAccount(
+        workspaceId: UUID,
+        reserved: Int,
+    ) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO workspace_credit_accounts (workspace_id, balance, reserved)
+                VALUES (:workspaceId, 10, :reserved)
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .param("reserved", reserved)
+            .update()
+    }
+
+    /**
+     * 활성(`queued`/`running`) 행동 안내 작업 한 건 — 운영과 같이 예약 원장 행을 함께 남긴다
+     * (`JdbcActionGuideCreditPort.reserve`, `uq_credit_transactions_action_guide_reserve`).
+     * `running` 은 lease·worker slot·provider 시작 시각이 함께 있어야 V29 의 CHECK 제약을
+     * 통과한다. `uq_action_guide_jobs_active_owner` 때문에 한 사용자에게 활성 작업은 동시에
+     * 하나뿐이라 두 상태를 각각 다른 시험에서 잰다.
+     */
+    private fun insertActionGuideJob(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        running: Boolean,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO action_guide_jobs
+                    (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                     expected_content_revision, based_on_content_revision, input_fingerprint,
+                     status, settlement, reserved_credits, provider_attempts, provider_execution_id,
+                     provider_started_at, lease_owner, lease_until, worker_slot)
+                VALUES (:id, :requestId, :userId, :workspaceId, :documentId, :conversionId,
+                        1, 1, :fingerprint, :status, 'reserved', :reservedCredits, :providerAttempts,
+                        :providerExecutionId, :providerStartedAt, :leaseOwner, :leaseUntil, :workerSlot)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("requestId", UUID.randomUUID())
+            .param("userId", userId)
+            .param("workspaceId", workspaceId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("fingerprint", "0".repeat(FINGERPRINT_LENGTH))
+            .param("status", if (running) "running" else "queued")
+            .param("reservedCredits", RESERVED_CREDITS)
+            .param("providerAttempts", if (running) 1 else 0)
+            .param("providerExecutionId", if (running) UUID.randomUUID() else null)
+            .param("providerStartedAt", if (running) Timestamp.from(Instant.now()) else null)
+            .param("leaseOwner", if (running) "worker-fixture" else null)
+            .param("leaseUntil", if (running) Timestamp.from(Instant.now().plusSeconds(LEASE_SECONDS)) else null)
+            .param("workerSlot", if (running) 1 else null)
+            .update()
+        insertActionGuideReserveTransaction(id, userId, workspaceId, documentId)
+        return id
+    }
+
+    /**
+     * 예약 시점에 남는 원장 한 행 — `reserved_delta` 는 작업이 잡아 둔 양 그대로다. 삭제
+     * 정산의 release 행과 짝을 이루며, 둘 다 `owner_user_id` CASCADE 로 탈퇴와 함께 사라진다.
+     */
+    private fun insertActionGuideReserveTransaction(
+        jobId: UUID,
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+    ) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, action_guide_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, 'reserve', 0, :reservedCredits,
+                        'action_guide', :jobId)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("reservedCredits", RESERVED_CREDITS)
+            .param("jobId", jobId)
+            .update()
+    }
+
+    /**
+     * 진행 중 호출 원장 한 행 — V29 의 `ck_llm_calls_unfinished_zero_usage` 때문에
+     * provider·model 은 `null`, 토큰은 0 이어야 한다.
+     */
+    private fun insertInProgressActionGuideLlmCall(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        jobId: UUID,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO llm_calls
+                    (id, workspace_id, user_id, document_id, conversion_id, purpose, provider, model,
+                     input_tokens, output_tokens, char_count, document_char_count, outcome,
+                     action_guide_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, :conversionId, 'action_guide', NULL,
+                        NULL, 0, 0, 4, 4, 'in_progress', :jobId)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("jobId", jobId)
+            .update()
+        return id
     }
 
     private fun feedbackCount(conversionId: UUID): Int =
@@ -387,19 +589,6 @@ class JdbcAccountDeletionRepositoryTest {
         return id
     }
 
-    private fun insertCreditAccount(workspaceId: UUID) {
-        jdbcClient
-            .sql(
-                """
-                INSERT INTO workspace_credit_accounts (workspace_id, balance, reserved)
-                VALUES (:workspaceId, :balance, :reserved)
-                """.trimIndent(),
-            ).param("workspaceId", workspaceId)
-            .param("balance", CREDITS)
-            .param("reserved", BigDecimal.ZERO)
-            .update()
-    }
-
     private fun insertLlmCall(
         userId: UUID,
         workspaceId: UUID,
@@ -433,11 +622,13 @@ class JdbcAccountDeletionRepositoryTest {
     private companion object {
         val HASH = PasswordHash("\$argon2id\$v=19\$m=65536,t=3,p=4\$YWJjZGVmZ2hpamtsbW5vcA\$c3RvcmVkLWhhc2g")
 
-        /** `ck_workspace_credit_accounts_*_tenth`(V31)를 만족한다. */
-        val CREDITS: BigDecimal = BigDecimal("1.0")
+        /** 활성 작업이 잡아 둔 예약량 — 작업 행·예약 원장·계정 `reserved` 가 같은 값을 쓴다. */
+        const val RESERVED_CREDITS = 2
 
-        /** `owner_user_id` 가 `NULL` 로 풀렸음을 나타내는 자리 표시 — uuid 형식이 아니라 섞이지 않는다. */
-        const val NO_OWNER = "소유자 없음"
+        /** `ck_action_guide_jobs_fingerprint_length` — 정확히 64자여야 한다. */
+        const val FINGERPRINT_LENGTH = 64
+
+        const val LEASE_SECONDS = 60L
 
         var counter = 0
     }

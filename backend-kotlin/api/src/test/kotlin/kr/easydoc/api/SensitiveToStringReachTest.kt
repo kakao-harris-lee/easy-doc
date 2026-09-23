@@ -193,6 +193,18 @@ class SensitiveToStringReachTest {
          * `IllustrationPlacementPayload`·`IllustrationPlacementsResponse`.
          * `IllustrationPlacements`(core)는 정규화·불변식 검증이 있는 일반 class라 세지
          * 않는다(`IllustrationCatalog`와 같은 판단).
+         *
+         * 342 는 그대로지만 **두 번 움직였다**(행동 안내 시작 경로, 2026-09-23).
+         *
+         * −1: `ProcessActionGuideJob.StartResult.Started` 를 `data class` 에서 일반 class 로
+         * 되돌렸다. 값 비교도 복사도 쓰지 않는 내부 제어 흐름 자리라 `data` 가 필요 없고, 이
+         * 타입이 든 `ActionGuideProviderCall` 은 주 생성자가 없어 이 탐지기가 표본을 만들지
+         * 못한다(`GeneratedToStringProbes.dataClassProbe` 는 민감 여부와 무관하게 **모든**
+         * 파라미터 자리를 채워 본다). **누출이 아니라 표본 생성이 이유다** — 컴파일러가 만든
+         * `toString()` 이 찍는 것은 람다의 식별자(`...$prepare$1@1b2c3d`)일 뿐 평문이 아니다.
+         *
+         * +1: 같은 `StartResult` 에 `PreparationFailed`(`data object`)를 더했다 — 입력을
+         * 만들지 못한 실패를 provider 시작 없이 끝내는 갈래다.
          */
         const val EXPECTED_SOURCE_DECLARATIONS = 342
 

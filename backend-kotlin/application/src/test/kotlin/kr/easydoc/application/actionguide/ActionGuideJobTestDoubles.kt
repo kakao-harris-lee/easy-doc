@@ -31,6 +31,9 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
     var currentInput = true
     var currentInputCheck: (() -> Boolean)? = null
     var terminalWriteSucceeds = true
+
+    /** 저장소가 끊긴 정산 쓰기. `false` 반환(경쟁에 졌다)과 달리 예외가 밖으로 나간다. */
+    var terminalWriteFailure: RuntimeException? = null
     val terminalWrites = mutableListOf<Pair<ActionGuideJobStatus, ActionGuideJobFailureCode?>>()
 
     override fun lockOwnedContext(
@@ -48,6 +51,13 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
         }
 
     override fun insert(job: StoredActionGuideJob): ActionGuideJobInsert {
+        // D04: 문서당 상한은 provider 호출이 실제로 시작된 작업만 센다. 저장소(JdbcActionGuideJobRepository)의
+        // `provider_started_at IS NOT NULL` 집계와 같은 규칙이어야 서비스 계약을 이 대역으로 확인할 수 있다.
+        val started =
+            rows.values.count {
+                it.ownerId == job.ownerId && it.conversionId == job.conversionId && it.providerStartedAt != null
+            }
+        if (started >= MAX_PROVIDER_STARTED_ATTEMPTS) return ActionGuideJobInsert.AttemptLimit
         rows[job.jobId] = job
         return ActionGuideJobInsert.Inserted(job)
     }
@@ -120,6 +130,7 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
         failureCode: ActionGuideJobFailureCode?,
         updatedAt: Instant,
     ): Boolean {
+        terminalWriteFailure?.let { throw it }
         if (!terminalWriteSucceeds) return false
         val current = lockIfHeld(lease) ?: return false
         rows[lease.jobId] = current.copy(status = status, failureCode = failureCode, updatedAt = updatedAt)
@@ -197,8 +208,9 @@ internal fun storedJob(
     requestId: UUID = REQUEST,
     executionId: UUID? = null,
     providerStartedAt: Instant? = null,
+    jobId: UUID = JOB,
 ) = StoredActionGuideJob(
-    JOB,
+    jobId,
     OWNER,
     WORKSPACE,
     DOCUMENT,
@@ -223,3 +235,6 @@ internal val REQUEST: UUID = UUID.fromString("00000000-0000-0000-0000-0000000000
 internal val JOB: UUID = UUID.fromString("00000000-0000-0000-0000-000000000006")
 internal val EXECUTION: UUID = UUID.fromString("00000000-0000-0000-0000-000000000007")
 internal val NOW: Instant = Instant.parse("2026-09-18T00:00:00Z")
+
+/** D04(개선 로드맵 §6)의 문서당 시도 상한. 저장소의 `MAX_ATTEMPTS_PER_CONVERSION`과 같은 값이다. */
+internal const val MAX_PROVIDER_STARTED_ATTEMPTS: Int = 3

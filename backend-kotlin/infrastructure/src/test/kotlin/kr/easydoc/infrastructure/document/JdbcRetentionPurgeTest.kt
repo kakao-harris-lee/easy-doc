@@ -113,6 +113,7 @@ class JdbcRetentionPurgeTest {
     @DisplayName("만료 파기가 V28~V34 파생 행(검수·행동 안내·표 구조·이력·그림 배치)을 함께 지운다")
     fun `만료 파기가 파생 행을 남기지 않는다`() {
         val seeded = seedDocument()
+        DerivedRows.requireNonEmptyCensus()
         val jobId =
             DerivedRows.seed(dataSource, seeded.ownerId, seeded.workspaceId, seeded.documentId, seeded.conversionId)
         assertThat(derivedCounts(seeded))
