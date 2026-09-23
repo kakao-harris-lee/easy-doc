@@ -163,11 +163,13 @@ class JdbcAccountDeletionRepositoryTest {
     fun `대기 중 행동 안내 작업이 있어도 탈퇴된다`() {
         val userId = insertUser(isAdmin = false, passwordHash = HASH)
         val workspaceId = insertWorkspace(userId)
-        insertCreditAccount(workspaceId, reserved = 2)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
         val documentId = insertDocument(userId, workspaceId)
         val conversionId = insertConversion(documentId)
         insertDocumentChildRows(documentId, conversionId)
         val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = false)
+        // 픽스처가 운영과 같은 상태인지 먼저 못박는다 — 활성 작업에는 예약 원장 한 행이 있다.
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isEqualTo(1)
 
         // 서비스가 하는 순서 그대로 — 피드백을 먼저, 사용자를 나중에.
         assertThatCode {
@@ -200,7 +202,7 @@ class JdbcAccountDeletionRepositoryTest {
     fun `실행 중 행동 안내 작업이 있어도 탈퇴된다`() {
         val userId = insertUser(isAdmin = false, passwordHash = HASH)
         val workspaceId = insertWorkspace(userId)
-        insertCreditAccount(workspaceId, reserved = 2)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
         val documentId = insertDocument(userId, workspaceId)
         val conversionId = insertConversion(documentId)
         val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = true)
@@ -270,9 +272,11 @@ class JdbcAccountDeletionRepositoryTest {
     }
 
     /**
-     * 활성(`queued`/`running`) 행동 안내 작업 한 건. `running` 은 lease·worker slot·provider
-     * 시작 시각이 함께 있어야 V29 의 CHECK 제약을 통과한다. `uq_action_guide_jobs_active_owner`
-     * 때문에 한 사용자에게 활성 작업은 동시에 하나뿐이라 두 상태를 각각 다른 시험에서 잰다.
+     * 활성(`queued`/`running`) 행동 안내 작업 한 건 — 운영과 같이 예약 원장 행을 함께 남긴다
+     * (`JdbcActionGuideCreditPort.reserve`, `uq_credit_transactions_action_guide_reserve`).
+     * `running` 은 lease·worker slot·provider 시작 시각이 함께 있어야 V29 의 CHECK 제약을
+     * 통과한다. `uq_action_guide_jobs_active_owner` 때문에 한 사용자에게 활성 작업은 동시에
+     * 하나뿐이라 두 상태를 각각 다른 시험에서 잰다.
      */
     private fun insertActionGuideJob(
         userId: UUID,
@@ -291,7 +295,7 @@ class JdbcAccountDeletionRepositoryTest {
                      status, settlement, reserved_credits, provider_attempts, provider_execution_id,
                      provider_started_at, lease_owner, lease_until, worker_slot)
                 VALUES (:id, :requestId, :userId, :workspaceId, :documentId, :conversionId,
-                        1, 1, :fingerprint, :status, 'reserved', 2, :providerAttempts,
+                        1, 1, :fingerprint, :status, 'reserved', :reservedCredits, :providerAttempts,
                         :providerExecutionId, :providerStartedAt, :leaseOwner, :leaseUntil, :workerSlot)
                 """.trimIndent(),
             ).param("id", id)
@@ -302,6 +306,7 @@ class JdbcAccountDeletionRepositoryTest {
             .param("conversionId", conversionId)
             .param("fingerprint", "0".repeat(FINGERPRINT_LENGTH))
             .param("status", if (running) "running" else "queued")
+            .param("reservedCredits", RESERVED_CREDITS)
             .param("providerAttempts", if (running) 1 else 0)
             .param("providerExecutionId", if (running) UUID.randomUUID() else null)
             .param("providerStartedAt", if (running) Timestamp.from(Instant.now()) else null)
@@ -309,7 +314,36 @@ class JdbcAccountDeletionRepositoryTest {
             .param("leaseUntil", if (running) Timestamp.from(Instant.now().plusSeconds(LEASE_SECONDS)) else null)
             .param("workerSlot", if (running) 1 else null)
             .update()
+        insertActionGuideReserveTransaction(id, userId, workspaceId, documentId)
         return id
+    }
+
+    /**
+     * 예약 시점에 남는 원장 한 행 — `reserved_delta` 는 작업이 잡아 둔 양 그대로다. 삭제
+     * 정산의 release 행과 짝을 이루며, 둘 다 `owner_user_id` CASCADE 로 탈퇴와 함께 사라진다.
+     */
+    private fun insertActionGuideReserveTransaction(
+        jobId: UUID,
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+    ) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, action_guide_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, 'reserve', 0, :reservedCredits,
+                        'action_guide', :jobId)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("reservedCredits", RESERVED_CREDITS)
+            .param("jobId", jobId)
+            .update()
     }
 
     /**
@@ -590,6 +624,9 @@ class JdbcAccountDeletionRepositoryTest {
                 VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
                 """.trimIndent(),
             )
+
+        /** 활성 작업이 잡아 둔 예약량 — 작업 행·예약 원장·계정 `reserved` 가 같은 값을 쓴다. */
+        const val RESERVED_CREDITS = 2
 
         /** `ck_action_guide_jobs_fingerprint_length` — 정확히 64자여야 한다. */
         const val FINGERPRINT_LENGTH = 64
