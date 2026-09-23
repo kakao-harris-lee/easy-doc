@@ -1,5 +1,6 @@
 package kr.easydoc.application.actionguide
 
+import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
 import org.assertj.core.api.Assertions.assertThat
@@ -75,6 +76,28 @@ class ActionGuideJobServiceTest {
         assertThat(result.job.jobId).isNotNull()
     }
 
+    @Test
+    fun `provider 호출이 시작된 작업이 상한만큼 쌓이면 새 요청은 시도 상한 초과다`() {
+        val world = World()
+        world.seedTerminalJobs(MAX_PROVIDER_STARTED_ATTEMPTS, providerStarted = true)
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, UUID.randomUUID(), 3, null) }
+            .isInstanceOf(ActionGuideAttemptLimitExceededException::class.java)
+            .hasMessage(ATTEMPT_LIMIT_MESSAGE)
+        assertThat(world.jobs.rows).hasSize(MAX_PROVIDER_STARTED_ATTEMPTS)
+    }
+
+    @Test
+    fun `provider 호출을 시작하지 못하고 끝난 작업은 시도로 세지 않는다`() {
+        val world = World()
+        world.seedTerminalJobs(MAX_PROVIDER_STARTED_ATTEMPTS, providerStarted = false)
+
+        val result = world.service.create(OWNER, CONVERSION, UUID.randomUUID(), 3, null)
+
+        assertThat(result.job.status.wireName).isEqualTo("queued")
+        assertThat(world.jobs.rows).hasSize(MAX_PROVIDER_STARTED_ATTEMPTS + 1)
+    }
+
     private class World(enabled: Boolean = true) {
         val jobs = FakeActionGuideJobs()
         val credits = RecordingActionGuideCredits()
@@ -86,5 +109,23 @@ class ActionGuideJobServiceTest {
                 DirectTransaction(),
                 Clock.fixed(NOW, ZoneOffset.UTC),
             )
+
+        /** 이미 끝난 과거 시도를 쌓는다. [providerStarted] 가 시도로 셀지 여부를 가른다. */
+        fun seedTerminalJobs(
+            count: Int,
+            providerStarted: Boolean,
+        ) {
+            repeat(count) {
+                val jobId = UUID.randomUUID()
+                jobs.rows[jobId] =
+                    storedJob(
+                        status = ActionGuideJobStatus.SUCCEEDED,
+                        requestId = UUID.randomUUID(),
+                        executionId = if (providerStarted) UUID.randomUUID() else null,
+                        providerStartedAt = if (providerStarted) NOW else null,
+                        jobId = jobId,
+                    )
+            }
+        }
     }
 }

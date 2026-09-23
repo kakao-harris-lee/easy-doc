@@ -5,6 +5,8 @@ import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
+import kr.easydoc.application.actionguide.ATTEMPT_LIMIT_MESSAGE
+import kr.easydoc.application.actionguide.ActionGuideAttemptLimitExceededException
 import kr.easydoc.application.actionguide.ActionGuideContentService
 import kr.easydoc.application.actionguide.ActionGuideJobCollectionView
 import kr.easydoc.application.actionguide.ActionGuideJobCreationView
@@ -104,6 +106,31 @@ class ActionGuideJobContractTest {
 
         assertThat(missingGuide).isEqualTo(422)
         assertThat(zeroContent).isEqualTo(422)
+    }
+
+    @Test
+    fun `시도 상한 초과는 Retry-After 없는 429와 detail 본문이다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val requestId = UUID.randomUUID()
+        `when`(service.create(owner, conversionId, requestId, 7, null))
+            .thenThrow(ActionGuideAttemptLimitExceededException(ATTEMPT_LIMIT_MESSAGE))
+
+        val response =
+            mockMvc
+                .post("/conversions/$conversionId/action-guide-jobs") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """{"request_id":"$requestId","expected_content_revision":7,"expected_guide_revision":null}"""
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(429)
+        // 쿨다운이 아니라 문서당 영구 상한이라 계약이 Retry-After 를 금지한다.
+        assertThat(response.getHeader(HttpHeaders.RETRY_AFTER)).isNull()
+        assertThat(json(response).propertyNames()).containsExactly("detail")
+        assertThat(json(response)["detail"].asString()).isEqualTo(ATTEMPT_LIMIT_MESSAGE)
     }
 
     @Test

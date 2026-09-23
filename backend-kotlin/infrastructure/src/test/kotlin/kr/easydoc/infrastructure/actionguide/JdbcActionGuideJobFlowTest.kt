@@ -11,6 +11,7 @@ import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -24,6 +25,10 @@ import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** AC-R2-a/b를 실제 PostgreSQL 트랜잭션과 원장 제약으로 확인한다. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -155,6 +160,59 @@ class JdbcActionGuideJobFlowTest {
     }
 
     @Test
+    @DisplayName("provider 호출을 시작한 작업이 3건이면 같은 변환의 새 접수를 상한으로 막는다")
+    fun `provider 시작 3회는 네 번째 접수를 막는다`() {
+        val fixture = seed()
+        repeat(MAX_ATTEMPTS_PER_CONVERSION) { startAndSucceed(fixture.job()) }
+
+        assertThat(tx.execute { jobs.insert(fixture.job()) }).isEqualTo(ActionGuideJobInsert.AttemptLimit)
+    }
+
+    @Test
+    @DisplayName("provider 호출을 시작하지 못하고 끝난 작업은 시도로 세지 않는다")
+    fun `미시작 종료 작업은 상한에 세지 않는다`() {
+        val fixture = seed()
+        repeat(MAX_ATTEMPTS_PER_CONVERSION) { supersedeWithoutStart(fixture.job()) }
+
+        assertThat(tx.execute { jobs.insert(fixture.job()) })
+            .isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+    }
+
+    @Test
+    @DisplayName("같은 변환의 동시 접수는 변환 행 잠금으로 직렬화돼 두 번째가 첫 번째의 커밋을 본다")
+    fun `동시 접수는 변환 행 잠금으로 직렬화된다`() {
+        // 시도 상한은 「시작된 시도 세기 → 삽입」이 원자적일 때만 지켜진다. 그 원자성은 접수
+        // 트랜잭션이 먼저 잡는 lockOwnedContext 의 FOR NO KEY UPDATE OF c 가 만든다.
+        val fixture = seed()
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            var loser: Future<ActionGuideJobInsert>? = null
+            tx.executeWithoutResult {
+                assertThat(jobs.lockOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                val pending =
+                    pool.submit<ActionGuideJobInsert> {
+                        checkNotNull(
+                            tx.execute {
+                                jobs.lockOwnedContext(fixture.ownerId, fixture.conversionId)
+                                jobs.insert(fixture.job())
+                            },
+                        )
+                    }
+                // 뒤 트랜잭션은 잠금 앞에서 멈춰 서 있어야 한다 — 끝나 있으면 직렬화가 깨진 것이다.
+                assertThatThrownBy { pending.get(BLOCKED_MILLIS, TimeUnit.MILLISECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+                assertThat(jobs.insert(fixture.job())).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+                loser = pending
+            }
+
+            assertThat(loser?.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(ActionGuideJobInsert.ActiveConflict)
+            assertThat(jobCount(fixture.conversionId)).isEqualTo(1)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     @DisplayName("소수 예약은 job에 저장된 양으로 성공 정산한다")
     fun `소수 예약은 저장된 양으로 소비한다`() {
         val fixture = seed()
@@ -200,6 +258,21 @@ class JdbcActionGuideJobFlowTest {
                 assertThat(jobs.insert(job)).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
             }
         }
+    }
+
+    /** 접수 → 획득 → provider 시작 → 성공까지 실제 경로로 한 번의 시도를 끝낸다. */
+    private fun startAndSucceed(job: StoredActionGuideJob) {
+        assertThat(tx.execute { jobs.insert(job) }).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        tx.executeWithoutResult { assertThat(jobs.markProviderStarted(lease, UUID.randomUUID(), NOW)).isTrue() }
+        tx.executeWithoutResult { assertThat(jobs.markSucceeded(lease, NOW.plusSeconds(1))).isTrue() }
+    }
+
+    /** 입력이 바뀐 작업처럼 provider를 시작하지 않고 superseded로 끝낸다. */
+    private fun supersedeWithoutStart(job: StoredActionGuideJob) {
+        assertThat(tx.execute { jobs.insert(job) }).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        tx.executeWithoutResult { assertThat(jobs.markSuperseded(lease, NOW.plusSeconds(1))).isTrue() }
     }
 
     private fun seed(): Fixture {
@@ -304,6 +377,13 @@ class JdbcActionGuideJobFlowTest {
             .query { rs, _ -> rs.getString(1) }
             .single()
 
+    private fun jobCount(conversionId: UUID): Int =
+        jdbc
+            .sql("SELECT count(*) FROM action_guide_jobs WHERE conversion_id=:id")
+            .param("id", conversionId)
+            .query { rs, _ -> rs.getInt(1) }
+            .single()
+
     private fun providerAttempts(jobId: UUID): Int =
         jdbc
             .sql("SELECT provider_attempts FROM action_guide_jobs WHERE id=:id")
@@ -340,5 +420,10 @@ class JdbcActionGuideJobFlowTest {
     private companion object {
         val NOW: Instant = Instant.parse("2026-09-18T00:00:00Z")
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
+
+        /** D04(개선 로드맵 §6) — 문서당 provider 호출을 시작한 작업은 3건까지다. */
+        const val MAX_ATTEMPTS_PER_CONVERSION = 3
+        const val BLOCKED_MILLIS = 300L
+        const val HANDOFF_SECONDS = 10L
     }
 }
