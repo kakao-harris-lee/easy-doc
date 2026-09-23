@@ -32,10 +32,23 @@
   risk가 더 낮은 후보가 되면 안 된다(§6.8 키①, `export.winner_sort_key`가
   이미 구현한 규칙을 산출물에서 다시 확인한다 — 37건이 지던 사고)
 - **`v`(뜻풀이 검수 이력) 규약** (2026-09-23) — 배포 색인의 `v`는 값이
-  `"reviewed"`(`models.DEFINITION_REVIEW_MARK`) 하나뿐이고(Kotlin
-  `DefinitionReviewStatus`가 다른 값을 만나면 기동을 거부한다), 뜻풀이(`d`)가
+  `"reviewed"`(`models.DEFINITION_REVIEW_MARK`) 하나뿐이고, 뜻풀이(`d`)가
   빈 엔트리에는 붙을 수 없다. 표시가 없다는 뜻으로 `v: null`을 쓰는 것도
-  위반이다 — 키 자체가 없어야 한다
+  위반이다 — 키 자체가 없어야 한다. (Kotlin은 **모르는** 값이면 기동을
+  거부하지만 `"unverified"`·null·빈 문자열은 조용히 UNVERIFIED로 흡수한다
+  — 조용한 흡수도 이 저장소의 규약 위반이라 여기서 잡는다. `DictionaryEntry.kt`
+  참고.)
+- **DB-색인 `v` 일치** (2026-09-23) — DB(정본)의
+  `definition_review.is_definition_reviewed()` 판정과 배포 색인의 `v`
+  존재 여부가 entry_id 단위로 서로 어긋나면 안 된다(양방향). 두 산출물이
+  같은 판정 규칙을 따라야 하는데 수동 UPDATE·마이그레이션 누락·재익스포트
+  전 DB만 고친 경우 등으로 갈라질 수 있다 — deprecated 엔트리는 애초에
+  색인에서 빠지므로(`export._ACTIVE_ENTRIES_SQL`) 이 검사에서 제외한다
+- **definition_reviewed_at 형식** (2026-09-23) — `reviewed_at`/`reviewed_by`를
+  둘 다 채웠는데(검수를 시도했는데) `reviewed_at`이 ISO-8601
+  (`definition_review.REVIEWED_AT_PATTERN`)이 아니면
+  `is_definition_reviewed()`가 조용히 "미검수"로 fail-close한다 — 조용히
+  넘어가면 오타를 아무도 못 본다. 여기서 명시적으로 드러낸다
 - **엔트리 귀속 불변** — `sources` 테이블의 모든 행은 최소 1개 이상의
   `entries.source_id`가 가리켜야 한다. 예문 전용 원천(`--source-role
   examples`)은 애초에 `sources`에 등록되지 않으므로(build.py 설계), 등록된
@@ -61,6 +74,10 @@ _SRC_DIR = REPO_ROOT / "src"
 if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
+from easydict.definition_review import (  # noqa: E402  (판정 규칙 재사용 — 새 규칙을 만들지 않는다)
+    REVIEWED_AT_PATTERN,
+    is_definition_reviewed,
+)
 from easydict.export import _RISK_WINNER_RANK, SOURCE_TRUST_TIER  # noqa: E402  (읽기 전용 재사용 — 새 순위표를 만들지 않는다)
 from easydict.lookup import EasyDict  # noqa: E402  (읽기 전용 — dist/를 조회만 한다)
 from easydict.models import DEFINITION_REVIEW_MARK, NEEDS_CONFIRMATION_MARKER  # noqa: E402
@@ -84,7 +101,8 @@ def _load_entries(conn: sqlite3.Connection) -> list[dict]:
     conn.row_factory = sqlite3.Row
     return [dict(r) for r in conn.execute(
         "SELECT id, term, term_norm, easy_term, replace_strategy, risk_level, "
-        "status, readability, source_id FROM entries"
+        "status, readability, source_id, definition, "
+        "definition_reviewed_at, definition_reviewed_by FROM entries"
     )]
 
 
@@ -309,10 +327,12 @@ def check_definition_review_marks(index_doc: dict) -> list[Violation]:
     두 가지만 본다.
 
     - **값은 `"reviewed"` 하나뿐이다.** Kotlin의 `DefinitionReviewStatus`(core)는
-      키가 없으면 UNVERIFIED, `"reviewed"`면 REVIEWED, **그 밖의 값이면 기동을
-      거부**한다. 배포 색인에 오타나 새 값("unverified", "pending" 등)이 섞이면
-      제품이 뜨지 않는다 — 여기서 먼저 잡는다. 표시가 없다는 뜻으로 `v: null`을
-      쓰는 것도 규약 위반이다(키 자체가 없어야 한다).
+      키가 없으면 UNVERIFIED, `"reviewed"`면 REVIEWED다. **모르는** 값이면
+      기동을 거부하지만, `"unverified"`·null·빈 문자열은 조용히 UNVERIFIED로
+      흡수한다(`DictionaryEntry.kt`의 `ofWire`/`optional` — `unverified`도
+      선언된 wire 값이라 예외를 던지지 않는다) — 조용한 흡수도 이 저장소의
+      규약 위반이라 여기서 잡는다. 표시가 없다는 뜻으로 `v: null`을 쓰는 것도
+      규약 위반이다(키 자체가 없어야 한다).
     - **뜻풀이가 빈 엔트리에 `v`가 있으면 안 된다.** "이 뜻풀이를 사람이 읽었다"는
       표시인데 읽을 뜻풀이가 없다는 모순이고, R3 프롬프트가 빈 문자열을 생성
       재료로 집어 들 수 있다. `export.export_index()`가 애초에 이런 조합을 만들지
@@ -336,6 +356,77 @@ def check_definition_review_marks(index_doc: dict) -> list[Violation]:
             out.append(Violation(
                 "빈 뜻풀이에 v 표시(index.json)",
                 f"entry_id={entry_id} d={definition!r} — 검수했다는 표시인데 검수할 뜻풀이가 없다",
+            ))
+    return out
+
+
+def check_definition_review_db_index_consistency(
+    entries: list[dict], index_doc: dict,
+) -> list[Violation]:
+    """DB(정본)와 배포 색인(`index.json`)의 `v` 판정이 서로 어긋나지 않는가 (2026-09-23).
+
+    두 산출물은 같은 판정 규칙(`definition_review.is_definition_reviewed()`)을
+    따라야 하는데, 수동 UPDATE·마이그레이션 누락·재익스포트 전 DB만 고친
+    경우 등으로 둘이 갈라질 수 있다. entry_id 단위로 DB 쪽 판정과 색인 쪽
+    `v` 존재 여부를 맞대본다 — 한쪽에만 있으면(양방향) 위반이다.
+
+    deprecated 엔트리는 검수 완료 표시가 있어도 애초에 색인에서 빠지므로
+    (`export.export_index()`의 `_ACTIVE_ENTRIES_SQL`이 `status != 'deprecated'`만
+    싣는다) 이 검사 대상에서 제외한다 — 그렇지 않으면 정상적으로 폐기된
+    엔트리를 매번 오탐으로 잡는다.
+    """
+    out = []
+    index_entries = index_doc.get("entries", {})
+    for e in entries:
+        if e["status"] == "deprecated":
+            continue
+        entry_id = e["id"]
+        db_reviewed = is_definition_reviewed(
+            e.get("definition"), e.get("definition_reviewed_at"), e.get("definition_reviewed_by"),
+        )
+        index_entry = index_entries.get(str(entry_id))
+        index_reviewed = bool(index_entry) and index_entry.get("v") == DEFINITION_REVIEW_MARK
+        if db_reviewed and not index_reviewed:
+            out.append(Violation(
+                "DB-색인 v 불일치",
+                f"entry_id={entry_id} term={e['term']!r}: DB는 검수 완료 조건을 만족하는데 "
+                f"색인에 v={DEFINITION_REVIEW_MARK!r}가 없다",
+            ))
+        elif index_reviewed and not db_reviewed:
+            out.append(Violation(
+                "DB-색인 v 불일치",
+                f"entry_id={entry_id} term={e['term']!r}: 색인은 v={DEFINITION_REVIEW_MARK!r}인데 "
+                "DB는 검수 완료 조건을 만족하지 않는다",
+            ))
+    return out
+
+
+def check_malformed_reviewed_at(entries: list[dict]) -> list[Violation]:
+    """`definition_reviewed_at` 형식 오류 검사 (2026-09-23).
+
+    `definition_review.is_definition_reviewed()`는 `reviewed_at`이 ISO-8601
+    (`REVIEWED_AT_PATTERN`)이 아니면 조용히 "미검수"로 fail-close한다(따옴표
+    없이 쓴 날짜가 SQLite 산술식으로 평가되는 사고 등) — 검수자가 실제로
+    값을 채웠는데(`reviewed_at`/`reviewed_by`가 둘 다 있음) 형식이 틀려
+    조용히 묻히면 아무도 그 오타를 못 본다. 여기서 명시적으로 드러낸다.
+
+    `reviewed_by`가 없는 경우는 다루지 않는다 — 그 자체로 이미 다른 규칙
+    (검수자 미기재)으로 검수 미완료이므로, 여기서까지 이중 보고하지 않는다.
+    """
+    out = []
+    for e in entries:
+        reviewed_at = e.get("definition_reviewed_at")
+        reviewed_by = e.get("definition_reviewed_by")
+        if not (isinstance(reviewed_at, str) and reviewed_at.strip()):
+            continue
+        if not (isinstance(reviewed_by, str) and reviewed_by.strip()):
+            continue
+        if not REVIEWED_AT_PATTERN.match(reviewed_at.strip()):
+            out.append(Violation(
+                "definition_reviewed_at 형식 오류",
+                f"id={e['id']} term={e['term']!r} definition_reviewed_at={reviewed_at!r} "
+                "— ISO-8601(YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM:SSZ)이 아니라 "
+                "검수 표시가 조용히 무시된다",
             ))
     return out
 
@@ -405,6 +496,8 @@ def run(db_path: Path, index_json_path: Path, simple_jsonl_path: Path) -> list[V
     violations += check_protected_entry_wins(entries, index_doc)
     violations += check_caution_free_of_review_notes(index_doc)
     violations += check_definition_review_marks(index_doc)
+    violations += check_definition_review_db_index_consistency(entries, index_doc)
+    violations += check_malformed_reviewed_at(entries)
     violations += check_source_attribution(conn)
     conn.close()
     return violations
