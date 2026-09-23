@@ -30,9 +30,11 @@ class ProcessActionGuideJobTest {
         var depthAtRun: Int? = null
         world.runner =
             ActionGuideJobRunner {
-                statusAtRun = world.jobs.rows[JOB]?.status
-                depthAtRun = world.transaction.depth
-                validResult()
+                ActionGuideProviderCall {
+                    statusAtRun = world.jobs.rows[JOB]?.status
+                    depthAtRun = world.transaction.depth
+                    validResult()
+                }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
@@ -57,7 +59,7 @@ class ProcessActionGuideJobTest {
         world.runner =
             ActionGuideJobRunner {
                 calls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.RECOVERED_UNKNOWN)
@@ -104,7 +106,7 @@ class ProcessActionGuideJobTest {
         world.runner =
             ActionGuideJobRunner {
                 runnerCalls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
@@ -117,13 +119,27 @@ class ProcessActionGuideJobTest {
     }
 
     @Test
+    fun `생성 입력을 더 이상 찾지 못하면 provider 시작 없이 superseded로 예약을 반환한다`() {
+        val world = World()
+        // 시작 트랜잭션 안에서 입력을 확정하지 못한 경우다 — 사용자가 본문을 방금 고쳤다.
+        world.runner = ActionGuideJobRunner { null }
+
+        assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.SUPERSEDED)
+        assertThat(world.jobs.rows[JOB]?.providerStartedAt).isNull()
+        assertThat(world.ledger.starts).isZero()
+        assertThat(world.ledger.unknowns).isZero()
+        assertThat(world.credits.releases).isEqualTo(1)
+    }
+
+    @Test
     fun `OFF drain은 queued 작업을 호출하지 않고 superseded로 예약 반환한다`() {
         val world = World()
         var runnerCalls = 0
         world.runner =
             ActionGuideJobRunner {
                 runnerCalls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().drainNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
@@ -138,7 +154,8 @@ class ProcessActionGuideJobTest {
     @Test
     fun `형식이나 근거가 무효인 완성 응답은 후보 없이 실패 정산하고 예약을 반환한다`() {
         val world = World()
-        world.runner = ActionGuideJobRunner { ActionGuideRunResult.Invalid(completedRecord()) }
+        world.runner =
+            ActionGuideJobRunner { ActionGuideProviderCall { ActionGuideRunResult.Invalid(completedRecord()) } }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.FAILED)
         assertThat(world.jobs.rows[JOB]?.failureCode).isEqualTo(ActionGuideJobFailureCode.RESULT_INVALID)
@@ -172,7 +189,7 @@ class ProcessActionGuideJobTest {
         val contents = RecordingActionGuideContents()
         val cipher = FakeContentCipher(writeKeyVersion = 1)
         val transaction = ReversibleTransaction(jobs, credits, ledger, contents)
-        var runner: ActionGuideJobRunner = ActionGuideJobRunner { validResult() }
+        var runner: ActionGuideJobRunner = ActionGuideJobRunner { ActionGuideProviderCall { validResult() } }
 
         init {
             jobs.rows[JOB] =

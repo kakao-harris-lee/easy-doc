@@ -23,7 +23,7 @@ enum class ActionGuideJobOutcome {
 /**
  * 별도 행동 안내문 worker 수직 흐름.
  *
- * provider 호출 시작은 트랜잭션에서 먼저 영속화하고, 호출 자체만 트랜잭션 밖에서 수행한다.
+ * 생성 입력 확정과 provider 호출 시작은 같은 트랜잭션에서 먼저 영속화하고, 호출 자체만 트랜잭션 밖에서 수행한다.
  * 시작된 리스가 만료되면 자동 재호출하지 않고 [ActionGuideJobFailureCode.OUTCOME_UNKNOWN]으로 정산한다.
  */
 @Suppress("LongParameterList") // worker의 저장·원장·예약 경계를 생성자에서 명시적으로 조립한다.
@@ -66,7 +66,7 @@ class ProcessActionGuideJob(
     ): ActionGuideJobOutcome {
         val result =
             try {
-                runner.run(started.job).also {
+                started.call.call().also {
                     require(it.record.purpose == LlmCallPurpose.ACTION_GUIDE) {
                         "행동 안내문 runner가 다른 원장 목적을 반환했습니다"
                     }
@@ -80,7 +80,11 @@ class ProcessActionGuideJob(
     private fun start(lease: ActionGuideJobLease): StartResult =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction StartResult.Dropped
-            if (!jobs.hasCurrentInput(lease, job.basedOnContentRevision)) {
+            // 입력 확정까지 변환 행 잠금 안에서 끝낸다. 시작을 커밋한 뒤에 입력을 읽으면 그 사이의
+            // 본문 수정이 호출 없는 OUTCOME_UNKNOWN이 되어 쓰지도 않은 시도를 상한에서 깎는다.
+            val call =
+                if (jobs.hasCurrentInput(lease, job.basedOnContentRevision)) runner.prepare(job) else null
+            if (call == null) {
                 if (!jobs.markSuperseded(lease, clock.instant())) return@inTransaction StartResult.Dropped
                 credits.release(job)
                 return@inTransaction StartResult.Superseded
@@ -89,7 +93,7 @@ class ProcessActionGuideJob(
             val startedAt = clock.instant()
             if (!jobs.markProviderStarted(lease, executionId, startedAt)) return@inTransaction StartResult.Dropped
             ledger.start(job, executionId, startedAt)
-            StartResult.Started(job, executionId)
+            StartResult.Started(executionId, call)
         }
 
     @Suppress("LongMethod")
@@ -217,9 +221,13 @@ class ProcessActionGuideJob(
 
         data object Superseded : StartResult
 
-        data class Started(
-            val job: StoredActionGuideJob,
+        /**
+         * 확정된 호출을 트랜잭션 밖으로 넘기는 자리다. `data class` 로 두지 않는다 — 컴파일러가
+         * 만들어 주는 `toString()` 이 호출 클로저를 함께 찍는다.
+         */
+        class Started(
             val executionId: UUID,
+            val call: ActionGuideProviderCall,
         ) : StartResult
     }
 }

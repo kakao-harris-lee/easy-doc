@@ -193,8 +193,13 @@ class SensitiveToStringReachTest {
          * `IllustrationPlacementPayload`·`IllustrationPlacementsResponse`.
          * `IllustrationPlacements`(core)는 정규화·불변식 검증이 있는 일반 class라 세지
          * 않는다(`IllustrationCatalog`와 같은 판단).
+         *
+         * 342 → 341 은 `ProcessActionGuideJob.StartResult.Started` 를 `data class` 에서
+         * 일반 class 로 되돌린 것이다 — 이 타입은 provider 호출 클로저를 들고 있어
+         * 컴파일러가 만든 `toString()` 이 그 클로저까지 찍는다. 값 비교도 복사도 쓰지
+         * 않는 내부 제어 흐름 자리라 `data` 가 필요 없다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 342
+        const val EXPECTED_SOURCE_DECLARATIONS = 341
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

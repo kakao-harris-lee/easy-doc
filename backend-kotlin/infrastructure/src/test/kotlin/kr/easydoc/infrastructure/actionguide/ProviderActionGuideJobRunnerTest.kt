@@ -11,11 +11,13 @@ import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
+
+/** 입력 확정과 호출을 한 줄로 이어 붙인다 — 확정에 실패하는 경우는 전용 테스트가 따로 본다. */
+private fun ProviderActionGuideJobRunner.runOnce(job: StoredActionGuideJob) = checkNotNull(prepare(job)).call()
 
 class ProviderActionGuideJobRunnerTest {
     @Test
@@ -23,7 +25,7 @@ class ProviderActionGuideJobRunnerTest {
         val provider = RecordingProvider(validCandidate())
         val input = ActionGuideInputSource { ActionGuideGenerationInput("신청은 3월까지입니다.", "3월까지 신청해요.") }
 
-        val result = ProviderActionGuideJobRunner(input, provider).run(job())
+        val result = ProviderActionGuideJobRunner(input, provider).runOnce(job())
 
         assertThat(result).isInstanceOf(ActionGuideRunResult.Valid::class.java)
         val valid = result as ActionGuideRunResult.Valid
@@ -42,8 +44,8 @@ class ProviderActionGuideJobRunnerTest {
         val truncated =
             ProviderActionGuideJobRunner(input, RecordingProvider(validCandidate(), LlmFinishReason.MAX_TOKENS))
 
-        val invalid = invented.run(job()) as ActionGuideRunResult.Invalid
-        val clipped = truncated.run(job()) as ActionGuideRunResult.Invalid
+        val invalid = invented.runOnce(job()) as ActionGuideRunResult.Invalid
+        val clipped = truncated.runOnce(job()) as ActionGuideRunResult.Invalid
 
         assertThat(invalid.record.outcome).isEqualTo(LlmCallOutcome.COMPLETED)
         assertThat(invalid.record.outputTokens).isEqualTo(34)
@@ -55,7 +57,8 @@ class ProviderActionGuideJobRunnerTest {
         val provider = RecordingProvider(validCandidate(), throwsProviderError = true)
         val input = ActionGuideInputSource { ActionGuideGenerationInput("원문", "저장 본문") }
 
-        val failed = ProviderActionGuideJobRunner(input, provider).run(job()) as ActionGuideRunResult.ProviderFailed
+        val failed =
+            ProviderActionGuideJobRunner(input, provider).runOnce(job()) as ActionGuideRunResult.ProviderFailed
 
         assertThat(provider.calls).isEqualTo(1)
         assertThat(failed.record.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
@@ -64,12 +67,12 @@ class ProviderActionGuideJobRunnerTest {
     }
 
     @Test
-    fun `입력 본문을 다시 찾지 못하면 provider를 호출하지 않는다`() {
+    fun `입력 본문을 다시 찾지 못하면 호출을 시작하지 않는다`() {
         val provider = RecordingProvider(validCandidate())
         val input = ActionGuideInputSource { null }
 
-        assertThatThrownBy { ProviderActionGuideJobRunner(input, provider).run(job()) }
-            .isInstanceOf(IllegalStateException::class.java)
+        // 시작 트랜잭션 안에서 불리는 단계다 — 예외가 아니라 null 로 「시작하지 않음」을 알린다.
+        assertThat(ProviderActionGuideJobRunner(input, provider).prepare(job())).isNull()
         assertThat(provider.calls).isZero()
     }
 

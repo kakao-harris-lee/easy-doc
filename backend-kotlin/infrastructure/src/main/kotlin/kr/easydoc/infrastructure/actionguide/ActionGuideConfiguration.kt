@@ -8,6 +8,7 @@ import kr.easydoc.application.actionguide.ActionGuideJobRunner
 import kr.easydoc.application.actionguide.ActionGuideJobService
 import kr.easydoc.application.actionguide.ActionGuideJobWorkerPolicy
 import kr.easydoc.application.actionguide.ActionGuideLlmCallLedger
+import kr.easydoc.application.actionguide.ActionGuideProviderCall
 import kr.easydoc.application.actionguide.ActionGuideRunResult
 import kr.easydoc.application.actionguide.ProcessActionGuideJob
 import kr.easydoc.application.auth.TransactionRunner
@@ -151,31 +152,33 @@ class FakeActionGuideWorkerConfiguration {
     @Bean
     fun fakeActionGuideJobRunner(): ActionGuideJobRunner =
         ActionGuideJobRunner {
-            val record =
-                LlmCallRecord(
-                    purpose = LlmCallPurpose.ACTION_GUIDE,
-                    provider = "fake",
-                    model = "fake-action-guide-r2",
-                    inputTokens = 0,
-                    outputTokens = 0,
-                    latencyMs = 0,
-                    estimatedCostUsd = null,
-                    pricingInputUsdPerMtok = null,
-                    pricingOutputUsdPerMtok = null,
-                    charCount = 0,
-                    calledAt = Instant.now(),
-                    outcome = LlmCallOutcome.COMPLETED,
+            ActionGuideProviderCall {
+                val record =
+                    LlmCallRecord(
+                        purpose = LlmCallPurpose.ACTION_GUIDE,
+                        provider = "fake",
+                        model = "fake-action-guide-r2",
+                        inputTokens = 0,
+                        outputTokens = 0,
+                        latencyMs = 0,
+                        estimatedCostUsd = null,
+                        pricingInputUsdPerMtok = null,
+                        pricingOutputUsdPerMtok = null,
+                        charCount = 0,
+                        calledAt = Instant.now(),
+                        outcome = LlmCallOutcome.COMPLETED,
+                    )
+                ActionGuideRunResult.Valid(
+                    record,
+                    ActionGuideCandidate(
+                        schemaVersion = 1,
+                        sections =
+                            ActionGuideSectionKind.entries.map { kind ->
+                                ActionGuideSection(kind, ActionGuideSectionStatus.NOT_IN_SOURCE, emptyList())
+                            },
+                    ),
                 )
-            ActionGuideRunResult.Valid(
-                record,
-                ActionGuideCandidate(
-                    schemaVersion = 1,
-                    sections =
-                        ActionGuideSectionKind.entries.map { kind ->
-                            ActionGuideSection(kind, ActionGuideSectionStatus.NOT_IN_SOURCE, emptyList())
-                        },
-                ),
-            )
+            }
         }
 
     @Suppress("LongParameterList")
