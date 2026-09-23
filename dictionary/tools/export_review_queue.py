@@ -21,7 +21,8 @@
 Excel이 한글을 깨뜨리지 않게 UTF-8 **BOM**을 붙여 쓴다(`utf-8-sig`).
 
 **읽기 전용이다** — `dist/`에도 `data/`에도 아무것도 쓰지 않는다(`--output`으로
-지정한 CSV 하나만 만든다). 표준 라이브러리만 쓴다.
+지정한 CSV 하나만 만든다). 외부 패키지 의존성은 없다(표준 라이브러리 + 이
+저장소의 `easydict` 패키지만 사용).
 
 사용법:
 
@@ -43,8 +44,18 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = REPO_ROOT / "dist" / "easy_dict.sqlite3"
 
-# CSV 헤더. 검수자가 채우는 칸은 마지막 두 개다.
+_SRC_DIR = REPO_ROOT / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from easydict.definition_review import DEFINITION_REVIEW_COLUMNS  # noqa: E402  (컬럼 이름 재사용 — 새로 만들지 않는다)
+
+# CSV 헤더. `id`가 첫 칸이다 — 같은 term에 엔트리가 여럿이면(예: 급여·중증·
+# 교육급여·주거급여, README·검수 SQL 틀 참고) 검수 SQL이 `WHERE id IN (...)`으로
+# 정확히 그 행만 좁혀 걸어야 하고, id 없이는 그 행을 되짚을 수 없다. 검수자가
+# 채우는 칸은 마지막 두 개다.
 COLUMNS: tuple[str, ...] = (
+    "id",
     "term",
     "easy_term",
     "definition",
@@ -54,6 +65,11 @@ COLUMNS: tuple[str, ...] = (
     "reviewed_at",
     "reviewed_by",
 )
+
+# 스프레드시트가 수식 시작으로 해석하는 선두 문자(CSV 인젝션 방어). 트리거
+# 집합은 backend-kotlin/application/.../report/CsvRfc4180.kt와 동일 — 새 규칙을
+# 만들지 않는다.
+_FORMULA_TRIGGER_CHARS: tuple[str, ...] = ("=", "+", "-", "@", "\t")
 
 # 뜻풀이가 그대로 사용자·LLM에게 설명으로 나가는 자리라 먼저 보는 묶음.
 _URGENT_STRATEGY = "keep"
@@ -74,15 +90,33 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _escape_formula_injection(value: str) -> str:
+    """`=`·`+`·`-`·`@`·탭으로 시작하는 칸 앞에 `'`를 붙여 스프레드시트가 수식으로
+    해석하지 않게 한다(CSV 인젝션 방어). Excel·시트는 그 문자로 시작하는 칸을
+    수식으로 실행할 수 있다 — `definition`·`sources`·`reviewed_by`처럼 자유
+    텍스트인 칸에 검수자가 그런 문자로 시작하는 값을 넣을 수 있어, 모든 칸에
+    예외 없이 적용한다(backend-kotlin의 CsvRfc4180.kt와 같은 원칙 — 숫자 칸은
+    애초에 이 문자로 시작할 일이 없어 값이 달라지지 않는다).
+    """
+    return f"'{value}" if value.startswith(_FORMULA_TRIGGER_CHARS) else value
+
+
 def _sort_key(row: dict[str, str]) -> tuple[int, str, str]:
     urgent = row["replace_strategy"] == _URGENT_STRATEGY or row["risk_level"] == _URGENT_RISK
     return (0 if urgent else 1, row["term"], row["easy_term"])
 
 
 def queue_rows(conn: sqlite3.Connection) -> list[dict[str, str]]:
-    """검수 큐에 실릴 행을 정렬된 채로 돌려준다 (모듈 docstring의 계약)."""
+    """검수 큐에 실릴 행을 정렬된 채로 돌려준다 (모듈 docstring의 계약).
+
+    `id`가 첫 칸이다 — 같은 term에 엔트리가 여럿이면 검수 SQL이
+    `WHERE id IN (...)`으로 정확히 그 행만 좁혀 걸어야 한다(README·검수 SQL
+    틀 참고). id는 `NOT NULL PRIMARY KEY`라 `_text()`(NULL -> 빈 칸) 없이
+    바로 문자열로 싣는다.
+    """
     rows = [
         {
+            "id": str(entry_id),
             "term": _text(term),
             "easy_term": _text(easy_term),
             "definition": _text(definition),
@@ -93,20 +127,26 @@ def queue_rows(conn: sqlite3.Connection) -> list[dict[str, str]]:
             "reviewed_by": _text(reviewed_by),
         }
         for (term, easy_term, definition, replace_strategy, risk_level,
-             source_code, reviewed_at, reviewed_by, _id) in conn.execute(_QUEUE_SQL)
+             source_code, reviewed_at, reviewed_by, entry_id) in conn.execute(_QUEUE_SQL)
     ]
     rows.sort(key=_sort_key)
     return rows
 
 
 def write_queue_csv(rows: list[dict[str, str]], out: Path) -> int:
-    """행을 CSV로 쓰고 쓴 행 수를 돌려준다. Excel용 UTF-8 BOM(`utf-8-sig`)."""
+    """행을 CSV로 쓰고 쓴 행 수를 돌려준다. Excel용 UTF-8 BOM(`utf-8-sig`).
+
+    각 칸은 쓰기 전에 `_escape_formula_injection()`을 거친다(CSV 인젝션 방어) —
+    RFC 4180 quoting(쉼표·따옴표·개행 이스케이프)은 `csv.DictWriter`가 그
+    뒤에 알아서 처리하므로 순서를 바꾸지 않는다.
+    """
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=list(COLUMNS))
         writer.writeheader()
-        writer.writerows(rows)
+        for row in rows:
+            writer.writerow({key: _escape_formula_injection(value) for key, value in row.items()})
     return len(rows)
 
 
@@ -123,6 +163,21 @@ def main(argv: list[str] | None = None) -> int:
 
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
+        # 정의 검수 이력 컬럼(2026-09-23)이 없는 옛 DB에서 그대로 v_entry_full을
+        # 조회하면 원시 sqlite3.OperationalError("no such column: ...")로 죽는다
+        # (실측 회귀, PR #147 독립 리뷰) — 검수자가 원인을 알 수 없다. 여기서
+        # 먼저 컬럼 존재를 확인해 마이그레이션 CLI로 안내한다.
+        existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(entries)")}
+        missing_columns = [c for c in DEFINITION_REVIEW_COLUMNS if c not in existing_columns]
+        if missing_columns:
+            print(
+                f"오류: {db_path}에 {', '.join(missing_columns)} 컬럼이 없습니다 — "
+                "이 DB는 뜻풀이 검수 이력(2026-09-23) 도입 전에 만들어졌습니다. "
+                "먼저 마이그레이션을 실행하세요:\n"
+                f"    PYTHONPATH=src python3 -m easydict.definition_review --db {db_path}",
+                file=sys.stderr,
+            )
+            return 1
         rows = queue_rows(conn)
     finally:
         conn.close()
