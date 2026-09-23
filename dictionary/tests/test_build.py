@@ -10,6 +10,7 @@ data/raw/*.csv 는 읽기만 한다. 절대 수정하지 않는다.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import sqlite3
 import tempfile
@@ -778,6 +779,78 @@ class TestPerSourceArgCountValidation(unittest.TestCase):
         with contextlib.redirect_stdout(buf_out), contextlib.redirect_stderr(buf_err):
             rc = build.main(argv)
         self.assertNotIn("원천별 인자 개수가 안 맞습니다", buf_err.getvalue())
+
+
+# PR #147(정의 검수 이력 도입, 2026-09-23) 직전 스키마 — entries에
+# definition_reviewed_at/definition_reviewed_by가 없던 마지막 커밋(927a13f9)의
+# schema.sql. 회귀 재현에 실물 구버전 스키마가 필요해서 손으로 다시 옮겨
+# 적는 대신 커밋된 fixture로 고정해 읽는다(tests/test_review_notes.py와 같은
+# 방식). CI가 shallow checkout(git history 없음)으로 돌기 때문에 `git show`로
+# 매번 읽을 수 없다.
+_PRE_DEFINITION_REVIEW_SCHEMA_SQL_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "schema_pre_definition_review.sql"
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _pre_definition_review_schema_sql() -> str:
+    return _PRE_DEFINITION_REVIEW_SCHEMA_SQL_PATH.read_text(encoding="utf-8")
+
+
+@unittest.skipUnless(_IMPORT_ERROR is None, f"easydict.build import 실패: {_IMPORT_ERROR}")
+class TestCreateDbMigratesPrePrDb(unittest.TestCase):
+    """실측 회귀(PR #147 독립 리뷰): `python3 -m easydict.build`를 `--reset` 없이
+    구버전(정의 검수 이력 컬럼이 없던) DB에 그대로 돌리면, `create_db()`가
+    호출하는 `conn.executescript(schema.sql)`이 `v_entry_full` 뷰를 다시
+    만든다 — SQLite는 뷰의 컬럼 참조를 지연 검증하므로 `CREATE VIEW` 자체는
+    "성공"하지만, 그 뒤 뷰를 실제로 조회하면 "no such column:
+    e.definition_reviewed_at"로 죽는다(컬럼이 여전히 없으므로). `create_db()`가
+    기존 DB에는 `executescript` 전에 `definition_review.
+    ensure_definition_review_columns()`를 먼저 불러야 한다."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="easydict_createdb_migration_test_")
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_reset_false_on_pre_pr_db_does_not_break_view(self) -> None:
+        db_path = Path(self._tmp.name) / "easy_dict.sqlite3"
+        pre_conn = sqlite3.connect(str(db_path))
+        try:
+            pre_conn.executescript(_pre_definition_review_schema_sql())
+            before = {row[1] for row in pre_conn.execute("PRAGMA table_info(entries)")}
+            self.assertNotIn("definition_reviewed_at", before)
+        finally:
+            pre_conn.close()
+
+        schema_path = REPO_ROOT / "schema" / "schema.sql"
+        conn = build.create_db(db_path, schema_path, reset=False)
+        try:
+            after = {row[1] for row in conn.execute("PRAGMA table_info(entries)")}
+            self.assertIn("definition_reviewed_at", after)
+            self.assertIn("definition_reviewed_by", after)
+            # 예외 없이 뷰에서도 두 컬럼을 선택할 수 있어야 한다(구 버그:
+            # "no such column: e.definition_reviewed_at").
+            conn.execute(
+                "SELECT definition_reviewed_at, definition_reviewed_by FROM v_entry_full LIMIT 1"
+            ).fetchall()
+        finally:
+            conn.close()
+
+    def test_reset_false_on_fresh_db_path_still_creates_columns_via_create_table(self) -> None:
+        """DB 파일 자체가 없는(첫 빌드) 경우는 `CREATE TABLE`이 컬럼을 이미
+        선언하므로 ALTER TABLE 보정이 필요 없다 — 이 경로가 회귀로 깨지지
+        않는지만 확인한다(존재하지 않는 `entries` 테이블에 ALTER TABLE을
+        시도해 죽는 사고를 막는 가드)."""
+        db_path = Path(self._tmp.name) / "brand_new.sqlite3"
+        self.assertFalse(db_path.exists())
+        schema_path = REPO_ROOT / "schema" / "schema.sql"
+        conn = build.create_db(db_path, schema_path, reset=False)
+        try:
+            conn.execute(
+                "SELECT definition_reviewed_at, definition_reviewed_by FROM v_entry_full LIMIT 1"
+            ).fetchall()
+        finally:
+            conn.close()
 
 
 if __name__ == "__main__":

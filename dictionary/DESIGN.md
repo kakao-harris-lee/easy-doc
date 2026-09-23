@@ -132,6 +132,8 @@ SQLite를 **정본(source of truth)** 으로 두고 JSON은 파생 산출물로 
 | `risk_level` | TEXT | ● | `none\|low\|high` |
 | `caution` | TEXT | | 치환 시 주의사항(사람이 읽는 메모, **사용자에게 노출**) |
 | `review_note` | TEXT | | 내부 검수 메모(사람이 읽는 빌드/검수 이력, **사용자에게 비노출**) |
+| `definition_reviewed_at` | TEXT | | 사람이 이 뜻풀이를 읽고 승인한 시각. **사람만 채운다** |
+| `definition_reviewed_by` | TEXT | | 승인한 사람(또는 검수 주체). 둘 다 차야 `v="reviewed"`가 나간다 |
 | `readability` | INTEGER | ● | 1(가장 쉬움)~3(여전히 조금 어려움) |
 | `confidence` | REAL | ● | 0~1. 자동 치환 신뢰도 |
 | `priority` | INTEGER | ● | 겹칠 때 큰 값 우선. 기본 `100 + len(term)*10` |
@@ -143,6 +145,8 @@ SQLite를 **정본(source of truth)** 으로 두고 JSON은 파생 산출물로 
 | `created_at` / `updated_at` | TEXT | ● | |
 
 제약: `UNIQUE(term_norm, easy_term)` — 같은 원어에 서로 다른 순화어가 여러 개 오는 것은 **허용한다**(문맥별 대안). 완전 중복만 막는다.
+
+**`definition_reviewed_at`/`definition_reviewed_by` (2026-09-23)**: `definition`은 대부분 자동으로 채워졌다(krdict 원천 306건은 사람이 읽지 않은 사전 정의를 그대로 옮긴 것이다). 그런데 easy-doc의 R3 생성 컨텍스트와 R6 설명 패널은 이 뜻풀이를 **LLM 생성 재료와 사용자 노출 문구**로 쓴다. 그래서 "이 뜻풀이를 사람이 읽고 승인했는가"를 엔트리마다 따로 들고 있어야 한다 — 이 두 컬럼이 그 사실이고, `export_index`는 둘 다 차 있고 `definition`이 비어 있지 않은 엔트리에만 `easy_dict.index.json`에 `v="reviewed"`(`models.DEFINITION_REVIEW_MARK`)를 싣는다. 표시가 없으면 `v` 키 자체가 없다(Kotlin `DefinitionReviewStatus`의 UNVERIFIED). **`status`·`risk_level`·`replace_strategy`·원천·`review_note`에서 파생시키지 않는다** — `active`는 "자동 치환에 써도 된다"는 분류지 "사람이 이 문장을 읽었다"가 아니고, 2026-09-11/09-12 검수 SQL도 뜻풀이를 고치면서 "사람 검수 완료 표시는 변경하지 않음"이라고 스스로 못 박았다. 자동 승격은 아무도 읽지 않은 문장을 LLM 프롬프트에 밀어 넣는 사고다(`docs/reports/2026-09-21-r3-implementation.md` 「리뷰 리스크」). 판정 규칙은 `src/easydict/definition_review.py`의 `is_definition_reviewed()` 한 곳에만 있고, 값을 채우는 경로는 사람이 쓰는 검수 SQL(`data/reviews/*.sql`) 하나다 — `build.py`는 이 컬럼에 아무 값도 쓰지 않는다. 산출물 쪽은 `tools/check_invariants.py`가 「`v` 값 규약」(허용값은 `"reviewed"` 하나)과 「빈 뜻풀이에 v 표시」를 `check.sh`에서 확인한다. 검수 큐 작성부터 재빌드까지의 절차는 README 「검수된 정의(v=reviewed) 공급」.
 
 **`caution` vs `review_note` (2026-09-06)**: 둘 다 "사람이 읽는 메모"지만 독자가 다르다. `caution`은 치환 시 사용자에게 보여줄 안내문이라 프런트(`TermLookupPopover`)가 그대로 렌더링하고 `DictionaryContextLines`가 `DetailTier.MAX`에서 LLM 프롬프트에도 싣는다 — **사용자와 LLM 둘 다에게 노출**된다. `review_note`는 반대로 검수자가 남긴 내부 결정 이력(예: "2026-08-30 검수: easy-doc 내장 목록 대치어 채택으로 substitute 승격 (docs/consumer-overlap-policy.md §3.2)")이고, `export_index`(easy-doc이 실제로 읽는 `easy_dict.index.json`)는 이 필드를 절대 내보내지 않는다 — `export_full`(전체 덤프, 감사 추적용)에만 남는다. 두 필드가 나뉘기 전에는 `caution` 하나에 둘을 섞어 써서 내부 검수 메모가 사용자·LLM에 그대로 유출됐다(474건 중 372건). `dictionary/src/easydict/review_notes.py`의 `classify_caution()`이 날짜·검수/승격/비활성화/채택·`§`·`docs/`·`consumer-overlap`·`골든 코퍼스`·`내장 목록`·참고용/프롬프트에 신호로 판정한다. 이 함수는 두 곳에서 쓰여 **상시 파이프라인 불변식**이 된다 — ⑴ `build.py`의 `row_to_entries()`가 CSV의 `note` 컬럼을 Entry에 담기 **직전**에 호출해, 다음에 같은 CSV(welfare_seed_*.csv 등)를 다시 읽어도 검수 메모가 caution에 재적재되지 않는다(잉제스트 시점 게이트), ⑵ 기존 `dist/easy_dict.sqlite3`에 이미 쌓여 있던 474건은 `migrate_existing_cautions()`(같은 파일 하단 CLI, `python3 -m easydict.review_notes`)로 한 번 정리했다. 산출물 쪽에는 `tools/check_invariants.py`의 "caution의 검수 메모 잔존 금지" 검사가 `check.sh`에 묶여 있어, 두 게이트를 모두 우회하는 경로가 생겨도 `easy_dict.index.json`의 `caution`에 이 패턴이 남으면 빌드가 실패한다. `NEEDS_CONFIRMATION_MARKER`(`[확인 필요]`, `models.py`)가 있는 caution은 build.py가 status=deprecated를 강제하는 제어 신호라 이 세 지점 모두에서 예외로 보존한다.
 
@@ -294,11 +298,14 @@ entry_tags (entry_id INTEGER REFERENCES entries(id) ON DELETE CASCADE,
   "surface_index": { "차상위계층": [12], "차상위 계층": [12], "명기하여": [7] },
   "entries": {
     "12": { "t": "차상위계층", "e": "기초생활수급자 바로 위의 저소득층",
-            "d": "...", "s": "gloss", "r": "high", "p": 150, "g": ["welfare","admin"] }
+            "d": "...", "s": "gloss", "r": "high", "p": 150, "g": ["welfare","admin"],
+            "v": "reviewed" }
   }
 }
 ```
 키를 1글자로 줄인 이유: 이 파일은 백엔드 메모리에 상주하며 수천~수만 엔트리로 커진다.
+
+`v`(뜻풀이 검수 이력, 2026-09-23)만 **선택 키**다 — 사람이 `definition_reviewed_at`/`definition_reviewed_by`를 채운 엔트리에만 `"reviewed"`로 붙고, 표시가 없으면 `null`이 아니라 키 자체가 없다(§3.2). 2026-09-23 현재 표시된 엔트리는 0건이라 이 키는 실제 산출물에 아직 나타나지 않는다.
 
 ### 4.4 `easy_dict.simple.jsonl` — 기획서 호환 형태
 기획서에 적힌 최소 형태를 그대로 유지해 초기 프로토타입/수작업 검토에 쓴다.

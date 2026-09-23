@@ -132,7 +132,7 @@ easy-doc의 골든셋은 `required_facts.canonical`이 변환 결과에 남아 �
 
 ## 빌드 검증
 
-빌드 파이프라인 자체의 계약(`tests/`)과 보조 도구(`tools/tests/`), 현재 `dist/` 산출물이 스스로 모순되지 않는지(층위 1 불변식 — `substitute`+`review` 공존 금지, `readability` 범위, `deprecated` 유출, `simple.jsonl` 계약, 도달 가능성, 보호 엔트리 승리, 엔트리 귀속), 그리고 실제 문서를 통과시키면 무슨 일이 나는지(층위 2 — 경계 위반·원문 파괴·활용형 비문·상충 지침)를 명령 하나로 확인한다.
+빌드 파이프라인 자체의 계약(`tests/`)과 보조 도구(`tools/tests/`), 현재 `dist/` 산출물이 스스로 모순되지 않는지(층위 1 불변식 — `substitute`+`review` 공존 금지, `readability` 범위, `deprecated` 유출, `simple.jsonl` 계약, 도달 가능성, 보호 엔트리 승리, `v` 값 규약, 빈 뜻풀이에 `v` 표시, DB-색인 `v` 일치, `definition_reviewed_at` 형식, 엔트리 귀속), 그리고 실제 문서를 통과시키면 무슨 일이 나는지(층위 2 — 경계 위반·원문 파괴·활용형 비문·상충 지침)를 명령 하나로 확인한다.
 
 ```bash
 ./scripts/check.sh
@@ -165,21 +165,25 @@ easy-dictionay/
 │   ├── schema.sql             # SQLite DDL (정본 스키마)
 │   └── entry.schema.json      # easy_dict.json entries[] JSON Schema
 ├── data/
-│   └── raw/
-│       ├── *.csv                 # 실제 원천 데이터(§데이터 출처와 라이선스 참고)
-│       ├── *.known-errors.md     # 원천 자체의 알려진 오류 기록(우리가 임의로 안 고침)
-│       └── sample/*.csv          # 가상 샘플 CSV (인코딩/헤더 변형 테스트용)
+│   ├── raw/
+│   │   ├── *.csv                 # 실제 원천 데이터(§데이터 출처와 라이선스 참고)
+│   │   ├── *.known-errors.md     # 원천 자체의 알려진 오류 기록(우리가 임의로 안 고침)
+│   │   └── sample/*.csv          # 가상 샘플 CSV (인코딩/헤더 변형 테스트용)
+│   └── reviews/                  # 사람 검수 결정 SQL + 검수 큐(§검수된 정의 공급)
 ├── src/easydict/
 │   ├── __init__.py             # 공개 심볼 재노출
 │   ├── models.py                # Source/Variant/Example/Entry 데이터클래스, 태그 표준값
 │   ├── normalize.py             # 한국어 정규화·변형형 생성 (NFC, 조사 경계, 활용형)
 │   ├── build.py                  # CSV → SQLite 빌드 파이프라인
 │   ├── export.py                 # SQLite → JSON 3종 익스포트
+│   ├── review_notes.py           # caution/review_note 분리 규칙 + 마이그레이션
+│   ├── definition_review.py      # 뜻풀이 검수 이력(v=reviewed) 규칙 + 마이그레이션
 │   └── lookup.py                  # 조회/매칭/프롬프트 컨텍스트 생성
 ├── tools/                      # 보조 스크립트(갭 추출·예문 추출·불변식 검사 등) + tools/tests/
 │   ├── check_invariants.py     # 층위 1 산출물 불변식 (dist/ 읽기 전용)
 │   ├── audit_corpus.py         # 층위 2 코퍼스 통과 검사 (§빌드 검증)
-│   └── audit_corpus.baseline.json  # 층위 2 기준선 — 커밋 대상(갭 리스트와 반대)
+│   ├── audit_corpus.baseline.json  # 층위 2 기준선 — 커밋 대상(갭 리스트와 반대)
+│   └── export_review_queue.py  # 검수자용 뜻풀이 검수 큐 CSV (§검수된 정의 공급)
 ├── scripts/
 │   └── check.sh                # 검사 진입점(§빌드 검증) — tests + tools/tests + 층위 1 불변식 + 층위 2 코퍼스 통과
 ├── docs/
@@ -210,3 +214,43 @@ Kotlin 제품의 컨텍스트는 이제 정의·주의사항을 함께 제공하
 [검수 SQL](data/reviews/2026-09-12-prompt-rag.sql)은 `시술`, `환수`, `중위소득`의 뜻풀이를 수정한다. 정본과 배포 JSON에 함께 반영했고 원천 CSV와 사람 검수 완료 표시는 유지했다. 정본 재생성 시 2026-09-11 결정 다음에 적용한다.
 
 Kotlin 생성 컨텍스트는 일반적인 정의와 검수 완료 예문을 참고 자료로 제공한다. `caution`은 다른 문서의 사업 조건이 섞인 사람용 메모이므로 생성 프롬프트에서 제외한다. 조회 데이터에서는 유지한다. 직전 절의 ‘정의·주의사항을 함께 제공’한다는 설명을 이 정책이 대체한다. 고정 출력은 Kotlin 제품 클래스로 갱신했으며 Python 비교 작업을 추가하지 않았다. 실측과 한계는 [재검증 보고서](../docs/reports/2026-09-12-prompt-rag-revalidation.md)에 기록한다.
+
+## 검수된 정의(v=reviewed) 공급
+
+easy-doc(Kotlin)의 R3 생성 컨텍스트와 R6 설명 패널은 **사람이 읽고 승인한 뜻풀이만** 쓴다. 배포 색인(`easy_dict.index.json`)의 엔트리에 `"v": "reviewed"`가 붙어 있는지로 그것을 가른다 — 키가 없으면 미검수(`DefinitionReviewStatus.UNVERIFIED`)다. Kotlin은 모르는 값이면 기동을 거부하고 `unverified`·null·빈 문자열은 조용히 UNVERIFIED로 흡수한다 — 조용한 흡수도 규약 위반이라 여기서 잡는다(`tools/check_invariants.py`의 「v 값 규약」이 `"reviewed"` 아닌 값을 전부 위반으로 잡으므로, 이 저장소가 만드는 색인에는 애초에 `unverified` 같은 값이 실리지 않는다).
+
+이 표시는 정본의 두 컬럼에서만 나온다.
+
+| 컬럼 | 뜻 |
+|---|---|
+| `entries.definition_reviewed_at` | 사람이 이 뜻풀이를 읽고 승인한 시각 |
+| `entries.definition_reviewed_by` | 승인한 사람(또는 검수 주체) |
+
+`export_index()`는 **두 값이 모두 차 있고 `definition`이 비어 있지 않은** 엔트리에만 `v`를 싣는다(`src/easydict/definition_review.py`). 표시가 없으면 `v: null`이 아니라 **키 자체를 만들지 않는다** — 그래서 아무도 검수하지 않은 지금의 `dist/`는 이 기능 도입 전과 바이트가 같다. 현재 표시된 엔트리는 **0건**이다.
+
+**`status`·`risk_level`·`replace_strategy`·원천·`review_note`에서 자동 승격하지 않는다.** `active`는 "자동 치환에 써도 된다"는 분류지 "사람이 이 문장을 읽었다"가 아니고, 2026-09-11/09-12 검수 SQL도 뜻풀이를 고치면서 "사람 검수 완료 표시는 변경하지 않음"이라고 스스로 못 박았다. 자동 승격은 아무도 읽지 않은 문장을 LLM 프롬프트에 밀어 넣는 사고다(`docs/reports/2026-09-21-r3-implementation.md` 「리뷰 리스크」). 산출물 쪽에서는 `tools/check_invariants.py`의 「`v` 값 규약」·「빈 뜻풀이에 v 표시」 검사가 `check.sh`에 묶여 이 규약을 다시 확인한다.
+
+### 절차 (큐 → 검수 → SQL → 재빌드 → 내보내기)
+
+1. **검수 큐를 뽑는다.** 배포되는 엔트리 중 뜻풀이가 있는 것 전부(현재 423건)를 CSV로 만든다. 뜻풀이가 그대로 사용자·LLM에게 설명으로 나가는 `replace_strategy=keep`·`risk_level=high`(현재 43건)가 앞에 오고, 나머지는 표제어 가나다순이다. Excel이 한글을 깨뜨리지 않게 UTF-8 BOM을 붙인다.
+
+   ```bash
+   PYTHONPATH=src python3 tools/export_review_queue.py \
+       --output data/reviews/2026-09-23-definition-review-queue.csv
+   ```
+
+   이번 회차 큐는 `data/reviews/2026-09-23-definition-review-queue.csv`로 커밋되어 있다(423행). 컬럼은 `id, term, easy_term, definition, replace_strategy, risk_level, sources, reviewed_at, reviewed_by`이고, 뒤 두 칸이 검수자가 채우는 자리다. `id`가 첫 칸이다 — 급여·중증·교육급여·주거급여처럼 같은 `term`에 엔트리가 여럿인 표제어(4개)가 있어 검수 SQL이 `term`이 아니라 `id`로 행을 정확히 골라야 한다(3단계).
+
+2. **사람이 읽는다.** `definition` 칸을 눈으로 읽고 "이 문장을 그대로 사용자에게 보여주고 생성 재료로 써도 된다"고 판단한 행에만 `reviewed_at`/`reviewed_by`를 적는다. 판단이 서지 않으면 비워 둔다 — 비어 있는 것이 정상 상태다.
+
+3. **검수 SQL을 쓴다.** `data/reviews/2026-09-23-reviewed-definitions.template.sql`(전부 주석이라 그대로 실행하면 no-op)을 복사해 `data/reviews/<검수일>-reviewed-definitions.sql`을 만들고, 2단계에서 채운 행의 `id`만 `WHERE id IN (...)`에 넣는다(`term`으로 걸지 않는다 — 위 4개 표제어에서 미검수 행까지 함께 표시해버린다). 이 새 파일을 만들면 **같은 커밋에서** 4단계의 재생성 순서 목록과 템플릿 파일(`data/reviews/2026-09-23-reviewed-definitions.template.sql`)의 "정본 재생성 시에는 ... 순서로 적용" 줄 양쪽에 이 파일 이름을 이어 붙인다 — 둘 중 하나만 고치면 다음 사람이 옛 순서로 재생성해 최신 검수 표시를 놓친다.
+
+   ```bash
+   sqlite3 dist/easy_dict.sqlite3 < data/reviews/<검수일>-reviewed-definitions.sql
+   ```
+
+4. **내보낸다.** 정본을 다시 만들 때는 검수 SQL을 2026-09-11 → 2026-09-12 → 이 파일 순서로(3단계에서 새 파일을 추가했다면 그 뒤까지) 적용한 뒤 `export_all`을 돌린다. 기존 `dist/easy_dict.sqlite3`처럼 이 컬럼이 없던 시절 만들어진 DB는 `easydict.definition_review.ensure_definition_review_columns()` + `easydict.review_notes.ensure_v_entry_full_view()`가 `ALTER TABLE`로 메운다(`review_note` 때와 같은 처방, 재실행 안전; `PYTHONPATH=src python3 -m easydict.definition_review --db dist/easy_dict.sqlite3`로 직접 돌릴 수도 있다).
+
+   **주의**: 커밋된 `dist/easy_dict.index.json`은 2026-09-13(f9d4380e)에 손으로 patch됐다(entries 키를 숫자 id 순으로 정렬하고 파일 끝에 줄바꿈을 추가) — `export_index()` 코드 자체는 키를 승자 정렬 순서로 쓰고 줄바꿈을 붙이지 않는다. 그래서 `export_all`을 다시 돌리면 **엔트리 값이 하나도 안 바뀌었어도 파일 전체가 diff로 잡힌다** — 예상된 동작이다. `dist/`와 백엔드 리소스 사본은 항상 같이 갱신한다(5단계).
+
+5. **백엔드에 옮긴다.** `./gradlew :infrastructure:syncDictionaryIndex`로 `dist/easy_dict.index.json`을 `backend-kotlin/infrastructure/src/main/resources/dictionary/`에 동기화한 뒤, `./gradlew :infrastructure:checkDictionaryIndex`로 두 파일의 바이트 동일성을 확인한다. `syncDictionaryIndex`를 빠뜨리면 `checkDictionaryIndex`가 실패해 백엔드 빌드가 실패한다.

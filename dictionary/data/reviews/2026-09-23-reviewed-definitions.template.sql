@@ -1,0 +1,110 @@
+-- 뜻풀이 검수 완료 표시 — 틀 (2026-09-23)
+--
+-- 이 파일은 **틀이다. 그대로 실행하면 아무 일도 일어나지 않는다**(전부 주석).
+-- 사람이 실제로 검수한 뒤, 이 파일을 복사해
+-- `data/reviews/<검수일>-reviewed-definitions.sql`로 만들고 아래 예시의 주석을
+-- 풀어 id를 채운다. 전체 절차는 README 「검수된 정의(v=reviewed) 공급」.
+--
+-- ## 규칙 (이걸 어기면 이 표시는 의미가 없다)
+--
+-- 1. **사람이 실제로 읽은 뜻풀이만 적는다.** 검수 큐 CSV
+--    (`2026-09-23-definition-review-queue.csv`)의 `definition` 칸을 눈으로 읽고
+--    "이 문장을 그대로 사용자에게 보여주고 LLM 생성 재료로 써도 된다"고 판단한
+--    행의 `id`만 `WHERE id IN (...)`에 넣는다. 훑어본 것, 맞겠거니 한 것은
+--    넣지 않는다 — 이 표시가 붙은 뜻풀이는 easy-doc의 R3 생성 컨텍스트와 R6
+--    설명 패널에 그대로 들어간다.
+-- 2. **`term`이 아니라 `id`로 좁힌다.** `WHERE term IN (...)`은 위험하다 —
+--    현재 급여·중증·교육급여·주거급여 4개 표제어는 엔트리가 각각 2건씩이라
+--    (`SELECT term, count(*) FROM entries GROUP BY term HAVING count(*) > 1`로
+--    확인), term 하나로 걸면 검수 큐에서 미처 읽지 않은 다른 행까지 함께
+--    "검수 완료"로 표시해버린다. 검수 큐 CSV의 `id` 칸이 정확히 그 행 하나를
+--    가리키므로 항상 `id`로 좁힌다(예시 1·2).
+-- 3. **다른 신호에서 파생시키지 않는다.** `status='active'`, `risk_level`,
+--    `replace_strategy`, 원천(seed) 출처, `review_note`는 검수 완료 표시가
+--    아니다. 그런 조건으로 한꺼번에 UPDATE 하는 SQL을 쓰지 않는다
+--    (docs/reports/2026-09-21-r3-implementation.md 「리뷰 리스크」).
+-- 4. **`definition_reviewed_by`를 반드시 함께 적는다.** 시각만 있고 사람이
+--    없으면 출처가 아니라서 `export_index()`가 `v`를 붙이지 않는다. 이
+--    저장소는 공개 저장소이므로 실명보다 **검수 주체(팀/역할, 예: '사전팀',
+--    'welfare-review')를 우선 적는다** — 컬럼이 뜻하는 것은 "누가 승인했는가"
+--    의 식별자이지 반드시 개인 실명이어야 하는 것은 아니다. 팀/역할 식별자를
+--    쓰기 어려운 조직이면 개인 이름을 적어도 된다.
+-- 5. **날짜는 ISO-8601로, 반드시 작은따옴표로 감싼다.**
+--    `definition_reviewed_at`은 `YYYY-MM-DD`(예: `'2026-09-30'`) 또는
+--    `YYYY-MM-DDTHH:MM:SSZ` 형식의 **문자열**이어야 한다 —
+--    `definition_review.is_definition_reviewed()`가 이 형식이 아니면 검수
+--    완료로 보지 않는다(fail closed). 따옴표를 빼고 `2026-09-30`처럼 쓰면
+--    SQLite가 이를 산술식(`2026-9-30` = `1987`)으로 평가해 정수를 저장한다
+--    — 그 값도 문자열이 아니므로 결국 검수 표시는 안 붙지만(fail closed),
+--    성공한 것처럼 보이는 오타이니 항상 작은따옴표로 감싼다. 형식은 있지만
+--    이 패턴에 안 맞는 값(예: 슬래시 구분자)은 `tools/check_invariants.py`가
+--    "definition_reviewed_at 형식 오류"로 따로 잡아 조용히 묻히지 않게 한다.
+-- 6. **뜻풀이를 고치는 일과 같은 문장에서 하지 않는다.** 뜻풀이 수정은 기존
+--    검수 SQL(2026-09-11/2026-09-12)처럼 별도 UPDATE로 하고, 고친 문장을 사람이
+--    다시 읽은 뒤에 이 표시를 붙인다.
+-- 7. 이 표시를 되돌릴 때는 두 컬럼을 함께 NULL로 되돌린다(맨 아래 예시).
+--
+-- ## 적용
+--
+--   sqlite3 dist/easy_dict.sqlite3 < data/reviews/<검수일>-reviewed-definitions.sql
+--
+-- 정본 재생성 시에는 2026-09-11 → 2026-09-12 → 이 파일 순서로 적용하고
+-- 내보내기(`export_all`)를 돌린다. **이 순서 목록은 이 파일 하나까지만
+-- 반영한 것이다** — 다음에 새 `data/reviews/<검수일>-reviewed-definitions.sql`을
+-- 만들 때마다 README 「검수된 정의(v=reviewed) 공급」 4단계와 바로 위 순서
+-- 목록 양쪽에 그 파일을 이어 붙인다(README·이 틀 어느 한쪽만 고치면 다음
+-- 사람이 옛 순서로 재생성해 최신 검수 표시를 놓친다). 적용 후 표시된 건수는
+-- `definition_review.is_definition_reviewed()`(정의·시각·검수자 셋 다 채워짐 +
+-- 시각이 ISO-8601)와 같은 조건으로 확인한다 — `definition_reviewed_at IS NOT
+-- NULL`만 보면 시각만 있고 검수자가 없거나 뜻풀이가 빈 행까지 세어
+-- 과대집계된다.
+--
+--   sqlite3 dist/easy_dict.sqlite3 \
+--     "SELECT count(*) FROM entries
+--       WHERE definition IS NOT NULL AND trim(definition) != ''
+--         AND definition_reviewed_at IS NOT NULL AND trim(definition_reviewed_at) != ''
+--         AND definition_reviewed_by IS NOT NULL AND trim(definition_reviewed_by) != '';"
+--
+-- ----------------------------------------------------------------------------
+-- 예시 1 — id로 표시하기 (검수 큐 CSV의 id 칸을 그대로 쓴다)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = '2026-09-30',
+--        definition_reviewed_by = '사전팀'
+--  WHERE id IN (2142, 2155)  -- 과태료(2142), 고지(2155)
+--    AND definition IS NOT NULL
+--    AND trim(definition) != '';
+-- COMMIT;
+--
+-- ----------------------------------------------------------------------------
+-- 예시 1' — (하지 말 것) term으로 거는 예 — 급여·중증·교육급여·주거급여처럼
+-- 엔트리가 여럿인 표제어에서 미검수 행까지 함께 표시해버린다. 규칙 2 참고.
+-- ----------------------------------------------------------------------------
+-- -- UPDATE entries SET definition_reviewed_at = '2026-09-30', definition_reviewed_by = '사전팀'
+-- --  WHERE term IN ('급여');  -- 하지 말 것: id 1899/2141 두 행이 한꺼번에 표시된다
+--
+-- ----------------------------------------------------------------------------
+-- 예시 2 — 같은 표제어에 엔트리가 여럿일 때도 id는 똑같은 방식으로 좁힌다
+-- (검수 큐 CSV에 같은 term이 두 줄 이상 나오면 이 경우다. id는 CSV의 id
+--  칸을 쓰거나, 필요하면
+--  `SELECT id, term, easy_term, definition FROM entries WHERE term = '수리';`)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = '2026-09-30',
+--        definition_reviewed_by = '사전팀'
+--  WHERE id = 831
+--    AND definition IS NOT NULL
+--    AND trim(definition) != '';
+-- COMMIT;
+--
+-- ----------------------------------------------------------------------------
+-- 예시 3 — 표시 취소(검수 결과 "이 뜻풀이는 쓰면 안 된다"로 뒤집혔을 때)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = NULL,
+--        definition_reviewed_by = NULL
+--  WHERE id IN (2142);
+-- COMMIT;

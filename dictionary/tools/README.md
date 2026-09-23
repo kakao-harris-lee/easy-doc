@@ -386,3 +386,29 @@ python3 tools/fetch_krdict.py --input <갭 리스트 CSV> \
 # 실제로 채워지는지까지 확인했다. 검증 스크립트 자체는 커밋하지
 # 않았다(임시 검증용, tools/tests/fixtures/*.xml만 남겨 뒀다).
 ```
+
+## `export_review_queue.py`
+
+검수자가 읽을 **뜻풀이 검수 큐 CSV**를 정본(`dist/easy_dict.sqlite3`)에서 뽑는다.
+배포되는 엔트리(`status != 'deprecated'`) 중 뜻풀이가 비어 있지 않은 것 전부가
+대상이고(2026-09-23 기준 423건), 뜻풀이가 그대로 사용자 화면과 LLM 프롬프트에
+들어가는 `replace_strategy='keep'`·`risk_level='high'`(43건)를 앞 묶음으로,
+나머지를 뒤 묶음으로 두고 각 묶음 안은 표제어 가나다순으로 정렬한다. 표준
+라이브러리만 쓰고 **읽기 전용**이다(`--output`으로 지정한 CSV만 만든다).
+
+```bash
+PYTHONPATH=src python3 tools/export_review_queue.py \
+    --output data/reviews/2026-09-23-definition-review-queue.csv
+```
+
+컬럼은 `term, easy_term, definition, replace_strategy, risk_level, sources,
+reviewed_at, reviewed_by`이고 뒤 두 칸이 검수자가 채우는 자리다. Excel이 한글을
+깨뜨리지 않게 UTF-8 BOM(`utf-8-sig`)을 붙인다.
+
+### 갭 리스트와 달리 이 산출물은 커밋한다
+
+`extract_gaps.py`의 갭 리스트는 파생물이라 커밋하지 않지만, 검수 큐는 **사람이
+그 위에 직접 작업하는 대상**이라 회차별로 커밋한다(`data/reviews/<날짜>-definition-review-queue.csv`).
+다음 사람이 "무엇을 검수 대상으로 삼았는지"와 "지금 몇 건이 남았는지"를 되짚을
+수 있어야 하기 때문이다. 검수 결과는 CSV가 아니라 검수 SQL(`data/reviews/*.sql`)로
+정본에 들어간다 — 절차 전체는 README의 「검수된 정의(v=reviewed) 공급」 참고.

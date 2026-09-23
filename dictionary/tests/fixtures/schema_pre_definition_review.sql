@@ -1,3 +1,4 @@
+-- PR #147(정의 검수 이력 도입, 2026-09-23) 직전 스키마 — `git show 927a13f9:dictionary/schema/schema.sql`의 고정 스냅샷. 수정 금지(회귀 테스트가 구버전 DB를 재현하는 데 쓴다).
 -- ============================================================================
 -- easy-dictionary (쉬운 말 사전) SQLite 스키마
 -- 이 파일은 SQLite를 정본(source of truth)으로 삼는다 (DESIGN.md §3).
@@ -76,34 +77,6 @@ CREATE TABLE IF NOT EXISTS entries (
     -- review_notes.ensure_review_note_column()이 ALTER TABLE로 뒤늦게 추가한다
     -- (2026-09-06 caution/review_note 분리 — dictionary/DESIGN.md §3.2 참고).
     review_note       TEXT,
-
-    -- definition_reviewed_at / definition_reviewed_by: 이 뜻풀이(definition)를
-    -- **사람이 실제로 읽고** "생성 재료로 써도 된다"고 판단한 이력. 둘 다
-    -- 사람만 채운다 — build.py도, 어떤 자동 경로도 이 값을 쓰지 않는다.
-    -- data/reviews/*.sql의 검수 결정으로만 들어온다(README 「검수된 정의
-    -- (v=reviewed) 공급」).
-    --
-    -- export_index()는 두 값이 모두 있고 definition이 비어 있지 않은 엔트리에만
-    -- easy_dict.index.json의 `v` 키를 "reviewed"로 싣는다. Kotlin의
-    -- DefinitionReviewStatus가 그 키를 읽어 R3 생성 컨텍스트·R6 설명 패널에
-    -- 쓸 뜻풀이를 고른다. 표시가 없으면 키 자체가 없다(= UNVERIFIED).
-    --
-    -- **status·risk_level·replace_strategy·원천·review_note에서 파생시키지
-    -- 않는다.** 'active'는 "자동 치환에 써도 된다"는 뜻이지 "사람이 이 뜻풀이를
-    -- 읽었다"는 뜻이 아니고, review_note는 빌드 이력이지 검수 완료 표시가
-    -- 아니다. 자동 승격은 읽지 않은 문장을 LLM 생성 재료로 밀어 넣는 사고다
-    -- (docs/reports/2026-09-21-r3-implementation.md 「리뷰 리스크」).
-    --
-    -- definition_reviewed_at의 형식은 ISO-8601 `YYYY-MM-DD`(예: '2026-09-30')
-    -- 또는 `YYYY-MM-DDTHH:MM:SSZ`이며, 값을 넣을 때 반드시 작은따옴표로 감싼
-    -- 문자열이어야 한다 — 따옴표 없이 `2026-09-30`처럼 쓰면 SQLite가 이를
-    -- 산술식(2026-9-30=1987)으로 평가해 정수를 저장한다.
-    -- definition_review.is_definition_reviewed()는 이 형식(REVIEWED_AT_PATTERN)이
-    -- 아니면 검수 완료로 보지 않고(fail closed), tools/check_invariants.py가
-    -- 형식은 있지만 이 패턴에 안 맞는 값을 별도로 잡아 오타가 조용히 묻히지
-    -- 않게 한다.
-    definition_reviewed_at  TEXT,
-    definition_reviewed_by  TEXT,
 
     -- readability: 1(가장 쉬움) ~ 3(여전히 조금 어려움).
     readability       INTEGER NOT NULL
@@ -322,8 +295,6 @@ SELECT
     e.risk_level,
     e.caution,
     e.review_note,
-    e.definition_reviewed_at,
-    e.definition_reviewed_by,
     e.readability,
     e.confidence,
     e.priority,
