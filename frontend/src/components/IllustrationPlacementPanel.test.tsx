@@ -299,4 +299,29 @@ describe('IllustrationPlacementPanel', () => {
     ).not.toBeInTheDocument()
     expect(saveButton).toBeEnabled()
   })
+
+  it('E17 320px 터치 대상 44px — select와 저장 버튼이 min-h-11 클래스를 쓴다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [illustration()] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue(placementsResponse())
+
+    render(
+      <IllustrationPlacementPanel
+        conversionId="c1"
+        contentRevision={1}
+        dirty={false}
+        units={['오늘 서류를 내세요.']}
+      />,
+    )
+
+    await screen.findByRole('combobox', { name: '1번째 줄 그림' })
+
+    // jsdom은 레이아웃을 계산하지 않으므로 실제 픽셀 높이 대신, 저장소가 44px 터치
+    // 대상에 쓰는 고정 클래스(`min-h-11`)를 모든 select·button이 갖는지로 검증한다.
+    for (const select of screen.getAllByRole('combobox')) {
+      expect(select.className).toContain('min-h-11')
+    }
+    for (const button of screen.getAllByRole('button')) {
+      expect(button.className).toContain('min-h-11')
+    }
+  })
 })

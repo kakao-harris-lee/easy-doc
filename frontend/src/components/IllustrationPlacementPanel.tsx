@@ -221,7 +221,7 @@ export function IllustrationPlacementPanel({
                   </div>
                   <select
                     aria-label={`${index + 1}번째 줄 그림`}
-                    className="h-10 rounded-md border border-input bg-card px-2 text-sm sm:w-48"
+                    className="min-h-11 rounded-md border border-input bg-card px-2 text-sm sm:w-48"
                     value={selections[index] ?? ''}
                     disabled={saving}
                     onChange={(event) => handleSelectionChange(index, event.target.value)}
@@ -258,6 +258,7 @@ export function IllustrationPlacementPanel({
             <Button
               type="button"
               variant="primary"
+              className="min-h-11"
               disabled={saveDisabled}
               loading={saving}
               onClick={() => void handleSave()}
