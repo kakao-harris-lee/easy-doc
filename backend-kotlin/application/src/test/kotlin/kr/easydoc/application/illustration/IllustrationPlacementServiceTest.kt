@@ -133,6 +133,36 @@ class IllustrationPlacementServiceTest {
     }
 
     @Test
+    fun `두 번째 저장도 처음 행 id 로 봉인한다`() {
+        val world = World()
+        val conversionId = world.seedDone(easyText = "첫째 줄\n둘째 줄")
+        val first = IllustrationPlacements(listOf(IllustrationPlacement(0, ASSET_VISIT_OFFICE.assetId)))
+        val second = IllustrationPlacements(listOf(IllustrationPlacement(1, ASSET_VISIT_OFFICE.assetId)))
+        world.service.replace(OWNER, conversionId, 1, first)
+        val rows = world.placements.rows
+        val cipher = world.cipher
+        val firstRowId = rows.getValue(conversionId).id
+
+        world.service.replace(OWNER, conversionId, 1, second)
+
+        val sealedRecord = cipher.sealed.last().second
+        assertThat(rows.getValue(conversionId).id)
+            .withFailMessage("대역이 행 id 를 갈아 끼웠다 — 실물 ON CONFLICT 는 기존 id 를 유지한다")
+            .isEqualTo(firstRowId)
+        assertThat(sealedRecord)
+            .withFailMessage("두 번째 저장이 새 행 id 로 봉인했다 — 저장된 행 id 는 그대로라 다음 조회가 깨진다")
+            .isEqualTo(firstRowId)
+
+        val reopened = world.service.read(OWNER, conversionId)
+
+        val openedRecord = cipher.decryptions.last().first
+        assertThat(reopened.placements).isEqualTo(second.entries)
+        assertThat(openedRecord)
+            .withFailMessage("조회가 저장 때와 다른 결속 인자로 열었다 — 실물이라면 태그 검증이 실패한다")
+            .isEqualTo(firstRowId)
+    }
+
+    @Test
     fun `빈 목록으로 저장하면 지운다`() {
         val world = World()
         val conversionId = world.seedDone(easyText = "첫째 줄\n둘째 줄")
@@ -276,6 +306,11 @@ class IllustrationPlacementServiceTest {
             conversionId: UUID,
         ): StoredIllustrationPlacements? = rows[conversionId]?.takeIf { owners[conversionId] == ownerId }
 
+        /**
+         * 실물 SQL 과 같은 upsert 규약 — `ON CONFLICT (conversion_id) DO UPDATE` 는 `id` 를
+         * 갱신하지 않으므로, 행이 이미 있으면 **기존 id 가 그대로 유지된다**([id] 는 행이 아직
+         * 없을 때만 쓰인다). `JdbcIllustrationPlacementRepositoryTest` 가 이 규약을 SQL 로 잰다.
+         */
         override fun replaceOwned(
             ownerId: UUID,
             conversionId: UUID,
@@ -284,7 +319,9 @@ class IllustrationPlacementServiceTest {
             payload: EncryptedContent,
         ): Boolean {
             owners[conversionId] = ownerId
-            rows[conversionId] = StoredIllustrationPlacements(id, conversionId, contentRevision, payload, Instant.EPOCH)
+            val keptId = rows[conversionId]?.id ?: id
+            rows[conversionId] =
+                StoredIllustrationPlacements(keptId, conversionId, contentRevision, payload, Instant.EPOCH)
             return true
         }
 

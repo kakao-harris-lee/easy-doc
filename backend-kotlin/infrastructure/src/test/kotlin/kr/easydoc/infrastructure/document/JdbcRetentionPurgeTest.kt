@@ -11,6 +11,7 @@ import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
+import kr.easydoc.infrastructure.DerivedRows
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.auth.JdbcUserRepository
 import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
@@ -106,6 +107,30 @@ class JdbcRetentionPurgeTest {
                 .query { rs, _ -> rs.getBigDecimal(1) }
                 .single()
         assertThat(release).isEqualByComparingTo("-0.1")
+    }
+
+    @Test
+    @DisplayName("만료 파기가 V28~V34 파생 행(검수·행동 안내·표 구조·이력·그림 배치)을 함께 지운다")
+    fun `만료 파기가 파생 행을 남기지 않는다`() {
+        val seeded = seedDocument()
+        DerivedRows.requireNonEmptyCensus()
+        val jobId =
+            DerivedRows.seed(dataSource, seeded.ownerId, seeded.workspaceId, seeded.documentId, seeded.conversionId)
+        assertThat(derivedCounts(seeded))
+            .withFailMessage("파생 행을 심지 못한 표가 있다 — 이 테스트가 아무것도 재지 못한다")
+            .isEqualTo(everyDerivedTable(1))
+        expire(seeded.documentId)
+
+        val result = purge(dryRun = false).run()
+
+        assertThat(result.purgedDocuments).isEqualTo(1)
+        assertThat(derivedCounts(seeded))
+            .withFailMessage("파생 행이 문서와 함께 사라지지 않았다 — 파기 범위가 새고 있다")
+            .isEqualTo(everyDerivedTable(0))
+        // 작업 감사행에는 일부러 FK 가 없다(V29 주석) — 청구 근거로 남는다.
+        assertThat(countIn("action_guide_jobs", "id", jobId))
+            .withFailMessage("작업 감사행이 사라졌다 — 문서가 지워져도 정산 근거는 남아야 한다")
+            .isEqualTo(1)
     }
 
     @Test
@@ -214,6 +239,25 @@ class JdbcRetentionPurgeTest {
         }
         return Seeded(documentId, conversionId, owner, workspace)
     }
+
+    /** [DerivedRows.CENSUS] 의 「표 이름 → 남은 행 수」. */
+    private fun derivedCounts(seeded: Seeded): Map<String, Int> =
+        DerivedRows.counts(dataSource, seeded.documentId, seeded.conversionId)
+
+    /** 모든 파생 표가 [rows] 행씩인 기대값 — 어긋난 표 이름이 실패 메시지에 그대로 나온다. */
+    private fun everyDerivedTable(rows: Int): Map<String, Int> =
+        DerivedRows.CENSUS.associate { (table, _) -> table to rows }
+
+    private fun countIn(
+        table: String,
+        column: String,
+        value: UUID,
+    ): Int =
+        jdbc
+            .sql("SELECT count(*) FROM $table WHERE $column = :value")
+            .param("value", value)
+            .query { rs, _ -> rs.getInt(1) }
+            .single()
 
     private fun expire(documentId: UUID) {
         jdbc

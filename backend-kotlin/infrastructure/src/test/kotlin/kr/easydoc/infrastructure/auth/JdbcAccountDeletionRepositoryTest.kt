@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.auth
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
+import kr.easydoc.infrastructure.DerivedRows
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
@@ -166,10 +167,14 @@ class JdbcAccountDeletionRepositoryTest {
         insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
         val documentId = insertDocument(userId, workspaceId)
         val conversionId = insertConversion(documentId)
-        insertDocumentChildRows(documentId, conversionId)
+        DerivedRows.requireNonEmptyCensus()
+        DerivedRows.seed(dataSource(), userId, workspaceId, documentId, conversionId)
         val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = false)
         // 픽스처가 운영과 같은 상태인지 먼저 못박는다 — 활성 작업에는 예약 원장 한 행이 있다.
         assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isEqualTo(1)
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행을 심지 못한 표가 있다 — 아래 0건 단언이 아무것도 재지 못한다")
+            .isEqualTo(everyDerivedTable(1))
 
         // 서비스가 하는 순서 그대로 — 피드백을 먼저, 사용자를 나중에.
         assertThatCode {
@@ -181,11 +186,9 @@ class JdbcAccountDeletionRepositoryTest {
         assertThat(countWhere("workspaces", "user_id", userId)).isZero()
         assertThat(countWhere("documents", "user_id", userId)).isZero()
         assertThat(countWhere("conversions", "document_id", documentId)).isZero()
-        assertThat(countWhere("document_table_structures", "document_id", documentId)).isZero()
-        assertThat(countWhere("action_guides", "conversion_id", conversionId)).isZero()
-        assertThat(countWhere("review_assessments", "conversion_id", conversionId)).isZero()
-        assertThat(countWhere("review_snapshots", "conversion_id", conversionId)).isZero()
-        assertThat(countWhere("illustration_placements", "conversion_id", conversionId)).isZero()
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("V28~V34 파생 행이 탈퇴 뒤에도 남았다 — 파기 범위가 새고 있다")
+            .isEqualTo(everyDerivedTable(0))
         // 해제 거래는 trigger 가 적고, 곧이어 `users` CASCADE 로 함께 사라진다.
         assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
         // 작업 행 자체는 설계상 남는다(FK 가 SET NULL) — 정산 상태만 종결로 바뀐다.
@@ -228,6 +231,62 @@ class JdbcAccountDeletionRepositoryTest {
         assertThat(call.first).isEqualTo("outcome_unknown")
         assertThat(call.second).isNull()
     }
+
+    /**
+     * 수용 기준 5·6·7 의 V28~V34 확장 — 검수 지원(V28)·행동 안내 후보와 안내문(V30)·표
+     * 구조(V32)·검수 이력(V33)·그림 배치(V34)는 전부 `documents`/`conversions` 에
+     * `ON DELETE CASCADE` 로 매달려 있으니 탈퇴 한 번으로 사라져야 한다.
+     *
+     * 활성 작업이 없는 갈래를 여기서 잰다 — [DerivedRows.seed] 가 심는 작업은 끝난 상태다.
+     * 활성(`queued`/`running`) 작업을 쥔 계정의 탈퇴는 위 두 시험이 따로 잰다.
+     */
+    @Test
+    @DisplayName("문서 있는 계정을 탈퇴하면 V28~V34 파생 행이 전부 0건이 된다")
+    fun `탈퇴가 V28부터 V34까지의 파생 행을 지운다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        insertCreditAccount(workspaceId, reserved = 0)
+        DerivedRows.requireNonEmptyCensus()
+        val jobId = DerivedRows.seed(dataSource(), userId, workspaceId, documentId, conversionId)
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행을 심지 못한 표가 있다 — 이 테스트가 아무것도 재지 못한다")
+            .isEqualTo(everyDerivedTable(1))
+
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행이 탈퇴 뒤에도 남았다 — 파기 범위가 새고 있다")
+            .isEqualTo(everyDerivedTable(0))
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("action_guide_jobs", "id", jobId))
+            .withFailMessage("작업 감사행이 사라졌다 — FK 를 일부러 두지 않은 청구 근거다(V29)")
+            .isEqualTo(1)
+        assertThat(jobOwnerAndWorkspaceOf(jobId))
+            .withFailMessage("남은 작업 감사행이 아직 탈퇴한 사용자·작업 공간을 가리킨다 — V29 의 SET NULL 이 닿지 않았다")
+            .containsExactly(null, null)
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId))
+            .withFailMessage("탈퇴한 사용자를 가리키는 거래가 남았다 — FK CASCADE 가 닿지 않았다")
+            .isZero()
+        assertThat(countWhere("workspace_credit_accounts", "workspace_id", workspaceId))
+            .withFailMessage("작업 공간 크레딧 계정이 남았다 — V15 의 CASCADE 가 닿지 않았다")
+            .isZero()
+    }
+
+    /** [DerivedRows.CENSUS] 의 「표 이름 → 남은 행 수」. */
+    private fun derivedCounts(
+        documentId: UUID,
+        conversionId: UUID,
+    ): Map<String, Int> = DerivedRows.counts(dataSource(), documentId, conversionId)
+
+    /** 모든 파생 표가 [rows] 행씩인 기대값 — 어긋난 표 이름이 실패 메시지에 그대로 나온다. */
+    private fun everyDerivedTable(rows: Int): Map<String, Int> =
+        DerivedRows.CENSUS.associate { (table, _) -> table to rows }
 
     @Test
     @DisplayName("소셜 전용 계정(비밀번호 없음)도 탈퇴된다")
@@ -376,39 +435,6 @@ class JdbcAccountDeletionRepositoryTest {
             .param("jobId", jobId)
             .update()
         return id
-    }
-
-    /** V28~V34 가 문서·변환에 매단 자식 행들 — 명시 문서 삭제가 이들도 함께 지우는지 본다. */
-    private fun insertDocumentChildRows(
-        documentId: UUID,
-        conversionId: UUID,
-    ) {
-        jdbcClient
-            .sql(
-                """
-                INSERT INTO document_table_structures
-                    (document_id, payload_encrypted, encryption_scheme, key_version)
-                VALUES (:documentId, :bytes, :scheme, 1)
-                """.trimIndent(),
-            ).param("documentId", documentId)
-            .param("bytes", byteArrayOf(0))
-            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
-            .update()
-        CONVERSION_CHILD_ROWS.forEach { sql -> insertConversionChildRow(sql, conversionId) }
-    }
-
-    /** [CONVERSION_CHILD_ROWS] 의 문장들은 매개변수 이름이 같아 한 자리에서 묶어 채운다. */
-    private fun insertConversionChildRow(
-        sql: String,
-        conversionId: UUID,
-    ) {
-        jdbcClient
-            .sql(sql)
-            .param("id", UUID.randomUUID())
-            .param("conversionId", conversionId)
-            .param("bytes", byteArrayOf(0))
-            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
-            .update()
     }
 
     private fun feedbackCount(conversionId: UUID): Int =
@@ -595,35 +621,6 @@ class JdbcAccountDeletionRepositoryTest {
 
     private companion object {
         val HASH = PasswordHash("\$argon2id\$v=19\$m=65536,t=3,p=4\$YWJjZGVmZ2hpamtsbW5vcA\$c3RvcmVkLWhhc2g")
-
-        /**
-         * 변환에 매달린 V28~V34 자식 행들 — 모양(`id`·`conversion_id`·암호문·방식·세대)이 같다.
-         */
-        val CONVERSION_CHILD_ROWS =
-            listOf(
-                """
-                INSERT INTO action_guides
-                    (id, conversion_id, based_on_content_revision, guide_revision, status,
-                     payload_encrypted, encryption_scheme, key_version)
-                VALUES (:id, :conversionId, 1, 1, 'draft', :bytes, :scheme, 1)
-                """.trimIndent(),
-                """
-                INSERT INTO review_assessments
-                    (id, conversion_id, content_revision, analyzer_version, payload_encrypted,
-                     encryption_scheme, key_version)
-                VALUES (:id, :conversionId, 1, 'fixture-v1', :bytes, :scheme, 1)
-                """.trimIndent(),
-                """
-                INSERT INTO review_snapshots
-                    (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
-                VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
-                """.trimIndent(),
-                """
-                INSERT INTO illustration_placements
-                    (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
-                VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
-                """.trimIndent(),
-            )
 
         /** 활성 작업이 잡아 둔 예약량 — 작업 행·예약 원장·계정 `reserved` 가 같은 값을 쓴다. */
         const val RESERVED_CREDITS = 2
