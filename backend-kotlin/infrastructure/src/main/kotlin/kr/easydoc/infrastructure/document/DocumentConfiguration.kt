@@ -37,6 +37,7 @@ import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.actionguide.ActionGuideProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
+import kr.easydoc.infrastructure.illustration.IllustrationsProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.beans.factory.annotation.Value
@@ -61,6 +62,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
     ReviewSupportProperties::class,
     ActionGuideProperties::class,
     ExplanationsProperties::class,
+    IllustrationsProperties::class,
 )
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
@@ -193,6 +195,7 @@ class DocumentConfiguration {
         @Value("\${easydoc.table-relations.enabled:false}") tableRelationsEnabled: Boolean,
         @Value("\${easydoc.review-history.enabled:false}") reviewHistoryEnabled: Boolean,
         explanationsProperties: ExplanationsProperties,
+        illustrationsProperties: IllustrationsProperties,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -208,6 +211,7 @@ class DocumentConfiguration {
                     tableRelationsEnabled,
                     reviewHistoryEnabled,
                     explanationsProperties.enabled,
+                    illustrationsProperties.enabled,
                 ),
         )
 
@@ -356,12 +360,14 @@ class DocumentConfiguration {
     ): EnvelopeRotation = EnvelopeRotation(stores = stores, cipher = cipher, transaction = transactionRunner)
 }
 
+@Suppress("LongParameterList") // ReviewCapabilities 의 독립 기능 토글 개수이며 도메인 복잡도가 아니다.
 internal fun reviewCapabilitiesFor(
     reviewSupport: ReviewSupportProperties,
     actionGuide: ActionGuideProperties,
     tableRelationsEnabled: Boolean = false,
     reviewHistoryEnabled: Boolean = false,
     explanationsEnabled: Boolean = false,
+    illustrationsEnabled: Boolean = false,
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
@@ -369,5 +375,5 @@ internal fun reviewCapabilitiesFor(
         tableRelations = tableRelationsEnabled,
         reviewHistory = reviewHistoryEnabled,
         explanations = explanationsEnabled,
-        illustrations = false,
+        illustrations = illustrationsEnabled,
     )

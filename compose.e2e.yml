@@ -30,6 +30,8 @@
 #
 # `EASYDOC_EXPLANATIONS_ENABLED=true`는 R6 용어 설명 패널을 이 E2E 스택에서만 켠다
 # (`explanations.spec.ts`). 운영 기본값은 꺼짐이다.
+# `EASYDOC_ILLUSTRATIONS_ENABLED=true`는 R7 그림 카탈로그를 이 E2E 스택에서만 켠다 —
+# 실제 리소스 카탈로그를 그대로 쓰므로 별도 fake가 없다. 운영 기본값은 꺼짐이다.
 
 services:
   backend-api:
@@ -50,6 +52,7 @@ services:
       EASYDOC_TABLE_RELATIONS_ENABLED: "true"
       EASYDOC_REVIEW_HISTORY_ENABLED: "true"
       EASYDOC_EXPLANATIONS_ENABLED: "true"
+      EASYDOC_ILLUSTRATIONS_ENABLED: "true"
       EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"

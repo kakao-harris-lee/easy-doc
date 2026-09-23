@@ -79,6 +79,9 @@ class CorsConfig {
                 "X-Credit-Balance",
                 "X-Credits-Required",
                 "X-Personal-Data-Kinds",
+                // 그림 이미지(ER-15, 2.44.0) — 계약이 인라인으로 선언한 헤더는 전부 노출한다
+                // (`ContractHeaderDeclarationTest.INLINE_HEADERS`와 같은 집합이어야 한다).
+                "Content-Security-Policy",
             )
 
         /** Starlette `CORSMiddleware` 의 기본 `max_age`. Spring 기본값(1800)과 다르다. */

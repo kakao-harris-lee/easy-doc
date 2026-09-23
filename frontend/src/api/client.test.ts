@@ -13,6 +13,7 @@ import {
   getActionGuide,
   getActionGuideJob,
   getExplanations,
+  getIllustrations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
@@ -22,6 +23,7 @@ import {
   saveActionGuide,
   setUnauthorizedHandler,
   updateReviewSupportItem,
+  illustrationImageUrl,
 } from './client'
 import { readToken, writeToken } from './token'
 import type { ActionGuideContent } from './types'
@@ -203,6 +205,25 @@ describe('explanations API', () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/explanations`)
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+})
+
+describe('illustrations API', () => {
+  it('검수된 그림 카탈로그를 쿼리 없이 요청하고 signal을 전달한다', async () => {
+    const payload = { illustrations: [] }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    const controller = new AbortController()
+
+    await getIllustrations(controller.signal)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/illustrations`)
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+
+  it('그림 이미지의 상대 경로를 API base와 합쳐 절대 URL로 만든다', () => {
+    expect(illustrationImageUrl('/illustrations/visit-office/image')).toBe(
+      `${apiBaseUrl}/illustrations/visit-office/image`,
+    )
   })
 })
 

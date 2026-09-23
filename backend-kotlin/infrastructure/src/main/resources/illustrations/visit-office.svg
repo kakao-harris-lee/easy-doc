@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img">
+<title>사람이 건물 입구로 걸어 들어가는 그림</title>
+<rect x="30" y="14" width="26" height="40" />
+<line x1="30" y1="24" x2="56" y2="24" />
+<line x1="30" y1="34" x2="56" y2="34" />
+<line x1="30" y1="44" x2="56" y2="44" />
+<rect x="40" y="44" width="8" height="10" />
+<circle cx="14" cy="28" r="4" />
+<path d="M14 32 L14 44 L8 56" />
+<path d="M14 44 L20 56" />
+<path d="M14 36 L24 40" />
+</svg>

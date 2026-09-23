@@ -1,6 +1,7 @@
 package kr.easydoc.api.support
 
 import kr.easydoc.core.document.TableStructure
+import kr.easydoc.core.illustration.IllustrationAssetId
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
@@ -377,6 +378,16 @@ class GeneratedToStringProbes(
                         columnCount = 1,
                         cells = emptyList(),
                     ),
+                // IllustrationAssetId(ER-15)는 asset_id 문자열을 감싸지만 사용자 콘텐츠가
+                // 아니다 — `toString()`이 값을 그대로 낸다(`Illustration.toString()`이
+                // 이미 assetId만 노출해도 되는 값으로 다루는 것과 같은 전제). `Illustration
+                // .assetId` 필드로 `slotFor`가 이 타입에 닿으면 여기 등록이 없을 경우
+                // `productSlot`을 타고 `reachedWrappers`에 등록돼 `wrapperProbes`가 이
+                // 값을 감싸는 타입으로 다시 표본화한다 — 그러면 `toString()`이 표식을 그대로
+                // 내어 "값을 감싸는 타입이 값을 찍지 않는다" 검사에서 **거짓 누출**로
+                // 걸린다(사용자 콘텐츠가 아닌데 그 축의 규약을 적용받는 것). 유효한 표본
+                // 하나를 등록해 그 경로 자체를 건너뛴다 — `TableStructure`와 같은 처리다.
+                IllustrationAssetId::class to IllustrationAssetId.of("visit-office"),
             )
 
         /** 원소 하나짜리 표본을 만드는 컬렉션 갈래. 모르는 컬렉션은 [slotFor] 가 끊는다. */

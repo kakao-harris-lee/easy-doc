@@ -97,6 +97,10 @@ class ContractHeaderDeclarationTest {
                 "X-Credit-Balance",
                 "X-Credits-Required",
                 "X-Personal-Data-Kinds",
+                // 그림 이미지(ER-15, 2.44.0) — 값은 고정이지만 이 오퍼레이션 하나만 쓰는
+                // 헤더라 컴포넌트화하지 않았다(계약 `GET /illustrations/{asset_id}/image`
+                // 200 설명이 정본).
+                "Content-Security-Policy",
             )
 
         /** 반드시 세어져야 하는 헤더 — 바닥이다(정확 일치가 아니라 포함). */
@@ -112,6 +116,7 @@ class ContractHeaderDeclarationTest {
                 "X-Credit-Balance",
                 "X-Credits-Required",
                 "X-Personal-Data-Kinds",
+                "Content-Security-Policy",
             )
     }
 }

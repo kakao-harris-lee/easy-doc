@@ -56,4 +56,23 @@ class ReviewCapabilityFlagsTest {
         assertThat(on.tableRelations).isFalse()
         assertThat(on.reviewHistory).isFalse()
     }
+
+    @Test
+    fun `그림 카탈로그는 독립된 기능 설정을 따른다`() {
+        val off =
+            reviewCapabilitiesFor(ReviewSupportProperties(), ActionGuideProperties())
+        val on =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationsEnabled = true,
+            )
+
+        assertThat(off.illustrations).isFalse()
+        assertThat(on.illustrations).isTrue()
+        // 켜져도 다른 기능은 따라 켜지지 않는다.
+        assertThat(on.tableRelations).isFalse()
+        assertThat(on.reviewHistory).isFalse()
+        assertThat(on.explanations).isFalse()
+    }
 }
