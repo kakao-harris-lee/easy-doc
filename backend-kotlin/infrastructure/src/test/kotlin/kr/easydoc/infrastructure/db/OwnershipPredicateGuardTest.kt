@@ -435,6 +435,11 @@ class OwnershipPredicateGuardTest {
                 // 전에 이 DELETE로 명시로 지운다. 소유 술어(`d.user_id = :userId`)는
                 // 서브쿼리 안에 있다 — 아래 미방어 목록에는 없다.
                 "$AUTH/JdbcAccountDeletionRepository.kt | DELETE [conversion_feedback, conversions, documents]",
+                // 같은 탈퇴 트랜잭션의 명시 문서 삭제 — `users` CASCADE 가 문서를 지날 때 V29 의
+                // BEFORE DELETE trigger 가 적는 해제 거래가 이미 사라진 작업 공간·사용자를
+                // 가리켜 FK 위반이 나던 자리다. 소유 술어(`user_id = :userId`)가 문장에 직접
+                // 있어 아래 미방어 목록에는 없다.
+                "$AUTH/JdbcAccountDeletionRepository.kt | DELETE [documents]",
                 // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
                 // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
                 // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을
