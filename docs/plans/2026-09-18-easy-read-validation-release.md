@@ -133,10 +133,10 @@ R2의 US$50 승인과 별개의 R3 전용 승인이다. [사람 검증 착수 �
 | 대상 단계·문서·조건·반복 | R3 프롬프트 변형 효과만 측정(검수 정의 0건이라 정의 효과는 V4 뒤 별도). 개발 6건 `070,087,023,072,077,088`(원문 합계 10,046자) × 조건 `EASYDOC_LANE_VARIANT=baseline`/`r3` × 각 2회 = 변환 24건 |
 | 호출 수 | 골든 레인은 변환 1회마다 판정(judge) 1회, 조건부 보정 최대 1회가 붙는다 → provider 호출 **48~72회**(사용자 재확인 2026-09-23) |
 | 모델·effort·상한 | 운영과 같은 `openai / gpt-6-astra / medium`, 출력 상한·읽기 제한은 제품 설정값. 단가 US$10/US$50 per 1M tokens |
-| 사용자 승인 달러 상한 | **누적 US$15 (2026-09-23 사용자 승인)**. 변형별 `EASYDOC_LANE_MAX_USD=7.5`로 나눠 레인이 강제. 실패·재시도도 포함, 초과 시 레인이 중단 |
-| 실행 설정 | `./gradlew :infrastructure:testLlm --tests '*GoldenCorpusLlmEvaluationTest'`에 `EASYDOC_LANE_DOCUMENTS`(문서 필터, 2026-09-23 추가)·`EASYDOC_LANE_RUNS=2`·`EASYDOC_LANE_TRANSCRIPT_DIR`·제품 사전 조립 모드. 실행 직전 provider·키·프로필·상한 확인 |
+| 사용자 승인 달러 상한 | 최초 **누적 US$15**(변형별 7.5, 반복 2회). 첫 실행에서 레인의 보수 예약(출력 상한 16,000토큰 기준 호출당 ≈US$1.0~1.2)이 6호출 만에 7.5에 닿아 023만 2회 돌고 중단됐다. **2026-09-23 재결정: 예약 기준 누적 US$40(변형별 `EASYDOC_LANE_MAX_USD=20`), 반복 1회.** 상한은 실제 비용이 아니라 예약액에 걸리며 실제 비용은 예약을 넘지 못한다 |
+| 실행 설정 | `./gradlew :infrastructure:testLlm --tests '*GoldenCorpusLlmEvaluationTest'`에 `EASYDOC_LANE_DOCUMENTS=070,087,023,072,077,088`(문서 필터, 2026-09-23 추가, [PR #148](https://github.com/kakao-harris-lee/easy-doc/pull/148))·`EASYDOC_LANE_RUNS=1`·`EASYDOC_LANE_MAX_USD=20`·`EASYDOC_LANE_DICT_PRODUCT=1`·`EASYDOC_LANE_TRANSCRIPT_DIR`. 실행 직전 provider·키·프로필·상한 확인 |
 | 판정 | R0 Q1~Q6 의미 검수와 공식 명칭 유지, BASELINE 대비 의미 오류 증가 없음(AC-R3). 보류 표본 회귀는 대체 보류 문서 확보 뒤 별도 승인 |
-| 결과 | 미실행 — 실행 후 호출 수·토큰·지연·실패·예상 비용을 이 표와 보고서에 기록 |
+| 결과 | **2026-09-23 실행 완료.** 중단된 첫 시도 6호출(023 × 2, 실제 US$1.289660, 예약 6.642140) + `baseline` 16호출(변환·보정 10 + 판정 6, 실제 **US$1.359450**, 예약 15.518780) + `r3` 16호출(실제 **US$1.391400**, 예약 15.499560) = 38호출, 실제 합계 **US$4.040510**(확정 청구액 아님). 두 변형 모두 6/6 변환 성공, 레인 품질·인프라 실패 0, 사실 보존 023 42/44·나머지 100%로 동일. 의미 검수·공식 명칭 판정은 [R3 평가 보고서](../reports/2026-09-23-r3-model-evaluation.md)를 따르며, 검수 정의 0건이라 프롬프트 변형 효과만 잰 것이다. 기본값은 BASELINE 유지 |
 
 ### 6.1 R2 정책 결정 기록 — 제한 노출 선행
 

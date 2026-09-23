@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-09-23",
+  "purpose": "R3 실제 모델 평가 — baseline vs r3 lane 변형 비교 (AC-R3), 개발 표본 6건 × 각 1회 + 중단된 최초 baseline 시도(023×2)",
+  "runs": {
+    "baseline": {
+      "calls": 16,
+      "input_tokens": 55110,
+      "output_tokens": 16167,
+      "estimated_cost_usd": "1.359450",
+      "max_reserved_usd": "15.518780",
+      "cap_usd": "20",
+      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/baseline-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
+    },
+    "r3": {
+      "calls": 16,
+      "input_tokens": 54700,
+      "output_tokens": 16888,
+      "estimated_cost_usd": "1.391400",
+      "max_reserved_usd": "15.499560",
+      "cap_usd": "20",
+      "conditions": "variant=r3 · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/r3-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
+    },
+    "baseline-aborted": {
+      "calls": 6,
+      "input_tokens": 44696,
+      "output_tokens": 16854,
+      "estimated_cost_usd": "1.289660",
+      "max_reserved_usd": "6.642140",
+      "cap_usd": "7.5",
+      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/baseline/transcript · documents=6/58[023,070,072,077,087,088] · runs=2 cap_usd=7.5"
+    }
+  },
+  "totals": {
+    "calls": 38,
+    "estimated_cost_usd": "4.040510"
+  },
+  "sha256": {
+    ".omc/state/sessions/2bffe2c2-79e8-45b5-b36b-5d9c3392b919/pre-tool-advisory-throttle.json": "19a2a1e607258516244d12b6689159a5eb6dc3e2c190174fd302b443c92e34ee",
+    "baseline-aborted/gradle.log": "9b2a0bd8fad812770a6abdd76cb5d7cbde7e6c981cdf4c6a3dce4a4ab89004e0",
+    "baseline-aborted/transcript/023-run1.txt": "139efbc42fffc1e002c4688ccb4d1de7360654c49f3bbc6e059a799f7b4736d2",
+    "baseline-aborted/transcript/023-run2.txt": "ce7b81a4fae7e50c34a525d19ef8f9686bc9459b4b1d29174ffe944b06f6360e",
+    "baseline-aborted/transcript/conditions.txt": "3aad678808a12d804f62cf6664f4cfb4e29cbc03de59a117f444893129a74889",
+    "baseline-aborted/transcript/passes/023-run1.json": "36f04d60e47f2c382574db6cd768d0081e5048001fd7fe897e61b42153066545",
+    "baseline-aborted/transcript/passes/023-run2.json": "8b944b2df7468542bb93adc775a7bcefb9b55d0e3bf9d640ca0f89378f74a8b5",
+    "baseline/gradle.log": "9399daa075b090725d32e15fb8f9cb4f38a3bc9e9606c51c880af1b28bb763ef",
+    "baseline/transcript/023.txt": "7567b0b62f855c01cb4d0184ad4b44b179b4cd2b5f6f573c37e8969e20813784",
+    "baseline/transcript/070.txt": "41ef8fccc89fa41058ad6332eb689ee8fec4559c34a6c4a09c336f0ed34e04d9",
+    "baseline/transcript/072.txt": "21c6d82f771e8e85ac6e3811d1d514246b3709d56dd08caac216b64f47e4e669",
+    "baseline/transcript/077.txt": "e8d03750c7101edb0c635bde79e798e95037cdb82f5e51fe5f9551d6cfed8d97",
+    "baseline/transcript/087.txt": "6d5c0c6f633d41542d94b8f798583d2d169d103f5b0fdc05fea617235bcf6c2c",
+    "baseline/transcript/088.txt": "8df90fd31cde1348706c6763e90913456b2938480ed070a87c9e5888f6b0e63d",
+    "baseline/transcript/conditions.txt": "7452749a2cbc198fb91ebeb0b243d3ce7bb3976a88732990b3cc9f57f50ae6bd",
+    "baseline/transcript/passes/023.json": "b42c77fa52d4dd783b816a6a8dc14af051b1d469eefad5c5b42af4b8cda5d184",
+    "baseline/transcript/passes/070.json": "98c2dbb95b72b227557dff8ddeb4124ead456409677d264b347525826c189207",
+    "baseline/transcript/passes/072.json": "9c48c3318d9356361d2d84c839bfaaab594365550c8d06d0fc8e1866b715bad2",
+    "baseline/transcript/passes/077.json": "4c6da65c9808aa1839f36a151c80155de0b7facd4bb9cd41e4479b6d9ccc6e2b",
+    "baseline/transcript/passes/087.json": "377ffe83fe4c39ba6fdb43ce995a7f38d725f9766556734f552ee4fc06cfdb55",
+    "baseline/transcript/passes/088.json": "f84cb7d41d0293f7afb13ded0dcb3767d35edd8ffa493654099e1374cf0def92",
+    "r3/gradle.log": "9b0ec5e9adba7503ff458898f31fe16608f9ec0f9b1596af10011fad34b3da1c",
+    "r3/transcript/023.txt": "9b5eae0823d25e93531796eee5f4c7b34abf3136b50634071d0d9b8d87f5420f",
+    "r3/transcript/070.txt": "a74d661212f3db89a0ade7a7b3ec29daf153abafced79e9b96d41931dc99cc98",
+    "r3/transcript/072.txt": "f7d819414e50b129192cc92cad06522a0a487079c4167f4d352123ceb7d48449",
+    "r3/transcript/077.txt": "6efaea019ffc2157a3a5c2c28fe58693dd4c6baff6509b0c23c635ff6dc285fa",
+    "r3/transcript/087.txt": "136bfd94cac90ea13144d812de360ac92567ba09ee8caab653c18256407da237",
+    "r3/transcript/088.txt": "725553eb8d0a9baa5d0cf48792e1f724d05b56a8589edec47c0e532bbe1dbd76",
+    "r3/transcript/conditions.txt": "169b69ca8fd8bcf9a43524d58f7511f2cad4e3d9763c4d27f4c65689d35dbae3",
+    "r3/transcript/passes/023.json": "5acdd3c719997fffe22ad9c5ba4a37c28136a84c639401212c70b56c463ec0c0",
+    "r3/transcript/passes/070.json": "dd8e3f1318a683db1e1a5a0d8853492c57401b44d7210e7c06b59a0308741e6b",
+    "r3/transcript/passes/072.json": "0a571dde0969928889c61c513f402dbf974095ac003a45e0d1119ead36f7e70f",
+    "r3/transcript/passes/077.json": "f9a87214688df9c4c0c490ea858dabec89cf552491892d28469375dc65c73fd9",
+    "r3/transcript/passes/087.json": "d74779ba87e7f66ac9356f6e34fa3998b9a5408d60874ab1e785b02c1bd8a2f3",
+    "r3/transcript/passes/088.json": "b52bd6cc29a50ecb2f446fdb2116594c9e3185af4a56d396e9b1d5ec1a42c14d"
+  }
+}

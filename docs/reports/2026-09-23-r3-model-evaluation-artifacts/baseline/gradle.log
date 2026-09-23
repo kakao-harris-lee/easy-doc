@@ -1,0 +1,394 @@
+Initialized native services in: /home/deploy/.gradle/native
+Initialized jansi services in: /home/deploy/.gradle/native
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Starting process 'Gradle build daemon'. Working directory: /home/deploy/.gradle/daemon/9.1.0 Command: /usr/lib/jvm/java-21-openjdk-amd64/bin/java --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED --add-opens=java.prefs/java.util.prefs=ALL-UNNAMED --add-opens=java.base/java.nio.charset=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED --add-opens=java.base/java.util.concurrent=ALL-UNNAMED --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED --add-opens=java.xml/javax.xml.namespace=ALL-UNNAMED --add-opens=java.base/java.time=ALL-UNNAMED -XX:MaxMetaspaceSize=768m -Xmx2g -Dfile.encoding=UTF-8 -Duser.country=KR -Duser.language=ko -Duser.variant -cp /home/deploy/.gradle/wrapper/dists/gradle-9.1.0-bin/9agqghryom9wkf8r80qlhnts3/gradle-9.1.0/lib/gradle-daemon-main-9.1.0.jar -javaagent:/home/deploy/.gradle/wrapper/dists/gradle-9.1.0-bin/9agqghryom9wkf8r80qlhnts3/gradle-9.1.0/lib/agents/gradle-instrumentation-agent-9.1.0.jar org.gradle.launcher.daemon.bootstrap.GradleDaemon 9.1.0
+Successfully started process 'Gradle build daemon'
+An attempt to start the daemon took 1.062 secs.
+The client will now receive all logging from the daemon (pid: 1458843). The daemon log file: /home/deploy/.gradle/daemon/9.1.0/daemon-1458843.out.log
+Daemon will be stopped at the end of the build 
+Using 16 worker leases.
+Received JVM installation metadata from '/usr/lib/jvm/java-21-openjdk-amd64': {JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64, JAVA_VERSION=21.0.12.1, JAVA_VENDOR=Ubuntu, RUNTIME_NAME=OpenJDK Runtime Environment, RUNTIME_VERSION=21.0.12.1+1-1-24.04.4-Ubuntu, VM_NAME=OpenJDK 64-Bit Server VM, VM_VERSION=21.0.12.1+1-1-24.04.4-Ubuntu, VM_VENDOR=Ubuntu, OS_ARCH=amd64}
+Watching the file system is configured to be enabled if available
+Now considering [/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin] as hierarchies to watch
+File system watching is active
+Starting Build
+Settings evaluated using settings file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/settings.gradle.kts'.
+Using local directory build cache for the root build (location = /home/deploy/.gradle/caches/build-cache-1, remove unused entries = after 7 days).
+Loaded state for lock with ID 'incomingCatalogForLibs0'
+Loaded state for lock with ID 'incomingCatalogForLibs0'
+Projects loaded. Root project using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/build.gradle.kts'.
+Included projects: [root project 'easy-doc-backend', project ':api', project ':application', project ':core', project ':infrastructure', project ':worker']
+
+> Configure project :
+Evaluating root project 'easy-doc-backend' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/build.gradle.kts'.
+Resolved plugin [id: 'org.jetbrains.kotlin.jvm', version: '2.3.21', apply: false]
+Resolved plugin [id: 'org.jetbrains.kotlin.plugin.spring', version: '2.3.21', apply: false]
+Resolved plugin [id: 'org.springframework.boot', version: '4.1.0', apply: false]
+Resolved plugin [id: 'org.jlleitschuh.gradle.ktlint', version: '14.2.0']
+Resolved plugin [id: 'io.gitlab.arturbosch.detekt', version: '1.23.8']
+Build fe0cbd4c-099c-444d-a2ad-e6f62ebf685a is started
+Using Kotlin Gradle Plugin gradle813 variant
+kotlin scripting plugin: created the scripting discovery configuration: kotlinScriptDef
+kotlin scripting plugin: created the scripting discovery configuration: testKotlinScriptDef
+Using Kotlin Gradle Plugin gradle813 variant
+kotlin scripting plugin: created the scripting discovery configuration: kotlinScriptDef
+kotlin scripting plugin: created the scripting discovery configuration: testKotlinScriptDef
+Using Kotlin Gradle Plugin gradle813 variant
+kotlin scripting plugin: created the scripting discovery configuration: kotlinScriptDef
+kotlin scripting plugin: created the scripting discovery configuration: testKotlinScriptDef
+Using Kotlin Gradle Plugin gradle813 variant
+kotlin scripting plugin: created the scripting discovery configuration: kotlinScriptDef
+kotlin scripting plugin: created the scripting discovery configuration: testKotlinScriptDef
+Using Kotlin Gradle Plugin gradle813 variant
+kotlin scripting plugin: created the scripting discovery configuration: kotlinScriptDef
+kotlin scripting plugin: created the scripting discovery configuration: testKotlinScriptDef
+
+> Configure project :api
+Evaluating project ':api' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/api/build.gradle.kts'.
+Resolved plugin [id: 'org.jetbrains.kotlin.plugin.spring', version: '2.3.21']
+Resolved plugin [id: 'org.springframework.boot', version: '4.1.0']
+
+> Configure project :application
+Evaluating project ':application' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/application/build.gradle.kts'.
+
+> Configure project :core
+Evaluating project ':core' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/core/build.gradle.kts'.
+Resolved plugin [id: 'org.gradle.java-test-fixtures']
+kotlin scripting plugin: created the scripting discovery configuration: testFixturesKotlinScriptDef
+
+> Configure project :infrastructure
+Evaluating project ':infrastructure' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure/build.gradle.kts'.
+Resolved plugin [id: 'org.jetbrains.kotlin.plugin.spring', version: '2.3.21']
+Resolved plugin [id: 'org.gradle.java-test-fixtures']
+kotlin scripting plugin: created the scripting discovery configuration: testFixturesKotlinScriptDef
+
+> Configure project :worker
+Evaluating project ':worker' using build file '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/worker/build.gradle.kts'.
+Resolved plugin [id: 'org.jetbrains.kotlin.plugin.spring', version: '2.3.21']
+Resolved plugin [id: 'org.springframework.boot', version: '4.1.0']
+All projects evaluated.
+Task path ':infrastructure:testLlm' matched project ':infrastructure'
+Task name matched 'testLlm'
+Selected primary task 'testLlm' from project :infrastructure
+Path for java installation '/usr/lib/jvm/openjdk-21' (Common Linux Locations) auto-detected does not contain a java executable
+Tasks to be executed: [task ':application:checkKotlinGradlePluginConfigurationErrors', task ':core:checkKotlinGradlePluginConfigurationErrors', task ':core:compileKotlin', task ':core:compileJava', task ':core:processResources', task ':core:classes', task ':core:jar', task ':application:compileKotlin', task ':application:compileJava', task ':application:processResources', task ':application:classes', task ':application:jar', task ':infrastructure:checkKotlinGradlePluginConfigurationErrors', task ':infrastructure:compileKotlin', task ':infrastructure:compileJava', task ':infrastructure:processResources', task ':infrastructure:classes', task ':infrastructure:jar', task ':infrastructure:compileTestFixturesKotlin', task ':infrastructure:compileTestFixturesJava', task ':infrastructure:processTestFixturesResources', task ':infrastructure:testFixturesClasses', task ':infrastructure:testFixturesJar', task ':core:compileTestFixturesKotlin', task ':core:compileTestFixturesJava', task ':core:processTestFixturesResources', task ':core:testFixturesClasses', task ':core:testFixturesJar', task ':infrastructure:compileTestKotlin', task ':infrastructure:compileTestJava', task ':infrastructure:processTestResources', task ':infrastructure:testClasses', task ':infrastructure:testLlm']
+Tasks that were excluded: []
+Resolve mutations for :application:checkKotlinGradlePluginConfigurationErrors (Thread[#125,Execution worker,5,main]) started.
+Resolve mutations for :core:checkKotlinGradlePluginConfigurationErrors (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:checkKotlinGradlePluginConfigurationErrors (Thread[#126,Execution worker Thread 2,5,main]) started.
+:core:checkKotlinGradlePluginConfigurationErrors (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:checkKotlinGradlePluginConfigurationErrors (Thread[#126,Execution worker Thread 2,5,main]) started.
+:application:checkKotlinGradlePluginConfigurationErrors (Thread[#125,Execution worker,5,main]) started.
+
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+Skipping task ':application:checkKotlinGradlePluginConfigurationErrors' as task onlyIf 'errorDiagnostics are present' is false.
+
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+Skipping task ':infrastructure:checkKotlinGradlePluginConfigurationErrors' as task onlyIf 'errorDiagnostics are present' is false.
+
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+Skipping task ':core:checkKotlinGradlePluginConfigurationErrors' as task onlyIf 'errorDiagnostics are present' is false.
+Resolve mutations for :core:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:processResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+Resolve mutations for :application:processResources (Thread[#125,Execution worker,5,main]) started.
+:infrastructure:processResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+:application:processResources (Thread[#125,Execution worker,5,main]) started.
+:core:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :application:processResources NO-SOURCE
+Skipping task ':application:processResources' as it has no source files and no previous output files.
+
+> Task :infrastructure:processResources UP-TO-DATE
+Caching disabled for task ':infrastructure:processResources' because:
+  Not worth caching
+Skipping task ':infrastructure:processResources' as it is up-to-date.
+Resolve mutations for :infrastructure:processTestFixturesResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+:infrastructure:processTestFixturesResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+Caching disabled for task ':infrastructure:processTestFixturesResources' because:
+  Not worth caching
+Skipping task ':infrastructure:processTestFixturesResources' as it is up-to-date.
+Resolve mutations for :infrastructure:processTestResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+:infrastructure:processTestResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :infrastructure:processTestResources UP-TO-DATE
+Caching disabled for task ':infrastructure:processTestResources' because:
+  Not worth caching
+Skipping task ':infrastructure:processTestResources' as it is up-to-date.
+
+> Task :core:compileKotlin UP-TO-DATE
+Loaded state for lock with ID 'kotlinScriptDefExtensions'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Build cache key for task ':core:compileKotlin' is c18c32eac3106f2d88e17c73af6fb1c3
+Skipping task ':core:compileKotlin' as it is up-to-date.
+Resolve mutations for :core:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+:core:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :core:compileJava NO-SOURCE
+Skipping task ':core:compileJava' as it has no source files and no previous output files.
+Resolve mutations for :core:processResources (Thread[#131,Execution worker Thread 7,5,main]) started.
+:core:processResources (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :core:processResources NO-SOURCE
+Skipping task ':core:processResources' as it has no source files and no previous output files.
+Resolve mutations for :core:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+:core:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :core:classes UP-TO-DATE
+Skipping task ':core:classes' as it has no actions.
+Resolve mutations for :core:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+:core:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :core:jar UP-TO-DATE
+Caching disabled for task ':core:jar' because:
+  Not worth caching
+Skipping task ':core:jar' as it is up-to-date.
+work action resolve core-0.1.0-SNAPSHOT.jar (project :core) (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :application:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :core:compileTestFixturesKotlin (Thread[#126,Execution worker Thread 2,5,main]) started.
+:application:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+:core:compileTestFixturesKotlin (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+Loaded state for lock with ID 'testFixturesKotlinScriptDefExtensions'
+Loaded state for lock with ID 'testFixturesCompileClasspath'
+Loaded state for lock with ID 'testFixturesCompileClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTestFixtures'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTestFixtures'
+Build cache key for task ':core:compileTestFixturesKotlin' is 28c114e0c8f358f867c1b13a4ca962c9
+Skipping task ':core:compileTestFixturesKotlin' as it is up-to-date.
+Resolve mutations for :core:compileTestFixturesJava (Thread[#126,Execution worker Thread 2,5,main]) started.
+:core:compileTestFixturesJava (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :core:compileTestFixturesJava NO-SOURCE
+Skipping task ':core:compileTestFixturesJava' as it has no source files and no previous output files.
+work action resolve testFixtures (project :core) (Thread[#126,Execution worker Thread 2,5,main]) started.
+work action resolve testFixtures (project :core) (Thread[#126,Execution worker Thread 2,5,main]) started.
+Resolve mutations for :core:processTestFixturesResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+:core:processTestFixturesResources (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :core:processTestFixturesResources NO-SOURCE
+Skipping task ':core:processTestFixturesResources' as it has no source files and no previous output files.
+Resolve mutations for :core:testFixturesClasses (Thread[#126,Execution worker Thread 2,5,main]) started.
+:core:testFixturesClasses (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :core:testFixturesClasses UP-TO-DATE
+Skipping task ':core:testFixturesClasses' as it has no actions.
+Resolve mutations for :core:testFixturesJar (Thread[#126,Execution worker Thread 2,5,main]) started.
+:core:testFixturesJar (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :core:testFixturesJar UP-TO-DATE
+Caching disabled for task ':core:testFixturesJar' because:
+  Not worth caching
+Skipping task ':core:testFixturesJar' as it is up-to-date.
+work action resolve core-0.1.0-SNAPSHOT-test-fixtures.jar (project :core) (Thread[#126,Execution worker Thread 2,5,main]) started.
+
+> Task :application:compileKotlin UP-TO-DATE
+Loaded state for lock with ID 'kotlinScriptDefExtensions'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Build cache key for task ':application:compileKotlin' is 8009c6c41df360942d9aaf70b0ac94b8
+Skipping task ':application:compileKotlin' as it is up-to-date.
+Resolve mutations for :application:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+:application:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :application:compileJava NO-SOURCE
+Skipping task ':application:compileJava' as it has no source files and no previous output files.
+Resolve mutations for :application:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+:application:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :application:classes UP-TO-DATE
+Skipping task ':application:classes' as it has no actions.
+Resolve mutations for :application:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+:application:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :application:jar UP-TO-DATE
+Caching disabled for task ':application:jar' because:
+  Not worth caching
+Skipping task ':application:jar' as it is up-to-date.
+work action resolve application-0.1.0-SNAPSHOT.jar (project :application) (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileKotlin UP-TO-DATE
+Loaded state for lock with ID 'kotlinScriptDefExtensions'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'compileClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinBuildToolsApiClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathMain'
+Build cache key for task ':infrastructure:compileKotlin' is 109347d73bcf977152fdf8d616ae1ccc
+Skipping task ':infrastructure:compileKotlin' as it is up-to-date.
+Resolve mutations for :infrastructure:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileJava NO-SOURCE
+Skipping task ':infrastructure:compileJava' as it has no source files and no previous output files.
+Resolve mutations for :infrastructure:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:classes (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:classes UP-TO-DATE
+Skipping task ':infrastructure:classes' as it has no actions.
+Resolve mutations for :infrastructure:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:jar (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:jar UP-TO-DATE
+Caching disabled for task ':infrastructure:jar' because:
+  Not worth caching
+Skipping task ':infrastructure:jar' as it is up-to-date.
+work action resolve infrastructure-0.1.0-SNAPSHOT.jar (project :infrastructure) (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:compileTestFixturesKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileTestFixturesKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+Loaded state for lock with ID 'testFixturesKotlinScriptDefExtensions'
+Loaded state for lock with ID 'testFixturesCompileClasspath'
+Loaded state for lock with ID 'testFixturesCompileClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTestFixtures'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTestFixtures'
+Build cache key for task ':infrastructure:compileTestFixturesKotlin' is 73d91ac50797e24644a772505f66dde8
+Skipping task ':infrastructure:compileTestFixturesKotlin' as it is up-to-date.
+Resolve mutations for :infrastructure:compileTestFixturesJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileTestFixturesJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+Skipping task ':infrastructure:compileTestFixturesJava' as it has no source files and no previous output files.
+work action resolve testFixtures (project :infrastructure) (Thread[#131,Execution worker Thread 7,5,main]) started.
+work action resolve testFixtures (project :infrastructure) (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:testFixturesClasses (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:testFixturesClasses (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+Skipping task ':infrastructure:testFixturesClasses' as it has no actions.
+Resolve mutations for :infrastructure:testFixturesJar (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:testFixturesJar (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+Caching disabled for task ':infrastructure:testFixturesJar' because:
+  Not worth caching
+Skipping task ':infrastructure:testFixturesJar' as it is up-to-date.
+work action resolve infrastructure-0.1.0-SNAPSHOT-test-fixtures.jar (project :infrastructure) (Thread[#131,Execution worker Thread 7,5,main]) started.
+Resolve mutations for :infrastructure:compileTestKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileTestKotlin (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileTestKotlin UP-TO-DATE
+Loaded state for lock with ID 'testKotlinScriptDefExtensions'
+Loaded state for lock with ID 'testCompileClasspath'
+Loaded state for lock with ID 'testCompileClasspath'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTest'
+Loaded state for lock with ID 'kotlinCompilerPluginClasspathTest'
+Build cache key for task ':infrastructure:compileTestKotlin' is 61438e9bd0646657ca50d8a8b8ae95bd
+Skipping task ':infrastructure:compileTestKotlin' as it is up-to-date.
+Resolve mutations for :infrastructure:compileTestJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:compileTestJava (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:compileTestJava NO-SOURCE
+Skipping task ':infrastructure:compileTestJava' as it has no source files and no previous output files.
+Resolve mutations for :infrastructure:testClasses (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:testClasses (Thread[#131,Execution worker Thread 7,5,main]) started.
+
+> Task :infrastructure:testClasses UP-TO-DATE
+Skipping task ':infrastructure:testClasses' as it has no actions.
+Resolve mutations for :infrastructure:testLlm (Thread[#131,Execution worker Thread 7,5,main]) started.
+:infrastructure:testLlm (Thread[#131,Execution worker Thread 7,5,main]) started.
+Gradle Test Executor 1 started executing tests.
+
+> Task :infrastructure:testLlm
+Loaded state for lock with ID 'testRuntimeClasspath'
+Loaded state for lock with ID 'testRuntimeClasspath'
+Build cache key for task ':infrastructure:testLlm' is 713d1bc315d97a882225e100b13f6e23
+Task ':infrastructure:testLlm' is not up-to-date because:
+  Task.upToDateWhen is false.
+file or directory '/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure/build/classes/java/test', not found
+Starting process 'Gradle Test Executor 1'. Working directory: /home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure Command: /usr/lib/jvm/java-21-openjdk-amd64/bin/java -Deasydoc.golden.conversions.dir=/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/data/golden/conversions -Deasydoc.golden.documents.dir=/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/data/golden/documents -Deasydoc.kotlin.source.root=/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin -Dorg.gradle.internal.worker.tmpdir=/home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure/build/tmp/testLlm/work -Dtestcontainers.reuse.enable=true @/home/deploy/.gradle/.tmp/gradle-worker-classpath15614294521186065270txt -Xmx512m -Dfile.encoding=UTF-8 -Duser.country=KR -Duser.language=ko -Duser.variant -ea worker.org.gradle.process.internal.worker.GradleWorkerMain 'Gradle Test Executor 1'
+Successfully started process 'Gradle Test Executor 1'
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 STANDARD_OUT
+    LLM budget: reserved_usd=1.038320 cap_usd=20
+    16:56:24.763 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=70623 input_tokens=5597 output_tokens=3945 estimated_cost_usd=0.25322
+    LLM budget: reserved_usd=2.200030 cap_usd=20
+    16:57:20.638 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=55753 input_tokens=8811 output_tokens=3964 estimated_cost_usd=0.28631
+    LLM budget: reserved_usd=3.320120 cap_usd=20
+    16:57:28.037 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=7132 input_tokens=7727 output_tokens=177 estimated_cost_usd=0.08612
+    LLM budget: reserved_usd=4.257270 cap_usd=20
+    16:57:52.055 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=23949 input_tokens=2542 output_tokens=1094 estimated_cost_usd=0.08012
+    LLM budget: reserved_usd=5.218590 cap_usd=20
+    16:58:11.155 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=19089 input_tokens=3121 output_tokens=1028 estimated_cost_usd=0.08261
+    LLM budget: reserved_usd=6.143750 cap_usd=20
+    16:58:15.814 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=4613 input_tokens=2186 output_tokens=84 estimated_cost_usd=0.02606
+    LLM budget: reserved_usd=7.083940 cap_usd=20
+    16:58:37.233 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=21410 input_tokens=2586 output_tokens=937 estimated_cost_usd=0.07271
+    LLM budget: reserved_usd=8.042170 cap_usd=20
+    16:58:55.137 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=17895 input_tokens=3012 output_tokens=936 estimated_cost_usd=0.07692
+    LLM budget: reserved_usd=8.964290 cap_usd=20
+    16:58:57.892 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=2724 input_tokens=2074 output_tokens=43 estimated_cost_usd=0.02289
+    LLM budget: reserved_usd=9.883360 cap_usd=20
+    16:59:13.206 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=15310 input_tokens=2067 output_tokens=640 estimated_cost_usd=0.05267
+    LLM budget: reserved_usd=10.780030 cap_usd=20
+    16:59:20.822 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=7599 input_tokens=1513 output_tokens=58 estimated_cost_usd=0.01803
+    LLM budget: reserved_usd=11.735490 cap_usd=20
+    16:59:46.751 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=25925 input_tokens=2954 output_tokens=1262 estimated_cost_usd=0.09264
+    LLM budget: reserved_usd=12.694560 cap_usd=20
+    16:59:49.319 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=2536 input_tokens=2928 output_tokens=47 estimated_cost_usd=0.03163
+    LLM budget: reserved_usd=13.635220 cap_usd=20
+    17:00:06.837 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=17514 input_tokens=2641 output_tokens=930 estimated_cost_usd=0.07291
+    LLM budget: reserved_usd=14.595080 cap_usd=20
+    17:00:23.423 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=16578 input_tokens=3147 output_tokens=966 estimated_cost_usd=0.07977
+    LLM budget: reserved_usd=15.518780 cap_usd=20
+    17:00:26.550 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=3097 input_tokens=2204 output_tokens=56 estimated_cost_usd=0.02484
+    골든 LLM 레인 — variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/baseline-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20
+    문서 6건 · 변환 성공 6 · 절단으로 실패 0 (0.0%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/6 (0.0%) · 품질 실패 0건 · 인프라 실패 0건
+    사실 보존 82/84 (97.6%) · 보존율 70% 미만 문서: 없음
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 5 · 변환 성공 5 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/5(변환 회차 있는 문서) (0.0%) · 팽창비 1.39/1.51/1.51 · 출력 토큰 1873/2122/2122
+      2000자 초과 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.38/1.38/1.38 · 출력 토큰 7909/7909/7909
+      전체 — 문서 6 · 변환 성공 6 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/6(변환 회차 있는 문서) (0.0%) · 팽창비 1.38/1.51/1.51 · 출력 토큰 1873/7909/7909
+      스타일 위반 밀도 중앙값 0.174 (위반 수/문장 수, 표본 6건)
+      절단 — 문서 단위 0/6 (0.0%, 변환 실패) · 호출 단위 0/10 (0.0%, 변환+보정)
+      └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)
+      단일 호출 최대 출력 토큰 3964 / 상한 16000 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      023 — 원문 4640 · 변환 6423 · 팽창비 1.38 · 사실 보존 42/44(95.5%) · 출력 토큰 7909 · 절단 호출 0 · 스타일 미통과 · 문장 273 · 위반 17건(밀도 0.062 · LENGTH=14 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+      087 — 원문 1799 · 변환 2092 · 팽창비 1.16 · 사실 보존 14/14(100.0%) · 출력 토큰 1262 · 절단 호출 0 · 스타일 미통과 · 문장 60 · 위반 16건(밀도 0.267 · LENGTH=12 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)
+      088 — 원문 1090 · 변환 1322 · 팽창비 1.21 · 사실 보존 7/7(100.0%) · 출력 토큰 1896 · 절단 호출 0 · 스타일 미통과 · 문장 47 · 위반 12건(밀도 0.255 · LENGTH=5 COMMA=4 DOUBLE_PASSIVE=0 DIFFICULT_WORD=3 GLOSS_COLLISION=0)
+      070 — 원문 1062 · 변환 1480 · 팽창비 1.39 · 사실 보존 7/7(100.0%) · 출력 토큰 2122 · 절단 호출 0 · 스타일 미통과 · 문장 46 · 위반 8건(밀도 0.174 · LENGTH=5 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=3 GLOSS_COLLISION=0)
+      072 — 원문 933 · 변환 1349 · 팽창비 1.45 · 사실 보존 3/3(100.0%) · 출력 토큰 1873 · 절단 호출 0 · 스타일 미통과 · 문장 39 · 위반 8건(밀도 0.205 · LENGTH=5 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+      077 — 원문 522 · 변환 790 · 팽창비 1.51 · 사실 보존 9/9(100.0%) · 출력 토큰 640 · 절단 호출 0 · 스타일 미통과 · 문장 30 · 위반 4건(밀도 0.133 · LENGTH=1 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+    LLM 호출 16회 · 재시도 0회/예산 20 · 입력 55110 토큰 · 출력 16167 토큰
+    예상 비용 $1.3595 (단가 입력 10 / 출력 50 USD/MTok)
+    문서 소요 — 합계 284.4초 · 중앙값 34.1초 · 최대 126.6초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 0건
+    인프라 실패(provider 오류): 0건
+
+Gradle Test Executor 1 finished executing tests.
+
+> Task :infrastructure:testLlm
+Finished generating test XML results (0.01 secs) into: /home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure/build/test-results/testLlm
+Generating HTML test report...
+Finished generating test html results (0.034 secs) into: /home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/infrastructure/build/reports/tests/testLlm
+Stored cache entry for task ':infrastructure:testLlm' with cache key 713d1bc315d97a882225e100b13f6e23
+Build fe0cbd4c-099c-444d-a2ad-e6f62ebf685a is closed
+
+[Incubating] Problems report is available at: file:///home/deploy/project/easy-doc/.claude/worktrees/agent-a9d1768ed127b6e3d/backend-kotlin/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 5m 24s
+15 actionable tasks: 1 executed, 14 up-to-date
