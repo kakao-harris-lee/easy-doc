@@ -57,6 +57,21 @@
 
 첫 판독 16:10 KST: api·worker 로그 ERROR 0건, WARN 4건은 모두 위 테스트 계정 주소로의 SMTP 발송 실패(인증 메일 2, 변환 완료 메일 1과 그 거절 로그)라 예상된 것이다. 컨테이너 5개 정상, health 200, 작업 11건 전부 `done`, 계정 8개 잔액 합계 31.9·예약 0, 문서 11건. 다음 판독은 관측 종료 시점에 같은 항목으로 남긴다.
 
+## 기능 토글 전부 On (19:28 KST, 사용자 결정)
+
+2026-09-23 사용자 지시 「전부 테스트 가능하도록 기능 On」과 선택 「운영 파일럿에서 전부 On」·「프롬프트 BASELINE 유지」에 따라 R1~R7 토글을 켰다. 검증·출시 계획 §7의 순서(R2 품질 기준 통과 뒤 제한 파일럿)를 앞당긴 사용자 결정이며, 출시 판정이 아니다.
+
+| 항목 | 값 |
+|---|---|
+| 실행 커밋 | main `40e56837`(PR #145~#148 머지). 전환 커밋 대비 `src/main`·마이그레이션 변경 없음 → 스키마 V34 그대로 |
+| 사전 확인 | 변환 작업 11건 모두 `done` |
+| 변경 | `.env`에 `EASYDOC_REVIEW_SUPPORT/TABLE_RELATIONS/REVIEW_HISTORY/EXPLANATIONS/ILLUSTRATIONS/ACTION_GUIDE_ENABLED=true`, `EASYDOC_ACTION_GUIDE_WORKER_ENABLED=true`, `EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION=BASELINE`. 이전 `.env`는 호스트에 `.env.bak-20260923-pre-toggles`(600, git 무시)로 보관 |
+| 실행 | `./docker_startup.sh restart` → 컨테이너 5개 `--wait` 통과, api·worker 컨테이너 env에 위 8개 값 확인 |
+| 확인 | `https://easydoc.kr/api/health` 200, 기동 후 3분 api·worker 로그 ERROR/Exception 0건 |
+| 되돌리기 | `.env`에서 위 8줄을 지우거나 `false`로 바꾸고 `./docker_startup.sh restart`. 스키마 변경이 없어 데이터 복원은 필요 없다 |
+
+영향: 실제 OpenAI를 호출하므로 행동 안내 등 새 기능을 쓰면 사용자 크레딧과 API 비용이 든다. 기존 파일럿 사용자에게도 기능이 보인다. 재시작으로 24시간 관측 창은 이 시각부터 다시 센다(종료 판독 2026-09-24 19:28 KST 이후). 기능별 실제 경로 확인(행동 안내 생성·실패 반환 포함)은 사용자 테스트로 남는다.
+
 ## 하지 않은 것 · 남은 것
 
 - 실패 반환(provider 오류 시 예약 반환) 경로는 운영에서 확인하지 않았다(위 절).
