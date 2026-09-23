@@ -537,8 +537,8 @@ class JdbcActionGuideJobFlowTest {
         /** D04(개선 로드맵 §6) — 문서당 provider 호출을 시작한 작업은 3건까지다. */
         const val MAX_ATTEMPTS_PER_CONVERSION = 3
 
-        /** `easydoc.action-guide.max-lease-attempts` 기본값 — 이 횟수까지만 worker에 다시 넘긴다. */
-        const val MAX_LEASE_ATTEMPTS = 5
+        /** 운영 기본값 하나를 그대로 쓴다 — 같은 숫자를 테스트에 다시 적지 않는다. */
+        const val MAX_LEASE_ATTEMPTS = ActionGuideProperties.DEFAULT_MAX_LEASE_ATTEMPTS
         const val BLOCKED_MILLIS = 300L
         const val HANDOFF_SECONDS = 10L
     }

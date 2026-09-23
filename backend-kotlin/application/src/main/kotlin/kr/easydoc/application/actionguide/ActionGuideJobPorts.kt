@@ -229,6 +229,14 @@ data class ActionGuideJobWorkerPolicy(
     init {
         require(owner.isNotBlank()) { "worker owner가 비어 있습니다" }
         require(!leaseDuration.isZero && !leaseDuration.isNegative) { "리스 수명이 양수가 아닙니다" }
-        require(maxLeaseAttempts >= 1) { "리스 재획득 상한이 1 미만입니다" }
+        // 위쪽 상한이 없으면 자릿수 오타 하나가 상한을 사실상 없애 버린다 — 기동에서 걸러낸다.
+        require(maxLeaseAttempts in 1..MAX_ALLOWED_LEASE_ATTEMPTS) {
+            "리스 재획득 상한은 1 이상 $MAX_ALLOWED_LEASE_ATTEMPTS 이하여야 합니다"
+        }
+    }
+
+    companion object {
+        /** 리스 수명이 120초면 100회는 이미 3시간이 넘는다. 그보다 큰 값은 상한이 아니다. */
+        const val MAX_ALLOWED_LEASE_ATTEMPTS: Int = 100
     }
 }

@@ -240,10 +240,23 @@ class ProcessActionGuideJob(
      * provider를 부른 적이 없으므로 원장에는 아무 것도 남기지 않고, 시도 상한(D04)도 세지 않는다.
      * 정산은 획득과 분리된 짧은 트랜잭션이며, 같은 CAS 울타리(status·lease_owner·attempts)를 쓰므로
      * 경쟁하는 worker나 문서 삭제 trigger가 예약을 두 번 되돌릴 수 없다.
+     *
+     * 「미시작」은 획득 트랜잭션이 본 사실이다. 정산 트랜잭션에서 다시 확인해 시작 표시가 보이면
+     * [supersedeUnstarted]와 같은 판단으로 불명확 회수에 넘긴다 — 호출 결과를 모르는 작업을
+     * `generation_failed` 로 굳히면 원장 없이 사라진 호출이 생긴다.
      */
     private fun deadLetter(lease: ActionGuideJobLease): ActionGuideJobOutcome =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction ActionGuideJobOutcome.DROPPED
+            if (job.providerStartedAt != null || job.executionId != null) {
+                val executionId = job.executionId ?: return@inTransaction ActionGuideJobOutcome.DROPPED
+                return@inTransaction settleUnknownHeld(
+                    lease,
+                    job,
+                    executionId,
+                    ActionGuideJobOutcome.RECOVERED_UNKNOWN,
+                )
+            }
             if (!jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, clock.instant())) {
                 return@inTransaction ActionGuideJobOutcome.DROPPED
             }

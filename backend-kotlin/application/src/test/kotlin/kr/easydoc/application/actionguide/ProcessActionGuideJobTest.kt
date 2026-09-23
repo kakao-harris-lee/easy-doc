@@ -96,6 +96,17 @@ class ProcessActionGuideJobTest {
     }
 
     @Test
+    fun `상한 획득 뒤 시작 표시가 보이면 generation_failed 가 아니라 불명확 회수로 넘긴다`() {
+        val world = World(started = true)
+        world.jobs.acquired = ActionGuideJobAcquire.DeadLettered(world.lease)
+
+        assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.RECOVERED_UNKNOWN)
+        assertThat(world.ledger.unknowns).isEqualTo(1)
+        assertThat(world.credits.releases).isEqualTo(1)
+        assertThat(world.jobs.rows[JOB]?.failureCode).isEqualTo(ActionGuideJobFailureCode.OUTCOME_UNKNOWN)
+    }
+
+    @Test
     fun `기능을 끈 drain에서는 상한에 닿은 작업도 미시작 예약 반환으로 끝낸다`() {
         val world = World()
         world.jobs.acquired = ActionGuideJobAcquire.DeadLettered(world.lease)
@@ -278,14 +289,18 @@ class ProcessActionGuideJobTest {
                 cipher,
                 runner,
                 transaction,
-                ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30), MAX_LEASE_ATTEMPTS),
+                ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30), ARBITRARY_MAX_LEASE_ATTEMPTS),
                 Clock.fixed(NOW, ZoneOffset.UTC),
             )
     }
 }
 
-/** 이 단위 테스트는 상한 판정을 저장소에 맡기므로 값 자체는 중요하지 않다. */
-private const val MAX_LEASE_ATTEMPTS: Int = 5
+/**
+ * 상한 판정은 저장소가 한다. 이 단위 테스트는 획득 결과를 대역으로 주므로 policy의 값은
+ * 무엇이든 상관없다 — 운영 기본값(`ActionGuideProperties.DEFAULT_MAX_LEASE_ATTEMPTS`)을
+ * 흉내 내 같은 숫자를 두 곳에 적지 않는다.
+ */
+private const val ARBITRARY_MAX_LEASE_ATTEMPTS: Int = 2
 
 private fun validResult() =
     ActionGuideRunResult.Valid(
