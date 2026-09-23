@@ -13,7 +13,6 @@ import contextlib
 import functools
 import io
 import sqlite3
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -783,19 +782,19 @@ class TestPerSourceArgCountValidation(unittest.TestCase):
 
 
 # PR #147(정의 검수 이력 도입, 2026-09-23) 직전 스키마 — entries에
-# definition_reviewed_at/definition_reviewed_by가 없던 마지막 커밋. 회귀
-# 재현에 실물 구버전 스키마가 필요해서 손으로 다시 옮겨 적는 대신 git
-# 이력에서 그대로 읽는다(tests/test_review_notes.py와 같은 방식).
-_PRE_DEFINITION_REVIEW_COMMIT = "927a13f9"
+# definition_reviewed_at/definition_reviewed_by가 없던 마지막 커밋(927a13f9)의
+# schema.sql. 회귀 재현에 실물 구버전 스키마가 필요해서 손으로 다시 옮겨
+# 적는 대신 커밋된 fixture로 고정해 읽는다(tests/test_review_notes.py와 같은
+# 방식). CI가 shallow checkout(git history 없음)으로 돌기 때문에 `git show`로
+# 매번 읽을 수 없다.
+_PRE_DEFINITION_REVIEW_SCHEMA_SQL_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "schema_pre_definition_review.sql"
+)
 
 
 @functools.lru_cache(maxsize=1)
 def _pre_definition_review_schema_sql() -> str:
-    result = subprocess.run(
-        ["git", "show", f"{_PRE_DEFINITION_REVIEW_COMMIT}:dictionary/schema/schema.sql"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=True,
-    )
-    return result.stdout
+    return _PRE_DEFINITION_REVIEW_SCHEMA_SQL_PATH.read_text(encoding="utf-8")
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"easydict.build import 실패: {_IMPORT_ERROR}")
