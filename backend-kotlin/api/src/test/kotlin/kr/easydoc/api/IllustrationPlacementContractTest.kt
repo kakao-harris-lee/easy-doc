@@ -16,6 +16,8 @@ import kr.easydoc.core.illustration.IllustrationAssetId
 import kr.easydoc.core.illustration.IllustrationPlacement
 import kr.easydoc.core.illustration.IllustrationPlacements
 import kr.easydoc.core.illustration.PLACEMENT_ASSET_NOT_SELECTABLE_MESSAGE
+import kr.easydoc.core.illustration.PLACEMENT_DUPLICATE_UNIT_MESSAGE
+import kr.easydoc.core.illustration.PLACEMENT_TOO_MANY_MESSAGE
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -108,6 +110,34 @@ class IllustrationPlacementContractTest {
         assertThat(body).contains("\"stale\":true")
         assertThat(body).contains("\"current_content_revision\":2")
         assertThat(body).contains("\"placements_content_revision\":1")
+    }
+
+    @Test
+    fun `GET은 배치가 없으면 placements_content_revision 키가 명시적 null로 남는다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val view =
+            IllustrationPlacementsView(
+                conversionId = conversionId,
+                currentContentRevision = 1,
+                placementsContentRevision = null,
+                stale = false,
+                placements = emptyList(),
+            )
+        `when`(service.read(owner, conversionId)).thenReturn(view)
+
+        val response =
+            mockMvc
+                .get("/conversions/$conversionId/illustration-placements") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(200)
+        // @get:JsonInclude(Include.ALWAYS)는 값이 null이어도 키 자체를 남기라는 계약(required)이다.
+        // 원문 JSON을 그대로 검사해 키가 생략되지 않고 명시적 null로 남는지 실측한다
+        // (ReviewHistoryContractTest의 같은 패턴 실측과 같은 방식).
+        assertThat(response.contentAsString).contains("\"placements_content_revision\":null")
     }
 
     @Test
@@ -227,6 +257,42 @@ class IllustrationPlacementContractTest {
                 .response
 
         assertThat(response.status).isEqualTo(422)
+    }
+
+    @Test
+    fun `PUT은 11개를 서비스 호출 전 422로 낸다`() {
+        val entries = (0..10).map { it to "visit-office" }
+
+        val response =
+            mockMvc
+                .put("/conversions/${UUID.randomUUID()}/illustration-placements") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:${newOwner()}")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = placementsBody(1, entries)
+                }.andReturn()
+                .response
+
+        // 컨트롤러가 요청을 IllustrationPlacements(entries)로 만드는 시점에 도메인 생성자가
+        // 직접 던진다 — 서비스를 부르지 않는다(같은 파일의 asset_id 형식 위반 테스트와 같은 경로).
+        assertThat(response.status).isEqualTo(422)
+        assertThat(response.contentAsString).contains("\"detail\":\"$PLACEMENT_TOO_MANY_MESSAGE\"")
+    }
+
+    @Test
+    fun `PUT은 easy_unit_index 중복을 서비스 호출 전 422로 낸다`() {
+        val entries = listOf(0 to "visit-office", 0 to "payment")
+
+        val response =
+            mockMvc
+                .put("/conversions/${UUID.randomUUID()}/illustration-placements") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:${newOwner()}")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = placementsBody(1, entries)
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(422)
+        assertThat(response.contentAsString).contains("\"detail\":\"$PLACEMENT_DUPLICATE_UNIT_MESSAGE\"")
     }
 
     @Test

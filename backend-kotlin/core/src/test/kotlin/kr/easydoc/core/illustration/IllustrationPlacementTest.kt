@@ -14,6 +14,15 @@ class IllustrationPlacementTest {
     }
 
     @Test
+    fun `IllustrationPlacement toString은 좌표와 asset을 찍지 않는다`() {
+        val placement = IllustrationPlacement(7, IllustrationAssetId.of("visit-office"))
+
+        val text = placement.toString()
+
+        assertThat(text).doesNotContain("visit-office", "7")
+    }
+
+    @Test
     fun `11개면 거부한다`() {
         val entries = (0..10).map { IllustrationPlacement(it, IllustrationAssetId.of("visit-office")) }
 

@@ -6,7 +6,19 @@ import kr.easydoc.core.exceptions.InvalidInputException
 // 붙이는 좌표 집합. `IllustrationPlacements`는 저장 시점의 요청 payload 그대로다 —
 // 좌표만으로 본문 내용을 유추할 수 있는 데이터라 toString은 개수만 낸다.
 
-/** 본문 한 줄에 그림 한 장을 붙이는 좌표 한 건. */
+/**
+ * 본문 한 줄에 그림 한 장을 붙이는 좌표 한 건.
+ *
+ * **[toString] 은 값을 찍지 않는다** — 이 파일 머리 주석대로 좌표(`easyUnitIndex`)와
+ * `assetId`는 그 자체로 본문 내용을 유추할 수 있는 데이터다(privacy-gate 판정, §10
+ * 「좌표만으로 본문 유추 가능한 데이터도 본문 취급」). `@UserContent`는 달지 않는다 —
+ * `assetId`(`IllustrationAssetId`)는 `SensitiveToStringReachTest`의
+ * `GeneratedToStringProbes.INERT_VALUES`에 이미 등록돼 있어(ER-15,
+ * `Illustration.assetId` 로 닿는 경로) 그 하네스가 `carriesText = false`로 고정한다 —
+ * `@UserContent`를 달아도 심을 표식 자리가 없어 표본 자체가 생성되지 않는다(자동 게이트가
+ * 닿지 않는다는 뜻). 그래서 이 재정의와 [IllustrationPlacementTest] 의 직접 단언이
+ * 유일한 방어선이다.
+ */
 data class IllustrationPlacement(
     val easyUnitIndex: Int,
     val assetId: IllustrationAssetId,
@@ -14,6 +26,8 @@ data class IllustrationPlacement(
     init {
         require(easyUnitIndex >= 0) { "easyUnitIndex 는 0 이상이어야 한다: $easyUnitIndex" }
     }
+
+    override fun toString(): String = "IllustrationPlacement(masked)"
 }
 
 /**

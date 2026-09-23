@@ -1,6 +1,7 @@
 package kr.easydoc.api.illustration
 
 import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
@@ -110,7 +111,9 @@ data class IllustrationPlacementPayload
 data class IllustrationPlacementsResponse(
     @get:JsonProperty("conversion_id") val conversionId: UUID,
     @get:JsonProperty("current_content_revision") val currentContentRevision: Long,
-    @get:JsonProperty("placements_content_revision") val placementsContentRevision: Long?,
+    @get:JsonProperty("placements_content_revision")
+    @get:JsonInclude(JsonInclude.Include.ALWAYS)
+    val placementsContentRevision: Long?,
     @get:JsonProperty("stale") val stale: Boolean,
     @get:JsonProperty("placements") val placements: List<IllustrationPlacementPayload>,
 ) {

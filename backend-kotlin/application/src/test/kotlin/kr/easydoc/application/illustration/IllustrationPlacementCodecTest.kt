@@ -82,4 +82,29 @@ class IllustrationPlacementCodecTest {
         assertThatThrownBy { IllustrationPlacementCodec.decode(corrupt) }
             .isInstanceOf(InvalidInputException::class.java)
     }
+
+    @Test
+    fun `음수 인덱스는 decode가 거절한다`() {
+        val corrupt = "-5\tvisit-office\n".toByteArray(Charsets.UTF_8)
+
+        assertThatThrownBy { IllustrationPlacementCodec.decode(corrupt) }
+            .isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    fun `중복된 인덱스는 decode가 거절한다`() {
+        val corrupt = "0\tvisit-office\n0\tpayment\n".toByteArray(Charsets.UTF_8)
+
+        assertThatThrownBy { IllustrationPlacementCodec.decode(corrupt) }
+            .isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    fun `11줄은 decode가 거절한다`() {
+        val corrupt =
+            (0..10).joinToString("") { "$it\tvisit-office\n" }.toByteArray(Charsets.UTF_8)
+
+        assertThatThrownBy { IllustrationPlacementCodec.decode(corrupt) }
+            .isInstanceOf(InvalidInputException::class.java)
+    }
 }

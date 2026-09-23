@@ -184,6 +184,35 @@ class EnvelopeColumnWriteGuardTest {
             .hasMessageContaining("SET")
     }
 
+    @Test
+    @DisplayName("**upsert(`ON CONFLICT ... DO UPDATE SET`)도 암호문 쓰기로 잡는다** — 코드 리뷰 MEDIUM 지적")
+    fun `upsert의 DO UPDATE SET 도 봉인 열 쓰기로 잡는다`() {
+        val violating =
+            probe(
+                "violating-upsert",
+                "INSERT INTO $target ($column) VALUES (:v) " +
+                    "ON CONFLICT (id) DO UPDATE SET $column = EXCLUDED.$column",
+            )
+        val compliant =
+            probe(
+                "compliant-upsert",
+                "INSERT INTO $target ($column) VALUES (:v) " +
+                    "ON CONFLICT (id) DO UPDATE SET $column = EXCLUDED.$column, " +
+                    "encryption_scheme = EXCLUDED.encryption_scheme, key_version = EXCLUDED.key_version",
+            )
+
+        assertThat(violating.single().setsEnvelope)
+            .describedAs("payload 열만 SET 하고 key_version 이 빠진 upsert 를 준수로 읽으면 그 행은 영원히 열리지 않는다")
+            .isFalse()
+        assertThat(compliant.single().setsEnvelope).isTrue()
+    }
+
+    @Test
+    @DisplayName("`DO UPDATE SET` 이 없는 순수 `INSERT` 는 조용히 넘어간다 — 과잉 탐지 0")
+    fun `DO UPDATE SET 이 없는 INSERT 는 쓰기로 잡지 않는다`() {
+        assertThat(probe("plain-insert", "INSERT INTO $target ($column) VALUES (:v)")).isEmpty()
+    }
+
     /** probe 가 쓰는 테이블·열 이름. 리터럴로 적지 않고 [EncryptedField] 에서 조립한다. */
     private val target: String get() = EncryptedField.CONVERSION_EASY_TEXT.wireName.substringBefore('.')
     private val column: String get() = EncryptedField.CONVERSION_EASY_TEXT.wireName.substringAfter('.')
@@ -229,6 +258,15 @@ class EnvelopeColumnWriteGuardTest {
 
         private val UPDATE_TARGET =
             Regex("""\bUPDATE\s+(${TABLES.joinToString("|")})\b""", RegexOption.IGNORE_CASE)
+
+        /**
+         * `INSERT ... ON CONFLICT ... DO UPDATE SET` upsert의 대상 테이블. `UPDATE_TARGET` 은
+         * `UPDATE <table>` 로 시작하는 문장만 잡으므로, upsert의 `DO UPDATE SET` 은 별도로
+         * 찾아야 한다 — 그 자리도 암호문 열을 쓰는 UPDATE다(코드 리뷰 MEDIUM 지적).
+         */
+        private val INSERT_TARGET =
+            Regex("""\bINSERT\s+INTO\s+(${TABLES.joinToString("|")})\b""", RegexOption.IGNORE_CASE)
+        private val ON_CONFLICT_DO_UPDATE_SET = Regex("""\bDO\s+UPDATE\s+SET\b""", RegexOption.IGNORE_CASE)
         private val SET_KEYWORD = Regex("""\bSET\b""", RegexOption.IGNORE_CASE)
         private val WHERE_KEYWORD = Regex("""\bWHERE\b""", RegexOption.IGNORE_CASE)
 
@@ -238,7 +276,8 @@ class EnvelopeColumnWriteGuardTest {
         fun scan(root: Path): List<CiphertextWrite> =
             kotlinSources(root).flatMap { file ->
                 val relative = root.relativize(file).joinToString("/")
-                writesIn(relative, file.readText())
+                val text = file.readText()
+                writesIn(relative, text) + upsertWritesIn(relative, text)
             }
 
         /**
@@ -281,14 +320,59 @@ class EnvelopeColumnWriteGuardTest {
             text: String,
             from: Int,
         ): String {
-            val end = STATEMENT_END.find(text, from)?.range?.first ?: text.length
-            val statement = text.substring(from, end)
+            val statement = statementBodyFrom(text, from)
             val set =
                 SET_KEYWORD.find(statement)
                     ?: error("$file 의 UPDATE 문에서 SET 절을 찾지 못했다 — 해석할 수 없는 문장을 조용히 넘기지 않는다: $statement")
-            val body = statement.substring(set.range.last + 1)
-            return WHERE_KEYWORD.find(body)?.let { body.substring(0, it.range.first) } ?: body
+            return trimAtWhere(statement.substring(set.range.last + 1))
         }
+
+        /**
+         * `INSERT ... ON CONFLICT ... DO UPDATE SET` upsert에서 암호문 열을 쓰는 것을 뽑는다.
+         * 대상 테이블은 `INSERT INTO <table>` 에서 잡고, `SET` 절은 `DO UPDATE SET` 뒤다.
+         *
+         * `DO UPDATE SET` 이 없는 `INSERT` 는 조용히 건너뛴다(에러로 끊지 않는다) — 순수
+         * `INSERT` 는 애초에 "쓰기 UPDATE" 가 아니고, `setClauseOf` 처럼 SET 절이 반드시
+         * 있어야 하는 문장이 아니다(기존 관행 — 「저장 쪽은 INSERT 라 SET 절이 없어 이 조사에
+         * 잡히지 않는다」).
+         */
+        private fun upsertWritesIn(
+            file: String,
+            text: String,
+        ): List<CiphertextWrite> =
+            INSERT_TARGET
+                .findAll(text)
+                .mapNotNull { match ->
+                    val statement = statementBodyFrom(text, match.range.last + 1)
+                    val doUpdateSet = ON_CONFLICT_DO_UPDATE_SET.find(statement) ?: return@mapNotNull null
+                    val setClause = trimAtWhere(statement.substring(doUpdateSet.range.last + 1))
+
+                    if (CIPHERTEXT_COLUMNS.none { assignsColumn(setClause, it) }) {
+                        null
+                    } else {
+                        CiphertextWrite(
+                            file = file,
+                            setClause = setClause,
+                            setsEnvelope =
+                                LiveSql.of(setClause).let { live ->
+                                    ENVELOPE_COLUMNS.all { assignsColumn(live, it) }
+                                },
+                        )
+                    }
+                }.toList()
+
+        /** `from` 부터 문장 끝(`STATEMENT_END`, 없으면 텍스트 끝)까지. */
+        private fun statementBodyFrom(
+            text: String,
+            from: Int,
+        ): String {
+            val end = STATEMENT_END.find(text, from)?.range?.first ?: text.length
+            return text.substring(from, end)
+        }
+
+        /** `WHERE`(있으면) 앞까지 자른다 — 조건절을 섞으면 `WHERE key_version = …` 이 오탐한다. */
+        private fun trimAtWhere(body: String): String =
+            WHERE_KEYWORD.find(body)?.let { body.substring(0, it.range.first) } ?: body
 
         private fun assignsColumn(
             setClause: String,
@@ -335,7 +419,8 @@ class EnvelopeColumnWriteGuardTest {
                 // R2 안내문 CAS 갱신 문장도 payload와 봉투를 한 번에 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
                     "JdbcActionGuideContentRepository.kt",
-                // 피드백 의견의 회전 UPDATE. 봉인 열이 하나라 문장도 하나다.
+                // 피드백 의견의 회전 UPDATE 하나와, 피드백 제출/재제출 upsert
+                // (`ON CONFLICT (conversion_id) DO UPDATE SET`) 하나 — 문장 둘이다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "JdbcConversionFeedbackRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
@@ -358,10 +443,22 @@ class EnvelopeColumnWriteGuardTest {
                 // R4 표 구조의 키 회전 UPDATE. payload와 봉투 두 값을 같은 문장에서 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "TableStructureKeyRotation.kt",
-                // ER-16 그림 배치의 키 회전 UPDATE(`rewriteEnvelope`). payload와 봉투 두 값을
-                // 같은 문장에서 쓴다.
+                // ER-16 그림 배치의 키 회전 UPDATE(`rewriteEnvelope`) 하나와, 저장(PUT) upsert
+                // (`replaceOwned`, `ON CONFLICT (conversion_id) DO UPDATE SET`) 하나 — 문장 둘이다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/" +
                     "JdbcIllustrationPlacementRepository.kt",
+                // 정기결제 세션·주문 upsert 둘 — `saveSession`(toss_billing_sessions)·
+                // `saveOrder`(toss_billing_orders) 모두 `ON CONFLICT ... DO UPDATE SET`으로
+                // payload_encrypted와 봉투 두 값을 같은 문장에서 쓴다(코드 리뷰 MEDIUM 지적으로
+                // upsert 탐지를 더하며 새로 잡힌 파일 — 세 번째 `ON CONFLICT (workspace_id,id)
+                // DO UPDATE`는 `status`·`refunded_amount`만 SET 해 암호문 열이 없으므로 잡히지
+                // 않는다).
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/" +
+                    "JdbcTossBillingStore.kt",
+                // 피드백 구버전 쓰기 호환 테스트가 옛 upsert SQL을 그대로 심는다 — 같은
+                // `ON CONFLICT (conversion_id) DO UPDATE SET`이라 봉투를 함께 쓴다.
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/" +
+                    "ConversionFeedbackStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
@@ -408,9 +505,22 @@ class EnvelopeColumnWriteGuardTest {
          * 표 관계 payload를 심는 UPDATE다.
          *
          * 31 → 32 는 ER-16 그림 배치(`JdbcIllustrationPlacementRepository.rewriteEnvelope`)의
-         * 키 회전 UPDATE다. `replaceOwned`의 upsert는 `INSERT ... ON CONFLICT DO UPDATE`라
-         * `UPDATE <table>` 형태로 시작하지 않아 이 스캐너에 잡히지 않는다.
+         * 키 회전 UPDATE다.
+         *
+         * 32 → 36 은 코드 리뷰 MEDIUM 지적으로 `INSERT ... ON CONFLICT ... DO UPDATE SET`
+         * upsert도 암호문 쓰기로 잡도록 스캐너를 확장하면서(`upsertWritesIn`) 새로 잡힌 문장
+         * 넷이다 — 전부 이미 봉투를 함께 쓰고 있었다(위반 0건, 이 가드가 이전까지 못 보고
+         * 있었을 뿐이다):
+         * ⑴ `JdbcIllustrationPlacementRepository.replaceOwned`(illustration_placements) —
+         *   `UPDATE <table>` 로 시작하지 않아 옛 스캐너가 놓쳤다.
+         * ⑵ `JdbcConversionFeedbackRepository`의 제출/재제출 upsert(conversion_feedback).
+         * ⑶⑷ `JdbcTossBillingStore.saveSession`(toss_billing_sessions)·`saveOrder`
+         *   (toss_billing_orders) — 이 파일은 옛 스캐너로는 한 번도 잡히지 않아 새로
+         *   `EXPECTED_FILES`에 들어왔다(세 번째 `ON CONFLICT` 문장은 암호문 열을 SET 하지
+         *   않아 여전히 안 잡힌다).
+         * ⑸ `ConversionFeedbackStorageTest`의 구버전 쓰기 호환 테스트가 심는 옛 upsert SQL —
+         *   같은 이유로 새로 `EXPECTED_FILES`에 들어왔다.
          */
-        const val EXPECTED_STATEMENTS = 32
+        const val EXPECTED_STATEMENTS = 37
     }
 }

@@ -32,6 +32,8 @@ const CONTENT_CONFLICT_MESSAGE = '다른 화면에서 저장한 최신 내용과
 const LOAD_ERROR_FALLBACK = '그림 배치를 불러오지 못했습니다. 다시 시도해 주세요.'
 const SAVE_ERROR_FALLBACK = '그림 배치를 저장하지 못했습니다. 다시 시도해 주세요.'
 const MAX_LINE_PREVIEW_LENGTH = 60
+/** 계약 `x-input-limits.max_illustration_placements` — 변환 한 건당 최대 그림 배치 수. */
+const MAX_PLACEMENTS = 10
 
 function describeError(caught: unknown, fallback: string): string {
   if (caught instanceof ApiError) {
@@ -121,6 +123,12 @@ export function IllustrationPlacementPanel({
     [serverPlacements, units.length],
   )
 
+  const selectedCount = useMemo(
+    () => Object.values(selections).filter((assetId) => assetId !== '').length,
+    [selections],
+  )
+  const overLimit = selectedCount > MAX_PLACEMENTS
+
   function handleSelectionChange(index: number, assetId: string): void {
     setSelections((current) => ({ ...current, [index]: assetId }))
   }
@@ -146,7 +154,7 @@ export function IllustrationPlacementPanel({
     }
   }
 
-  const saveDisabled = dirty || saving || loading
+  const saveDisabled = dirty || saving || loading || overLimit
 
   return (
     <section
@@ -186,6 +194,15 @@ export function IllustrationPlacementPanel({
 
       {!loading && loadError === null && (
         <>
+          <p className="mt-4 text-sm text-muted-foreground">
+            배치 {selectedCount} / {MAX_PLACEMENTS}
+          </p>
+          {overLimit && (
+            <p className="mt-2 text-sm font-semibold text-warning" role="status">
+              그림은 최대 {MAX_PLACEMENTS}개까지 배치할 수 있습니다. (현재 {selectedCount}개)
+            </p>
+          )}
+
           <ul className="mt-5 flex flex-col gap-2">
             {units.map((text, index) => {
               const displayText = text === '' ? '(빈 줄)' : text.slice(0, MAX_LINE_PREVIEW_LENGTH)

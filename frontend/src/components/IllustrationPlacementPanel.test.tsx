@@ -260,4 +260,43 @@ describe('IllustrationPlacementPanel', () => {
       }),
     )
   })
+
+  it('선택이 계약 상한(10개)을 넘으면 저장을 막고, 하나를 해제하면 다시 허용한다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [illustration()] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue(
+      placementsResponse({ current_content_revision: 1 }),
+    )
+
+    const units = Array.from({ length: 12 }, (_, index) => `줄 ${index + 1}`)
+    const user = userEvent.setup()
+    render(
+      <IllustrationPlacementPanel
+        conversionId="c1"
+        contentRevision={1}
+        dirty={false}
+        units={units}
+      />,
+    )
+
+    const selects = await screen.findAllByRole('combobox')
+    expect(selects).toHaveLength(12)
+    for (const select of selects.slice(0, 11)) {
+      await user.selectOptions(select, 'visit-office')
+    }
+
+    expect(
+      screen.getByText('그림은 최대 10개까지 배치할 수 있습니다. (현재 11개)'),
+    ).toBeInTheDocument()
+    const saveButton = screen.getByRole('button', { name: '그림 배치 저장' })
+    expect(saveButton).toBeDisabled()
+    await user.click(saveButton)
+    expect(putIllustrationPlacements).not.toHaveBeenCalled()
+
+    await user.selectOptions(selects[10]!, '')
+
+    expect(
+      screen.queryByText('그림은 최대 10개까지 배치할 수 있습니다. (현재 11개)'),
+    ).not.toBeInTheDocument()
+    expect(saveButton).toBeEnabled()
+  })
 })
