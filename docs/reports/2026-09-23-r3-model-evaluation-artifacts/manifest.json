@@ -1,6 +1,8 @@
 {
   "generated_at": "2026-09-23",
   "purpose": "R3 실제 모델 평가 — baseline vs r3 lane 변형 비교 (AC-R3), 개발 표본 6건 × 각 1회 + 중단된 최초 baseline 시도(023×2)",
+  "baseline_commit": "a2c5265a56b16cead0bc71435d4b3ea7ad7b35b2",
+  "base_main": "927a13f99fc86b0a6778e6797be54c0852d82c4f",
   "runs": {
     "baseline": {
       "calls": 16,
@@ -9,7 +11,7 @@
       "estimated_cost_usd": "1.359450",
       "max_reserved_usd": "15.518780",
       "cap_usd": "20",
-      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/baseline-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
+      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=.../baseline-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
     },
     "r3": {
       "calls": 16,
@@ -18,7 +20,7 @@
       "estimated_cost_usd": "1.391400",
       "max_reserved_usd": "15.499560",
       "cap_usd": "20",
-      "conditions": "variant=r3 · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/r3-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
+      "conditions": "variant=r3 · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=.../r3-r1/transcript · documents=6/58[023,070,072,077,087,088] · runs=1 cap_usd=20"
     },
     "baseline-aborted": {
       "calls": 6,
@@ -27,7 +29,7 @@
       "estimated_cost_usd": "1.289660",
       "max_reserved_usd": "6.642140",
       "cap_usd": "7.5",
-      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=/tmp/claude-1000/-home-deploy-project-easy-doc/4f31e7cc-7354-4dd9-8b11-fd440324421f/scratchpad/r3-lane/baseline/transcript · documents=6/58[023,070,072,077,087,088] · runs=2 cap_usd=7.5"
+      "conditions": "variant=baseline · provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16000 · dictContext=product · transcript=.../baseline/transcript · documents=6/58[023,070,072,077,087,088] · runs=2 cap_usd=7.5"
     }
   },
   "totals": {
@@ -35,7 +37,6 @@
     "estimated_cost_usd": "4.040510"
   },
   "sha256": {
-    ".omc/state/sessions/2bffe2c2-79e8-45b5-b36b-5d9c3392b919/pre-tool-advisory-throttle.json": "19a2a1e607258516244d12b6689159a5eb6dc3e2c190174fd302b443c92e34ee",
     "baseline-aborted/gradle.log": "9b2a0bd8fad812770a6abdd76cb5d7cbde7e6c981cdf4c6a3dce4a4ab89004e0",
     "baseline-aborted/transcript/023-run1.txt": "139efbc42fffc1e002c4688ccb4d1de7360654c49f3bbc6e059a799f7b4736d2",
     "baseline-aborted/transcript/023-run2.txt": "ce7b81a4fae7e50c34a525d19ef8f9686bc9459b4b1d29174ffe944b06f6360e",

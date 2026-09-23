@@ -18,6 +18,7 @@
 4. [UX·화면 상태·문구·접근성](2026-09-18-easy-read-ux-spec.md)
 5. [검증·품질 평가·출시·롤백](2026-09-18-easy-read-validation-release.md)
 6. [사람 검증 착수 계획 — 배포 전환·파일럿·R3 평가·사전 검수 데이터](2026-09-23-human-verification-kickoff.md)
+7. [파일럿 참여 안내·동의·기록지 초안](2026-09-23-pilot-participant-drafts.md)
 
 ## 상태 규칙
 
