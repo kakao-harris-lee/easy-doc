@@ -46,9 +46,11 @@ data class ActionGuideProperties(
     val workerEnabled: Boolean = false,
     val owner: String = "",
     val leaseDurationSeconds: Long = DEFAULT_LEASE_SECONDS,
+    val maxLeaseAttempts: Int = DEFAULT_MAX_LEASE_ATTEMPTS,
 ) {
     companion object {
         const val DEFAULT_LEASE_SECONDS: Long = 120
+        const val DEFAULT_MAX_LEASE_ATTEMPTS: Int = 5
     }
 }
 
@@ -244,6 +246,7 @@ private fun workerPolicy(properties: ActionGuideProperties): ActionGuideJobWorke
     ActionGuideJobWorkerPolicy(
         owner = properties.owner.ifBlank(::hostOwner).take(OWNER_MAX_LENGTH),
         leaseDuration = Duration.ofSeconds(properties.leaseDurationSeconds),
+        maxLeaseAttempts = properties.maxLeaseAttempts,
     )
 
 private fun hostOwner(): String =

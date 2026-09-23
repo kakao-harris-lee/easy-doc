@@ -18,6 +18,7 @@ enum class ActionGuideJobOutcome {
     COMPLETED,
     FAILED,
     RECOVERED_UNKNOWN,
+    DEAD_LETTERED,
     DROPPED,
 }
 
@@ -46,19 +47,27 @@ class ProcessActionGuideJob(
     private val log = LoggerFactory.getLogger(ProcessActionGuideJob::class.java)
 
     fun processNext(): ActionGuideJobOutcome =
-        when (val acquired = transaction.inTransaction { jobs.acquire(policy.owner, policy.leaseDuration) }) {
+        when (val acquired = transaction.inTransaction { acquire() }) {
             ActionGuideJobAcquire.Empty -> ActionGuideJobOutcome.IDLE
             is ActionGuideJobAcquire.RecoverUnknown -> recoverUnknown(acquired.lease)
+            is ActionGuideJobAcquire.DeadLettered -> deadLetter(acquired.lease)
             is ActionGuideJobAcquire.Held -> run(acquired.lease)
         }
 
-    /** 기능을 끈 동안 미시작 예약을 반환하되, 이미 시작한 호출은 불명확 정산한다. */
+    /**
+     * 기능을 끈 동안 미시작 예약을 반환하되, 이미 시작한 호출은 불명확 정산한다.
+     * 리스 재획득 상한을 넘긴 작업도 여기서는 실패가 아니라 같은 미시작 반환으로 끝낸다.
+     */
     fun drainNext(): ActionGuideJobOutcome =
-        when (val acquired = transaction.inTransaction { jobs.acquire(policy.owner, policy.leaseDuration) }) {
+        when (val acquired = transaction.inTransaction { acquire() }) {
             ActionGuideJobAcquire.Empty -> ActionGuideJobOutcome.IDLE
             is ActionGuideJobAcquire.RecoverUnknown -> recoverUnknown(acquired.lease)
+            is ActionGuideJobAcquire.DeadLettered -> supersedeUnstarted(acquired.lease)
             is ActionGuideJobAcquire.Held -> supersedeUnstarted(acquired.lease)
         }
+
+    private fun acquire(): ActionGuideJobAcquire =
+        jobs.acquire(policy.owner, policy.leaseDuration, policy.maxLeaseAttempts)
 
     private fun run(lease: ActionGuideJobLease): ActionGuideJobOutcome =
         when (val start = start(lease)) {
@@ -220,6 +229,45 @@ class ProcessActionGuideJob(
         )
         return StartResult.PreparationFailed
     }
+
+    /**
+     * provider를 시작하지 못한 채 리스만 계속 다시 얻은 작업을 그 자리에서 끝낸다.
+     *
+     * 시작 트랜잭션이 매번 같은 저장소 오류로 깨지는 작업은 [failPreparation]의 정산 쓰기까지
+     * 함께 실패하므로 `running` 으로 남는다. 그대로 두면 리스가 만료될 때마다 같은 자리에서
+     * 다시 깨지면서 예약·worker slot·계정의 활성 작업 자리를 영원히 붙잡는다.
+     *
+     * provider를 부른 적이 없으므로 원장에는 아무 것도 남기지 않고, 시도 상한(D04)도 세지 않는다.
+     * 정산은 획득과 분리된 짧은 트랜잭션이며, 같은 CAS 울타리(status·lease_owner·attempts)를 쓰므로
+     * 경쟁하는 worker나 문서 삭제 trigger가 예약을 두 번 되돌릴 수 없다.
+     *
+     * 「미시작」은 획득 트랜잭션이 본 사실이다. 정산 트랜잭션에서 다시 확인해 시작 표시가 보이면
+     * [supersedeUnstarted]와 같은 판단으로 불명확 회수에 넘긴다 — 호출 결과를 모르는 작업을
+     * `generation_failed` 로 굳히면 원장 없이 사라진 호출이 생긴다.
+     */
+    private fun deadLetter(lease: ActionGuideJobLease): ActionGuideJobOutcome =
+        transaction.inTransaction {
+            val job = jobs.lockIfHeld(lease) ?: return@inTransaction ActionGuideJobOutcome.DROPPED
+            if (job.providerStartedAt != null || job.executionId != null) {
+                val executionId = job.executionId ?: return@inTransaction ActionGuideJobOutcome.DROPPED
+                return@inTransaction settleUnknownHeld(
+                    lease,
+                    job,
+                    executionId,
+                    ActionGuideJobOutcome.RECOVERED_UNKNOWN,
+                )
+            }
+            if (!jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, clock.instant())) {
+                return@inTransaction ActionGuideJobOutcome.DROPPED
+            }
+            credits.release(job)
+            log.warn(
+                "행동 안내 작업이 리스 재획득 상한을 넘겨 호출 없이 실패로 끝낸다: jobId={}, attempts={}",
+                job.jobId,
+                lease.fence,
+            )
+            ActionGuideJobOutcome.DEAD_LETTERED
+        }
 
     private fun recoverUnknown(lease: ActionGuideJobLease): ActionGuideJobOutcome =
         transaction.inTransaction {

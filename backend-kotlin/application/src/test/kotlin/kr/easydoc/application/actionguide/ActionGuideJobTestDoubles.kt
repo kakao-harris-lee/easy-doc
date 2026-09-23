@@ -82,6 +82,7 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
     override fun acquire(
         owner: String,
         leaseDuration: Duration,
+        maxLeaseAttempts: Int,
     ): ActionGuideJobAcquire = acquired
 
     override fun lockIfHeld(lease: ActionGuideJobLease): StoredActionGuideJob? = if (held) rows[lease.jobId] else null

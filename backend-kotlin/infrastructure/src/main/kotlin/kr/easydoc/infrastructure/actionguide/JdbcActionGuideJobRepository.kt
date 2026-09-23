@@ -111,6 +111,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
     override fun acquire(
         owner: String,
         leaseDuration: Duration,
+        maxLeaseAttempts: Int,
     ): ActionGuideJobAcquire {
         // 두 replica가 같은 free slot을 동시에 보지 않게 획득 결정만 짧게 직렬화한다.
         jdbc
@@ -118,7 +119,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             .param("key", ACQUIRE_LOCK_KEY)
             .query { _, _ -> true }
             .single()
-        acquireExpired(owner, leaseDuration)?.let { return it }
+        acquireExpired(owner, leaseDuration, maxLeaseAttempts)?.let { return it }
         return acquireQueued(owner, leaseDuration) ?: ActionGuideJobAcquire.Empty
     }
 
@@ -185,20 +186,23 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
         updatedAt: Instant,
     ): Boolean = finish(lease, ActionGuideJobStatus.SUPERSEDED, null, "released", updatedAt)
 
+    /** 시작한 호출의 결과는 알 수 없으므로, 불명확 회수가 리스 재획득 상한보다 우선한다. */
     private fun acquireExpired(
         owner: String,
         leaseDuration: Duration,
+        maxLeaseAttempts: Int,
     ): ActionGuideJobAcquire? =
         jdbc
             .sql(ACQUIRE_EXPIRED_SQL)
             .param("owner", owner)
             .param("leaseSeconds", leaseDuration.seconds)
             .query { rs, _ ->
-                val lease = ActionGuideJobLease(rs.getObject("id", UUID::class.java), owner, rs.getInt("attempts"))
-                if (rs.getObject("provider_started_at") == null) {
-                    ActionGuideJobAcquire.Held(lease)
-                } else {
-                    ActionGuideJobAcquire.RecoverUnknown(lease)
+                val attempts = rs.getInt("attempts")
+                val lease = ActionGuideJobLease(rs.getObject("id", UUID::class.java), owner, attempts)
+                when {
+                    rs.getObject("provider_started_at") != null -> ActionGuideJobAcquire.RecoverUnknown(lease)
+                    attempts > maxLeaseAttempts -> ActionGuideJobAcquire.DeadLettered(lease)
+                    else -> ActionGuideJobAcquire.Held(lease)
                 }
             }.optional()
             .orElse(null)

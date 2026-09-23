@@ -64,6 +64,13 @@ sealed interface ActionGuideJobAcquire {
 
     /** provider 시작 뒤 만료됐다. 새 호출 없이 불명확 실패로 정산해야 한다. */
     data class RecoverUnknown(val lease: ActionGuideJobLease) : ActionGuideJobAcquire
+
+    /**
+     * provider를 시작하지 못한 채 리스 재획득 상한에 닿았다. 다시 worker에 넘기지 않고
+     * 그 자리에서 실패로 정산한다 — 결정적으로 깨지는 작업이 예약·worker slot·계정의 활성
+     * 작업 자리를 영원히 붙잡지 않게 한다.
+     */
+    data class DeadLettered(val lease: ActionGuideJobLease) : ActionGuideJobAcquire
 }
 
 /** 접수·조회와 worker fencing을 함께 제공하는 별도 action_guide_jobs 저장소 포트. */
@@ -99,9 +106,11 @@ interface ActionGuideJobRepository {
         conversionId: UUID,
     ): StoredActionGuideJob?
 
+    /** [maxLeaseAttempts]를 넘겨 다시 얻은 미시작 작업은 [ActionGuideJobAcquire.DeadLettered]로 돌려준다. */
     fun acquire(
         owner: String,
         leaseDuration: Duration,
+        maxLeaseAttempts: Int,
     ): ActionGuideJobAcquire
 
     /** fencing이 유효하면 작업 행을 잠가 반환한다. */
@@ -215,9 +224,19 @@ fun interface ActionGuideJobRunner {
 data class ActionGuideJobWorkerPolicy(
     val owner: String,
     val leaseDuration: Duration,
+    val maxLeaseAttempts: Int,
 ) {
     init {
         require(owner.isNotBlank()) { "worker owner가 비어 있습니다" }
         require(!leaseDuration.isZero && !leaseDuration.isNegative) { "리스 수명이 양수가 아닙니다" }
+        // 위쪽 상한이 없으면 자릿수 오타 하나가 상한을 사실상 없애 버린다 — 기동에서 걸러낸다.
+        require(maxLeaseAttempts in 1..MAX_ALLOWED_LEASE_ATTEMPTS) {
+            "리스 재획득 상한은 1 이상 $MAX_ALLOWED_LEASE_ATTEMPTS 이하여야 합니다"
+        }
+    }
+
+    companion object {
+        /** 리스 수명이 120초면 100회는 이미 3시간이 넘는다. 그보다 큰 값은 상한이 아니다. */
+        const val MAX_ALLOWED_LEASE_ATTEMPTS: Int = 100
     }
 }
