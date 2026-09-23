@@ -107,10 +107,17 @@ class ConversionFeatureRouteReachTest {
         val mine = newAccount()
         val theirs = doneConversion(newAccount())
         val theirJob = seedActionGuideJob(theirs)
-        val myConversion = doneConversion(mine).conversionId
+        val myDone = doneConversion(mine)
+        val myConversion = myDone.conversionId
+        val myJob = seedActionGuideJob(myDone)
 
         assertThat(getBytes(mine, ACTION_GUIDE_JOBS_PATH.forConversion(myConversion)).statusCode())
             .withFailMessage("내 변환의 작업 목록이 200 이 아니다 — 토글이 꺼져 있어 소유권 판정이 공회전한다")
+            .isEqualTo(OK)
+        // 단건 조회에도 대조군이 있어야 한다 — 아래 두 팔이 404 대 404 뿐이면 언제나
+        // 404 를 내는 구현도 통과한다.
+        assertThat(getBytes(mine, jobPath(myConversion, myJob)).statusCode())
+            .withFailMessage("내 변환의 내 작업 단건 조회가 200 이 아니다 — 모든 팔이 404 라 판정이 공회전한다")
             .isEqualTo(OK)
 
         val foreignConversion = getBytes(mine, jobPath(theirs.conversionId, theirJob))

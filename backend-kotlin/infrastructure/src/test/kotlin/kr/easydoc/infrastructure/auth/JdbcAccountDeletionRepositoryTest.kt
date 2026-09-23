@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.auth
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
+import kr.easydoc.infrastructure.DerivedRows
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
@@ -156,10 +157,12 @@ class JdbcAccountDeletionRepositoryTest {
      * 구조(V32)·검수 이력(V33)·그림 배치(V34)는 전부 `documents`/`conversions` 에
      * `ON DELETE CASCADE` 로 매달려 있으니 탈퇴 한 번으로 사라져야 한다.
      *
-     * 행동 안내 작업은 **끝난 상태**(`succeeded`/`consumed`)로 둔다 — V29 의 문서 삭제
-     * 트리거가 정산하는 대상은 `queued`·`running` 뿐이라 이 테스트가 재는 CASCADE 범위와
-     * 무관하다. 활성 작업을 쥔 계정의 탈퇴는 별개의 결함이라 이 파일에서 재지 않는다
-     * (PR 본문 참고).
+     * 행동 안내 작업은 [DerivedRows.seed] 의 기본값인 **끝난 상태**(`succeeded`/`consumed`)로
+     * 둔다. `queued`·`running` + `settlement = 'reserved'` 인 작업을 쥔 계정은 지금 탈퇴가
+     * FK 위반으로 실패한다 — `users` CASCADE 가 `workspaces` 를 먼저 지운 뒤 `documents`
+     * CASCADE 의 V29 `BEFORE DELETE` 트리거가 이미 사라진 작업 공간·사용자를 가리키는
+     * `credit_transactions` 행을 INSERT 하기 때문이다. 그 갈래의 수정과 재현 테스트는
+     * 브랜치 `fix/account-deletion-active-action-guide` 의 몫이라 여기서 재지 않는다.
      */
     @Test
     @DisplayName("문서 있는 계정을 탈퇴하면 V28~V34 파생 행이 전부 0건이 된다")
@@ -169,29 +172,27 @@ class JdbcAccountDeletionRepositoryTest {
         val documentId = insertDocument(userId, workspaceId)
         val conversionId = insertConversion(documentId)
         insertCreditAccount(workspaceId)
-        val jobId = insertSettledActionGuideJob(userId, workspaceId, documentId, conversionId)
-        insertDerivedRows(userId, documentId, conversionId, jobId)
-        DERIVED_TABLES.forEach { (table, column) ->
-            assertThat(countWhere(table, column, if (column == DOCUMENT_ID) documentId else conversionId))
-                .withFailMessage("%s 에 파생 행을 심지 못했다 — 이 테스트가 아무것도 재지 못한다", table)
-                .isEqualTo(1)
-        }
+        val jobId = DerivedRows.seed(dataSource(), userId, workspaceId, documentId, conversionId)
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행을 심지 못한 표가 있다 — 이 테스트가 아무것도 재지 못한다")
+            .isEqualTo(everyDerivedTable(1))
 
         assertThatCode {
             repository.deleteConversionFeedback(userId)
             repository.deleteUser(userId)
         }.doesNotThrowAnyException()
 
-        DERIVED_TABLES.forEach { (table, column) ->
-            assertThat(countWhere(table, column, if (column == DOCUMENT_ID) documentId else conversionId))
-                .withFailMessage("%s 의 파생 행이 탈퇴 뒤에도 남았다 — 파기 범위가 새고 있다", table)
-                .isZero()
-        }
+        assertThat(derivedCounts(documentId, conversionId))
+            .withFailMessage("파생 행이 탈퇴 뒤에도 남았다 — 파기 범위가 새고 있다")
+            .isEqualTo(everyDerivedTable(0))
         assertThat(countWhere("users", "id", userId)).isZero()
         assertThat(countWhere("documents", "user_id", userId)).isZero()
         assertThat(countWhere("action_guide_jobs", "id", jobId))
             .withFailMessage("작업 감사행이 사라졌다 — FK 를 일부러 두지 않은 청구 근거다(V29)")
             .isEqualTo(1)
+        assertThat(jobOwnerText(jobId))
+            .withFailMessage("남은 작업 감사행이 아직 탈퇴한 사용자를 가리킨다 — V29 의 SET NULL 이 닿지 않았다")
+            .isEqualTo(NO_OWNER)
         assertThat(countWhere("credit_transactions", "owner_user_id", userId))
             .withFailMessage("탈퇴한 사용자를 가리키는 거래가 남았다 — FK CASCADE 가 닿지 않았다")
             .isZero()
@@ -199,6 +200,29 @@ class JdbcAccountDeletionRepositoryTest {
             .withFailMessage("작업 공간 크레딧 계정이 남았다 — V15 의 CASCADE 가 닿지 않았다")
             .isZero()
     }
+
+    /** [DerivedRows.CENSUS] 의 「표 이름 → 남은 행 수」. */
+    private fun derivedCounts(
+        documentId: UUID,
+        conversionId: UUID,
+    ): Map<String, Int> = DerivedRows.counts(dataSource(), documentId, conversionId)
+
+    /** 모든 파생 표가 [rows] 행씩인 기대값 — 어긋난 표 이름이 실패 메시지에 그대로 나온다. */
+    private fun everyDerivedTable(rows: Int): Map<String, Int> =
+        DerivedRows.CENSUS.associate { (table, _) -> table to rows }
+
+    /**
+     * 남은 작업 감사행의 소유자를 문자열로 읽는다. V29 의 FK 가 `ON DELETE SET NULL` 이라
+     * 탈퇴 뒤에는 [NO_OWNER] 여야 한다 — `null` 을 그대로 매핑하면 `single()` 이 끊으므로
+     * SQL 에서 미리 [NO_OWNER] 로 바꾸고, 남아 있으면 그 id 가 실패 메시지에 그대로 나온다.
+     */
+    private fun jobOwnerText(jobId: UUID): String =
+        jdbcClient
+            .sql("SELECT coalesce(owner_user_id::text, :none) FROM action_guide_jobs WHERE id = :id")
+            .param("none", NO_OWNER)
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
 
     @Test
     @DisplayName("소셜 전용 계정(비밀번호 없음)도 탈퇴된다")
@@ -376,173 +400,6 @@ class JdbcAccountDeletionRepositoryTest {
             .update()
     }
 
-    /** 끝난 작업 — V29 의 문서 삭제 트리거는 `queued`·`running` 만 정산한다. */
-    private fun insertSettledActionGuideJob(
-        userId: UUID,
-        workspaceId: UUID,
-        documentId: UUID,
-        conversionId: UUID,
-    ): UUID {
-        val id = UUID.randomUUID()
-        jdbcClient
-            .sql(
-                """
-                INSERT INTO action_guide_jobs
-                    (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
-                     expected_content_revision, based_on_content_revision, input_fingerprint,
-                     status, reserved_credits, settlement)
-                VALUES (:id, :request, :userId, :workspaceId, :documentId, :conversionId,
-                        1, 1, :fingerprint, 'succeeded', :credits, 'consumed')
-                """.trimIndent(),
-            ).param("id", id)
-            .param("request", UUID.randomUUID())
-            .param("userId", userId)
-            .param("workspaceId", workspaceId)
-            .param("documentId", documentId)
-            .param("conversionId", conversionId)
-            .param("fingerprint", FINGERPRINT)
-            .param("credits", CREDITS)
-            .update()
-        return id
-    }
-
-    /** V28~V34 가 문서·변환에 매단 파생 행 한 벌. */
-    private fun insertDerivedRows(
-        userId: UUID,
-        documentId: UUID,
-        conversionId: UUID,
-        jobId: UUID,
-    ) {
-        insertReviewSupportRow(conversionId)
-        insertTableStructureRow(documentId)
-        insertReviewHistoryRows(userId, conversionId)
-        insertIllustrationPlacementRow(conversionId)
-        insertActionGuideContentRows(conversionId, jobId)
-    }
-
-    /** 이름 있는 파라미터를 한 번에 묶는다 — 파생 행 SQL 이 전부 같은 모양이라 반복을 줄인다. */
-    private fun insertRow(
-        sql: String,
-        params: Map<String, Any>,
-    ) {
-        var spec = jdbcClient.sql(sql.trimIndent())
-        params.forEach { (name, value) -> spec = spec.param(name, value) }
-        spec.update()
-    }
-
-    private fun insertReviewSupportRow(conversionId: UUID) =
-        insertRow(
-            """
-            INSERT INTO review_assessments
-                (id, conversion_id, content_revision, analyzer_version,
-                 payload_encrypted, encryption_scheme, key_version)
-            VALUES (:id, :conversionId, 1, 'fact-preservation-v1', :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "id" to UUID.randomUUID(),
-                "conversionId" to conversionId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-
-    private fun insertTableStructureRow(documentId: UUID) =
-        insertRow(
-            """
-            INSERT INTO document_table_structures
-                (document_id, payload_encrypted, encryption_scheme, key_version)
-            VALUES (:documentId, :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "documentId" to documentId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-
-    private fun insertReviewHistoryRows(
-        userId: UUID,
-        conversionId: UUID,
-    ) {
-        val snapshotId = UUID.randomUUID()
-        insertRow(
-            """
-            INSERT INTO review_snapshots
-                (id, conversion_id, content_revision, kind, payload_encrypted, encryption_scheme, key_version)
-            VALUES (:id, :conversionId, 1, 'review_assessment', :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "id" to snapshotId,
-                "conversionId" to conversionId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-        insertRow(
-            """
-            INSERT INTO review_events
-                (id, conversion_id, event_type, actor_user_id, created_at, content_revision, snapshot_id)
-            VALUES (:id, :conversionId, 'item_confirmed', :userId, now(), 1, :snapshotId)
-            """,
-            mapOf(
-                "id" to UUID.randomUUID(),
-                "conversionId" to conversionId,
-                "userId" to userId,
-                "snapshotId" to snapshotId,
-            ),
-        )
-    }
-
-    private fun insertIllustrationPlacementRow(conversionId: UUID) =
-        insertRow(
-            """
-            INSERT INTO illustration_placements
-                (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
-            VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "id" to UUID.randomUUID(),
-                "conversionId" to conversionId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-
-    private fun insertActionGuideContentRows(
-        conversionId: UUID,
-        jobId: UUID,
-    ) {
-        insertRow(
-            """
-            INSERT INTO action_guide_candidates
-                (id, job_id, conversion_id, based_on_content_revision,
-                 payload_encrypted, encryption_scheme, key_version)
-            VALUES (:id, :jobId, :conversionId, 1, :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "id" to UUID.randomUUID(),
-                "jobId" to jobId,
-                "conversionId" to conversionId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-        insertRow(
-            """
-            INSERT INTO action_guides
-                (id, conversion_id, based_on_content_revision, guide_revision, status,
-                 payload_encrypted, encryption_scheme, key_version)
-            VALUES (:id, :conversionId, 1, 1, 'draft', :bytes, :scheme, 1)
-            """,
-            mapOf(
-                "id" to UUID.randomUUID(),
-                "conversionId" to conversionId,
-                "bytes" to PAYLOAD,
-                "scheme" to EncryptionScheme.AES_256_GCM_V1,
-            ),
-        )
-    }
-
     private fun insertLlmCall(
         userId: UUID,
         workspaceId: UUID,
@@ -576,28 +433,11 @@ class JdbcAccountDeletionRepositoryTest {
     private companion object {
         val HASH = PasswordHash("\$argon2id\$v=19\$m=65536,t=3,p=4\$YWJjZGVmZ2hpamtsbW5vcA\$c3RvcmVkLWhhc2g")
 
-        const val DOCUMENT_ID = "document_id"
-        const val CONVERSION_ID = "conversion_id"
-
-        /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
-        const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
-        /** `ck_action_guide_jobs_reserved_credits_positive` 과 `…_tenth`(V31)를 함께 만족한다. */
+        /** `ck_workspace_credit_accounts_*_tenth`(V31)를 만족한다. */
         val CREDITS: BigDecimal = BigDecimal("1.0")
 
-        val PAYLOAD: ByteArray = byteArrayOf(1, 2, 3, 4)
-
-        /** 전부 `ON DELETE CASCADE` — 탈퇴 한 번으로 사라져야 한다. */
-        val DERIVED_TABLES: List<Pair<String, String>> =
-            listOf(
-                "review_assessments" to CONVERSION_ID,
-                "document_table_structures" to DOCUMENT_ID,
-                "review_snapshots" to CONVERSION_ID,
-                "review_events" to CONVERSION_ID,
-                "illustration_placements" to CONVERSION_ID,
-                "action_guide_candidates" to CONVERSION_ID,
-                "action_guides" to CONVERSION_ID,
-            )
+        /** `owner_user_id` 가 `NULL` 로 풀렸음을 나타내는 자리 표시 — uuid 형식이 아니라 섞이지 않는다. */
+        const val NO_OWNER = "소유자 없음"
 
         var counter = 0
     }
