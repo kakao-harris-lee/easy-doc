@@ -179,8 +179,8 @@ class WorkspaceEndpointReachTest {
     }
 
     /**
-     * 소유권 은닉의 셋째 축 — 응답 시간. 1차 21표본이 문턱을 넘으면 [CONFIRMATION_SAMPLES]
-     * 표본으로 한 번 더 재 그 결과로 판정한다([TimingUniformity] KDoc 참고 — CI 잡음 대응).
+     * 소유권 은닉의 셋째 축 — 응답 시간. 표본 설계와 이 축이 무엇의 보조인지는
+     * [TimingUniformity] KDoc 에 있다. 여기 companion 상수가 그 설계의 값이다.
      */
     @Test
     @DisplayName("소유권 404 의 응답 시간이 「없음」과 「타인 것」 사이에서 갈리지 않는다")
@@ -188,24 +188,8 @@ class WorkspaceEndpointReachTest {
         val mine = newAccount()
         val othersId = idOf(create(newAccount(), uniqueName()))
 
-        val outcome =
-            TimingUniformity.measureWithConfirmation(
-                threshold = MAX_TIMING_RATIO,
-                minMeasurableMillis = MIN_MEASURABLE_MILLIS,
-                firstPass = {
-                    TimingUniformity.interleavedMedians(listOf(ABSENT, OTHERS), TIMING_SAMPLES, TIMING_SEED) { arm ->
-                        timeNotFoundRequest(mine, othersId, arm)
-                    }
-                },
-                confirmationPass = {
-                    TimingUniformity.interleavedMedians(
-                        listOf(ABSENT, OTHERS),
-                        CONFIRMATION_SAMPLES,
-                        TIMING_SEED + 1,
-                    ) { arm -> timeNotFoundRequest(mine, othersId, arm) }
-                },
-            )
-        val description = TimingUniformity.describe(outcome, "없음" to "타인", MIN_MEASURABLE_MILLIS)
+        val outcome = TimingUniformity.judge(TIMING_SPEC) { arm -> timeNotFoundRequest(mine, othersId, arm) }
+        val description = TimingUniformity.describe(outcome)
         println(description)
 
         assertThat(outcome.ratio)
@@ -356,16 +340,33 @@ class WorkspaceEndpointReachTest {
         assertDeclaredStatus(delete(token, id), NOT_FOUND, ITEM_PATH, DELETE)
     }
 
-    /** 소유권 404 시간 판정 한 표본. [arm] 이 [ABSENT] 면 없는 식별자를, 아니면 남의 작업 공간을 잰다. */
+    /**
+     * 소유권 404 시간 판정 한 표본. [arm] 이 [ABSENT] 면 없는 식별자를, 아니면 남의 작업 공간을 잰다.
+     *
+     * 요청 조립(계약에서 경로 변수 이름 읽기·URL 파싱·본문 직렬화)은 괄호 **밖**이고, 잰 구간은
+     * [client] 의 왕복 하나뿐이다. 종전에는 `HttpClient.newHttpClient()` 와 요청 조립이 모두 괄호
+     * 안에 있어, 두 팔의 차이를 재는 자리에 두 팔과 무관한 비용(클라이언트 생성·연결 수립·계약
+     * 파일 조회)이 표본마다 섞였다. 그 비용이 종전 중앙값을 지배했는지는 재지 않았다 — 공유로
+     * 바꾼 뒤에도 중앙값은 5~6ms 대다. 고친 이유는 크기가 아니라 「재는 구간은 두 팔의 차이만
+     * 담아야 한다」는 것이고, 그래서 클라이언트는 클래스 하나로 공유한다.
+     */
     private fun timeNotFoundRequest(
         token: String,
         othersId: String,
-        arm: String,
+        arm: TimingUniformity.Arm,
     ): Double {
         val target = if (arm == ABSENT) UUID.randomUUID().toString() else othersId
+        val request =
+            jsonRequest(itemPath(target), token)
+                .method(PATCH.uppercase(), bodyPublisher(nameBody(uniqueName())))
+                .build()
+
         val started = System.nanoTime()
-        patch(token, target, uniqueName())
-        return (System.nanoTime() - started) / NANOS_PER_MILLI
+        val status = client.send(request, HttpResponse.BodyHandlers.ofString(Charsets.UTF_8)).statusCode()
+        val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
+
+        check(status == NOT_FOUND) { "404 가 아니면 잰 것이 다른 경로다: $status" }
+        return elapsed
     }
 
     /** 가입하고 로그인해 토큰을 받는다. 가입은 기본 작업 공간을 함께 만든다. */
@@ -408,7 +409,7 @@ class WorkspaceEndpointReachTest {
     ): HttpResponse<ByteArray> = sendBytes(jsonRequest(itemPath(workspaceId), token).DELETE())
 
     private fun sendBytes(builder: HttpRequest.Builder): HttpResponse<ByteArray> =
-        HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+        client.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
 
     private fun get(
         path: String,
@@ -432,7 +433,7 @@ class WorkspaceEndpointReachTest {
         HttpRequest.BodyPublishers.ofString(payload, Charsets.UTF_8)
 
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
-        HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
+        client.send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
     private fun nameBody(name: String): String = json.writeValueAsString(mapOf(NAME_PROPERTY to name))
 
@@ -531,33 +532,55 @@ class WorkspaceEndpointReachTest {
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
 
-        /** 응답마다 값이 달라지는 헤더 — 집합 비교에서 뺀다(길이·날짜는 존재 자체가 갈리지 않는다). */
+        private val ABSENT = TimingUniformity.Arm("absent", "없음")
+        private val OTHERS = TimingUniformity.Arm("others", "타인")
 
-        private const val ABSENT = "absent"
-        private const val OTHERS = "others"
-
-        /** 경로당 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
+        /** 1차 회차의 경로당 표본 수. 홀수라 확인 없이 끝날 때 중앙값이 표본 하나로 정해진다. */
         private const val TIMING_SAMPLES = 21
 
-        /**
-         * 1차가 문턱을 넘었을 때만 도는 확인 표본 수 — 1차의 3배. 짧은 CI 스톨 하나로는
-         * 이 더 큰 표본에서 비가 다시 문턱을 넘기 어렵지만, 실제로 일하는 양이 갈리는
-         * 회귀는 표본을 늘려도 그대로 남는다.
-         */
-        private const val CONFIRMATION_SAMPLES = TIMING_SAMPLES * 3
+        /** 1차가 문턱 이상일 때만 더 재는 표본 수 — 합산이 홀수가 되게 짝수다. 근거는 [TimingUniformity] KDoc. */
+        private const val CONFIRMATION_SAMPLES = TIMING_SAMPLES * 2
 
         /** 두 경로를 섞는 순서. 고정 시드라 실패가 재현된다. */
         private const val TIMING_SEED = 20260819L
 
-        /** 명세는 KDoc 에 있다 — 2.0 에서 좁힌 값이고 auth 의 로그인 게이트와 같다. */
+        /** 확인 회차의 시드. 1차와 다른 배치를 써 확인이 1차의 자리 배열을 되풀이하지 않게 한다. */
+        private const val CONFIRMATION_SEED = TIMING_SEED + 1
+
+        /**
+         * 1차와 확인 사이에 재우는 시간(ms). `AesGcmContentCipherTest.TIMING_ATTEMPT_GAP_MILLIS`
+         * 와 같은 값·같은 이유다 — 두 회차가 하나의 스케줄러·GC 잡음 구간에 붙어 있지 않게 한다.
+         */
+        private const val CONFIRMATION_GAP_MILLIS = 50L
+
+        /**
+         * 명세는 [TimingUniformity] KDoc 에 있다 — 2.0 에서 좁힌 값이고 auth 의 로그인 게이트와
+         * 같다. 다만 판정은 auth 와 다르다 — auth 는 한 회차로 끝내고 여기는 1차·확인을 합산한다.
+         */
         private const val MAX_TIMING_RATIO = 1.5
 
         /** 0 으로 나누지 않기 위한 바닥. 이보다 짧은 응답은 측정 분해능 밖이다. */
         private const val MIN_MEASURABLE_MILLIS = 0.05
 
+        /** 위 상수들이 곧 이 판정의 표본 설계다. */
+        private val TIMING_SPEC =
+            TimingUniformity.TimingSpec(
+                arms = listOf(ABSENT, OTHERS),
+                samples = TIMING_SAMPLES,
+                confirmationSamples = CONFIRMATION_SAMPLES,
+                seed = TIMING_SEED,
+                confirmationSeed = CONFIRMATION_SEED,
+                gapMillis = CONFIRMATION_GAP_MILLIS,
+                threshold = MAX_TIMING_RATIO,
+                minMeasurableMillis = MIN_MEASURABLE_MILLIS,
+            )
+
         private const val NANOS_PER_MILLI = 1_000_000.0
 
         private var counter = 0
+
+        /** 모든 요청이 쓰는 클라이언트 하나. 요청마다 새로 만들면 그 생성 비용이 시간 판정에 얹힌다. */
+        private val client: HttpClient = HttpClient.newHttpClient()
 
         /** 이 테스트만 쓰는 DB. 다른 기동 테스트의 행과 섞이지 않게 따로 만든다. */
         val database: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("workspace_reach") }
