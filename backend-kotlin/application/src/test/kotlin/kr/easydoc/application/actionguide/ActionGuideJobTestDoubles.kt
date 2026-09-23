@@ -31,6 +31,9 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
     var currentInput = true
     var currentInputCheck: (() -> Boolean)? = null
     var terminalWriteSucceeds = true
+
+    /** 저장소가 끊긴 정산 쓰기. `false` 반환(경쟁에 졌다)과 달리 예외가 밖으로 나간다. */
+    var terminalWriteFailure: RuntimeException? = null
     val terminalWrites = mutableListOf<Pair<ActionGuideJobStatus, ActionGuideJobFailureCode?>>()
 
     override fun lockOwnedContext(
@@ -127,6 +130,7 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
         failureCode: ActionGuideJobFailureCode?,
         updatedAt: Instant,
     ): Boolean {
+        terminalWriteFailure?.let { throw it }
         if (!terminalWriteSucceeds) return false
         val current = lockIfHeld(lease) ?: return false
         rows[lease.jobId] = current.copy(status = status, failureCode = failureCode, updatedAt = updatedAt)
