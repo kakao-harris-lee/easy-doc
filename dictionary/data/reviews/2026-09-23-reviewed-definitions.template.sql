@@ -1,0 +1,70 @@
+-- 뜻풀이 검수 완료 표시 — 틀 (2026-09-23)
+--
+-- 이 파일은 **틀이다. 그대로 실행하면 아무 일도 일어나지 않는다**(전부 주석).
+-- 사람이 실제로 검수한 뒤, 이 파일을 복사해
+-- `data/reviews/<검수일>-reviewed-definitions.sql`로 만들고 아래 예시의 주석을
+-- 풀어 표제어를 채운다. 전체 절차는 README 「검수된 정의(v=reviewed) 공급」.
+--
+-- ## 규칙 (이걸 어기면 이 표시는 의미가 없다)
+--
+-- 1. **사람이 실제로 읽은 뜻풀이만 적는다.** 검수 큐 CSV
+--    (`2026-09-23-definition-review-queue.csv`)의 `definition` 칸을 눈으로 읽고
+--    "이 문장을 그대로 사용자에게 보여주고 LLM 생성 재료로 써도 된다"고 판단한
+--    표제어만 `WHERE term IN (...)`에 넣는다. 훑어본 것, 맞겠거니 한 것은 넣지
+--    않는다 — 이 표시가 붙은 뜻풀이는 easy-doc의 R3 생성 컨텍스트와 R6 설명
+--    패널에 그대로 들어간다.
+-- 2. **다른 신호에서 파생시키지 않는다.** `status='active'`, `risk_level`,
+--    `replace_strategy`, 원천(seed) 출처, `review_note`는 검수 완료 표시가
+--    아니다. 그런 조건으로 한꺼번에 UPDATE 하는 SQL을 쓰지 않는다
+--    (docs/reports/2026-09-21-r3-implementation.md 「리뷰 리스크」).
+-- 3. **`definition_reviewed_by`를 반드시 함께 적는다.** 시각만 있고 사람이
+--    없으면 출처가 아니라서 `export_index()`가 `v`를 붙이지 않는다. 사람 이름
+--    또는 검수 주체(팀/역할)를 적는다.
+-- 4. **뜻풀이를 고치는 일과 같은 문장에서 하지 않는다.** 뜻풀이 수정은 기존
+--    검수 SQL(2026-09-11/2026-09-12)처럼 별도 UPDATE로 하고, 고친 문장을 사람이
+--    다시 읽은 뒤에 이 표시를 붙인다.
+-- 5. 이 표시를 되돌릴 때는 두 컬럼을 함께 NULL로 되돌린다(맨 아래 예시).
+--
+-- ## 적용
+--
+--   sqlite3 dist/easy_dict.sqlite3 < data/reviews/<검수일>-reviewed-definitions.sql
+--
+-- 정본 재생성 시에는 2026-09-11 → 2026-09-12 → 이 파일 순서로 적용하고
+-- 내보내기(`export_all`)를 돌린다. 적용 후 표시된 건수는 다음으로 확인한다.
+--
+--   sqlite3 dist/easy_dict.sqlite3 \
+--     "SELECT count(*) FROM entries WHERE definition_reviewed_at IS NOT NULL;"
+--
+-- ----------------------------------------------------------------------------
+-- 예시 1 — 표제어로 표시하기 (같은 표제어에 엔트리가 하나뿐일 때)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = '2026-09-30',
+--        definition_reviewed_by = '홍길동'
+--  WHERE term IN ('과태료', '고지')
+--    AND definition IS NOT NULL
+--    AND trim(definition) != '';
+-- COMMIT;
+--
+-- ----------------------------------------------------------------------------
+-- 예시 2 — 같은 표제어에 엔트리가 여럿일 때는 id로 좁힌다
+-- (검수 큐 CSV에 같은 term이 두 줄 이상 나오면 이 경우다. id는
+--  `SELECT id, term, easy_term, definition FROM entries WHERE term = '수리';`)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = '2026-09-30',
+--        definition_reviewed_by = '홍길동'
+--  WHERE id = 831;
+-- COMMIT;
+--
+-- ----------------------------------------------------------------------------
+-- 예시 3 — 표시 취소(검수 결과 "이 뜻풀이는 쓰면 안 된다"로 뒤집혔을 때)
+-- ----------------------------------------------------------------------------
+-- BEGIN;
+-- UPDATE entries
+--    SET definition_reviewed_at = NULL,
+--        definition_reviewed_by = NULL
+--  WHERE term IN ('과태료');
+-- COMMIT;
