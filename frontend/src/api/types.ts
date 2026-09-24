@@ -764,7 +764,13 @@ export interface WorkspaceNameRequest {
 // --- 워크스페이스 사용량 집계 ---
 
 /** `llm_calls.purpose`(V12)와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
-export type UsagePurpose = 'convert' | 'repair' | 'reconvert' | 'action_guide'
+export type UsagePurpose =
+  | 'convert'
+  | 'repair'
+  | 'reconvert'
+  | 'action_guide'
+  /** R7 ER-17 문맥 기반 그림 제안 분석(V35). */
+  | 'illustration_suggestion'
 
 /**
  * `WorkspaceUsageResponse.by_purpose` 항목. 계약
@@ -823,7 +829,15 @@ export type CreditTransactionKind =
  * 갱신 없이 주기가 닫힐 때다 — 갱신(`plan_monthly`)과 구분된다.
  */
 export type CreditReason =
-  'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'action_guide' | 'cycle_end'
+  | 'signup'
+  | 'plan_monthly'
+  | 'manual'
+  | 'refund'
+  | 'conversion'
+  | 'action_guide'
+  /** R7 ER-17 제안 분석 1건의 예약·소비·해제(V35). */
+  | 'illustration_suggestion'
+  | 'cycle_end'
 
 /**
  * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.

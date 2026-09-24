@@ -28,7 +28,7 @@ class IllustrationSuggestionJobServiceTest {
         rate,
         jobs,
         credits,
-        DirectSuggestionTransaction(),
+        DirectSuggestionTransaction(jobs),
         Clock.fixed(SUGGESTION_NOW, ZoneOffset.UTC),
     )
 
@@ -107,7 +107,7 @@ class IllustrationSuggestionJobServiceTest {
     }
 
     @Test
-    @DisplayName("잔액이 모자라면 402 예외이고 작업 행을 만들지 않는다")
+    @DisplayName("잔액이 모자라면 402 예외이고 작업 행이 롤백돼 남지 않는다")
     fun `잔액이 모자라면 예약하지 않는다`() {
         credits.reservation = IllustrationSuggestionCreditReservation.Insufficient(BigDecimal("0.2"))
 

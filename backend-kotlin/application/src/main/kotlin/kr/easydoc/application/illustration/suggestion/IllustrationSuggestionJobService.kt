@@ -111,23 +111,12 @@ class IllustrationSuggestionJobService(
                     createdAt = now,
                     updatedAt = now,
                 )
-            val available =
-                when (
-                    val reservation =
-                        credits.reserve(ownerId, context.workspaceId, context.documentId, candidate.jobId, required)
-                ) {
-                    is IllustrationSuggestionCreditReservation.Reserved -> {
-                        reservation.available
-                    }
-
-                    is IllustrationSuggestionCreditReservation.Insufficient -> {
-                        throw InsufficientCreditsException(
-                            INSUFFICIENT_SUGGESTION_CREDITS_MESSAGE,
-                            reservation.available,
-                            required.amount,
-                        )
-                    }
-                }
+            // **작업 INSERT 가 이용량 예약보다 먼저다.** 정산(`ProcessIllustrationSuggestionJob.settle`)은
+            // 작업 행을 먼저 잠그고 그 다음 이용량 계정을 잡는다. 접수가 계정을 먼저 잡으면 두 순서가
+            // 엇갈려 교착한다 — 접수는 계정을 든 채 새 작업의 활성 부분 UNIQUE 항목이 풀리기를
+            // 기다리고, 정산은 그 계정을 기다린다. 교착에서 정산이 죽으면 **이미 돈을 쓴 호출의
+            // 결과가 사라지고** 작업은 리스 만료 뒤 `outcome_unknown` 으로 정리되며 시도 상한만 깎인다.
+            // 잔액이 모자라면 아래 예약이 402 로 끊고 이 INSERT 까지 함께 롤백된다.
             val inserted =
                 when (val result = jobs.insert(candidate)) {
                     is IllustrationSuggestionJobInsert.Inserted -> {
@@ -144,6 +133,23 @@ class IllustrationSuggestionJobService(
 
                     IllustrationSuggestionJobInsert.RequestConflict -> {
                         throw ConflictException(SUGGESTION_REQUEST_ID_CONFLICT_MESSAGE)
+                    }
+                }
+            val available =
+                when (
+                    val reservation =
+                        credits.reserve(ownerId, context.workspaceId, context.documentId, candidate.jobId, required)
+                ) {
+                    is IllustrationSuggestionCreditReservation.Reserved -> {
+                        reservation.available
+                    }
+
+                    is IllustrationSuggestionCreditReservation.Insufficient -> {
+                        throw InsufficientCreditsException(
+                            INSUFFICIENT_SUGGESTION_CREDITS_MESSAGE,
+                            reservation.available,
+                            required.amount,
+                        )
                     }
                 }
             IllustrationSuggestionJobCreationView(inserted.toView(), available)

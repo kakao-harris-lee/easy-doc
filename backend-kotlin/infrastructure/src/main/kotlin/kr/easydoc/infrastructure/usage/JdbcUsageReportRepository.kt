@@ -19,7 +19,8 @@ import java.util.UUID
  *
  * 문서 수·문자 수는 U2와 같은 규칙을 쓴다 — 완료된 변환·보정·재변환 중 같은 문서를 대상으로 한 여러 행
  * (재시도·보정)은 `document_id`로 distinct 한 뒤에만 합산한다(`document_totals` CTE).
- * 크레딧은 실제 소비 원장(`credit_transactions`, `consume` 중 `conversion`·`action_guide`)을 우선해 성공한
+ * 크레딧은 실제 소비 원장(`credit_transactions`, `consume` 중 `conversion`·`action_guide`·
+ * `illustration_suggestion`)을 우선해 성공한
  * 재변환도 센다. V15 이전처럼 소비 원장이 없는 그룹만 문서별 계산값으로 대체한다.
  * `call_totals`는 U2의 `callTotals`와 같은 식으로 비용 미상(`estimated_cost_usd IS NULL`)을
  * 0으로 섞지 않고 [UsageReportRow.costUnknownCalls]로만 센다.
@@ -140,7 +141,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 FROM credit_transactions
                 WHERE created_at >= :from AND created_at < :toExclusive
                   AND kind = 'consume'
-                  AND reason IN ('conversion', 'action_guide')
+                  AND reason IN ('conversion', 'action_guide', 'illustration_suggestion')
                 GROUP BY owner_user_id, workspace_id
             )
             SELECT

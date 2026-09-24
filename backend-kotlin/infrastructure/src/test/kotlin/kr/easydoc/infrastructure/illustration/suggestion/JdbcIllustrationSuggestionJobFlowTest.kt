@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.illustration.suggestion
 
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobAcquire
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobInsert
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobService
 import kr.easydoc.application.illustration.suggestion.StoredIllustrationSuggestionJob
 import kr.easydoc.application.illustration.suggestion.StoredIllustrationSuggestionResult
 import kr.easydoc.core.credit.Credits
@@ -12,6 +13,7 @@ import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeEach
@@ -23,9 +25,14 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** V35 의 동시성·과금 경계를 실제 PostgreSQL 트랜잭션과 제약으로 확인한다(명세 §2·§3). */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -36,6 +43,7 @@ class JdbcIllustrationSuggestionJobFlowTest {
     private lateinit var ledger: JdbcIllustrationSuggestionLlmCallLedger
     private lateinit var results: JdbcIllustrationSuggestionResultRepository
     private lateinit var tx: TransactionTemplate
+    private lateinit var service: IllustrationSuggestionJobService
 
     @BeforeEach
     fun prepare() {
@@ -53,6 +61,15 @@ class JdbcIllustrationSuggestionJobFlowTest {
         ledger = JdbcIllustrationSuggestionLlmCallLedger(jdbc)
         results = JdbcIllustrationSuggestionResultRepository(jdbc)
         tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        service =
+            IllustrationSuggestionJobService(
+                enabled = true,
+                creditsPer100Chars = BigDecimal("0.1"),
+                jobs = jobs,
+                credits = credits,
+                transaction = SpringTransactionRunner(tx),
+                clock = Clock.fixed(NOW, ZoneOffset.UTC),
+            )
     }
 
     @Test
@@ -319,6 +336,62 @@ class JdbcIllustrationSuggestionJobFlowTest {
         assertThat(transactionCount(job.jobId, "release")).isZero()
     }
 
+    /**
+     * **접수와 정산이 잠금을 같은 순서로 잡는가** — 두 트랜잭션이 같은 계정을 두고 만나는 자리다.
+     *
+     * 정산은 작업 행을 먼저 잠그고(`markSucceeded`) 그 다음 이용량 계정을 잡는다
+     * (`ProcessIllustrationSuggestionJob.settle`). 접수가 계정을 **먼저** 잡으면 두 순서가 엇갈려
+     * 교착한다 — 접수는 계정을 든 채 새 작업 INSERT 가 정산 중인 작업의 활성 부분 UNIQUE 항목을
+     * 기다리고, 정산은 그 계정을 기다린다.
+     *
+     * 교착에서 PostgreSQL 이 **정산 쪽을 죽이면** 이미 돈을 쓴 호출의 결과가 사라지고, 작업은
+     * `running` 으로 남아 리스 만료 뒤 `outcome_unknown` 으로 정리되면서 시도 상한만 깎인다.
+     * 그래서 접수는 작업 INSERT 를 계정 예약보다 **먼저** 한다.
+     */
+    @Test
+    @DisplayName("접수는 정산과 같은 순서로 잠금을 잡는다 — 다른 문서의 정산과 교착하지 않는다")
+    fun `접수와 정산이 교착하지 않는다`() {
+        val fixture = seed()
+        val other = seedDocument(fixture.ownerId, fixture.workspaceId)
+        val running = fixture.job()
+        createIdempotently(running)
+        val lease = (tx.execute { acquire("worker-a") } as IllustrationSuggestionJobAcquire.Held).lease
+        tx.executeWithoutResult {
+            jobs.lockIfHeld(lease)
+            jobs.markProviderStarted(lease, UUID.randomUUID(), NOW)
+        }
+
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val terminalized = CountDownLatch(1)
+            val settlement =
+                pool.submit {
+                    tx.executeWithoutResult {
+                        val held = jobs.lockIfHeld(lease)!!
+                        check(jobs.markSucceeded(lease, NOW.plusSeconds(1)))
+                        terminalized.countDown()
+                        // 접수가 계정을 먼저 잡을 시간을 준다 — 옛 순서라면 이 소비에서 교착한다.
+                        Thread.sleep(BLOCKED_MILLIS)
+                        credits.consume(held)
+                    }
+                }
+            check(terminalized.await(HANDOFF_SECONDS, TimeUnit.SECONDS)) { "정산이 작업 행을 잠그지 못했다" }
+
+            // 정산이 커밋될 때까지 INSERT 에서 기다렸다가 통과해야 한다 — 교착이면 둘 중 하나가 죽는다.
+            val view = service.create(fixture.ownerId, other.conversionId, UUID.randomUUID(), 1)
+            settlement.get(HANDOFF_SECONDS, TimeUnit.SECONDS)
+
+            assertThat(view.job.status).isEqualTo(IllustrationSuggestionJobStatus.QUEUED)
+            assertThat(settlement(running.jobId)).isEqualTo("consumed")
+            assertThat(status(running.jobId)).isEqualTo("succeeded")
+            // 예약 1.0(정산됨) + 새 접수 0.1 → 잔액 9, 예약 0.1 이 남는다.
+            assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("9")
+            assertThat(accountReserved(fixture.workspaceId)).isEqualByComparingTo(BigDecimal("0.1"))
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
     private fun createIdempotently(job: StoredIllustrationSuggestionJob) {
         tx.executeWithoutResult {
             if (jobs.findByRequestId(job.ownerId, job.conversionId, job.requestId) != null) return@executeWithoutResult
@@ -519,5 +592,9 @@ class JdbcIllustrationSuggestionJobFlowTest {
         /** 운영 기본값 하나를 그대로 쓴다 — 같은 숫자를 테스트에 다시 적지 않는다. */
         const val MAX_PROVIDER_ATTEMPTS = IllustrationSuggestionProperties.DEFAULT_MAX_PROVIDER_ATTEMPTS
         const val MAX_LEASE_ATTEMPTS = IllustrationSuggestionProperties.DEFAULT_MAX_LEASE_ATTEMPTS
+
+        /** 접수가 계정 잠금을 먼저 잡을 만큼은 길고, 시험을 늘어뜨리지 않을 만큼은 짧은 창. */
+        const val BLOCKED_MILLIS = 300L
+        const val HANDOFF_SECONDS = 20L
     }
 }

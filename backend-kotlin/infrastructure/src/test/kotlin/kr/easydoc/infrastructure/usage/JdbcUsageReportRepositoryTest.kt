@@ -160,6 +160,36 @@ class JdbcUsageReportRepositoryTest {
     }
 
     @Test
+    @DisplayName("그림 제안 소비만 있는 기간도 운영 리포트의 크레딧에 들어간다")
+    fun `그림 제안 소비를 리포트에 더한다`() {
+        val owner = newOwner()
+        val ws = workspaces.create(owner, "공간-${UUID.randomUUID()}")
+        val at = Instant.parse("2026-03-20T04:00:00Z")
+        val doc = insertDocument(ws.id, owner, charCount = 1_000, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.ILLUSTRATION_SUGGESTION,
+            documentId = doc,
+            documentCharCount = 1_000,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = at,
+        )
+        insertSuggestionCreditConsume(ws.id, owner, doc, BigDecimal("1.5"), at)
+
+        val row =
+            repository
+                .reportRows(zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))
+                .first { it.workspaceId == ws.id }
+
+        // 사유 목록에서 빠지면 소비 원장이 없는 것으로 보여 문자 수 기반 대체값이 나온다.
+        assertThat(row.credits).isEqualByComparingTo("1.5")
+        assertThat(row.llmCalls).isEqualTo(1)
+    }
+
+    @Test
     @DisplayName("행동 안내 호출은 호출·비용에만 포함하고, 예약·해제는 레거시 변환 크레딧 대체를 막지 않는다")
     fun `행동 안내 예약과 해제가 있어도 레거시 변환 문서와 크레딧을 유지한다`() {
         val owner = newOwner()
@@ -706,6 +736,32 @@ class JdbcUsageReportRepositoryTest {
         credits: Int,
         at: Instant,
     ) = insertCreditConsume(workspaceId, ownerId, documentId, BigDecimal.valueOf(credits.toLong()), at)
+
+    /** R7 ER-17 제안 분석의 소비 한 행. 사유만 다르고 나머지는 변환 소비와 같은 모양이다. */
+    private fun insertSuggestionCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: BigDecimal,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, 'consume', :delta,
+                        :delta, 'illustration_suggestion', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("documentId", documentId)
+            .param("delta", -credits)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
+    }
 
     private fun insertActionGuideReservationAndRelease(
         workspaceId: UUID,

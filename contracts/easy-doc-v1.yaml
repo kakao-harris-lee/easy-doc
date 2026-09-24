@@ -8087,10 +8087,11 @@ components:
     # ---------------------------------------------------------------------
     UsagePurpose:
       type: string
-      enum: [convert, repair, reconvert, action_guide]
+      enum: [convert, repair, reconvert, action_guide, illustration_suggestion]
       description: |
-        `llm_calls.purpose`(V12, U1)와 같은 값 — 문서 1차 변환·조건부 보정·문단
-        재변환·행동 안내 생성. `LlmCallPurpose.wireName`이 정본이다.
+        `llm_calls.purpose`(V12, U1, `illustration_suggestion`은 V35)와 같은 값 — 문서 1차
+        변환·조건부 보정·문단 재변환·행동 안내 생성·문맥 기반 그림 제안 분석.
+        `LlmCallPurpose.wireName`이 정본이다 — 목적이 늘면 이 목록도 함께 는다.
 
     PurposeUsageItem:
       type: object
@@ -8209,10 +8210,13 @@ components:
 
     CreditReason:
       type: string
-      enum: [signup, plan_monthly, manual, refund, conversion, action_guide, cycle_end]
+      enum:
+        [signup, plan_monthly, manual, refund, conversion, action_guide,
+         illustration_suggestion, cycle_end]
       description: |
-        `credit_transactions.reason`(V15, `cycle_end`는 V21)와 같은 값 — 가입 부여 ·
-        월 구독 갱신 · 운영자 수동 · 환급 · 문서 변환 · 행동 안내 · 주기 종료(갱신 없이 닫힘).
+        `credit_transactions.reason`(V15, `cycle_end`는 V21, `illustration_suggestion`은 V35)와
+        같은 값 — 가입 부여 · 월 구독 갱신 · 운영자 수동 · 환급 · 문서 변환 · 행동 안내 ·
+        문맥 기반 그림 제안 분석 · 주기 종료(갱신 없이 닫힘).
         `cycle_end`는 `kind=cycle_reset`이면서 `renews=false`인 초기화에 쓴다 — 갱신
         (`plan_monthly`)과 헷갈리면 없었던 구독이 있었던 것처럼 보인다.
 
