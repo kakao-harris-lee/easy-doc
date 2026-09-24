@@ -158,6 +158,10 @@ else
   export EASYDOC_EXPLANATIONS_ENABLED="${EASYDOC_EXPLANATIONS_ENABLED:-true}"
   # R7 그림 카탈로그도 일회용 브라우저 검증에서만 기본 활성화한다. 제품 기본값은 false다.
   export EASYDOC_ILLUSTRATIONS_ENABLED="${EASYDOC_ILLUSTRATIONS_ENABLED:-true}"
+  # R7 ER-17 문맥 기반 그림 제안. compose.e2e.yml과 같은 값이다 — 단가 0은 fake 모드
+  # 전용이며 이용량 거래 행을 만들지 않는다(명세 §3). 미설정(null)과는 다르다.
+  export EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED="${EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED:-true}"
+  export EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS="${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:-0}"
   # 사전 팝업 E19도 compose.e2e.yml과 같은 조건에서만 열린다(제품 기본값은 꺼짐).
   export EASYDOC_DICTIONARY_LOOKUP_ENABLED="${EASYDOC_DICTIONARY_LOOKUP_ENABLED:-true}"
   export EASYDOC_LLM_PROVIDER=fake
@@ -190,8 +194,9 @@ else
   # E13 수직 흐름은 lease 큐를 소비하는 프로세스가 있어야 한다. fake LLM 은 local
   # 프로필에서만 조립되므로 worker,local 을 켠다.
   export EASYDOC_ACTION_GUIDE_WORKER_ENABLED=true
-  log "Kotlin worker 기동 (profile=worker,local,action-guide-fake, fake LLM)"
-  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local,action-guide-fake >"${LOG_DIR}/backend-worker.log" 2>&1 &
+  export EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED="${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED:-true}"
+  log "Kotlin worker 기동 (profile=worker,local,action-guide-fake,illustration-suggestion-fake, fake LLM)"
+  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake >"${LOG_DIR}/backend-worker.log" 2>&1 &
   worker_pid=$!
   sleep 2
   if ! kill -0 "$worker_pid" 2>/dev/null; then

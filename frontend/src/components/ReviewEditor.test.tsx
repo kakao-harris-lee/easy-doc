@@ -20,9 +20,11 @@ import {
   getExplanations,
   getIllustrationPlacements,
   getIllustrations,
+  getIllustrationSuggestions,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
+  listIllustrationSuggestionJobs,
   putIllustrationPlacements,
   reconvertUnit,
   saveFeedback,
@@ -79,6 +81,8 @@ vi.mock('../api/client', async (importOriginal) => ({
   getExplanations: vi.fn(),
   getIllustrations: vi.fn(),
   getIllustrationPlacements: vi.fn(),
+  getIllustrationSuggestions: vi.fn(),
+  listIllustrationSuggestionJobs: vi.fn(),
   putIllustrationPlacements: vi.fn(),
   getReviewHistory: vi.fn(),
   listActionGuideJobs: vi.fn(),
@@ -3363,5 +3367,102 @@ describe('ER-16 그림 배치', () => {
     expect(
       screen.queryByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('ER-17 그림 제안', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: false,
+    illustration_suggestions: true,
+  }
+
+  beforeEach(() => {
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      status: 'not_analyzed',
+      content_revision: 1,
+      based_on_content_revision: null,
+      required_credits: 1.5,
+      suggestions: [],
+      dropped_count: 0,
+    })
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+      active_job: null,
+      latest_job: null,
+      required_credits: 1.5,
+      available_credits: 6.4,
+    })
+  })
+
+  it('기능 플래그가 없으면 제안 패널을 숨기고 조회하지 않는다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
+    expect(getIllustrationSuggestions).not.toHaveBeenCalled()
+    expect(listIllustrationSuggestionJobs).not.toHaveBeenCalled()
+  })
+
+  it('그림 목록 기능만 켜져 있으면 제안 패널을 만들지 않는다', () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      placements_content_revision: null,
+      stale: false,
+      placements: [],
+    })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          content_revision: 1,
+          review_capabilities: {
+            ...capabilities,
+            illustrations: true,
+            illustration_suggestions: false,
+          },
+        })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
+    expect(getIllustrationSuggestions).not.toHaveBeenCalled()
+  })
+
+  it('기능이 켜져 있으면 제안 패널을 보이고 조회하되 분석을 자동 요청하지 않는다', async () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '그림 제안' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(getIllustrationSuggestions).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
+    )
+    expect(listIllustrationSuggestionJobs).toHaveBeenCalledWith('c1', expect.any(AbortSignal))
+    expect(await screen.findByRole('button', { name: '그림 제안 확인' })).toBeEnabled()
+  })
+
+  it('본문을 수정하면 저장 전까지 제안 요청을 막는다', async () => {
+    const user = userEvent.setup()
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await screen.findByRole('button', { name: '그림 제안 확인' })
+    await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), '수정')
+
+    expect(screen.getByRole('button', { name: '그림 제안 확인' })).toBeDisabled()
+    expect(screen.getByText(/저장하지 않은 본문 수정이 있습니다/)).toBeInTheDocument()
   })
 })
