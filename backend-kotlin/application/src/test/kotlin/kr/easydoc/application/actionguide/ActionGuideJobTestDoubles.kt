@@ -10,13 +10,28 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
-internal class DirectTransaction : TransactionRunner {
+/**
+ * 블록을 그대로 실행하되 **예외가 나가면 작업 표를 되돌린다** — PostgreSQL 의 전부-아니면-전무를
+ * 모사한다. 이 되돌림이 없으면 「잔액 부족 402 는 작업 행을 남기지 않는다」 같은 단언이 대역에서만
+ * 거짓이 되어, 접수의 잠금 순서를 바꾸는 편집이 실제 동작과 무관하게 빨개진다.
+ */
+internal class DirectTransaction(private val jobs: FakeActionGuideJobs? = null) : TransactionRunner {
     var depth = 0
 
+    // 도메인 예외는 전부 RuntimeException 이고, 어느 갈래로 끊기든 되돌림은 같다 — 갈래를 좁히면
+    // 새 예외 타입이 조용히 되돌림을 건너뛴다.
+    @Suppress("TooGenericExceptionCaught")
     override fun <T> inTransaction(block: () -> T): T {
+        val snapshot = jobs?.rows?.toMap()
         depth += 1
         return try {
             block()
+        } catch (failure: RuntimeException) {
+            if (snapshot != null) {
+                jobs.rows.clear()
+                jobs.rows.putAll(snapshot)
+            }
+            throw failure
         } finally {
             depth -= 1
         }
@@ -50,6 +65,15 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
             it.ownerId == ownerId && it.conversionId == conversionId && it.requestId == requestId
         }
 
+    /**
+     * 잠금 밖의 경쟁을 흉내 내는 자리 — INSERT 직전에 다른 트랜잭션이 행을 먼저 넣은 상황을
+     * 테스트가 여기서 만든다(저장소의 `RequestConflict` 갈래).
+     */
+    var beforeInsert: (() -> Unit)? = null
+
+    // 갈래마다 끊는다 — 저장소(JdbcActionGuideJobRepository.insert)와 같은 형태여야 서비스 계약을
+    // 이 대역으로 확인할 수 있다.
+    @Suppress("ReturnCount")
     override fun insert(job: StoredActionGuideJob): ActionGuideJobInsert {
         // D04: 문서당 상한은 provider 호출이 실제로 시작된 작업만 센다. 저장소(JdbcActionGuideJobRepository)의
         // `provider_started_at IS NOT NULL` 집계와 같은 규칙이어야 서비스 계약을 이 대역으로 확인할 수 있다.
@@ -58,6 +82,15 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
                 it.ownerId == job.ownerId && it.conversionId == job.conversionId && it.providerStartedAt != null
             }
         if (started >= MAX_PROVIDER_STARTED_ATTEMPTS) return ActionGuideJobInsert.AttemptLimit
+        beforeInsert?.invoke()
+        // 갈래 순서도 저장소와 같다 — INSERT 가 막히면 같은 요청 키가 먼저인지를 보고, 아니면
+        // 계정당 활성 작업 하나(`uq_action_guide_jobs_active_owner`)에 걸린 것이다.
+        if (findByRequestId(job.ownerId, job.conversionId, job.requestId) != null) {
+            return ActionGuideJobInsert.RequestConflict
+        }
+        if (rows.values.any { it.ownerId == job.ownerId && it.status.active }) {
+            return ActionGuideJobInsert.ActiveConflict
+        }
         rows[job.jobId] = job
         return ActionGuideJobInsert.Inserted(job)
     }

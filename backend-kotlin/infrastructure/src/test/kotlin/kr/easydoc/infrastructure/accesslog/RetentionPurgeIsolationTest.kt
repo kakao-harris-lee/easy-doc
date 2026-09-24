@@ -7,6 +7,7 @@ import kr.easydoc.infrastructure.auth.JdbcExpiredAuthArtifactPurge
 import kr.easydoc.infrastructure.auth.JdbcUnverifiedAccountPurge
 import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.credit.JdbcSignupGrantRecordPurge
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import kr.easydoc.infrastructure.document.JdbcExpiredDocumentPurge
 import kr.easydoc.infrastructure.document.JdbcFeedbackCommentPurge
 import org.assertj.core.api.Assertions.assertThat
@@ -67,8 +68,13 @@ class RetentionPurgeIsolationTest {
         insertAccessLogRow(actorId)
         val before = countAccessLogRows()
 
-        JdbcExpiredDocumentPurge(jdbc, CreditAccountService(JdbcCreditAccountRepository(jdbc), enforced = false))
-            .purge(dryRun = false, limit = GENEROUS_LIMIT)
+        val documentPurge =
+            JdbcExpiredDocumentPurge(
+                jdbc,
+                CreditAccountService(JdbcCreditAccountRepository(jdbc), enforced = false),
+                DocumentJobLocks(jdbc),
+            )
+        documentPurge.purge(dryRun = false, limit = GENEROUS_LIMIT)
         JdbcFeedbackCommentPurge(jdbc).purge(dryRun = false, limit = GENEROUS_LIMIT, retentionDays = 0)
         JdbcUnverifiedAccountPurge(jdbc).purge(createdBefore = FAR_FUTURE, batchSize = GENEROUS_LIMIT)
         JdbcSignupGrantRecordPurge(jdbc).purge(grantedBefore = FAR_FUTURE, batchSize = GENEROUS_LIMIT)
