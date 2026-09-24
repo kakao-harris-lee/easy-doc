@@ -16,6 +16,10 @@ import type {
   ConversionResponse,
   ConversionReviewRequest,
   CreateActionGuideJobRequest,
+  CreateIllustrationSuggestionJobRequest,
+  IllustrationSuggestionJob,
+  IllustrationSuggestionJobCollection,
+  IllustrationSuggestionsResource,
   DocumentCreatedResponse,
   DocumentListResponse,
   DocumentSourceResponse,
@@ -573,6 +577,61 @@ export async function createActionGuideJob(
     job: (await response.json()) as ActionGuideJob,
     creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
   }
+}
+
+/** GET /conversions/{id}/illustration-suggestion-jobs — 그림 제안 분석 작업과 이용량을 읽는다. */
+export function listIllustrationSuggestionJobs(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationSuggestionJobCollection> {
+  return requestJson<IllustrationSuggestionJobCollection>(
+    `/conversions/${conversionId}/illustration-suggestion-jobs`,
+    { signal },
+  )
+}
+
+/** GET /conversions/{id}/illustration-suggestion-jobs/{jobId} — 작업 한 건의 상태를 읽는다. */
+export function getIllustrationSuggestionJob(
+  conversionId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationSuggestionJob> {
+  return requestJson<IllustrationSuggestionJob>(
+    `/conversions/${conversionId}/illustration-suggestion-jobs/${jobId}`,
+    { signal },
+  )
+}
+
+export interface IllustrationSuggestionJobCreationResult {
+  job: IllustrationSuggestionJob
+  /** 예약 직후의 가용 이용량. 헤더가 없거나 유한한 소수가 아니면 null이다. */
+  creditBalance: number | null
+}
+
+/** POST /conversions/{id}/illustration-suggestion-jobs — 현재 본문 기준 제안 분석을 접수한다. */
+export async function createIllustrationSuggestionJob(
+  conversionId: string,
+  body: CreateIllustrationSuggestionJobRequest,
+): Promise<IllustrationSuggestionJobCreationResult> {
+  const response = await send(`/conversions/${conversionId}/illustration-suggestion-jobs`, {
+    method: 'POST',
+    body,
+  })
+  return {
+    job: (await response.json()) as IllustrationSuggestionJob,
+    creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
+  }
+}
+
+/** GET /conversions/{id}/illustration-suggestions — 저장된 제안 결과와 stale 여부를 읽는다. */
+export function getIllustrationSuggestions(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationSuggestionsResource> {
+  return requestJson<IllustrationSuggestionsResource>(
+    `/conversions/${conversionId}/illustration-suggestions`,
+    { signal },
+  )
 }
 
 /**

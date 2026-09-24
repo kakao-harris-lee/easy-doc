@@ -219,8 +219,19 @@ class SensitiveToStringReachTest {
          * 낸다(명세 §4) — `altTextDraft` 가 `text` 토큰에 걸려 이 게이트의 표본 대상이다.
          * `IllustrationSuggestionPurpose` 는 enum, `IllustrationSuggestionIdGenerator` 는
          * `fun interface` 라 세지 않는다.
+         *
+         * 351 → 384 는 R7 ER-17-2 서버 조각이 더한 서른셋이다(2026-09-24). application 의
+         * 포트·뷰 스무넷(`IllustrationSuggestionJobContext`·`StoredIllustrationSuggestionJob`·
+         * `StoredIllustrationSuggestionResult`·`IllustrationSuggestionJobLease`·
+         * `IllustrationSuggestionJobWorkerPolicy` 와 `IllustrationSuggestionJobInsert`·
+         * `IllustrationSuggestionJobAcquire`·`IllustrationSuggestionCreditReservation`·
+         * `IllustrationSuggestionRunResult` 의 갈래들, 서비스 뷰 넷, `ProcessIllustrationSuggestionJob
+         * .StartResult` 의 `data object` 셋), infrastructure 의 `IllustrationSuggestionProperties`,
+         * api 의 요청·응답 일곱이다. 본문 조각을 든 타입(`IllustrationSuggestionPayload`·
+         * `IllustrationSuggestionAnchorPayload`)은 `toString()` 을 재정의해 개수만 낸다.
+         * `IllustrationSuggestionGenerationInput`·`StartResult.Started` 는 일반 class 라 세지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 351
+        const val EXPECTED_SOURCE_DECLARATIONS = 384
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

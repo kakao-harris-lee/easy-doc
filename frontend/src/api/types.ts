@@ -284,6 +284,8 @@ export interface ReviewCapabilities {
   review_history: boolean
   explanations: boolean
   illustrations: boolean
+  /** R7 ER-17. 토글이 켜져 있고 이용량 단가가 설정돼 있을 때만 true다. */
+  illustration_suggestions: boolean
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
@@ -627,6 +629,83 @@ export interface CreateActionGuideJobRequest {
   expected_content_revision: number
   /** 처음 만들 때도 필드를 생략하지 않고 null로 보낸다. */
   expected_guide_revision: number | null
+}
+
+// --- R7 ER-17 문맥 기반 그림 제안 ---
+
+export type IllustrationSuggestionJobStatus =
+  'queued' | 'running' | 'succeeded' | 'failed' | 'superseded'
+
+export type IllustrationSuggestionFailureCode =
+  'generation_failed' | 'result_invalid' | 'outcome_unknown'
+
+export interface IllustrationSuggestionJob {
+  job_id: string
+  request_id: string
+  status: IllustrationSuggestionJobStatus
+  based_on_content_revision: number
+  /** fake 모드의 0은 이용량 거래 행이 없다는 뜻이다. */
+  reserved_credits: number
+  failure_code: IllustrationSuggestionFailureCode | null
+  /** ISO 8601 문자열. */
+  created_at: string
+  /** ISO 8601 문자열. */
+  updated_at: string
+}
+
+export interface IllustrationSuggestionJobCollection {
+  /** 현재 실행 중인 작업. queued·running 작업이 없으면 null이다. */
+  active_job: IllustrationSuggestionJob | null
+  /** 상태와 무관한 가장 최근 작업. 한 번도 요청하지 않았으면 null이다. */
+  latest_job: IllustrationSuggestionJob | null
+  /** 이용량 단가가 설정되지 않았으면 null이다 — 0(무과금)과 구분된다. */
+  required_credits: number | null
+  available_credits: number
+}
+
+export interface CreateIllustrationSuggestionJobRequest {
+  request_id: string
+  expected_content_revision: number
+}
+
+export type IllustrationSuggestionPurpose = 'procedure' | 'comparison' | 'relationship'
+
+export interface IllustrationSuggestionBodyRange {
+  /** 저장 본문 줄 번호. 0 기반이고 양 끝을 포함한다. */
+  start: number
+  end: number
+}
+
+export interface IllustrationSuggestionAnchor {
+  source_unit_indexes: number[]
+  quote: string
+}
+
+export interface IllustrationSuggestion {
+  /** 서버가 부여한다. */
+  suggestion_id: string
+  purpose: IllustrationSuggestionPurpose
+  reason: string
+  body_range: IllustrationSuggestionBodyRange
+  source_anchors: IllustrationSuggestionAnchor[]
+  scenes: string[]
+  preserved_facts: string[]
+  alt_text_draft: string
+}
+
+export type IllustrationSuggestionStatus =
+  'not_analyzed' | 'ready' | 'no_suggestions' | 'stale'
+
+export interface IllustrationSuggestionsResource {
+  status: IllustrationSuggestionStatus
+  content_revision: number
+  /** 아직 분석하지 않았으면 null이다. */
+  based_on_content_revision: number | null
+  /** 이용량 단가가 설정되지 않았으면 null이다. */
+  required_credits: number | null
+  suggestions: IllustrationSuggestion[]
+  /** 원문 대조에서 버려진 제안 수. 버린 내용은 저장되지 않는다. */
+  dropped_count: number
 }
 
 /** 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). */

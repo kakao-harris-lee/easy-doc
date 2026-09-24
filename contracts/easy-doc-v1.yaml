@@ -3888,6 +3888,175 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # R7 ER-17 (2.46.0) — 문맥 기반 그림 제안 분석 작업과 결과
+  # 원본: 신설 — 명세 docs/plans/2026-09-24-r7-er17-suggestion-spec.md §6
+  # ===========================================================================
+  /conversions/{conversion_id}/illustration-suggestion-jobs:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: listIllustrationSuggestionJobs
+      summary: 그림 제안 분석 작업과 예상 이용량을 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        현재 `queued`·`running` 작업, 가장 최근 작업, 현재 원문으로 새 분석을 만들 때 필요한
+        이용량과 가용 이용량을 함께 돌려준다. 필요한 양은 **원문의 공백 포함 문자 수**에
+        `ceil(nonnegative char_count / 100) × easydoc.illustration-suggestions.credits-per-100-chars`
+        를 적용한다. 단가가 설정되지 않았으면 `required_credits`는 null이고 접수는 503이다.
+        조회는 작업을 새로 만들거나 이용량을 예약하지 않는다.
+        기능 토글 OFF, 타인·삭제·만료는 모두 404다.
+      responses:
+        '200':
+          description: 현재 그림 제안 분석 작업 상태
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationSuggestionJobCollectionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [documents]
+      operationId: createIllustrationSuggestionJob
+      summary: 현재 저장 본문을 기준으로 그림 제안 분석을 접수한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        `request_id`는 소유자·변환 안의 멱등 키다. 같은 키와 같은 입력은 기존 작업을
+        돌려주며 새 이용량을 예약하지 않는다. 같은 키에 다른 revision을 보내면 409다.
+        소유권·만료를 먼저 확인한 다음 멱등성을 판정하고, 그 뒤 잔액과 시도 상한을 확인한다.
+        실제 모델 호출은 비동기 작업이 **한 번만** 수행하며 자동 재시도가 없다.
+
+        이용량 단가(`easydoc.illustration-suggestions.credits-per-100-chars`)가 설정되지
+        않았으면 기능이 켜져 있어도 503이다 — 0과 미설정은 다르다. 0은 fake 모드 전용이며
+        그때는 이용량 거래 행을 만들지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IllustrationSuggestionJobCreateRequest' }
+      responses:
+        '202':
+          description: 새 작업 또는 같은 멱등 요청으로 이미 접수된 작업
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+            Location:
+              description: "`/conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}` 형식의 상태 조회 주소."
+              required: true
+              schema: { type: string }
+            X-Credit-Balance:
+              description: 이용량 예약 직후의 가용 이용량(`balance − reserved`, 소수 첫째 자리까지의 숫자 문자열).
+              required: true
+              schema: { type: string, examples: ["0.0", "0.1", "1.0"] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationSuggestionJobResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/InsufficientCredits' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 본문 revision이 바뀌었거나 멱등 키 입력이 다르거나 활성 작업이 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { $ref: '#/components/responses/IllustrationSuggestionAttemptLimitExceeded' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: job_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getIllustrationSuggestionJob
+      summary: 그림 제안 분석 작업 한 건을 조회한다
+      security: [{ HTTPBearer: [] }]
+      responses:
+        '200':
+          description: 그림 제안 분석 작업 상태
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationSuggestionJobResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/illustration-suggestions:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getIllustrationSuggestions
+      summary: 저장된 그림 제안 분석 결과를 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        변환 한 건의 가장 최근 분석 결과다. `status`는 **읽는 시점에** 저장된
+        `based_on_content_revision`과 현재 `content_revision`을 비교해 정한다 —
+        본문이 바뀌어도 서버가 결과를 고치지 않는다(명세 §2).
+
+        - `not_analyzed`: 아직 분석하지 않았다. `suggestions`는 빈 배열이다.
+        - `ready`: 현재 본문 기준 결과가 있고 제안이 1건 이상이다.
+        - `no_suggestions`: 현재 본문 기준 결과가 있고 제안이 0건이다 — 정상 결과이며 실패가 아니다.
+        - `stale`: 결과는 있으나 본문이 그 뒤 수정됐다. 제안은 그대로 돌려주되 화면이 재분석을 안내한다.
+
+        `dropped_count`는 원문 대조에서 버려진 제안 수다 — 버린 내용 자체는 저장하지 않는다.
+      responses:
+        '200':
+          description: 최신 그림 제안 분석 결과
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationSuggestionsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # P0-4 S4 (2.14.0) — POST /conversions/{conversion_id}/units/{source_unit_index}/reconvert
   # 원본: 신설 — 계획 docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md §4 결정 3
   # ===========================================================================
@@ -5663,6 +5832,22 @@ components:
           examples:
             attempts_exhausted: { value: { detail: "행동 안내 생성 횟수를 모두 사용했습니다" } }
 
+    IllustrationSuggestionAttemptLimitExceeded:
+      description: |
+        이 문서의 그림 제안 분석 시도 상한
+        (`easydoc.illustration-suggestions.max-provider-attempts-per-conversion`, 기본 3)을
+        모두 사용했다. 시간이 지나면 회복되는 쿨다운이 아니므로 `Retry-After`는 보내지 않는다
+        (`ActionGuideAttemptLimitExceeded`와 같은 축). 같은 `request_id`와 같은 입력의 멱등
+        재요청은 이 상한보다 먼저 기존 작업을 찾아 202로 응답한다.
+
+        상한은 **provider 호출이 실제로 시작된** 작업만 센다 — 입력을 만들지 못해 호출 없이
+        끝난 실패는 시도가 아니다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            attempts_exhausted: { value: { detail: "그림 제안 분석 횟수를 모두 사용했습니다" } }
+
     ReconversionConcurrencyLimited:
       description: |
         재변환 동시 실행 한도(`easydoc.reconversion.concurrency`, 기본 4)에 도달했다 —
@@ -6696,7 +6881,9 @@ components:
 
     ReviewCapabilities:
       type: object
-      required: [review_support, action_guide, table_relations, review_history, explanations, illustrations]
+      required:
+        [review_support, action_guide, table_relations, review_history, explanations,
+         illustrations, illustration_suggestions]
       properties:
         review_support: { type: boolean }
         action_guide: { type: boolean }
@@ -6706,6 +6893,12 @@ components:
         illustrations:
           type: boolean
           description: '`easydoc.illustrations.enabled` 토글에 연결된다(ER-15, 2.44.0).'
+        illustration_suggestions:
+          type: boolean
+          description: |
+            R7 ER-17 문맥 기반 그림 제안(2.46.0). `easydoc.illustration-suggestions.enabled`가
+            켜져 있고 **이용량 단가가 설정돼 있을 때만** true다 — 단가가 없으면 접수가 503이라
+            기능을 노출하는 것이 거짓말이 된다. ER-15 카탈로그 토글과는 독립이다.
       description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
 
     ReviewHistoryResponse:
@@ -7218,6 +7411,178 @@ components:
           type: number
           multipleOf: 0.1
           description: 현재 크레딧 계정의 가용량(balance − reserved).
+
+    # ---------------------------------------------------------------------
+    # R7 ER-17 (2.46.0) — 문맥 기반 그림 제안. 명세
+    # docs/plans/2026-09-24-r7-er17-suggestion-spec.md §4·§6.
+    # ---------------------------------------------------------------------
+    IllustrationSuggestionJobCreateRequest:
+      type: object
+      required: [request_id, expected_content_revision]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: 클라이언트가 생성한 멱등 키. 같은 변환 안에서 입력과 함께 고정한다.
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+
+    IllustrationSuggestionJobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, superseded]
+
+    IllustrationSuggestionFailureCode:
+      type: string
+      enum: [generation_failed, result_invalid, outcome_unknown]
+
+    IllustrationSuggestionJobResponse:
+      type: object
+      required:
+        [job_id, request_id, status, based_on_content_revision, reserved_credits,
+         failure_code, created_at, updated_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        request_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/IllustrationSuggestionJobStatus' }
+        based_on_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        reserved_credits:
+          type: number
+          multipleOf: 0.1
+          minimum: 0
+          description: 이 작업이 예약한 이용량. fake 모드의 0은 이용량 거래 행이 없다는 뜻이다.
+        failure_code:
+          description: 실패 분류 코드. 실패하지 않았거나 공개할 코드가 없으면 null이다.
+          anyOf:
+            - { $ref: '#/components/schemas/IllustrationSuggestionFailureCode' }
+            - { type: 'null' }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    IllustrationSuggestionJobCollectionResponse:
+      type: object
+      required: [active_job, latest_job, required_credits, available_credits]
+      properties:
+        active_job:
+          description: 현재 queued 또는 running 작업. 없으면 null이다.
+          anyOf:
+            - { $ref: '#/components/schemas/IllustrationSuggestionJobResponse' }
+            - { type: 'null' }
+        latest_job:
+          description: 상태와 무관한 가장 최근 작업. 한 번도 요청하지 않았으면 null이다.
+          anyOf:
+            - { $ref: '#/components/schemas/IllustrationSuggestionJobResponse' }
+            - { type: 'null' }
+        required_credits:
+          description: |
+            현재 원문으로 새 분석을 만들 때 필요한 이용량. **이용량 단가가 설정되지 않았으면
+            null**이며, 그때 접수는 503이고 `review_capabilities.illustration_suggestions`도
+            false다 — 0(fake 모드의 무과금)과 구분된다.
+          anyOf:
+            - { type: number, multipleOf: 0.1, minimum: 0 }
+            - { type: 'null' }
+        available_credits:
+          type: number
+          multipleOf: 0.1
+          description: 현재 이용량 계정의 가용량(balance − reserved).
+
+    IllustrationSuggestionPurpose:
+      type: string
+      enum: [procedure, comparison, relationship]
+      description: 제안이 그림으로 설명하려는 것 — 행동 순서·대상 비교·구성 관계.
+
+    IllustrationSuggestionBodyRange:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: integer, minimum: 0 }
+        end: { type: integer, minimum: 0 }
+      description: 저장 본문 줄 범위. 0 기반이고 양 끝을 포함한다.
+
+    IllustrationSuggestionAnchor:
+      type: object
+      required: [source_unit_indexes, quote]
+      properties:
+        source_unit_indexes:
+          description: |
+            0 기반 원문 줄 번호. 중복 없이 오름차순이며, 여러 줄을 가리킬 때는 같은 인용이 모든
+            줄에 있거나(반복 인용) 줄 번호가 빈틈없이 이어져야 한다(연속 구간 인용). 개수 상한은
+            원문 줄 수 자체이므로 계약이 따로 고정하지 않는다.
+          type: array
+          minItems: 1
+          items: { type: integer, minimum: 0 }
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 1000
+      description: 원문 근거 한 건 — 0 기반 원문 줄 번호와 그 줄에 실제로 있는 인용.
+
+    IllustrationSuggestion:
+      type: object
+      required:
+        [suggestion_id, purpose, reason, body_range, source_anchors, scenes,
+         preserved_facts, alt_text_draft]
+      properties:
+        suggestion_id:
+          type: string
+          format: uuid
+          description: 서버가 부여한다. LLM 출력의 식별자를 쓰지 않는다.
+        purpose: { $ref: '#/components/schemas/IllustrationSuggestionPurpose' }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        body_range: { $ref: '#/components/schemas/IllustrationSuggestionBodyRange' }
+        source_anchors:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: '#/components/schemas/IllustrationSuggestionAnchor' }
+        scenes:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items: { type: string, minLength: 1, maxLength: 200 }
+        preserved_facts:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+        alt_text_draft: { type: string, minLength: 1, maxLength: 300 }
+
+    IllustrationSuggestionStatus:
+      type: string
+      enum: [not_analyzed, ready, no_suggestions, stale]
+
+    IllustrationSuggestionsResponse:
+      type: object
+      required:
+        [status, content_revision, based_on_content_revision, required_credits,
+         suggestions, dropped_count]
+      properties:
+        status: { $ref: '#/components/schemas/IllustrationSuggestionStatus' }
+        content_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        based_on_content_revision:
+          description: 결과가 근거로 삼은 본문 버전. 아직 분석하지 않았으면 null이다.
+          anyOf:
+            - { type: integer, minimum: 1, maximum: 9007199254740991 }
+            - { type: 'null' }
+        required_credits:
+          description: 이용량 단가가 설정되지 않았으면 null이다(위 컬렉션 응답과 같은 규칙).
+          anyOf:
+            - { type: number, multipleOf: 0.1, minimum: 0 }
+            - { type: 'null' }
+        suggestions:
+          type: array
+          maxItems: 5
+          items: { $ref: '#/components/schemas/IllustrationSuggestion' }
+        dropped_count:
+          type: integer
+          minimum: 0
+          description: 원문 대조에서 버려진 제안 수. 버린 내용 자체는 저장하지 않는다.
 
     # ---------------------------------------------------------------------
     # 문단 대응표 (2.12.0 신설, P0-4 S2) — `ConversionResponse.segment_map`이 쓴다.

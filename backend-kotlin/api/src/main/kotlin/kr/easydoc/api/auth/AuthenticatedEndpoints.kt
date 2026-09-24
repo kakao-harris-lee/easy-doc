@@ -55,6 +55,11 @@ object AuthenticatedEndpoints {
             // 그림 배치(ER-16)도 같은 사유로 **따로** 넣는다 — 인터셉터 패턴이 하위 경로를
             // 덮지 않는다.
             "/conversions/{conversion_id}/illustration-placements",
+            // 문맥 기반 그림 제안(R7 ER-17). 작업 접수·조회와 결과 조회가 각각 다른 경로라
+            // 셋을 따로 넣는다 — 인터셉터 패턴은 하위 경로를 덮지 않는다.
+            "/conversions/{conversion_id}/illustration-suggestion-jobs",
+            "/conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}",
+            "/conversions/{conversion_id}/illustration-suggestions",
             // 재변환(P0-4 S4, 2.14.0)도 같은 사유로 **따로** 넣는다.
             "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",

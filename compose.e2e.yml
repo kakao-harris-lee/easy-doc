@@ -32,6 +32,9 @@
 # (`explanations.spec.ts`). 운영 기본값은 꺼짐이다.
 # `EASYDOC_ILLUSTRATIONS_ENABLED=true`는 R7 그림 카탈로그를 이 E2E 스택에서만 켠다 —
 # 실제 리소스 카탈로그를 그대로 쓰므로 별도 fake가 없다. 운영 기본값은 꺼짐이다.
+# R7 ER-17 문맥 기반 그림 제안도 이 스택에서만 켠다. worker의 illustration-suggestion-fake
+# profile이 외부 provider 호출 없이 결정적인 제안을 만들며, 이용량 단가를 0으로 둬 이용량
+# 거래 행 없이 전체 흐름을 검증한다(단가 미설정은 503이라 0과 다르다). 운영 기본값은 꺼짐이다.
 
 services:
   backend-api:
@@ -53,15 +56,25 @@ services:
       EASYDOC_REVIEW_HISTORY_ENABLED: "true"
       EASYDOC_EXPLANATIONS_ENABLED: "true"
       EASYDOC_ILLUSTRATIONS_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS: "0"
       EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"
 
   backend-worker:
     command:
-      ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,local,action-guide-fake"]
+      [
+        "java",
+        "-jar",
+        "/app/easy-doc-worker.jar",
+        "--spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake",
+      ]
     environment:
       EASYDOC_LLM_PROVIDER: fake
       EASYDOC_MAIL_PROVIDER: fake
       EASYDOC_ACTION_GUIDE_ENABLED: "true"
       EASYDOC_ACTION_GUIDE_WORKER_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS: "0"

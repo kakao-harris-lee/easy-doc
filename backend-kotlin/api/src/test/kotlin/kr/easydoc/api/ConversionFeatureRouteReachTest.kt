@@ -26,7 +26,7 @@ import java.net.http.HttpResponse
 import java.util.UUID
 
 /**
- * R1~R7·ER-16 이 더한 변환 하위 라우트의 **소유권 은닉** 실측 — 남의 변환이 없는 변환과
+ * R1~R7·ER-16·ER-17 이 더한 변환 하위 라우트의 **소유권 은닉** 실측 — 남의 변환이 없는 변환과
  * 구별되지 않는가(X-B1·X-B2, [DocumentDeleteReachTest]·[WorkspaceEndpointReachTest] 와
  * 같은 판정).
  *
@@ -46,6 +46,9 @@ import java.util.UUID
         "easydoc.explanations.enabled=true",
         "easydoc.illustrations.enabled=true",
         "easydoc.action-guide.enabled=true",
+        "easydoc.illustration-suggestions.enabled=true",
+        // 단가가 없으면 접수가 503이라 기능이 노출되지 않는다 — 소유권 판정이 공회전한다.
+        "easydoc.illustration-suggestions.credits-per-100-chars=0.1",
     ],
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -132,6 +135,63 @@ class ConversionFeatureRouteReachTest {
         assertThat(foreignJob.statusCode()).isEqualTo(NOT_FOUND)
         OwnershipConcealment.assertIndistinguishable("GET $JOB_PATH (내 변환·남의 작업)", absentJob, foreignJob)
     }
+
+    @Test
+    @DisplayName("타인 그림 제안 작업 조회 → 404 · 남의 변환으로도 내 변환 위의 남의 작업으로도 존재가 새지 않는다")
+    fun `타인 그림 제안 작업 조회는 404 다`() {
+        val mine = newAccount()
+        val theirs = doneConversion(newAccount())
+        val theirJob = seedSuggestionJob(theirs)
+        val myDone = doneConversion(mine)
+        val myConversion = myDone.conversionId
+        seedSuggestionJob(myDone)
+
+        assertThat(getBytes(mine, SUGGESTION_JOBS_PATH.forConversion(myConversion)).statusCode())
+            .withFailMessage("내 변환의 작업 목록이 200 이 아니다 — 토글이나 이용량 단가가 없어 판정이 공회전한다")
+            .isEqualTo(OK)
+
+        val foreignConversion = getBytes(mine, suggestionJobPath(theirs.conversionId, theirJob))
+        val absentConversion = getBytes(mine, suggestionJobPath(UUID.randomUUID(), UUID.randomUUID()))
+        assertThat(foreignConversion.statusCode()).isEqualTo(NOT_FOUND)
+        assertThat(foreignConversion.statusCode()).isNotEqualTo(FORBIDDEN)
+        OwnershipConcealment.assertIndistinguishable(
+            "GET $SUGGESTION_JOB_PATH (남의 변환)",
+            absentConversion,
+            foreignConversion,
+        )
+
+        // 변환은 내 것인데 작업 id 만 남의 것 — 이 팔이 갈리면 job id 로 남의 작업 존재를 확인할 수 있다.
+        val foreignJob = getBytes(mine, suggestionJobPath(myConversion, theirJob))
+        val absentJob = getBytes(mine, suggestionJobPath(myConversion, UUID.randomUUID()))
+        assertThat(foreignJob.statusCode()).isEqualTo(NOT_FOUND)
+        OwnershipConcealment.assertIndistinguishable(
+            "GET $SUGGESTION_JOB_PATH (내 변환·남의 작업)",
+            absentJob,
+            foreignJob,
+        )
+    }
+
+    /** 남의 문서에서 소유자·작업 공간을 그대로 읽어 제안 작업 행 하나를 심는다. */
+    private fun seedSuggestionJob(seeded: Seeded): UUID {
+        val jobId = UUID.randomUUID()
+        database.execute(
+            """
+            INSERT INTO illustration_suggestion_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 status, reserved_credits, settlement)
+            SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${seeded.conversionId}',
+                   1, 1, '$FINGERPRINT', 'succeeded', 1.0, 'consumed'
+            FROM documents d WHERE d.id = '${seeded.documentId}'
+            """.trimIndent(),
+        )
+        return jobId
+    }
+
+    private fun suggestionJobPath(
+        conversionId: UUID,
+        jobId: UUID,
+    ): String = SUGGESTION_JOB_PATH.forConversion(conversionId).replace("{$JOB_ID_VARIABLE}", jobId.toString())
 
     /** 남의 문서에서 소유자·작업 공간을 그대로 읽어 작업 행 하나를 심는다. */
     private fun seedActionGuideJob(seeded: Seeded): UUID {
@@ -255,7 +315,10 @@ class ConversionFeatureRouteReachTest {
         private const val ACTION_GUIDE_PATH = "/conversions/{conversion_id}/action-guide"
         private const val EXPLANATIONS_PATH = "/conversions/{conversion_id}/explanations"
         private const val PLACEMENTS_PATH = "/conversions/{conversion_id}/illustration-placements"
+        private const val SUGGESTION_JOBS_PATH = "/conversions/{conversion_id}/illustration-suggestion-jobs"
+        private const val SUGGESTIONS_PATH = "/conversions/{conversion_id}/illustration-suggestions"
         private const val JOB_PATH = "$ACTION_GUIDE_JOBS_PATH/{job_id}"
+        private const val SUGGESTION_JOB_PATH = "$SUGGESTION_JOBS_PATH/{job_id}"
 
         /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
         private const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -283,6 +346,8 @@ class ConversionFeatureRouteReachTest {
                 ACTION_GUIDE_PATH,
                 EXPLANATIONS_PATH,
                 PLACEMENTS_PATH,
+                SUGGESTION_JOBS_PATH,
+                SUGGESTIONS_PATH,
             )
 
         /** 기능 토글이 다른 Spring 컨텍스트라 다른 테스트와 DB 를 공유하지 않는다. */

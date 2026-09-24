@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.infrastructure.actionguide.ActionGuideProperties
+import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
@@ -15,6 +16,7 @@ class ReviewCapabilityFlagsTest {
         assertThat(capabilities.tableRelations).isFalse()
         assertThat(capabilities.reviewHistory).isFalse()
         assertThat(capabilities.explanations).isFalse()
+        assertThat(capabilities.illustrationSuggestions).isFalse()
     }
 
     @Test
@@ -74,5 +76,49 @@ class ReviewCapabilityFlagsTest {
         assertThat(on.tableRelations).isFalse()
         assertThat(on.reviewHistory).isFalse()
         assertThat(on.explanations).isFalse()
+    }
+
+    @Test
+    fun `그림 제안은 토글과 이용량 단가가 모두 있어야 노출된다`() {
+        val toggleOnly =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationSuggestions = IllustrationSuggestionProperties(enabled = true),
+            )
+        val configured =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationSuggestions =
+                    IllustrationSuggestionProperties(
+                        enabled = true,
+                        creditsPer100Chars = java.math.BigDecimal("0.1"),
+                    ),
+            )
+        val rateOnly =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationSuggestions =
+                    IllustrationSuggestionProperties(creditsPer100Chars = java.math.BigDecimal("0.1")),
+            )
+
+        // 단가가 없으면 접수가 503이라 기능을 노출하는 것이 거짓말이 된다(명세 §3).
+        assertThat(toggleOnly.illustrationSuggestions).isFalse()
+        assertThat(rateOnly.illustrationSuggestions).isFalse()
+        assertThat(configured.illustrationSuggestions).isTrue()
+        // 단가 0은 설정된 값이다 — fake 모드에서 노출된다.
+        assertThat(
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationSuggestions =
+                    IllustrationSuggestionProperties(enabled = true, creditsPer100Chars = java.math.BigDecimal.ZERO),
+            ).illustrationSuggestions,
+        ).isTrue()
+        // 켜져도 다른 기능은 따라 켜지지 않는다.
+        assertThat(configured.illustrations).isFalse()
+        assertThat(configured.actionGuide).isFalse()
     }
 }
