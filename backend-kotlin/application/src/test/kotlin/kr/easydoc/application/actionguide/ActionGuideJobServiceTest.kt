@@ -48,6 +48,35 @@ class ActionGuideJobServiceTest {
     }
 
     @Test
+    @DisplayName("이미 진행 중인 작업이 있으면 409이고 이용량을 예약하지 않는다")
+    fun `활성 작업이 있으면 예약하지 않는다`() {
+        val world = World()
+        // 같은 계정의 진행 중 작업 — 요청 키는 다르므로 멱등 반환이 아니라 활성 충돌 갈래다.
+        world.jobs.rows[JOB] = storedJob(requestId = UUID.randomUUID())
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, REQUEST, 3, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(ACTIVE_JOB_CONFLICT_MESSAGE)
+        assertThat(world.credits.reserveCalls).isZero()
+        assertThat(world.jobs.rows).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("잠금 밖 경쟁이 같은 요청 키를 먼저 저장하면 409이고 이용량을 예약하지 않는다")
+    fun `같은 요청 키 경쟁에 지면 예약하지 않는다`() {
+        val world = World()
+        world.jobs.beforeInsert = {
+            world.jobs.rows[UUID.randomUUID()] = storedJob(jobId = UUID.randomUUID())
+        }
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, REQUEST, 3, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(REQUEST_ID_CONFLICT_MESSAGE)
+        assertThat(world.credits.reserveCalls).isZero()
+        assertThat(world.jobs.rows).isEmpty()
+    }
+
+    @Test
     @DisplayName("잔액이 모자라면 402 예외이고 작업 행이 롤백돼 남지 않는다")
     fun `잔액이 모자라면 작업을 남기지 않는다`() {
         val world = World()

@@ -65,6 +65,15 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
             it.ownerId == ownerId && it.conversionId == conversionId && it.requestId == requestId
         }
 
+    /**
+     * 잠금 밖의 경쟁을 흉내 내는 자리 — INSERT 직전에 다른 트랜잭션이 행을 먼저 넣은 상황을
+     * 테스트가 여기서 만든다(저장소의 `RequestConflict` 갈래).
+     */
+    var beforeInsert: (() -> Unit)? = null
+
+    // 갈래마다 끊는다 — 저장소(JdbcActionGuideJobRepository.insert)와 같은 형태여야 서비스 계약을
+    // 이 대역으로 확인할 수 있다.
+    @Suppress("ReturnCount")
     override fun insert(job: StoredActionGuideJob): ActionGuideJobInsert {
         // D04: 문서당 상한은 provider 호출이 실제로 시작된 작업만 센다. 저장소(JdbcActionGuideJobRepository)의
         // `provider_started_at IS NOT NULL` 집계와 같은 규칙이어야 서비스 계약을 이 대역으로 확인할 수 있다.
@@ -73,6 +82,15 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
                 it.ownerId == job.ownerId && it.conversionId == job.conversionId && it.providerStartedAt != null
             }
         if (started >= MAX_PROVIDER_STARTED_ATTEMPTS) return ActionGuideJobInsert.AttemptLimit
+        beforeInsert?.invoke()
+        // 갈래 순서도 저장소와 같다 — INSERT 가 막히면 같은 요청 키가 먼저인지를 보고, 아니면
+        // 계정당 활성 작업 하나(`uq_action_guide_jobs_active_owner`)에 걸린 것이다.
+        if (findByRequestId(job.ownerId, job.conversionId, job.requestId) != null) {
+            return ActionGuideJobInsert.RequestConflict
+        }
+        if (rows.values.any { it.ownerId == job.ownerId && it.status.active }) {
+            return ActionGuideJobInsert.ActiveConflict
+        }
         rows[job.jobId] = job
         return ActionGuideJobInsert.Inserted(job)
     }

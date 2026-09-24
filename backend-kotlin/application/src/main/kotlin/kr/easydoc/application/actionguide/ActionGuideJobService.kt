@@ -50,7 +50,7 @@ class ActionGuideJobService(
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    @Suppress("LongMethod", "ThrowsCount") // 멱등 확인부터 예약·삽입까지 한 트랜잭션의 순서를 보인다.
+    @Suppress("LongMethod", "ThrowsCount") // 멱등 확인부터 삽입·예약까지 한 트랜잭션의 순서를 보인다.
     fun create(
         ownerId: UUID,
         conversionId: UUID,
