@@ -11,11 +11,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.llm.MAX_LLM_JSON_CHARS
 
 /** Provider와 사용자 저장 요청에 동일하게 적용할 엄격한 v1 JSON codec. */
 object ActionGuideCandidateParser {
-    private const val MAX_JSON_CHARS = 262_144
-
     fun parseAndValidate(
         rawJson: String,
         sourceUnits: List<String>,
@@ -34,7 +33,7 @@ object ActionGuideCandidateParser {
         rawJson: String,
         validateStructure: Boolean,
     ): ActionGuideCandidate {
-        if (rawJson.length > MAX_JSON_CHARS) invalidCandidateJson()
+        if (rawJson.length > MAX_LLM_JSON_CHARS) invalidCandidateJson()
         val root =
             try {
                 Json.parseToJsonElement(rawJson).requiredObject()

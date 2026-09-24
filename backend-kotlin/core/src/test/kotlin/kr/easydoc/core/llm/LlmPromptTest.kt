@@ -20,6 +20,9 @@ import java.lang.reflect.Modifier
 class LlmPromptTest {
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
+    /** 자료 태그에서 난수 구분자만 뽑는다 — 값 자체를 단언할 수 없으니 자리와 일관성만 잰다. */
+    private val delimiterPattern = Regex("id=\"([0-9a-f-]{36})\"")
+
     @Test
     fun `변환은 고학년 독해 수준과 문맥 보존을 함께 지시한다`() {
         val prompt = LlmPrompt.forConversion("기한 내 보완하지 않으면 신청이 취소될 수 있습니다.")
@@ -229,6 +232,68 @@ class LlmPromptTest {
                 "전체 text는 4,000 코드 포인트 이하다",
             )
         assertThat(prompt.system).doesNotContain("비금여", "비급여", "088")
+    }
+
+    @Test
+    fun `그림 제안 프롬프트는 원문과 저장 본문 양쪽에 줄 번호를 붙인다`() {
+        val prompt =
+            LlmPrompt.forIllustrationSuggestions(
+                "신청서를 준비합니다.\n주민센터에 제출합니다.",
+                "먼저 신청서를 준비해요.\n그다음 주민센터에 내요.",
+            )
+
+        assertThat(prompt.user).contains("[0] 신청서를 준비합니다.", "[1] 주민센터에 제출합니다.")
+        assertThat(prompt.user).contains("[0] 먼저 신청서를 준비해요.", "[1] 그다음 주민센터에 내요.")
+        assertThat(prompt.user).contains("<source id=", "<saved_body id=")
+        assertThat(prompt.user).doesNotContain("<source id=\"0123456789ab\">")
+        assertThat(prompt.toString()).doesNotContain("신청서", "주민센터")
+    }
+
+    @Test
+    @DisplayName("구분자는 호출마다 달라지고 원문·저장 본문 양쪽 태그가 같은 값을 쓴다")
+    fun `그림 제안 프롬프트의 구분자는 매번 새로 뽑는다`() {
+        val first = LlmPrompt.forIllustrationSuggestions("원문입니다.", "본문입니다.")
+        val second = LlmPrompt.forIllustrationSuggestions("원문입니다.", "본문입니다.")
+
+        val firstIds = delimiterPattern.findAll(first.user).map { it.groupValues[1] }.toList()
+        assertThat(firstIds).hasSize(4)
+        assertThat(firstIds.distinct()).hasSize(1)
+        assertThat(delimiterPattern.findAll(second.user).map { it.groupValues[1] }.toSet())
+            .doesNotContainAnyElementsOf(firstIds)
+    }
+
+    @Test
+    fun `그림 제안 시스템 프롬프트는 제안할 문맥과 제안하지 않을 문맥을 모두 지시한다`() {
+        val prompt = LlmPrompt.forIllustrationSuggestions("원문입니다.", "본문입니다.")
+
+        assertThat(prompt.system)
+            .contains(
+                "JSON 객체 하나",
+                "schema_version=1",
+                "suggestions",
+                "procedure",
+                "comparison",
+                "relationship",
+                "source_unit_indexes",
+                "body_range",
+                "preserved_facts",
+                "alt_text_draft",
+                "빈 배열",
+                "낱말마다 아이콘",
+                "장식",
+                "연락처",
+                "오해",
+                "원문에 없는 행동·장소·기간·조건",
+                "어린이처럼",
+                "그림 속 글자",
+                "정확한 인용",
+                "오름차순",
+                "같은 번호를 두 번 넣지 마라",
+                "짧고 정확한 quote",
+                "줄 전체나 같은 긴 문단을 반복 인용하지 마라",
+                "데이터",
+            )
+        assertThat(prompt.system).doesNotContain("suggestion_id", "analysis_version")
     }
 
     @Test

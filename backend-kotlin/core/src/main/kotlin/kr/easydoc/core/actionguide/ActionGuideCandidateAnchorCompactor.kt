@@ -1,5 +1,8 @@
 package kr.easydoc.core.actionguide
 
+import kr.easydoc.core.segment.MAX_SOURCE_ANCHORS
+import kr.easydoc.core.segment.MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS
+
 /**
  * Reduces only adjacent, fully contiguous anchors to their exact source span.
  *
@@ -28,7 +31,7 @@ internal object ActionGuideCandidateAnchorCompactor {
         item: ActionGuideItem,
         sourceUnits: List<String>,
     ): ActionGuideItem {
-        if (item.sourceAnchors.size <= ActionGuideCandidateValidator.MAX_ANCHORS_PER_ITEM) return item
+        if (item.sourceAnchors.size <= MAX_SOURCE_ANCHORS) return item
 
         val compacted = mutableListOf<ActionGuideSourceAnchor>()
         item.sourceAnchors.forEach { anchor ->
@@ -69,10 +72,8 @@ internal object ActionGuideCandidateAnchorCompactor {
         val indexes = (leftIndexes.first()..rightIndexes.last()).toList()
         val quote = sourceUnits.subList(indexes.first(), indexes.last() + 1).joinToString("\n")
         return quote
-            .takeIf {
-                it.codePointCount(0, it.length) <=
-                    ActionGuideCandidateValidator.MAX_ANCHOR_QUOTE_CODE_POINTS
-            }?.let { ActionGuideSourceAnchor(indexes, it) }
+            .takeIf { it.codePointCount(0, it.length) <= MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS }
+            ?.let { ActionGuideSourceAnchor(indexes, it) }
     }
 
     private fun isContiguous(indexes: List<Int>): Boolean =
