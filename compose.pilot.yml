@@ -35,7 +35,7 @@ services:
       EASYDOC_SENS_ACCESS_KEY: ${EASYDOC_SENS_ACCESS_KEY:?EASYDOC_SENS_ACCESS_KEY must be set in .env}
       EASYDOC_SENS_SECRET_KEY: ${EASYDOC_SENS_SECRET_KEY:?EASYDOC_SENS_SECRET_KEY must be set in .env}
       EASYDOC_SMS_FROM: ${EASYDOC_SMS_FROM:?EASYDOC_SMS_FROM must be set in .env}
-    # 호스트 earlyoom(--prefer java)이 메모리 고갈 때 빌드·테스트 JVM보다 파일럿 JVM을 먼저
+    # 호스트 earlyoom(/etc/default/earlyoom, --prefer '^(java)$')이 메모리 고갈 때 빌드·테스트 JVM보다 파일럿 JVM을 먼저
     # 고르지 않게 낮춘다(2026-09-24 WSL hang 재발 방지). 커널 OOM killer에도 같은 값이 적용된다.
     oom_score_adj: -500
     restart: unless-stopped
@@ -46,7 +46,7 @@ services:
     environment:
       # admin-grant 등 일회성 운영 프로필에도 파일럿 결제 설정을 포함한다.
       SPRING_PROFILES_INCLUDE: local
-    # 호스트 earlyoom(--prefer java)이 메모리 고갈 때 빌드·테스트 JVM보다 파일럿 JVM을 먼저
+    # 호스트 earlyoom(/etc/default/earlyoom, --prefer '^(java)$')이 메모리 고갈 때 빌드·테스트 JVM보다 파일럿 JVM을 먼저
     # 고르지 않게 낮춘다(2026-09-24 WSL hang 재발 방지). 커널 OOM killer에도 같은 값이 적용된다.
     oom_score_adj: -500
     restart: unless-stopped

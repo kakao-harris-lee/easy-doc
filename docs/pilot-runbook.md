@@ -87,6 +87,12 @@ Docker 서비스가 부팅 시 활성화되어 있으면 서버 재부팅 뒤 �
 운영 중 `docker compose down`을 실행하면 컨테이너 자체가 없어져 자동 복구되지 않으므로,
 일시 중단에는 `stop` 대신 가급적 재배포 명령의 `up -d`를 사용한다.
 
+`compose.pilot.yml`의 `oom_score_adj`(backend-api·backend-worker, -500)는 `HostConfig`
+값이라 컨테이너를 다시 만들 때만 반영된다. 값을 바꾸면 다음 `./docker_startup.sh restart`에서
+api·worker가 재생성되며 잠깐 끊긴다. 이 값은 호스트 `/etc/default/earlyoom`의
+`--prefer '^(java)$'`를 전제로 하므로 그 설정이 바뀌면 함께 다시 본다. 반영 확인:
+`docker inspect easy-doc-backend-api-1 --format '{{.HostConfig.OomScoreAdj}}'` → -500.
+
 ### PostgreSQL 영속성과 백업
 
 원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도
