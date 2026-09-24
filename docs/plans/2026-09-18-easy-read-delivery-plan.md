@@ -1,5 +1,7 @@
 # 쉬운글 개선 실행 계획과 개발 절차
 
+**2026-09-24 R7 정정:** ER-15/16의 기존 카탈로그·배치 구현 기록은 유지한다. 문맥 기반 제안·요청형 이미지 생성은 미구현이며 [수정 계획](2026-09-24-contextual-illustration-correction.md)의 ER-17~20을 완료해야 R7/M4를 판정한다.
+
 작성일: 2026-09-18 · 상태(2026-09-21): ER-00~ER-07 구현·fake E2E·원격 CI 완료. R3 후속 구현 병합, 실제 품질 검증은 미완료. R2 잔여 오류 보완과 R4·R5 구현의 검증·리뷰는 [후속 보고서](../reports/2026-09-21-r2-r4-r5-implementation.md)에 기록한다. 출시 검증은 별도 진행.
 
 정본: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [검증·출시](2026-09-18-easy-read-validation-release.md).
@@ -46,10 +48,16 @@ ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구
 | ER-12 | ER-11 | 버전별 확인 이벤트, 이력 API·페이징·기록 TXT·삭제. Kotlin·계약·API | AC-R5-a |
 | ER-13 | ER-12 | 이력 표시·버전 구분·기록 내려받기·파일럿 | AC-R5-b, M3 중 R5 |
 | ER-14 | ER-13 | 근거 있는 추가 설명 데이터·선택 조회·접기/펼치기·키보드/모바일 | AC-R6 |
-| ER-15 | ER-14 | 그림 권리·의미·대체텍스트 목록, 최대 10종 수동 매핑 예시 | AC-R7-a |
-| ER-16 | ER-15 | 그림 배치·출력 범위 결정·미리보기·실사용 확인. 지원 확장은 별도 계약 | AC-R7-b, M4 |
+| ER-15 | ER-14 | 기존 범위: 그림 권리·의미·대체텍스트 목록, 최대 10종 수동 매핑 예시 | AC-R7-a, 카탈로그만의 완료 근거 |
+| ER-16 | ER-15 | 기존 범위: 수동 배치·웹 미리보기·파일 미포함 안내 | AC-R7-b, R7/M4 전체 완료 아님 |
+| ER-17 | ER-01 본문 버전 기반 | 문맥 제안·원문 근거·제안 이유·그림 구성·무제안 처리. Kotlin·계약·React API/카드 | AC-R7-c/d |
+| ER-18 | ER-17 | 요청형 이미지 생성 작업·fake adapter·멱등성·이용량·비공개 자산·파기. 계약/소비자 동기화 | AC-R7-e/f/h/i |
+| ER-19 | ER-18 | 생성 요청·상태 복구·미리보기·검토·선택 적용/제거·개별 이미지 내려받기·E2E | AC-R7-f/g/h |
+| ER-20 | ER-19, D10 유료 평가 조건 확정 | 실제 문맥·이미지 품질 평가·비용/지연·운영·공개 가이드 | AC-R7-c~i, R7 및 M4 |
 
 ### 3.1 현재 완료 증거
+
+- 2026-09-24 정정: 아래 ER-15/16 테스트 통과는 고정 카탈로그와 배치만 검증했다. 문맥 제안·새 이미지 생성의 검증 증거가 아니며 ER-17~20은 미착수다. 과거 기록에 나온 AC-R7-a/b는 기존 범위 기준으로 보존한다.
 
 - 2026-09-23 후속 범위(2): R7 그림 배치(ER-16)를 구현했으며 토글은 ER-15의 `easydoc.illustrations.enabled`(기본 OFF)를 그대로 쓴다. 검수자가 쉬운 글 줄마다 카탈로그 그림을 골라 저장하면(`PUT /conversions/{conversion_id}/illustration-placements`, 계약 2.45.0, `expected_content_revision` CAS) 변환당 하나의 암호화 payload(V34 `illustration_placements`, 최대 10건, cascade 삭제, 키 회전 등록)로 보관하고, 본문이 바뀌어 `content_revision`이 오르면 `stale=true`로 돌려주되 지우지 않는다. 화면은 dirty면 저장을 막고, stale이면 배지와 함께 미리보기에서 그림을 내리며, 저장된 배치는 웹 미리보기(`figure`+대체텍스트)로만 보이고 다운로드 버튼 옆에 「배치한 그림은 파일에 들어가지 않습니다」를 명시한다(AC-R7-b의 「이미지 미포함 출력은 사용자에게 명시」). DOCX/HWPX 이미지 삽입은 명세대로 별도 범위로 남긴다. Kotlin 전체 빌드 5개 모듈 3,316개 테스트(Testcontainers 실 DB 포함), React check·60개 파일/779개 테스트·build, Compose 기본·CI·E2E 구성을 통과했으며 유료 provider 호출은 0회다. e2e `frontend/e2e/illustration-placement.spec.ts`를 일회용 스택(fake LLM)에서 실행해 **1 통과 / 0 실패**(배치 저장 → 미리보기 → 안내문 → 본문 재저장 → stale 배지)를 확인했다.
 
