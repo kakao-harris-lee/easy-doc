@@ -16,36 +16,57 @@ import java.util.UUID
  * 시점에는 배치의 모든 작업 행을 이미 들고 있으므로 trigger 가 중간에 새로 기다릴 일이 없다.
  * `ORDER BY id` 는 배치끼리도 같은 순서로 잡게 해 파기 배치 두 개가 엇갈리지 않게 한다.
  *
- * 지금은 행동 안내 작업만 본다. 그림 제안 작업(R7)이 같은 trigger 로 합쳐지면 이 자리에
- * 한 문장을 더한다 — 「어떤 작업 표를 미리 잠가야 하는가」를 한곳에 모으는 것이 이 클래스의
- * 존재 이유다.
+ * 잠그는 표는 행동 안내와 그림 제안 **둘 다**이고 순서는 V35 의 합친 trigger
+ * (`settle_document_jobs_before_delete`)와 같은 표 이름 순이다 — 한 문서에 두 가족이 동시에
+ * 활성일 수 있어 한쪽만 잠그면 나머지 가족을 정산 중인 worker 와 같은 교착이 남는다. 「어떤 작업
+ * 표를 미리 잠가야 하는가」를 한곳에 모으는 것이 이 클래스의 존재 이유다.
  *
  * 문서 한 건만 지우는 경로(`DocumentService.delete`)는 trigger 가 그 한 행을 스스로 먼저
  * 잠그므로 여기를 거칠 필요가 없다 — 대신 그 경로는 계정 갱신을 삭제 뒤로 둔다.
  */
 class DocumentJobLocks(private val jdbc: JdbcClient) {
-    /** [documentIds] 에 걸린 `queued`/`running` 작업 행을 id 순서로 잠근다. 비어 있으면 아무것도 하지 않는다. */
+    /**
+     * [documentIds] 에 걸린 `queued`/`running` 작업 행을 두 가족 모두, 표 이름 순서와 id 순서로
+     * 잠근다. 비어 있으면 아무것도 하지 않는다.
+     */
     fun lockActiveJobs(documentIds: List<UUID>) {
         if (documentIds.isEmpty()) return
+        JOB_TABLES.forEach { table -> lockActiveJobsIn(table, documentIds) }
+    }
+
+    private fun lockActiveJobsIn(
+        table: String,
+        documentIds: List<UUID>,
+    ) {
         val statement =
-            documentIds.foldIndexed(jdbc.sql(lockActiveActionGuideJobsSql(documentIds.size))) { index, spec, id ->
+            documentIds.foldIndexed(jdbc.sql(lockActiveJobsSql(table, documentIds.size))) { index, spec, id ->
                 spec.param(idParam(index), id)
             }
         statement.query { rs, _ -> rs.getObject(1, UUID::class.java) }.list()
     }
 
     private companion object {
+        /**
+         * 잠글 작업 표와 그 순서. V35 의 `settle_document_jobs_before_delete` 가 도는 순서와 같게
+         * 둔다 — 두 파기·탈퇴 배치가 엇갈리지 않으려면 방향이 하나여야 한다.
+         */
+        val JOB_TABLES = listOf("action_guide_jobs", "illustration_suggestion_jobs")
+
         fun idParam(index: Int): String = "id$index"
 
         /**
          * `= ANY(:ids)` 가 아니라 자리표시자를 펼친다 — `NamedParameterJdbcTemplate` 은 배열·컬렉션
          * 인자를 `?, ?` 로 펼쳐 버려 `ANY` 의 괄호와 맞지 않는다(같은 파일의 다른 질의도 같은 이유).
+         * 표 이름은 [JOB_TABLES] 의 상수라 그대로 끼워 넣는다 — 매개변수는 문서 id 뿐이다.
          */
-        fun lockActiveActionGuideJobsSql(size: Int): String {
+        fun lockActiveJobsSql(
+            table: String,
+            size: Int,
+        ): String {
             val placeholders = (0 until size).joinToString { ":${idParam(it)}" }
             return """
                 SELECT id
-                FROM action_guide_jobs
+                FROM $table
                 WHERE document_id IN ($placeholders)
                   AND status IN ('queued', 'running')
                 ORDER BY id

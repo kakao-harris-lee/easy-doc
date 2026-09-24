@@ -37,6 +37,7 @@ import kr.easydoc.infrastructure.auth.naver.NaverOAuthSettings
 import kr.easydoc.infrastructure.auth.naver.NaverSocialLoginProvider
 import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import kr.easydoc.infrastructure.sms.SmsProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -534,8 +535,10 @@ class AuthConfiguration {
 
     /** `POST /auth/me/deletion` — 회원 탈퇴(계획 `docs/plans/2026-09-09-account-deletion.md`). */
     @Bean
-    fun accountDeletionRepository(jdbcClient: JdbcClient): AccountDeletionRepository =
-        JdbcAccountDeletionRepository(jdbcClient)
+    fun accountDeletionRepository(
+        jdbcClient: JdbcClient,
+        documentJobLocks: DocumentJobLocks,
+    ): AccountDeletionRepository = JdbcAccountDeletionRepository(jdbcClient, documentJobLocks)
 
     /** 세금계산서 처리 대기 알림도 같은 운영자 주소를 쓴다(`InvoiceRequestConfiguration`과 같은 설정). */
     @Bean

@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.db
 
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.auth.JdbcAccountDeletionRepository
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
@@ -62,7 +63,7 @@ class DocumentDeleteSettlementLockOrderTest {
         dataSource = DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
         jdbc = JdbcClient.create(dataSource)
         tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
-        accountDeletion = JdbcAccountDeletionRepository(jdbc)
+        accountDeletion = JdbcAccountDeletionRepository(jdbc, DocumentJobLocks(jdbc))
         pool = Executors.newSingleThreadExecutor()
     }
 

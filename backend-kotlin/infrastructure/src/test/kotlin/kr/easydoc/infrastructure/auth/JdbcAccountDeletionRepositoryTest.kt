@@ -5,6 +5,7 @@ import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.DerivedRows
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.flywaydb.core.Flyway
@@ -45,7 +46,7 @@ class JdbcAccountDeletionRepositoryTest {
             .migrate()
 
         jdbcClient = JdbcClient.create(dataSource())
-        repository = JdbcAccountDeletionRepository(jdbcClient)
+        repository = JdbcAccountDeletionRepository(jdbcClient, DocumentJobLocks(jdbcClient))
         users = JdbcUserRepository(jdbcClient)
     }
 

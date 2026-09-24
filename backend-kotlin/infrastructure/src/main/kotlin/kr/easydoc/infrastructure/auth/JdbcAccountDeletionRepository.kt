@@ -3,7 +3,7 @@ package kr.easydoc.infrastructure.auth
 import kr.easydoc.application.account.AccountDeletionRepository
 import kr.easydoc.application.account.LockedAccount
 import kr.easydoc.core.user.PasswordHash
-import kr.easydoc.infrastructure.db.DocumentJobLocks
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
 import java.util.UUID
@@ -12,7 +12,10 @@ import java.util.UUID
  * 회원 탈퇴 저장소 — 계획 `docs/plans/2026-09-09-account-deletion.md` §3. 스키마는
  * `V1__initial_schema.sql`(`users`)·`V2__conversion_feedback.sql`·`V16__invoice_requests.sql`.
  */
-class JdbcAccountDeletionRepository(private val jdbc: JdbcClient) : AccountDeletionRepository {
+class JdbcAccountDeletionRepository(
+    private val jdbc: JdbcClient,
+    private val jobLocks: DocumentJobLocks,
+) : AccountDeletionRepository {
     /** `SELECT … FOR UPDATE` — `JdbcUserRepository.lockForUpdate`와 같은 규약. */
     override fun lockForDeletion(userId: UUID): LockedAccount? =
         jdbc
@@ -75,7 +78,7 @@ class JdbcAccountDeletionRepository(private val jdbc: JdbcClient) : AccountDelet
     override fun deleteUser(userId: UUID) {
         kr.easydoc.infrastructure.subscription.BillingDeletionGuard
             .check(jdbc, userId)
-        DocumentJobLocks.lockActiveJobs(jdbc, documentIdsOf(userId))
+        jobLocks.lockActiveJobs(documentIdsOf(userId))
         jdbc
             .sql("DELETE FROM documents WHERE user_id = :userId")
             .param("userId", userId)
