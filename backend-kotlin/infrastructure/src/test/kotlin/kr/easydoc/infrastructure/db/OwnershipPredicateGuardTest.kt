@@ -441,6 +441,11 @@ class OwnershipPredicateGuardTest {
                 // 가리켜 FK 위반이 나던 자리다. 소유 술어(`user_id = :userId`)가 문장에 직접
                 // 있어 아래 미방어 목록에는 없다.
                 "$AUTH/JdbcAccountDeletionRepository.kt | DELETE [documents]",
+                // 그 삭제 직전에 지울 문서 id 를 읽는 SELECT — `DocumentJobLocks` 가 이 배치의
+                // 활성 작업을 미리 잠그는 근거다(문서 여럿을 한 문장으로 지우는 자리라 trigger 의
+                // 문서별 잠금만으로는 worker 와 순서가 엇갈린다). 소유 술어(`user_id = :userId`)가
+                // 문장에 직접 있어 아래 미방어 목록에는 없다.
+                "$AUTH/JdbcAccountDeletionRepository.kt | SELECT [documents]",
                 // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
                 // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
                 // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을
