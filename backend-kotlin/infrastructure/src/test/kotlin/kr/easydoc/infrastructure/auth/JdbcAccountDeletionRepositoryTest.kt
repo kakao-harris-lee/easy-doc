@@ -158,7 +158,8 @@ class JdbcAccountDeletionRepositoryTest {
 
     /**
      * 활성 행동 안내 작업(`action_guide_jobs` queued/reserved)이 있는 계정의 탈퇴 — `users`
-     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V29 의 BEFORE DELETE trigger 가 해제 거래를
+     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V35 의 BEFORE DELETE trigger
+     * (`trg_documents_settle_jobs`, V29 의 가족별 trigger 를 대체했다)가 해제 거래를
      * 적는다. 그 거래의 `workspace_id`·`owner_user_id` 가 **같은 문장에서 이미 사라진 뒤**면
      * FK 위반으로 탈퇴 전체가 실패한다 — 문서를 사용자보다 먼저 지워야 하는 이유다.
      */
