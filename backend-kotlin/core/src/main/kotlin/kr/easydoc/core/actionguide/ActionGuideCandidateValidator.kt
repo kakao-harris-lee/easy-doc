@@ -2,6 +2,7 @@ package kr.easydoc.core.actionguide
 
 import kr.easydoc.core.easyread.findMissingFacts
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.segment.isSourceAnchorSupported
 
 /** 구조·원문 인용·제한된 사실 규칙만 검증한다. 의미 정확성이나 자격을 확정하지 않는다. */
 object ActionGuideCandidateValidator {
@@ -103,17 +104,12 @@ object ActionGuideCandidateValidator {
         }
     }
 
+    /** 규칙 자체는 [isSourceAnchorSupported] 가 든다 — 그림 제안(R7 ER-17)과 같은 판정을 쓴다. */
     private fun validateAnchor(
         anchor: ActionGuideSourceAnchor,
         sourceUnits: List<String>,
     ) {
-        if (anchor.sourceUnitIndexes.any { it !in sourceUnits.indices }) invalid()
-        val selectedUnits = anchor.sourceUnitIndexes.map(sourceUnits::get)
-        val repeatedQuote = selectedUnits.all { anchor.quote in it }
-        val spanningQuote =
-            anchor.sourceUnitIndexes.zipWithNext().all { (left, right) -> right == left + 1 } &&
-                anchor.quote in selectedUnits.joinToString("\n")
-        if (!repeatedQuote && !spanningQuote) invalid()
+        if (!isSourceAnchorSupported(anchor.sourceUnitIndexes, anchor.quote, sourceUnits)) invalid()
     }
 
     /** 기계적으로 연결 여부만 검사한다. 어떤 예외가 어떤 행동에 해당하는지는 사람의 검수가 필요하다. */

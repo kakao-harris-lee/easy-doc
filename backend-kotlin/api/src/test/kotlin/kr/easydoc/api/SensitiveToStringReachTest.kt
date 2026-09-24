@@ -209,8 +209,18 @@ class SensitiveToStringReachTest {
          * 342 → 343 은 `ActionGuideJobAcquire.DeadLettered` 하나다(2026-09-23). 리스 재획득
          * 상한을 넘긴 미시작 작업을 worker에 다시 넘기지 않고 실패로 정산하는 획득 결과이며,
          * 기존 `Held`·`RecoverUnknown` 과 같은 `ActionGuideJobLease` 하나만 담는다.
+         *
+         * 343 → 351 은 R7 ER-17-1 그림 제안 core가 더한 여덟이다(2026-09-24, DB·Spring 없는
+         * 조각이라 전부 `core`의 `illustration.suggestion` 패키지에 있다) — 모델 넷
+         * (`IllustrationSuggestion`·`IllustrationSuggestionSet`·`IllustrationSuggestionSourceAnchor`·
+         * `IllustrationSuggestionBodyRange`), 검증 전 LLM 출력을 담는 `IllustrationSuggestionDraft`,
+         * 결과 갈래 셋(`IllustrationSuggestionAnalysis` 의 `Valid`·`AllDropped`·`InvalidStructure`,
+         * 마지막은 `data object`). 본문·인용을 든 타입은 전부 `toString()` 을 재정의해 개수만
+         * 낸다(명세 §4) — `altTextDraft` 가 `text` 토큰에 걸려 이 게이트의 표본 대상이다.
+         * `IllustrationSuggestionPurpose` 는 enum, `IllustrationSuggestionIdGenerator` 는
+         * `fun interface` 라 세지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 343
+        const val EXPECTED_SOURCE_DECLARATIONS = 351
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
