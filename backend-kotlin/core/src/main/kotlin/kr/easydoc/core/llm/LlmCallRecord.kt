@@ -19,6 +19,9 @@ enum class LlmCallPurpose(
     REPAIR("repair"),
     RECONVERT("reconvert"),
     ACTION_GUIDE("action_guide"),
+
+    /** R7 ER-17 문맥 기반 그림 제안 분석 1회(V35 CHECK 확장과 같은 어휘). */
+    ILLUSTRATION_SUGGESTION("illustration_suggestion"),
 }
 
 /**
