@@ -23,6 +23,7 @@ import java.util.UUID
 class JdbcExpiredDocumentPurge(
     private val jdbc: JdbcClient,
     private val credits: CreditAccountService,
+    private val jobLocks: DocumentJobLocks,
 ) : ExpiredDocumentPurge {
     override fun purge(
         dryRun: Boolean,
@@ -44,6 +45,11 @@ class JdbcExpiredDocumentPurge(
             // 계정 갱신은 삭제 뒤로 나눈다. 해제 자체는 `workspace_credit_accounts` 와
             // `credit_transactions` 만 건드리고, 후자의 `document_id` 에는 일부러 FK 가
             // 없어(V15) 문서가 사라진 뒤에도 그대로 기록된다.
+            //
+            // 그리고 그 계정보다도 먼저, **배치의 활성 작업 행을 한 번에** 잠근다. 삭제 trigger 는
+            // 행마다 돌아 문서 A 의 계정 갱신 뒤에 문서 B 의 작업 행을 잠그러 가므로, 한 문장
+            // 안에서도 같은 엇갈림이 생긴다([DocumentJobLocks] 참고).
+            jobLocks.lockActiveJobs(ids)
             val pending = lockPendingReservations(ids)
             deleteDocuments(ids)
             releaseReservations(pending)
