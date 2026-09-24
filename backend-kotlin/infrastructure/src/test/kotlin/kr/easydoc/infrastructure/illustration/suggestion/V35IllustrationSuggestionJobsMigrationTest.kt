@@ -71,8 +71,8 @@ class V35IllustrationSuggestionJobsMigrationTest {
     }
 
     @Test
-    @DisplayName("문서 삭제 trigger 가 새 작업에도 달려 있다 — 예약이 문서와 함께 사라지지 않는다")
-    fun `문서 삭제 trigger 가 있다`() {
+    @DisplayName("문서 삭제 정산 trigger 는 두 작업 가족을 함께 도는 **하나**다 — 가족마다 두면 교착한다")
+    fun `문서 삭제 trigger 가 하나로 합쳐져 있다`() {
         val triggers =
             database.queryFirstColumn(
                 """
@@ -82,10 +82,35 @@ class V35IllustrationSuggestionJobsMigrationTest {
                 """.trimIndent(),
             )
 
-        assertThat(triggers).contains(
-            "trg_documents_settle_action_guide_jobs",
-            "trg_documents_settle_illustration_suggestion_jobs",
-        )
+        assertThat(triggers)
+            .describedAs("문서 삭제 정산 trigger 가 없다 — 예약이 문서와 함께 사라진다")
+            .contains("trg_documents_settle_jobs")
+        assertThat(triggers)
+            .withFailMessage {
+                "가족별 정산 trigger 가 남아 있다: $triggers\n" +
+                    "  PostgreSQL 은 BEFORE DELETE trigger 를 이름 순서로 돈다 — 앞선 trigger 가 이용량\n" +
+                    "  계정을 잡은 뒤에야 다음 가족의 작업을 잠그므로 그 가족을 정산 중인 worker 와 교착한다."
+            }.doesNotContain(
+                "trg_documents_settle_action_guide_jobs",
+                "trg_documents_settle_illustration_suggestion_jobs",
+            )
+    }
+
+    @Test
+    @DisplayName("합친 trigger 가 두 가족의 정산 함수를 모두 부른다 — 한쪽만 부르면 예약이 남는다")
+    fun `합친 trigger 가 두 정산을 모두 부른다`() {
+        val body =
+            database
+                .queryFirstColumn(
+                    "SELECT prosrc FROM pg_proc WHERE proname = 'settle_document_jobs_before_delete'",
+                ).single()
+
+        assertThat(body).contains("settle_action_guide_jobs_for_document")
+        assertThat(body).contains("settle_illustration_suggestion_jobs_for_document")
+        // 계정을 건드리기 전에 두 가족의 행을 먼저 잠근다.
+        assertThat(body.indexOf("FROM action_guide_jobs")).isLessThan(body.indexOf("settle_action_guide_jobs_for_"))
+        assertThat(body.indexOf("FROM illustration_suggestion_jobs"))
+            .isLessThan(body.indexOf("settle_action_guide_jobs_for_"))
     }
 
     private fun constraint(name: String): String =

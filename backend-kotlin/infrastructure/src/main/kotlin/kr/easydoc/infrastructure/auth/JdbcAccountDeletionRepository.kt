@@ -54,7 +54,7 @@ class JdbcAccountDeletionRepository(private val jdbc: JdbcClient) : AccountDelet
     /**
      * 문서를 사용자보다 **먼저** 지운다. `users` 한 행만 지우면 CASCADE 가 `workspaces` 를
      * `documents` 보다 먼저 훑고(V1 의 FK 선언 순서), 그 뒤 문서가 지워질 때 V29 의 BEFORE
-     * DELETE trigger(`settle_action_guide_jobs_before_document_delete`)가 활성 행동 안내
+     * DELETE trigger(`settle_document_jobs_before_delete`)가 활성 행동 안내
      * 작업의 예약을 해제하며 `credit_transactions` 에 해제 거래 한 행을 적는다 — 그 행의
      * `workspace_id`·`owner_user_id` 가 **같은 문장에서 이미 사라진 뒤**라 FK 위반
      * (`fk_credit_transactions_workspace_id_workspaces`)으로 탈퇴 전체가 실패했다.

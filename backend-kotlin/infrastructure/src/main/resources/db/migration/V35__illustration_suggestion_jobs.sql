@@ -7,7 +7,10 @@
 --
 -- V29 와 다른 점은 둘이다.
 -- ⑴ `expected_guide_revision` 이 없다 — 제안 분석에는 담당자 편집본이 없다.
--- ⑵ 예약량이 0 일 수 있다. 이용량 단가(`easydoc.illustration-suggestions.credits-per-100-chars`)
+-- ⑵ 문서 삭제 정산 트리거를 **하나로 합친다**(V29 의 것을 이 마이그레이션이 내린다) — 가족마다
+--    트리거를 두면 이름 순서 때문에 계정 잠금이 다른 가족의 작업 잠금보다 앞서 worker 와 교착한다.
+--    자세한 사유는 파일 끝 트리거 절의 주석에 적었다.
+-- ⑶ 예약량이 0 일 수 있다. 이용량 단가(`easydoc.illustration-suggestions.credits-per-100-chars`)
 --    가 0 인 fake 모드에서는 크레딧 거래 행을 만들지 않으므로(명세 §3) 그 작업의 정산 상태는
 --    `not_charged` 로 고정된다. 「예약했는데 정산이 안 됐다」와 「애초에 예약이 없다」를 같은
 --    값으로 뭉개면 원장 대조가 두 경우를 구분하지 못한다.
@@ -248,17 +251,50 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION settle_illustration_suggestion_jobs_before_document_delete()
+-- **문서 삭제 정산은 트리거 하나로 합친다.**
+--
+-- 한 문서에는 행동 안내 작업과 그림 제안 작업이 동시에 활성일 수 있다. 가족마다 BEFORE DELETE
+-- 트리거를 따로 두면 PostgreSQL 이 트리거를 **이름 순서로** 실행하므로, 앞선 트리거가 자기 가족의
+-- 작업을 잠그고 `workspace_credit_accounts` 까지 잡은 **뒤에야** 다음 트리거가 나머지 가족의 작업을
+-- 잠근다. 그 사이에 나머지 가족을 정산 중인 worker(작업 행 → 계정 순서, `ProcessActionGuideJob`·
+-- `ProcessIllustrationSuggestionJob`)가 있으면 사이클이 닫히고, PostgreSQL 이 둘 중 하나를 죽인다 —
+-- 문서 삭제(또는 그 삭제를 묶은 보존 만료 파기 배치 전체)가 통째로 되돌려지거나, 이미 돈을 쓴
+-- 정산이 사라진다.
+--
+-- 그래서 조정 트리거 하나가 **두 가족의 활성 작업 행을 먼저 모두 잠그고**(표 이름 순서로 고정)
+-- 그 다음에 각 가족의 정산 함수를 부른다. 정산 함수 자신도 같은 행을 다시 잠그지만 이미 이
+-- 트랜잭션이 들고 있어 기다리지 않는다 — 함수는 그대로 두고(다른 호출자가 없다) 순서만 앞세운다.
+-- 정산 함수들은 활성 작업만 건드리므로 정확히 한 번 정산되는 성질도 그대로다.
+DROP TRIGGER trg_documents_settle_action_guide_jobs ON documents;
+
+DROP FUNCTION settle_action_guide_jobs_before_document_delete();
+
+CREATE FUNCTION settle_document_jobs_before_delete()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+    -- 잠금 순서는 표 이름 순으로 고정한다. worker 는 자기 가족의 행 하나만 잠그므로 이 순서와
+    -- 엇갈릴 수 없고, 나중에 세 번째 가족이 생겨도 같은 규칙으로 줄을 세운다.
+    PERFORM id
+    FROM action_guide_jobs
+    WHERE document_id = OLD.id
+      AND status IN ('queued', 'running')
+    FOR UPDATE;
+
+    PERFORM id
+    FROM illustration_suggestion_jobs
+    WHERE document_id = OLD.id
+      AND status IN ('queued', 'running')
+    FOR UPDATE;
+
+    PERFORM settle_action_guide_jobs_for_document(OLD.id);
     PERFORM settle_illustration_suggestion_jobs_for_document(OLD.id);
     RETURN OLD;
 END;
 $$;
 
-CREATE TRIGGER trg_documents_settle_illustration_suggestion_jobs
+CREATE TRIGGER trg_documents_settle_jobs
 BEFORE DELETE ON documents
 FOR EACH ROW
-EXECUTE FUNCTION settle_illustration_suggestion_jobs_before_document_delete();
+EXECUTE FUNCTION settle_document_jobs_before_delete();
