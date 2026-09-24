@@ -110,7 +110,7 @@ class JdbcRetentionPurgeTest {
     }
 
     @Test
-    @DisplayName("만료 파기가 V28~V34 파생 행(검수·행동 안내·표 구조·이력·그림 배치)을 함께 지운다")
+    @DisplayName("만료 파기가 V28~V35 파생 행(검수·행동 안내·표 구조·이력·그림 배치·그림 제안)을 함께 지운다")
     fun `만료 파기가 파생 행을 남기지 않는다`() {
         val seeded = seedDocument()
         DerivedRows.requireNonEmptyCensus()
@@ -127,9 +127,12 @@ class JdbcRetentionPurgeTest {
         assertThat(derivedCounts(seeded))
             .withFailMessage("파생 행이 문서와 함께 사라지지 않았다 — 파기 범위가 새고 있다")
             .isEqualTo(everyDerivedTable(0))
-        // 작업 감사행에는 일부러 FK 가 없다(V29 주석) — 청구 근거로 남는다.
+        // 작업 감사행에는 일부러 FK 가 없다(V29·V35 주석) — 청구 근거로 남는다.
         assertThat(countIn("action_guide_jobs", "id", jobId))
             .withFailMessage("작업 감사행이 사라졌다 — 문서가 지워져도 정산 근거는 남아야 한다")
+            .isEqualTo(1)
+        assertThat(countIn("illustration_suggestion_jobs", "conversion_id", seeded.conversionId))
+            .withFailMessage("그림 제안 작업 감사행이 사라졌다 — 결과만 파기하고 정산 근거는 남아야 한다")
             .isEqualTo(1)
     }
 

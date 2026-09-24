@@ -450,6 +450,10 @@ class EnvelopeColumnWriteGuardTest {
                 // (`replaceOwned`, `ON CONFLICT (conversion_id) DO UPDATE SET`) 하나 — 문장 둘이다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/" +
                     "JdbcIllustrationPlacementRepository.kt",
+                // R7 ER-17 결과 payload 의 키 회전 UPDATE 하나. 저장은 INSERT 라 SET 절이 없어
+                // 이 조사에 잡히지 않는다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/suggestion/" +
+                    "IllustrationSuggestionResultKeyRotation.kt",
                 // 정기결제 세션·주문 upsert 둘 — `saveSession`(toss_billing_sessions)·
                 // `saveOrder`(toss_billing_orders) 모두 `ON CONFLICT ... DO UPDATE SET`으로
                 // payload_encrypted와 봉투 두 값을 같은 문장에서 쓴다(코드 리뷰 MEDIUM 지적으로
@@ -527,7 +531,11 @@ class EnvelopeColumnWriteGuardTest {
          * 37 → 38 은 `ConversionFeatureRouteReachTest` 가 새 변환 하위 라우트의 소유권 은닉을
          * 실제 스택에서 재려고 심는 완료 상태 문장 하나다 — 「남의 것」팔에 내줄 것이
          * 실재해야 판정이 공회전하지 않는다. 결과 열과 봉투 두 값을 같은 문장에서 쓴다.
+         *
+         * 38 → 39 는 R7 ER-17 결과 payload 의 키 회전 UPDATE
+         * (`IllustrationSuggestionResultKeyRotation.rotateOne`) 하나다 — payload 와 봉투 두 값을
+         * 같은 문장에서 쓴다.
          */
-        const val EXPECTED_STATEMENTS = 38
+        const val EXPECTED_STATEMENTS = 39
     }
 }

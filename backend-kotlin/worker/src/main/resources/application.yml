@@ -38,6 +38,20 @@ easydoc:
     # 만료된 리스를 다시 넘기는 횟수 상한. 넘으면 호출 없이 실패로 정산해 예약과 slot을 돌려준다.
     max-lease-attempts: ${EASYDOC_ACTION_GUIDE_MAX_LEASE_ATTEMPTS:5}
     poll-interval-ms: ${EASYDOC_ACTION_GUIDE_POLL_INTERVAL_MS:500}
+  # R7 ER-17 문맥 기반 그림 제안 worker. 토글 둘 다 꺼진 것이 기본값이다.
+  illustration-suggestions:
+    enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED:false}
+    worker-enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED:false}
+    owner: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_OWNER:}
+    lease-duration-seconds: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_LEASE_DURATION_SECONDS:120}
+    # 만료된 리스를 다시 넘기는 횟수 상한. 넘으면 호출 없이 실패로 정산해 예약과 slot을 돌려준다.
+    max-lease-attempts: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_LEASE_ATTEMPTS:5}
+    # 문서당 provider 시작 누적 상한(명세 §2). 운영 구성이며 D04를 자동 승계한 값이 아니다.
+    max-provider-attempts-per-conversion: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_PROVIDER_ATTEMPTS:3}
+    poll-interval-ms: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_POLL_INTERVAL_MS:500}
+    max-output-tokens: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_OUTPUT_TOKENS:8192}
+    # 미설정과 0은 다르다 — 실제 provider worker는 0 이하를 기동에서 거부한다.
+    credits-per-100-chars: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   prompt:
