@@ -7,6 +7,7 @@ import {
   analyzeReviewSupport,
   createActionGuideJob,
   createDocumentFromText,
+  createIllustrationSuggestionJob,
   downloadExport,
   downloadActionGuide,
   downloadReviewHistory,
@@ -14,11 +15,14 @@ import {
   getActionGuideJob,
   getExplanations,
   getIllustrationPlacements,
+  getIllustrationSuggestionJob,
+  getIllustrationSuggestions,
   getIllustrations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
   listDocuments,
+  listIllustrationSuggestionJobs,
   putIllustrationPlacements,
   reconvertUnit,
   saveReview,
@@ -436,6 +440,144 @@ describe('action guide job API', () => {
     })
     expect(result.job).toEqual(job)
     expect(result.creditBalance).toBe(8.1)
+  })
+})
+
+describe('illustration suggestion API (R7 ER-17)', () => {
+  const job = {
+    job_id: 'job-7',
+    request_id: 'request-7',
+    status: 'queued',
+    based_on_content_revision: 7,
+    reserved_credits: 1.5,
+    failure_code: null,
+    created_at: '2026-09-24T00:00:00Z',
+    updated_at: '2026-09-24T00:00:00Z',
+  }
+
+  it('접수는 멱등 키와 본문 revision만 보내고 202 이용량 헤더를 읽는다', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(job), {
+        status: 202,
+        headers: {
+          'Content-Type': 'application/json',
+          Location: '/conversions/c1/illustration-suggestion-jobs/job-7',
+          'X-Credit-Balance': '6.4',
+        },
+      }),
+    )
+
+    const result = await createIllustrationSuggestionJob('c1', {
+      request_id: 'request-7',
+      expected_content_revision: 7,
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/illustration-suggestion-jobs`)
+    expect(init?.method).toBe('POST')
+    // 행동 안내와 달리 두 번째 revision 축이 없다 — 계약에 없는 필드를 보내면 422다.
+    expect(JSON.parse(init?.body as string)).toEqual({
+      request_id: 'request-7',
+      expected_content_revision: 7,
+    })
+    expect(result.job).toEqual(job)
+    expect(result.creditBalance).toBe(6.4)
+  })
+
+  it('이용량 헤더가 없거나 숫자가 아니면 잔액은 null이다', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(job), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const result = await createIllustrationSuggestionJob('c1', {
+      request_id: 'request-7',
+      expected_content_revision: 7,
+    })
+
+    expect(result.creditBalance).toBeNull()
+  })
+
+  it('작업 목록과 단건 조회 경로를 구분한다', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        active_job: job,
+        latest_job: job,
+        required_credits: 1.5,
+        available_credits: 6.4,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, job))
+
+    const collection = await listIllustrationSuggestionJobs('c1')
+    await getIllustrationSuggestionJob('c1', 'job-7')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/illustration-suggestion-jobs`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/illustration-suggestion-jobs/job-7`,
+    )
+    expect(collection.required_credits).toBe(1.5)
+  })
+
+  it('제안 조회는 상태·근거·버린 수를 그대로 읽는다', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: 'ready',
+        content_revision: 7,
+        based_on_content_revision: 7,
+        required_credits: 1.5,
+        dropped_count: 2,
+        suggestions: [
+          {
+            suggestion_id: 'suggestion-1',
+            purpose: 'procedure',
+            reason: '신청 순서를 그림으로 보면 이해하기 쉽다',
+            body_range: { start: 0, end: 2 },
+            source_anchors: [{ source_unit_indexes: [0], quote: '신청서를 제출합니다' }],
+            scenes: ['신청서를 내는 장면'],
+            preserved_facts: [],
+            alt_text_draft: '신청 순서를 보여 주는 그림',
+          },
+        ],
+      }),
+    )
+
+    const resource = await getIllustrationSuggestions('c1')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/illustration-suggestions`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+    expect(resource.status).toBe('ready')
+    expect(resource.dropped_count).toBe(2)
+    expect(resource.suggestions[0]?.body_range).toEqual({ start: 0, end: 2 })
+    expect(resource.suggestions[0]?.source_anchors[0]?.source_unit_indexes).toEqual([0])
+  })
+
+  it('분석 전에는 근거 revision과 제안이 비어 있다', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        status: 'not_analyzed',
+        content_revision: 1,
+        based_on_content_revision: null,
+        required_credits: null,
+        dropped_count: 0,
+        suggestions: [],
+      }),
+    )
+
+    const resource = await getIllustrationSuggestions('c1')
+
+    expect(resource.status).toBe('not_analyzed')
+    expect(resource.based_on_content_revision).toBeNull()
+    // 단가 미설정은 0(무과금)이 아니라 null이다 — 화면이 두 경우를 구분한다.
+    expect(resource.required_credits).toBeNull()
+    expect(resource.suggestions).toEqual([])
   })
 })
 

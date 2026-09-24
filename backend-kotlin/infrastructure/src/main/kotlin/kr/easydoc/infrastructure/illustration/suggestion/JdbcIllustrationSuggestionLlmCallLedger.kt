@@ -65,7 +65,6 @@ class JdbcIllustrationSuggestionLlmCallLedger(private val jdbc: JdbcClient) : Il
     override fun markOutcomeUnknown(
         job: StoredIllustrationSuggestionJob,
         executionId: UUID,
-        recoveredAt: Instant,
     ) {
         val updated =
             jdbc
@@ -79,8 +78,6 @@ class JdbcIllustrationSuggestionLlmCallLedger(private val jdbc: JdbcClient) : Il
                 .param("jobId", job.jobId)
                 .update()
         check(updated == 1) { "그림 제안 LLM 호출 원장을 불명확 상태로 바꿀 수 없습니다" }
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredRecoveryTime = recoveredAt
     }
 
     private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)

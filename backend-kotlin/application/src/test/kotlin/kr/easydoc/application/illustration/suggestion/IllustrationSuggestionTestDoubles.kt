@@ -204,7 +204,6 @@ internal class RecordingSuggestionLedger : IllustrationSuggestionLlmCallLedger {
     override fun markOutcomeUnknown(
         job: StoredIllustrationSuggestionJob,
         executionId: UUID,
-        recoveredAt: Instant,
     ) {
         unknowns += 1
     }

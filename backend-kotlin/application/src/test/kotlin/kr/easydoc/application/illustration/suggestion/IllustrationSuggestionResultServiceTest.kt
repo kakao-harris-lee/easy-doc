@@ -38,7 +38,6 @@ class IllustrationSuggestionResultServiceTest {
                     cipher.writeScheme,
                     cipher.writeKeyVersion,
                 ),
-                SUGGESTION_NOW,
             )
     }
 

@@ -29,9 +29,15 @@ class EncryptionSchemeSchemaTest {
     }
 
     @Test
-    @DisplayName("두 테이블의 CHECK 가 코드 상수만 허용한다 (fernet-v1 은 목록에 없다)")
+    @DisplayName("봉인 표의 CHECK 가 코드 상수만 허용한다 (fernet-v1 은 목록에 없다)")
     fun `CHECK 도메인이 코드 상수와 같다`() {
-        listOf("ck_documents_encryption_scheme_valid", "ck_conversions_encryption_scheme_valid").forEach { name ->
+        listOf(
+            "ck_documents_encryption_scheme_valid",
+            "ck_conversions_encryption_scheme_valid",
+            // R7 ER-17 결과(V35). 새 봉인 표가 방식 이름을 자기 CHECK 로 고정하는지 함께 본다
+            // (명세 §7) — 이름만 `EncryptedField` 에 올리고 표 제약을 빠뜨리면 이 대조가 잡는다.
+            "ck_illustration_suggestion_results_scheme",
+        ).forEach { name ->
             val definition = constraintDefinition(name)
 
             assertThat(definition)
@@ -121,6 +127,14 @@ class EncryptionSchemeSchemaTest {
                     "  선언에만 있으면 그 이름으로 쓴 암호문은 **영원히 열리지 않는다**(AAD 불일치).\n" +
                     "  스키마에만 있으면 새 암호문 컬럼이 결속 없이 생긴 것이다 — `EncryptedField` 에 더하라."
             }.isEqualTo(actual)
+    }
+
+    @Test
+    @DisplayName("R7 ER-17 결과 표가 키 세대 하한도 자기 CHECK 로 진다")
+    fun `새 봉인 표가 키 세대 하한을 진다`() {
+        assertThat(constraintDefinition("ck_illustration_suggestion_results_key_version"))
+            .describedAs("결과 표가 key_version 하한을 걸지 않는다 — 0·음수 세대가 들어가면 그 행은 열리지 않는다")
+            .contains("key_version")
     }
 
     /** `public` 스키마의 모든 bytea 컬럼을 `테이블.컬럼` 으로. 열거하지 않고 DB 에서 읽는다. */

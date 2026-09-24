@@ -6,9 +6,6 @@ import kr.easydoc.application.illustration.suggestion.StoredIllustrationSuggesti
 import kr.easydoc.core.crypto.EncryptedContent
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
-import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 
 /** 결과는 암호문만 다루고, 사용자 경로에서 소유권과 보존기간을 한 SQL 로 확인한다. */
@@ -30,7 +27,6 @@ class JdbcIllustrationSuggestionResultRepository(private val jdbc: JdbcClient) :
             .param("payload", result.payload.bytes)
             .param("scheme", result.payload.scheme)
             .param("keyVersion", result.payload.keyVersion)
-            .param("createdAt", utc(result.createdAt))
             .update() == 1
     }
 
@@ -61,18 +57,15 @@ class JdbcIllustrationSuggestionResultRepository(private val jdbc: JdbcClient) :
                     rs.getString("encryption_scheme"),
                     rs.getInt("key_version"),
                 ),
-            createdAt = rs.getObject("created_at", OffsetDateTime::class.java).toInstant(),
         )
-
-    private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
 
     private companion object {
         val INSERT_SQL =
             """
             INSERT INTO illustration_suggestion_results
                 (id, job_id, conversion_id, based_on_content_revision,
-                 payload_encrypted, encryption_scheme, key_version, created_at)
-            SELECT :id, j.id, c.id, :revision, :payload, :scheme, :keyVersion, :createdAt
+                 payload_encrypted, encryption_scheme, key_version)
+            SELECT :id, j.id, c.id, :revision, :payload, :scheme, :keyVersion
             FROM illustration_suggestion_jobs j
             JOIN conversions c ON c.id = j.conversion_id
             JOIN documents d ON d.id = c.document_id
@@ -88,12 +81,13 @@ class JdbcIllustrationSuggestionResultRepository(private val jdbc: JdbcClient) :
         val LATEST_SQL =
             """
             SELECT r.id, r.job_id, r.conversion_id, r.based_on_content_revision,
-                   r.payload_encrypted, r.encryption_scheme, r.key_version, r.created_at
+                   r.payload_encrypted, r.encryption_scheme, r.key_version
             FROM illustration_suggestion_results r
             JOIN conversions c ON c.id = r.conversion_id
             JOIN documents d ON d.id = c.document_id
             WHERE r.conversion_id = :conversionId AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
+            -- 정렬 기준은 DB 시계가 찍은 `created_at` 이다(INSERT 가 값을 싣지 않는다).
             ORDER BY r.created_at DESC, r.id DESC
             LIMIT 1
             """.trimIndent()

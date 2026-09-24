@@ -194,13 +194,18 @@ class IllustrationSuggestionJobService(
 /**
  * `ceil(원문 글자 수 / 100) * 단가` — 올림 방식은 [Credits.requiredFor] 와 같고 단가만 구성값이다
  * (명세 §3). 문자 수는 `Long` 으로 올려 `Int` 덧셈 overflow 를 피한다.
+ *
+ * **유상 단가에서는 최소 한 단위를 부과한다.** 빈 원문(0자)이 0을 내면 유상 모드에서도 예약이
+ * 없는 `not_charged` 작업이 생겨, fake 모드의 무과금과 원장에서 구분되지 않는다 — 호출은
+ * 실제로 나가는데 과금 근거만 사라지는 자리다. 단가가 0이면 그대로 0이다(fake 모드).
  */
 internal fun requiredCreditsFor(
     charCount: Int,
     creditsPer100Chars: BigDecimal,
 ): Credits {
     require(charCount >= 0) { "문자 수는 음수일 수 없습니다: $charCount" }
-    val units = (charCount.toLong() + CHARS_PER_CREDIT_UNIT - 1) / CHARS_PER_CREDIT_UNIT
+    val measured = (charCount.toLong() + CHARS_PER_CREDIT_UNIT - 1) / CHARS_PER_CREDIT_UNIT
+    val units = if (creditsPer100Chars.signum() > 0) maxOf(1L, measured) else measured
     return Credits(creditsPer100Chars.multiply(BigDecimal.valueOf(units)))
 }
 

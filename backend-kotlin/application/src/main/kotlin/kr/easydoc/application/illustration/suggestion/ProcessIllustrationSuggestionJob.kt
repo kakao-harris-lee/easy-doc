@@ -200,7 +200,6 @@ class ProcessIllustrationSuggestionJob(
                     job.conversionId,
                     job.basedOnContentRevision,
                     payload,
-                    clock.instant(),
                 ),
             )
         ) {
@@ -321,7 +320,7 @@ class ProcessIllustrationSuggestionJob(
         outcome: IllustrationSuggestionJobOutcome,
     ): IllustrationSuggestionJobOutcome =
         if (jobs.markFailed(lease, IllustrationSuggestionJobFailureCode.OUTCOME_UNKNOWN, clock.instant())) {
-            ledger.markOutcomeUnknown(job, executionId, clock.instant())
+            ledger.markOutcomeUnknown(job, executionId)
             credits.release(job)
             outcome
         } else {

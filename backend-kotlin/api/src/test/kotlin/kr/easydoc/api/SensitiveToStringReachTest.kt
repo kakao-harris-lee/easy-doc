@@ -221,7 +221,7 @@ class SensitiveToStringReachTest {
          * `fun interface` 라 세지 않는다.
          *
          * 351 → 384 는 R7 ER-17-2 서버 조각이 더한 서른셋이다(2026-09-24). application 의
-         * 포트·뷰 스무넷(`IllustrationSuggestionJobContext`·`StoredIllustrationSuggestionJob`·
+         * 포트·뷰 스물다섯(`IllustrationSuggestionJobContext`·`StoredIllustrationSuggestionJob`·
          * `StoredIllustrationSuggestionResult`·`IllustrationSuggestionJobLease`·
          * `IllustrationSuggestionJobWorkerPolicy` 와 `IllustrationSuggestionJobInsert`·
          * `IllustrationSuggestionJobAcquire`·`IllustrationSuggestionCreditReservation`·

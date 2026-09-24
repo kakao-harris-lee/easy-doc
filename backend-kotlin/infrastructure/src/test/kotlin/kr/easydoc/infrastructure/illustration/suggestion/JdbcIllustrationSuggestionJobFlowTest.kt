@@ -132,7 +132,7 @@ class JdbcIllustrationSuggestionJobFlowTest {
             assertThat(
                 jobs.markFailed(lease, IllustrationSuggestionJobFailureCode.OUTCOME_UNKNOWN, NOW.plusSeconds(2)),
             ).isTrue()
-            ledger.markOutcomeUnknown(held, executionId, NOW.plusSeconds(2))
+            ledger.markOutcomeUnknown(held, executionId)
             credits.release(held)
         }
 
@@ -235,7 +235,6 @@ class JdbcIllustrationSuggestionJobFlowTest {
                         held.conversionId,
                         held.basedOnContentRevision,
                         EncryptedContent(byteArrayOf(9), "aes256gcm-v1", 1),
-                        NOW,
                     ),
                 ),
             ).isTrue()
@@ -271,7 +270,6 @@ class JdbcIllustrationSuggestionJobFlowTest {
                     held.conversionId,
                     held.basedOnContentRevision,
                     EncryptedContent(byteArrayOf(9), "aes256gcm-v1", 1),
-                    NOW,
                 ),
             )
         }

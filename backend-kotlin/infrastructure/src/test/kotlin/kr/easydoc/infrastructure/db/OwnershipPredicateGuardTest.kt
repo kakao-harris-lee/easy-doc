@@ -824,6 +824,9 @@ class OwnershipPredicateGuardTest {
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
 
         // 52 → 58: R2 암호문 가족 둘의 회전 커서·잠금·재봉인 여섯 문장.
+        // 67 → 70: R7 ER-17 결과(`IllustrationSuggestionResultKeyRotation`)의 후보 커서
+        // SELECT·잠금 SELECT·재봉인 UPDATE 셋이다. 같은 기능의 사용자 경로(입력 적재·접수
+        // 잠금·호출 원장·결과 저장/조회)는 소유 매개변수를 SQL 자체에 둬 이 상한을 먹지 않았다.
         const val MAX_UNGUARDED_STATEMENTS = 70
     }
 }

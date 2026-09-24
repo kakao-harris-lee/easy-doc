@@ -11,6 +11,7 @@ import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionLlmC
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultRepository
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultService
 import kr.easydoc.application.illustration.suggestion.ProcessIllustrationSuggestionJob
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.llm.LlmProperties
@@ -246,9 +247,10 @@ class ProviderIllustrationSuggestionWorkerConfiguration {
         environment: Environment,
     ): IllustrationSuggestionJobRunner {
         // 0 크레딧은 fake 모드 전용이다(명세 §3) — 유료 호출을 무료로 돌리는 구성을 기동에서 끊는다.
+        // 사용자 잘못이 아니라 운영 설정이라 `ConfigurationException` 이다(저장소 관례).
         val rate = properties.creditsPer100Chars
-        require(rate != null && rate.signum() > 0) {
-            "실제 provider 모드에서는 easydoc.illustration-suggestions.credits-per-100-chars 가 0보다 커야 합니다"
+        if (rate == null || rate.signum() <= 0) {
+            throw ConfigurationException(PROVIDER_RATE_REQUIRED_MESSAGE)
         }
         // 별도 provider 인스턴스에 응답 제한을 둔다. 변환 worker 의 긴 출력·타임아웃은 건드리지 않는다.
         val boundedProperties =
@@ -290,6 +292,10 @@ class ProviderIllustrationSuggestionWorkerConfiguration {
 
 /** e2e·검증에서만 켜는 fake provider 프로필 이름. */
 const val ILLUSTRATION_SUGGESTION_FAKE_PROFILE: String = "illustration-suggestion-fake"
+
+/** 실제 provider worker 가 기동에서 거부하는 구성. 값 자체는 비밀이 아니라 메시지에 넣지 않는다. */
+const val PROVIDER_RATE_REQUIRED_MESSAGE: String =
+    "실제 provider 모드에서는 easydoc.illustration-suggestions.credits-per-100-chars 가 0보다 커야 합니다"
 
 private fun workerPolicy(properties: IllustrationSuggestionProperties): IllustrationSuggestionJobWorkerPolicy =
     IllustrationSuggestionJobWorkerPolicy(

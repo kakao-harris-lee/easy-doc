@@ -66,7 +66,6 @@ class IllustrationSuggestionResultKeyRotationTest {
                     fixture.job.conversionId,
                     fixture.job.basedOnContentRevision,
                     sealed,
-                    NOW,
                 ),
             ),
         ).isTrue()

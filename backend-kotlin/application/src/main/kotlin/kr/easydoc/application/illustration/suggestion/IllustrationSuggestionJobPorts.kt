@@ -145,14 +145,19 @@ interface IllustrationSuggestionJobRepository {
     ): Boolean
 }
 
-/** 저장된 제안 결과 한 건. 평문은 이 경계를 지나 DB 에 남지 않는다. */
+/**
+ * 저장된 제안 결과 한 건. 평문은 이 경계를 지나 DB 에 남지 않는다.
+ *
+ * 생성 시각이 없다 — 저장 시각은 **DB 시계**가 찍고(`created_at DEFAULT now()`), 최신 결과를
+ * 고르는 정렬도 그 값으로 한다. worker 시계를 실어 보내면 노드 간 시계 차이가 「더 새 결과가
+ * 더 오래됐다」로 뒤집혀 사용자가 낡은 제안에 갇힌다.
+ */
 data class StoredIllustrationSuggestionResult(
     val resultId: UUID,
     val jobId: UUID,
     val conversionId: UUID,
     val basedOnContentRevision: Long,
     val payload: EncryptedContent,
-    val createdAt: Instant,
 )
 
 /** 조회는 소유권과 문서 보존기간을 같은 SQL 에서 확인한다. */
@@ -216,10 +221,13 @@ interface IllustrationSuggestionLlmCallLedger {
         record: LlmCallRecord,
     )
 
+    /**
+     * 시작된 호출의 결과를 확인하지 못했다. 회수 **시각**은 받지 않는다 — 원장 행은 호출 시각을
+     * 이미 들고 있고, 회수 시각을 쓰지 않는 파라미터로 두면 「기록되는 값」으로 오해된다.
+     */
     fun markOutcomeUnknown(
         job: StoredIllustrationSuggestionJob,
         executionId: UUID,
-        recoveredAt: Instant,
     )
 }
 

@@ -693,8 +693,7 @@ export interface IllustrationSuggestion {
   alt_text_draft: string
 }
 
-export type IllustrationSuggestionStatus =
-  'not_analyzed' | 'ready' | 'no_suggestions' | 'stale'
+export type IllustrationSuggestionStatus = 'not_analyzed' | 'ready' | 'no_suggestions' | 'stale'
 
 export interface IllustrationSuggestionsResource {
   status: IllustrationSuggestionStatus

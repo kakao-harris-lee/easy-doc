@@ -48,7 +48,9 @@ class ProviderIllustrationSuggestionJobRunner(
     @Suppress("ReturnCount") // 호출 실패·절단·검증 실패는 서로 다른 정산 결과여서 조기 반환한다.
     private fun call(loaded: IllustrationSuggestionGenerationInput): IllustrationSuggestionRunResult {
         val prompt = LlmPrompt.forIllustrationSuggestions(loaded.sourceText, loaded.savedBody)
-        val inputChars = loaded.sourceText.length + loaded.savedBody.length
+        // 길이는 코드 포인트다(명세 §4) — UTF-16 길이로 세면 이모지·보조 평면 문자가 두 번 세어져
+        // 원장의 문자 수가 사용자에게 보이는 글자 수와 갈린다.
+        val inputChars = loaded.sourceText.codePointCount() + loaded.savedBody.codePointCount()
         val startedAt = System.nanoTime()
         val completion =
             try {
@@ -122,4 +124,6 @@ class ProviderIllustrationSuggestionJobRunner(
 
     private fun elapsedMillis(startedAt: Long): Long =
         TimeUnit.NANOSECONDS.toMillis((System.nanoTime() - startedAt).coerceAtLeast(0))
+
+    private fun String.codePointCount(): Int = codePointCount(0, length)
 }

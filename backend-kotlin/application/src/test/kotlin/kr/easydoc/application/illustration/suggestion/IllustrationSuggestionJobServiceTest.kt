@@ -153,6 +153,30 @@ class IllustrationSuggestionJobServiceTest {
     }
 
     @Test
+    @DisplayName("유상 단가에서는 빈 원문도 최소 한 단위를 예약한다 — 무과금 작업과 섞이지 않는다")
+    fun `유상 단가는 최소 한 단위를 부과한다`() {
+        jobs.context = defaultSuggestionContext().copy(charCount = 0)
+
+        val view =
+            service(rate = BigDecimal("0.1"))
+                .create(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_REQUEST, 3)
+
+        assertThat(view.job.reservedCredits).isEqualByComparingTo(BigDecimal("0.1"))
+    }
+
+    @Test
+    @DisplayName("fake 단가 0은 빈 원문에서도 0이다 — 최소 단위 규칙이 무과금을 뒤집지 않는다")
+    fun `단가 0은 최소 단위를 만들지 않는다`() {
+        jobs.context = defaultSuggestionContext().copy(charCount = 0)
+
+        val view =
+            service(rate = BigDecimal.ZERO)
+                .create(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_REQUEST, 3)
+
+        assertThat(view.job.reservedCredits).isEqualByComparingTo(BigDecimal.ZERO)
+    }
+
+    @Test
     @DisplayName("본문 버전이 0 이하면 422다")
     fun `본문 버전이 범위 밖이면 거절한다`() {
         assertThatThrownBy { service().create(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_REQUEST, 0) }
