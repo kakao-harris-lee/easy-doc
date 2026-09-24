@@ -2,10 +2,13 @@ package kr.easydoc.application.actionguide
 
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.exceptions.ConflictException
+import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.NotFoundException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.ZoneOffset
 import java.util.UUID
@@ -42,6 +45,47 @@ class ActionGuideJobServiceTest {
         assertThat(result.job.status.wireName).isEqualTo("queued")
         assertThat(result.job.reservedCredits).isEqualByComparingTo("1.5")
         assertThat(world.credits.reserveCalls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("이미 진행 중인 작업이 있으면 409이고 이용량을 예약하지 않는다")
+    fun `활성 작업이 있으면 예약하지 않는다`() {
+        val world = World()
+        // 같은 계정의 진행 중 작업 — 요청 키는 다르므로 멱등 반환이 아니라 활성 충돌 갈래다.
+        world.jobs.rows[JOB] = storedJob(requestId = UUID.randomUUID())
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, REQUEST, 3, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(ACTIVE_JOB_CONFLICT_MESSAGE)
+        assertThat(world.credits.reserveCalls).isZero()
+        assertThat(world.jobs.rows).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("잠금 밖 경쟁이 같은 요청 키를 먼저 저장하면 409이고 이용량을 예약하지 않는다")
+    fun `같은 요청 키 경쟁에 지면 예약하지 않는다`() {
+        val world = World()
+        world.jobs.beforeInsert = {
+            world.jobs.rows[UUID.randomUUID()] = storedJob(jobId = UUID.randomUUID())
+        }
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, REQUEST, 3, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(REQUEST_ID_CONFLICT_MESSAGE)
+        assertThat(world.credits.reserveCalls).isZero()
+        assertThat(world.jobs.rows).isEmpty()
+    }
+
+    @Test
+    @DisplayName("잔액이 모자라면 402 예외이고 작업 행이 롤백돼 남지 않는다")
+    fun `잔액이 모자라면 작업을 남기지 않는다`() {
+        val world = World()
+        world.credits.reservation = ActionGuideCreditReservation.Insufficient(BigDecimal("0.2"))
+
+        assertThatThrownBy { world.service.create(OWNER, CONVERSION, REQUEST, 3, null) }
+            .isInstanceOf(InsufficientCreditsException::class.java)
+            .hasMessage(INSUFFICIENT_ACTION_GUIDE_CREDITS_MESSAGE)
+        assertThat(world.jobs.rows).isEmpty()
     }
 
     @Test
@@ -106,7 +150,7 @@ class ActionGuideJobServiceTest {
                 enabled,
                 jobs,
                 credits,
-                DirectTransaction(),
+                DirectTransaction(jobs),
                 Clock.fixed(NOW, ZoneOffset.UTC),
             )
 

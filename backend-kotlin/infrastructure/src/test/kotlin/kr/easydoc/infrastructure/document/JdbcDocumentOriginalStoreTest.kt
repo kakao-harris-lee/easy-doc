@@ -76,7 +76,7 @@ class JdbcDocumentOriginalStoreTest {
         workspaces = JdbcWorkspaceRepository(jdbc)
         originals = JdbcDocumentOriginalRepository(jdbc)
         cipher = cipherWith(OLD_GENERATION)
-        purge = JdbcExpiredDocumentPurge(jdbc, noCredits())
+        purge = JdbcExpiredDocumentPurge(jdbc, noCredits(), DocumentJobLocks(jdbc))
         service =
             DocumentService(
                 storage =
