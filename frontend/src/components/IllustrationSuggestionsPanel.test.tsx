@@ -186,7 +186,28 @@ describe('ER-17 그림 제안 패널 — 접수와 진행', () => {
     ).toBeInTheDocument()
   })
 
-  it('접수가 실패하면 같은 request_id로 다시 보낸다', async () => {
+  it('요청 버튼은 차감량을 접근 가능한 설명으로 함께 읽힌다', async () => {
+    show()
+
+    expect(
+      await screen.findByRole('button', { name: '그림 제안 확인' }),
+    ).toHaveAccessibleDescription(/필요 이용량 1\.5크레딧 \/ 남은 이용량 6\.4크레딧/)
+  })
+
+  it('접수에 성공하면 사라진 버튼 대신 진행 상태로 초점을 옮긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createIllustrationSuggestionJob).mockResolvedValue({ job, creditBalance: 4.9 })
+
+    show()
+    await user.click(await screen.findByRole('button', { name: '그림 제안 확인' }))
+
+    const progress = await screen.findByText(
+      '그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.',
+    )
+    await waitFor(() => expect(progress).toHaveFocus())
+  })
+
+  it('결과를 모르는 실패만 같은 request_id 재전송으로 남기고 새 요청 버튼을 감춘다', async () => {
     const user = userEvent.setup()
     vi.mocked(createIllustrationSuggestionJob)
       .mockRejectedValueOnce(new ApiError(0, '네트워크'))
@@ -194,12 +215,27 @@ describe('ER-17 그림 제안 패널 — 접수와 진행', () => {
 
     show()
     await user.click(await screen.findByRole('button', { name: '그림 제안 확인' }))
+
+    // 새 uuid를 보내는 기본 버튼이 남아 있으면 「같은 요청」 안내와 달리 중복 접수가 된다.
+    expect(screen.queryByRole('button', { name: '그림 제안 확인' })).not.toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: '같은 요청 다시 보내기' }))
 
     await waitFor(() => expect(createIllustrationSuggestionJob).toHaveBeenCalledTimes(2))
     const first = vi.mocked(createIllustrationSuggestionJob).mock.calls.at(0)?.[1]
     expect(first?.request_id).toBe('generated-uuid')
     expect(vi.mocked(createIllustrationSuggestionJob).mock.calls.at(1)?.[1]).toEqual(first)
+  })
+
+  it('서버가 분명히 거절한 실패는 재전송 대신 기본 요청 버튼을 남긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createIllustrationSuggestionJob).mockRejectedValue(new ApiError(409, '충돌'))
+
+    show()
+    await user.click(await screen.findByRole('button', { name: '그림 제안 확인' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/다른 화면에서 본문이 바뀌었거나/)
+    expect(screen.queryByRole('button', { name: '같은 요청 다시 보내기' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '그림 제안 확인' })).toBeEnabled()
   })
 
   it('재방문하면 활성 작업을 목록에서 찾아 폴링을 이어간다', async () => {
@@ -228,6 +264,76 @@ describe('ER-17 그림 제안 패널 — 접수와 진행', () => {
       })
 
       expect(screen.getByText('신청 순서를 그림으로 보면 이해하기 쉬워집니다')).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('폴링이 실패를 받으면 목록이 갱신되기 전에도 진행 문구를 지운다', async () => {
+    vi.useFakeTimers()
+    try {
+      const queued = { ...jobs, active_job: job, latest_job: job }
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue(queued)
+      vi.mocked(getIllustrationSuggestionJob).mockResolvedValue({ ...job, status: 'running' })
+
+      show()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(
+        screen.getByText('그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.'),
+      ).toBeInTheDocument()
+
+      // 작업은 실패했지만 목록 조회는 아직 답하지 않는다 — 옛 `active_job`이 남아 있는
+      // 그 한 틱 동안 「분석 중」과 실패 문구가 같이 뜨면 안 된다.
+      vi.mocked(getIllustrationSuggestionJob).mockResolvedValue({
+        ...job,
+        status: 'failed',
+        failure_code: 'generation_failed',
+      })
+      vi.mocked(listIllustrationSuggestionJobs).mockReturnValue(new Promise(() => {}))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+
+      expect(screen.getByText(/그림 제안을 만들지 못했습니다/)).toBeInTheDocument()
+      expect(
+        screen.queryByText('그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.'),
+      ).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('폴링은 한 왕복이 끝난 뒤에만 다음 조회를 건다', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, active_job: job })
+      let settle: ((value: IllustrationSuggestionJob) => void) | undefined
+      vi.mocked(getIllustrationSuggestionJob).mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve
+        }),
+      )
+
+      show()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      // 응답이 오지 않는 동안 주기를 여러 번 넘겨도 조회는 한 번뿐이다.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000)
+      })
+      expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        settle?.({ ...job, status: 'running' })
+        await Promise.resolve()
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
@@ -290,14 +396,20 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(screen.getByText('신청 순서를 차례대로 보여 주는 그림')).toBeInTheDocument()
   })
 
-  it('그림 만들기 버튼은 다음 단계 안내와 함께 비활성이다', async () => {
+  it('그림 만들기 버튼은 초점을 받을 수 있는 채로 비활성이라 이유가 읽힌다', async () => {
+    const user = userEvent.setup()
     vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
 
     show()
 
     const create = await screen.findByRole('button', { name: '이 내용으로 그림 만들기' })
-    expect(create).toBeDisabled()
+    // `disabled` 버튼은 초점을 받지 못해 설명이 낭독되지 않는다 — aria-disabled로 둔다.
+    expect(create).toHaveAttribute('aria-disabled', 'true')
     expect(create).toHaveAccessibleDescription(/다음 단계에서 제공합니다/)
+    create.focus()
+    expect(create).toHaveFocus()
+    await user.click(create)
+    expect(createIllustrationSuggestionJob).not.toHaveBeenCalled()
   })
 
   it('한 줄만 가리키는 제안은 단일 줄로 적는다', async () => {
@@ -311,11 +423,15 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(await screen.findByText('본문 2줄')).toBeInTheDocument()
   })
 
-  it('제안 없음은 실패가 아니라 정상 결과로 적는다', async () => {
+  it('제안 없음은 실패가 아니라 정상 결과로 적고 사용한 이용량을 밝힌다', async () => {
     vi.mocked(getIllustrationSuggestions).mockResolvedValue({
       ...ready,
       status: 'no_suggestions',
       suggestions: [],
+    })
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+      ...jobs,
+      latest_job: { ...job, status: 'succeeded' },
     })
 
     show()
@@ -323,7 +439,28 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(
       await screen.findByText('이 문서에서 추가 그림이 도움이 될 부분을 찾지 못했습니다.'),
     ).toBeInTheDocument()
+    // 제안이 0건이어도 결과가 저장되면 이용량은 소비된다(명세 §3).
+    expect(
+      screen.getByText('분석은 정상적으로 끝났습니다. 이용량 1.5크레딧을 사용했습니다.'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('무과금 스택에서는 제안 없음에 사용 이용량을 적지 않는다', async () => {
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      ...ready,
+      status: 'no_suggestions',
+      suggestions: [],
+    })
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+      ...jobs,
+      required_credits: 0,
+      latest_job: { ...job, status: 'succeeded', reserved_credits: 0 },
+    })
+
+    show()
+
+    expect(await screen.findByText('분석은 정상적으로 끝났습니다.')).toBeInTheDocument()
   })
 
   it('stale 결과는 이전 버전으로 표시하고 그림 만들기를 막은 채 재분석을 권한다', async () => {
@@ -336,7 +473,10 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     show({ contentRevision: 2 })
 
     expect(await screen.findByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '이 내용으로 그림 만들기' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     expect(screen.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 

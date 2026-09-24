@@ -154,9 +154,21 @@ function SuggestionCard({
         </div>
 
         <div>
-          {/* ER-18 이전에는 누를 수 없다. 버튼을 숨기지 않는 이유는 다음 단계가 무엇인지
-              화면에서 읽히게 하기 위해서다 — 비활성 이유는 접근 가능한 설명으로 붙인다. */}
-          <Button type="button" disabled aria-describedby={disabledNoteId}>
+          {/*
+            ER-18 이전에는 누를 수 없다. 버튼을 숨기지 않는 이유는 다음 단계가 무엇인지
+            화면에서 읽히게 하기 위해서다.
+
+            `disabled`가 아니라 `aria-disabled`를 쓴다 — `disabled` 버튼은 초점을 받지
+            못해 낭독기 사용자가 «왜 못 누르는지»를 적어 둔 설명(`aria-describedby`)에
+            영영 닿지 못한다. 보이는 모양은 그대로 두고, 눌러도 아무 일도 하지 않는다.
+          */}
+          <Button
+            type="button"
+            aria-disabled="true"
+            aria-describedby={disabledNoteId}
+            className="cursor-not-allowed opacity-50"
+            onClick={(event) => event.preventDefault()}
+          >
             이 내용으로 그림 만들기
           </Button>
         </div>
@@ -181,6 +193,7 @@ export function IllustrationSuggestionsPanel({
 }: IllustrationSuggestionsPanelProps) {
   const headingId = useId()
   const generationNoteId = useId()
+  const costId = useId()
   const [resource, setResource] = useState<IllustrationSuggestionsResource | null>(null)
   const [jobs, setJobs] = useState<IllustrationSuggestionJobCollection | null>(null)
   const [job, setJob] = useState<IllustrationSuggestionJob | null>(null)
@@ -193,15 +206,30 @@ export function IllustrationSuggestionsPanel({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const requestRef = useRef(false)
+  const refreshControllerRef = useRef<AbortController | null>(null)
+  const activeStatusRef = useRef<HTMLParagraphElement>(null)
+  const focusActiveStatusRef = useRef(false)
 
   const loaded = loadedConversionId === conversionId
   const latestJob = loaded ? (jobs?.latest_job ?? null) : null
-  const currentJob = job ?? latestJob
+  /**
+   * 이 화면이 아는 **가장 최신** 작업. 폴링이 방금 받은 `job`이 목록 응답보다 항상 새롭다
+   * — 목록은 그 뒤에 다시 읽으므로 잠시 한 틱 뒤처진다. 문서가 바뀌는 동안(`!loaded`)에는
+   * 이전 문서의 작업을 새 문서의 것으로 읽지 않도록 둘 다 버린다.
+   */
+  const currentJob = (loaded ? job : null) ?? latestJob
+  /**
+   * 진행 중 작업. `currentJob`을 먼저 보고, 그것이 없을 때만 목록의 `active_job`으로
+   * 되돌아간다. 순서를 뒤집으면 폴링이 실패를 받은 직후 아직 갱신되지 않은 목록의
+   * queued 작업이 이겨 「분석하고 있어요」와 실패 문구가 같이 뜨고 같이 낭독된다.
+   */
   const activeJob =
-    loaded && (jobs?.active_job ?? null) !== null
-      ? (jobs?.active_job ?? null)
-      : currentJob !== null && (currentJob.status === 'queued' || currentJob.status === 'running')
+    currentJob !== null
+      ? currentJob.status === 'queued' || currentJob.status === 'running'
         ? currentJob
+        : null
+      : loaded
+        ? (jobs?.active_job ?? null)
         : null
   const suggestions = loaded ? (resource?.suggestions ?? []) : []
   const status = loaded ? (resource?.status ?? null) : null
@@ -213,6 +241,14 @@ export function IllustrationSuggestionsPanel({
   const isLoading = loading || !loaded
   const bodyLines = savedBody.split(/\r?\n/)
   const analyzed = status === 'ready' || status === 'no_suggestions' || stale
+  /**
+   * 결과가 저장되면 예약한 이용량을 **소비**한다 — 제안이 0건이어도 마찬가지다(명세 §3).
+   * 실패·stale·만료만 반환이므로, 성공한 작업의 예약분을 그대로 사용액으로 읽는다.
+   */
+  const consumedCredits =
+    currentJob?.status === 'succeeded' && currentJob.reserved_credits > 0
+      ? currentJob.reserved_credits
+      : null
   // 이용량 단가가 없으면 접수 자체가 503이다(계약 `IllustrationSuggestionJobCollectionResponse`).
   // 누를 수 없는 버튼 대신 이유를 적는다.
   const canRequest = requiredCredits !== null
@@ -257,52 +293,92 @@ export function IllustrationSuggestionsPanel({
     // 있으므로 `contentRevision`도 의존성에 둔다(ExplanationsPanel과 같은 규칙).
   }, [conversionId, contentRevision])
 
+  /**
+   * 작업 폴링. `setInterval`이 아니라 **한 번 끝난 뒤 다시 예약**하는 사슬이다 — 한 번의
+   * 왕복이 주기보다 오래 걸려도 요청이 겹치지 않고, 끝난 작업에는 다음 예약을 걸지 않는다.
+   * 모든 호출에 `AbortSignal`을 실어 언마운트·문서 전환·본문 저장 때 중간 응답이 사라진
+   * 화면에 상태를 쓰지 못하게 한다.
+   */
   useEffect(() => {
     const id = activeJob?.job_id
     if (id === undefined) return
-    let disposed = false
-    async function poll(): Promise<void> {
+    const controller = new AbortController()
+    let timer = 0
+
+    async function poll(): Promise<boolean> {
       try {
-        const next = await getIllustrationSuggestionJob(conversionId, id!)
-        if (disposed) return
+        const next = await getIllustrationSuggestionJob(conversionId, id!, controller.signal)
+        if (controller.signal.aborted) return false
         setJob(next)
-        if (next.status === 'queued' || next.status === 'running') return
+        if (next.status === 'queued' || next.status === 'running') return true
         const [nextResource, nextJobs] = await Promise.all([
-          getIllustrationSuggestions(conversionId),
-          listIllustrationSuggestionJobs(conversionId),
+          getIllustrationSuggestions(conversionId, controller.signal),
+          listIllustrationSuggestionJobs(conversionId, controller.signal),
         ])
-        if (disposed) return
+        if (controller.signal.aborted) return false
         setResource(nextResource)
         setJobs(nextJobs)
+        return false
       } catch (caught) {
-        if (!disposed) setError(errorText(caught, 'load'))
+        if (controller.signal.aborted) return false
+        // 일시적인 조회 실패로 폴링을 멈추지 않는다 — 작업은 서버에서 계속 돈다.
+        setError(errorText(caught, 'load'))
+        return true
       }
     }
-    const timer = window.setInterval(() => {
-      void poll()
-    }, POLL_INTERVAL_MS)
+
+    function schedule(): void {
+      timer = window.setTimeout(() => {
+        void poll().then((again) => {
+          if (again && !controller.signal.aborted) schedule()
+        })
+      }, POLL_INTERVAL_MS)
+    }
+
+    schedule()
     return () => {
-      disposed = true
-      window.clearInterval(timer)
+      controller.abort()
+      window.clearTimeout(timer)
     }
   }, [conversionId, activeJob?.job_id])
 
+  /**
+   * 접수에 성공하면 눌렀던 버튼이 사라지고 진행 상태 문구가 그 자리에 온다. 초점을 그대로
+   * 두면 body로 떨어져 키보드 사용자가 맥락을 잃으므로, 새로 생긴 상태 문구로 옮긴다.
+   */
+  useEffect(() => {
+    if (!focusActiveStatusRef.current) return
+    if (activeStatusRef.current === null) return
+    focusActiveStatusRef.current = false
+    activeStatusRef.current.focus()
+  }, [activeJob?.job_id])
+
+  useEffect(() => () => refreshControllerRef.current?.abort(), [])
+
   async function refresh(): Promise<void> {
+    refreshControllerRef.current?.abort()
+    const controller = new AbortController()
+    refreshControllerRef.current = controller
     setBusy(true)
     setError(null)
     try {
       const [nextResource, nextJobs] = await Promise.all([
-        getIllustrationSuggestions(conversionId),
-        listIllustrationSuggestionJobs(conversionId),
+        getIllustrationSuggestions(conversionId, controller.signal),
+        listIllustrationSuggestionJobs(conversionId, controller.signal),
       ])
+      if (controller.signal.aborted) return
       setResource(nextResource)
       setJobs(nextJobs)
       setJob(null)
+      // 서버 상태를 다시 읽었으므로 「결과를 모르는 요청」도 더는 남겨 두지 않는다 —
+      // 접수됐다면 위 목록에 나타나고, 아니라면 새 요청으로 다시 시작한다.
+      setPendingCreate(null)
       setNotice('최신 상태를 불러왔습니다.')
     } catch (caught) {
+      if (controller.signal.aborted) return
       setError(errorText(caught, 'load'))
     } finally {
-      setBusy(false)
+      if (!controller.signal.aborted) setBusy(false)
     }
   }
 
@@ -333,7 +409,12 @@ export function IllustrationSuggestionsPanel({
       // 접수 성공은 아래 「분석하고 있어요」 상태 문구가 말한다 — 같은 사실을 두 live
       // region 이 잇달아 읽지 않게 여기서 별도 안내를 남기지 않는다(UX 명세 §7).
       setPendingCreate(null)
+      focusActiveStatusRef.current = true
     } catch (caught) {
+      // 같은 키를 다시 보낼 값어치가 있는 것은 **결과를 모르는** 실패뿐이다(네트워크
+      // 끊김·status 0). 402·409·429·503처럼 서버가 분명히 거절한 경우는 같은 키를 다시
+      // 보내도 답이 같으므로 재전송 버튼을 내밀지 않고 기본 요청 버튼을 그대로 둔다.
+      if (caught instanceof ApiError && caught.status !== 0) setPendingCreate(null)
       setError(errorText(caught, 'create'))
     } finally {
       requestRef.current = false
@@ -410,9 +491,11 @@ export function IllustrationSuggestionsPanel({
               이용량이 설정되지 않았습니다. 지금은 그림 제안을 요청할 수 없습니다.
             </p>
           ) : requiredCredits === 0 ? (
-            <p className="font-medium">추가 차감 없음</p>
+            <p id={costId} className="font-medium">
+              추가 차감 없음
+            </p>
           ) : (
-            <p className="font-medium">
+            <p id={costId} className="font-medium">
               필요 이용량 {formatCredits(requiredCredits)}크레딧 / 남은 이용량{' '}
               {formatCredits(availableCredits)}크레딧
             </p>
@@ -426,27 +509,37 @@ export function IllustrationSuggestionsPanel({
           {bodyConflict && <p className="text-sm">본문 충돌을 해결한 뒤 제안을 확인해 주세요.</p>}
 
           {activeJob !== null ? (
-            <p role="status">그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.</p>
+            <p ref={activeStatusRef} tabIndex={-1} role="status">
+              그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.
+            </p>
           ) : (
             canRequest && (
               <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  disabled={busy || bodyDirty || bodyBusy || bodyConflict || insufficientCredits}
-                  onClick={startCreate}
-                >
-                  {analyzed ? '그림 제안 다시 확인' : '그림 제안 확인'}
-                </Button>
-                {pendingCreate !== null && (
+                {/* 결과를 모르는 요청이 남아 있는 동안에는 **같은 키의 재전송만** 내민다.
+                    새 uuid를 보내는 기본 버튼을 나란히 두면 「같은 요청」이라는 안내와
+                    달리 중복 접수·중복 예약을 만들 수 있다. */}
+                {pendingCreate !== null ? (
                   <Button
                     type="button"
                     variant="outline"
                     disabled={busy}
+                    aria-describedby={costId}
                     onClick={() => {
                       void submitCreate(pendingCreate)
                     }}
                   >
                     같은 요청 다시 보내기
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={busy || bodyDirty || bodyBusy || bodyConflict || insufficientCredits}
+                    // 차감량은 버튼 이름이 아니라 설명으로 붙인다 — 이름에 넣으면 상태가
+                    // 바뀔 때마다 버튼 이름이 달라져 같은 조작을 다른 것으로 읽게 된다.
+                    aria-describedby={costId}
+                    onClick={startCreate}
+                  >
+                    {analyzed ? '그림 제안 다시 확인' : '그림 제안 확인'}
                   </Button>
                 )}
               </div>
@@ -474,7 +567,16 @@ export function IllustrationSuggestionsPanel({
         </p>
       )}
       {!isLoading && status === 'no_suggestions' && (
-        <p role="status">이 문서에서 추가 그림이 도움이 될 부분을 찾지 못했습니다.</p>
+        <div role="status" className="space-y-1">
+          <p>이 문서에서 추가 그림이 도움이 될 부분을 찾지 못했습니다.</p>
+          {/* 제안이 0건이어도 분석은 끝났고 이용량은 소비된다(명세 §3). 실패로 오인하지
+              않도록 「끝났다」와 「얼마를 썼다」를 함께 적는다. */}
+          <p className="text-sm text-muted-foreground">
+            분석은 정상적으로 끝났습니다.
+            {consumedCredits !== null &&
+              ` 이용량 ${formatCredits(consumedCredits)}크레딧을 사용했습니다.`}
+          </p>
+        </div>
       )}
       {!isLoading && analyzed && (resource?.dropped_count ?? 0) > 0 && (
         <p className="text-sm text-muted-foreground">

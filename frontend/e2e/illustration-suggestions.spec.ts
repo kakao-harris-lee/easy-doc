@@ -106,8 +106,12 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
       timeout: 90_000,
     })
     await expect(panel.getByText(/원문 1줄:/)).toBeVisible()
-    // 그림 생성은 ER-18이다 — 여기서는 버튼이 비활성인 채로 다음 단계를 알린다.
-    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toBeDisabled()
+    // 그림 생성은 ER-18이다 — 버튼은 `aria-disabled`로 남겨 초점을 받을 수 있게 두고
+    // (그래야 «왜 못 누르는지»가 낭독된다) 다음 단계를 함께 알린다.
+    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     await expect(panel.getByText(/그림 만들기는 다음 단계에서 제공합니다/)).toBeVisible()
 
     // 4. 재방문 — 브라우저 저장소가 아니라 서버 조회로 같은 결과를 되살린다.
@@ -160,7 +164,10 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const staleResource = (await staleResponse.json()) as IllustrationSuggestionsResource
     expect(staleResource.status).toBe('stale')
     await expect(panel.getByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeVisible()
-    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toBeDisabled()
+    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     await expect(panel.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 })
