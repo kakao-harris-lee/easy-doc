@@ -2,6 +2,8 @@ package kr.easydoc.core.actionguide
 
 import kr.easydoc.core.easyread.findMissingFacts
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.segment.MAX_SOURCE_ANCHORS
+import kr.easydoc.core.segment.isSourceAnchorShapeValid
 import kr.easydoc.core.segment.isSourceAnchorSupported
 
 /** 구조·원문 인용·제한된 사실 규칙만 검증한다. 의미 정확성이나 자격을 확정하지 않는다. */
@@ -10,8 +12,6 @@ object ActionGuideCandidateValidator {
     private const val MAX_ITEMS_PER_SECTION = 10
     private const val MAX_ITEM_CODE_POINTS = 500
     private const val MAX_USER_TEXT_CODE_POINTS = 4_000
-    internal const val MAX_ANCHORS_PER_ITEM = 10
-    internal const val MAX_ANCHOR_QUOTE_CODE_POINTS = 1_000
 
     fun validate(
         candidate: ActionGuideCandidate,
@@ -74,7 +74,7 @@ object ActionGuideCandidateValidator {
     ): Int {
         if (item.text.isBlank() || item.text.countCodePoints() > MAX_ITEM_CODE_POINTS) invalid()
         if (item.cautions.size > MAX_ITEMS_PER_SECTION ||
-            (!allowAnchorOverflow && item.sourceAnchors.size > MAX_ANCHORS_PER_ITEM)
+            (!allowAnchorOverflow && item.sourceAnchors.size > MAX_SOURCE_ANCHORS)
         ) {
             invalid()
         }
@@ -84,10 +84,9 @@ object ActionGuideCandidateValidator {
         return item.text.countCodePoints() + item.cautions.sumOf { it.countCodePoints() }
     }
 
+    /** 형식 규칙은 [isSourceAnchorShapeValid] 가 든다 — 그림 제안(R7 ER-17)과 같은 규칙이다. */
     private fun validateAnchorStructure(anchor: ActionGuideSourceAnchor) {
-        if (anchor.quote.isBlank() || anchor.quote.countCodePoints() > MAX_ANCHOR_QUOTE_CODE_POINTS) invalid()
-        if (anchor.sourceUnitIndexes.isEmpty()) invalid()
-        if (anchor.sourceUnitIndexes != anchor.sourceUnitIndexes.distinct().sorted()) invalid()
+        if (!isSourceAnchorShapeValid(anchor.sourceUnitIndexes, anchor.quote)) invalid()
     }
 
     private fun validateSectionAgainstSource(

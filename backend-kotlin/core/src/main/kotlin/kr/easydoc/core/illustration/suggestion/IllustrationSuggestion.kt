@@ -12,6 +12,16 @@ import java.util.UUID
 // 모든 타입의 `toString()` 은 개수·번호만 낸다. 원문 인용·장면·대체텍스트는 사용자 문서에서
 // 나온 본문이라 로그에 실리면 안 된다(명세 §4 마지막 줄, §7).
 
+/**
+ * 제안 분석 프롬프트의 버전. 결과와 함께 저장돼 「어느 프롬프트가 낸 제안인가」를 나중에
+ * 잇는다(명세 §4 `analysis_version`). LLM 출력이 아니라 **서버가 찍는 계약 고정값**이다.
+ *
+ * `LlmPrompt.forIllustrationSuggestions` 의 시스템 프롬프트 문구나 출력 스키마를 바꾸면 이
+ * 값을 함께 올린다. 상수가 프롬프트가 아니라 제안 패키지에 있는 이유는 이 값을 읽는 쪽이
+ * 검증기·저장이기 때문이다 — 도메인 규칙이 프롬프트 생성기에 의존하게 두지 않는다.
+ */
+const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-1"
+
 /** 제안 한 건이 그림으로 설명하려는 것. 계약 wire 값과 1:1 이다(명세 §4). */
 enum class IllustrationSuggestionPurpose(val wireName: String) {
     /** 행동 순서·절차. */

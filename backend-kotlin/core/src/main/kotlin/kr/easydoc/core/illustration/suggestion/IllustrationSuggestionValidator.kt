@@ -1,7 +1,8 @@
 package kr.easydoc.core.illustration.suggestion
 
 import kr.easydoc.core.easyread.findMissingFacts
-import kr.easydoc.core.llm.LlmPrompt
+import kr.easydoc.core.segment.MAX_SOURCE_ANCHORS
+import kr.easydoc.core.segment.isSourceAnchorShapeValid
 import kr.easydoc.core.segment.isSourceAnchorSupported
 import java.util.UUID
 
@@ -29,19 +30,17 @@ internal object IllustrationSuggestionValidator {
     private const val MAX_PRESERVED_FACTS = 10
     private const val MAX_PRESERVED_FACT_CODE_POINTS = 200
     private const val MAX_ALT_TEXT_CODE_POINTS = 300
-    private const val MIN_ANCHORS = 1
-    private const val MAX_ANCHORS = 10
 
-    /** 인용 길이는 명세가 「R2와 같은 규칙」이라 행동 안내 후보와 같은 값을 쓴다. */
-    private const val MAX_ANCHOR_QUOTE_CODE_POINTS = 1_000
+    // 앵커 개수·인용 길이·형식은 명세가 「R2와 같은 규칙」이라 `core.segment` 의 공용
+    // 상한·판정([MAX_SOURCE_ANCHORS]·[isSourceAnchorShapeValid])을 그대로 쓴다.
 
     fun validate(
         drafts: List<IllustrationSuggestionDraft>,
         sourceUnits: List<String>,
-        savedBodyLineCount: Int,
+        savedBodyUnits: List<String>,
         suggestionIds: IllustrationSuggestionIdGenerator,
     ): IllustrationSuggestionAnalysis {
-        if (drafts.size > MAX_SUGGESTIONS || drafts.any { !isStructurallyValid(it, savedBodyLineCount) }) {
+        if (drafts.size > MAX_SUGGESTIONS || drafts.any { !isStructurallyValid(it, savedBodyUnits.size) }) {
             return IllustrationSuggestionAnalysis.InvalidStructure
         }
         val kept = drafts.filter { isSupportedBySource(it, sourceUnits) }
@@ -51,7 +50,7 @@ internal object IllustrationSuggestionValidator {
             IllustrationSuggestionAnalysis.Valid(
                 IllustrationSuggestionSet(
                     schemaVersion = SCHEMA_VERSION,
-                    analysisVersion = LlmPrompt.ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION,
+                    analysisVersion = ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION,
                     suggestions = kept.map { it.withId(suggestionIds.next()) },
                     droppedCount = drafts.size - kept.size,
                 ),
@@ -76,14 +75,9 @@ internal object IllustrationSuggestionValidator {
     private fun hasValidSizes(draft: IllustrationSuggestionDraft): Boolean =
         draft.scenes.size in MIN_SCENES..MAX_SCENES &&
             draft.preservedFacts.size <= MAX_PRESERVED_FACTS &&
-            draft.sourceAnchors.size in MIN_ANCHORS..MAX_ANCHORS &&
-            draft.sourceAnchors.all(::hasValidAnchorShape)
-
-    /** 행동 안내 후보와 같은 앵커 형식 규칙 — 빈 목록·중복·역순을 받지 않는다. */
-    private fun hasValidAnchorShape(anchor: IllustrationSuggestionSourceAnchor): Boolean =
-        anchor.quote.hasContentWithin(MAX_ANCHOR_QUOTE_CODE_POINTS) &&
-            anchor.sourceUnitIndexes.isNotEmpty() &&
-            anchor.sourceUnitIndexes == anchor.sourceUnitIndexes.distinct().sorted()
+            draft.sourceAnchors.isNotEmpty() &&
+            draft.sourceAnchors.size <= MAX_SOURCE_ANCHORS &&
+            draft.sourceAnchors.all { isSourceAnchorShapeValid(it.sourceUnitIndexes, it.quote) }
 
     /** 저장 본문 줄 수 안의 0 기반 포함 범위인가. 줄 수가 0이면 어떤 범위도 들어가지 못한다. */
     private fun isWithinSavedBody(

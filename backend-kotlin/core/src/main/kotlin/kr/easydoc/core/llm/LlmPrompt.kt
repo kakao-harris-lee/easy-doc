@@ -141,6 +141,10 @@ class LlmPrompt private constructor(
          * R7 ER-17 문맥 기반 그림 제안 분석. 원문과 저장 본문은 각각 난수 구분자로 감싼
          * **자료**이며, 제안의 `body_range` 가 저장 본문 줄을 가리키므로 **양쪽 모두** 줄
          * 번호를 붙인다(명세 §5). 호출은 저장된 변환 결과에 대한 별도 요청 1회다.
+         *
+         * 이 시스템 프롬프트 문구나 출력 스키마를 바꾸면 제안 패키지의
+         * `ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION` 을 함께 올린다 — 저장된 결과가 어느
+         * 프롬프트에서 나왔는지는 그 값으로만 이어진다.
          */
         fun forIllustrationSuggestions(
             sourceText: String,
@@ -206,14 +210,6 @@ class LlmPrompt private constructor(
             섹션당 항목은 최대 10개, 항목 text는 500 코드 포인트 이하, 전체 text는 4,000 코드 포인트 이하다.
             """.trimIndent()
 
-        /**
-         * [forIllustrationSuggestions] 프롬프트의 버전. 결과와 함께 저장돼 「어느 프롬프트가
-         * 낸 제안인가」를 나중에 잇는다(명세 §4 `analysis_version`). **프롬프트 문구나 출력
-         * 스키마를 바꾸면 이 값을 함께 올린다** — 이 값이 계약 고정값이라 LLM 출력이 아니라
-         * 서버가 찍는다.
-         */
-        const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-1"
-
         private val ILLUSTRATION_SUGGESTION_SYSTEM: String =
             """
             너는 저장된 쉬운 글 본문과 원문을 함께 읽고, 그림으로 설명하면 이해가 쉬워지는 문맥만 고른다.
@@ -227,6 +223,8 @@ class LlmPrompt private constructor(
             reason은 그림이 도움이 되는 이유 1~300자다.
             body_range는 저장 본문 줄 번호로 {"start":정수,"end":정수}이며 0 기반이고 양 끝을 포함한다. 여러 문단을 함께 설명해도 된다.
             source_anchors는 1~10개이고 각 항목은 source_unit_indexes(0 기반 원문 줄 번호 배열)와 quote(그 줄에 실제로 있는 원문 인용)만 갖는다.
+            source_unit_indexes는 오름차순으로 적고 같은 번호를 두 번 넣지 마라. 줄 번호 하나에 근거가 다 있으면 배열에 그 번호 하나만 둔다.
+            각 근거에는 그 내용을 뒷받침하는 짧고 정확한 quote만 남기고, 필요한 부분을 넘겨 줄 전체나 같은 긴 문단을 반복 인용하지 마라.
             scenes는 그릴 내용 1~6개이며 각 1~200자다. preserved_facts는 그림이 바꾸면 안 되는 사실·조건 0~10개이며 각 1~200자다. alt_text_draft는 대체텍스트 초안 1~300자다.
             문서의 목적과 주변 문장, 관련 조건·예외를 함께 읽고 그림이 행동 순서·비교·관계 이해를 실제로 돕는 문맥만 고른다.
             낱말마다 아이콘을 붙이는 제안, 장식으로만 쓰이는 그림, 연락처·날짜만 나열한 문맥은 제안하지 마라.

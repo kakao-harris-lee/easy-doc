@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kr.easydoc.core.llm.MAX_LLM_JSON_CHARS
 
 /**
  * LLM 이 낸 그림 제안 JSON 의 엄격한 v1 reader(명세 §4·§5).
@@ -17,30 +18,33 @@ import kotlinx.serialization.json.intOrNull
  * 갈래로 모은다 — 형식 위반은 이 기능에서 예외 상황이 아니라 예상된 결과 중 하나다.
  */
 object IllustrationSuggestionParser {
-    /** 행동 안내 후보(`ActionGuideCandidateParser`)와 같은 입력 크기 상한. 파싱 전에 자른다. */
-    private const val MAX_JSON_CHARS = 262_144
-
     private val SUGGESTION_KEYS =
         arrayOf("purpose", "reason", "body_range", "source_anchors", "scenes", "preserved_facts", "alt_text_draft")
 
     /**
-     * 원문([sourceUnits])·저장 본문 줄 수([savedBodyLineCount])와 대조해 결과 한 건을 낸다.
-     * [suggestionIds] 는 검증을 통과한 제안에만 쓰인다.
+     * 원문·저장 본문과 대조해 결과 한 건을 낸다. [suggestionIds] 는 검증을 통과한 제안에만
+     * 쓰인다.
+     *
+     * [sourceUnits]·[savedBodyUnits] 는 **둘 다 `segment.splitUnits` 로 쪼갠 줄**이어야 한다 —
+     * `LlmPrompt.forIllustrationSuggestions` 가 그 기준으로 `[i]` 번호를 붙이고, 제안의
+     * `source_unit_indexes`·`body_range` 가 그 번호를 가리킨다. 저장소에는 다른 줄 나누기
+     * 관례도 있으므로(`IllustrationPlacementCodec` 의 `removeSuffix("\n").split("\n")`,
+     * 끝 빈 줄을 버린다) 호출부가 그쪽 목록을 넘기면 마지막 줄 번호가 한 줄씩 어긋난다.
      */
     fun parseAndValidate(
         rawJson: String,
         sourceUnits: List<String>,
-        savedBodyLineCount: Int,
+        savedBodyUnits: List<String>,
         suggestionIds: IllustrationSuggestionIdGenerator = RandomIllustrationSuggestionIds,
     ): IllustrationSuggestionAnalysis {
         val drafts = decode(rawJson) ?: return IllustrationSuggestionAnalysis.InvalidStructure
-        return IllustrationSuggestionValidator.validate(drafts, sourceUnits, savedBodyLineCount, suggestionIds)
+        return IllustrationSuggestionValidator.validate(drafts, sourceUnits, savedBodyUnits, suggestionIds)
     }
 
     /** 형식을 어기면 `null`. 각 갈래가 곧 「결과 전체 무효」라 `ReturnCount` 를 벗어난다. */
     @Suppress("ReturnCount")
     private fun decode(rawJson: String): List<IllustrationSuggestionDraft>? {
-        if (rawJson.length > MAX_JSON_CHARS) return null
+        if (rawJson.length > MAX_LLM_JSON_CHARS) return null
         val root =
             try {
                 Json.parseToJsonElement(rawJson) as? JsonObject

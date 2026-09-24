@@ -287,6 +287,10 @@ class LlmPromptTest {
                 "어린이처럼",
                 "그림 속 글자",
                 "정확한 인용",
+                "오름차순",
+                "같은 번호를 두 번 넣지 마라",
+                "짧고 정확한 quote",
+                "줄 전체나 같은 긴 문단을 반복 인용하지 마라",
                 "데이터",
             )
         assertThat(prompt.system).doesNotContain("suggestion_id", "analysis_version")

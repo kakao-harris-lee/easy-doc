@@ -45,4 +45,23 @@ class SourceAnchorEvidenceTest {
     fun `줄 번호가 하나도 없으면 근거가 아니다`() {
         assertThat(isSourceAnchorSupported(emptyList(), "주민센터", sourceUnits)).isFalse()
     }
+
+    @Test
+    fun `형식 검사는 원문 없이 인용과 줄 번호 모양만 본다`() {
+        assertThat(isSourceAnchorShapeValid(listOf(0, 1), "원문에 없어도 형식은 통과한다")).isTrue()
+        assertThat(isSourceAnchorShapeValid(listOf(0), " ")).isFalse()
+        assertThat(isSourceAnchorShapeValid(emptyList(), "주민센터")).isFalse()
+    }
+
+    @Test
+    fun `줄 번호는 중복 없이 오름차순이어야 한다`() {
+        assertThat(isSourceAnchorShapeValid(listOf(1, 0), "주민센터")).isFalse()
+        assertThat(isSourceAnchorShapeValid(listOf(0, 0), "주민센터")).isFalse()
+    }
+
+    @Test
+    fun `인용 길이 상한은 코드 포인트로 잰다`() {
+        assertThat(isSourceAnchorShapeValid(listOf(0), "😀".repeat(MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS))).isTrue()
+        assertThat(isSourceAnchorShapeValid(listOf(0), "가".repeat(MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS + 1))).isFalse()
+    }
 }

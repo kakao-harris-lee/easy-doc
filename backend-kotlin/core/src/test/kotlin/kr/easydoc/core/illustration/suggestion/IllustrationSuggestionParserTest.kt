@@ -1,6 +1,5 @@
 package kr.easydoc.core.illustration.suggestion
 
-import kr.easydoc.core.llm.LlmPrompt
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -17,7 +16,14 @@ class IllustrationSuggestionParserTest {
             "준비한 서류는 주민센터에 제출합니다.",
             "심사가 끝나면 결과를 문자로 알려 드립니다.",
         )
-    private val savedBodyLineCount = 3
+
+    /** 프롬프트가 줄 번호를 붙이는 기준과 같은 `splitUnits(savedBody)` 결과를 흉내 낸다. */
+    private val savedBodyUnits =
+        listOf(
+            "먼저 신청서와 신분증을 준비해요.",
+            "준비한 서류는 주민센터에 내요.",
+            "심사가 끝나면 결과를 문자로 알려 줘요.",
+        )
 
     private val anchors =
         "\"source_anchors\":[{\"source_unit_indexes\":[0],\"quote\":\"신청서와 신분증을 준비합니다\"}," +
@@ -47,7 +53,7 @@ class IllustrationSuggestionParserTest {
 
         val set = validSetOf(result)
         assertThat(set.schemaVersion).isEqualTo(1)
-        assertThat(set.analysisVersion).isEqualTo(LlmPrompt.ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION)
+        assertThat(set.analysisVersion).isEqualTo(ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION)
         assertThat(set.droppedCount).isZero()
         val suggestion = set.suggestions.single()
         assertThat(suggestion.suggestionId).isEqualTo(FIRST_ID)
@@ -105,9 +111,17 @@ class IllustrationSuggestionParserTest {
     }
 
     @Test
+    @DisplayName("서버가 붙이는 값(suggestion_id·dropped_count·analysis_version)을 LLM 이 내면 무효다")
+    fun `서버가 부여하는 필드를 출력에 넣으면 결과 전체가 무효다`() {
+        val withServerId = "\"suggestion_id\":\"$FIRST_ID\",\"purpose\":\"procedure\""
+        invalid(validJson.replace("\"purpose\":\"procedure\"", withServerId))
+        invalid(validJson.replace("\"schema_version\":1", "\"schema_version\":1,\"dropped_count\":0"))
+        invalid(validJson.replace("\"schema_version\":1", "\"schema_version\":1,\"analysis_version\":\"직접 지정\""))
+    }
+
+    @Test
     fun `모르는 필드와 지원하지 않는 스키마 버전은 결과 전체를 무효로 만든다`() {
         invalid(validJson.replace("\"schema_version\":1", "\"schema_version\":2"))
-        invalid(validJson.replace("\"schema_version\":1", "\"schema_version\":1,\"analysis_version\":\"직접 지정\""))
         invalid(validJson.replace("\"purpose\":\"procedure\"", "\"purpose\":\"procedure\",\"html\":\"<b>x</b>\""))
         invalid(validJson.replace("\"purpose\":\"procedure\"", "\"purpose\":\"decoration\""))
         invalid("JSON 이 아니다")
@@ -181,7 +195,7 @@ class IllustrationSuggestionParserTest {
         rawJson: String,
         suggestionIds: IllustrationSuggestionIdGenerator = FixedSuggestionIds(FIRST_ID, SECOND_ID),
     ): IllustrationSuggestionAnalysis =
-        IllustrationSuggestionParser.parseAndValidate(rawJson, sourceUnits, savedBodyLineCount, suggestionIds)
+        IllustrationSuggestionParser.parseAndValidate(rawJson, sourceUnits, savedBodyUnits, suggestionIds)
 
     private fun validSetOf(result: IllustrationSuggestionAnalysis): IllustrationSuggestionSet {
         assertThat(result).isInstanceOf(IllustrationSuggestionAnalysis.Valid::class.java)
