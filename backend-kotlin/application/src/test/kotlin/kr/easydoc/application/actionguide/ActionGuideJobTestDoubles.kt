@@ -10,13 +10,28 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
-internal class DirectTransaction : TransactionRunner {
+/**
+ * 블록을 그대로 실행하되 **예외가 나가면 작업 표를 되돌린다** — PostgreSQL 의 전부-아니면-전무를
+ * 모사한다. 이 되돌림이 없으면 「잔액 부족 402 는 작업 행을 남기지 않는다」 같은 단언이 대역에서만
+ * 거짓이 되어, 접수의 잠금 순서를 바꾸는 편집이 실제 동작과 무관하게 빨개진다.
+ */
+internal class DirectTransaction(private val jobs: FakeActionGuideJobs? = null) : TransactionRunner {
     var depth = 0
 
+    // 도메인 예외는 전부 RuntimeException 이고, 어느 갈래로 끊기든 되돌림은 같다 — 갈래를 좁히면
+    // 새 예외 타입이 조용히 되돌림을 건너뛴다.
+    @Suppress("TooGenericExceptionCaught")
     override fun <T> inTransaction(block: () -> T): T {
+        val snapshot = jobs?.rows?.toMap()
         depth += 1
         return try {
             block()
+        } catch (failure: RuntimeException) {
+            if (snapshot != null) {
+                jobs.rows.clear()
+                jobs.rows.putAll(snapshot)
+            }
+            throw failure
         } finally {
             depth -= 1
         }
