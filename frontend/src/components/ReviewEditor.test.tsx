@@ -3006,6 +3006,7 @@ describe('ER-25 결과 문단 집중 검토', () => {
     explanations: false,
     illustrations: false,
     focused_review: true,
+    illustration_suggestions: false,
   }
 
   function focusedResponse(items: ReviewItem[], reviewRevision = 1): ReviewSupportResponse {
@@ -3578,6 +3579,7 @@ describe('ER-17 그림 제안', () => {
     explanations: false,
     illustrations: false,
     illustration_suggestions: true,
+    focused_review: false,
   }
 
   beforeEach(() => {

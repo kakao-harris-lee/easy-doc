@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.46.0"
+  version: "2.47.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -3935,7 +3935,7 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
-  # R7 ER-17 (2.46.0) — 문맥 기반 그림 제안 분석 작업과 결과
+  # R7 ER-17 (2.47.0) — 문맥 기반 그림 제안 분석 작업과 결과
   # 원본: 신설 — 명세 docs/plans/2026-09-24-r7-er17-suggestion-spec.md §6
   # ===========================================================================
   /conversions/{conversion_id}/illustration-suggestion-jobs:
@@ -6973,7 +6973,7 @@ components:
         illustration_suggestions:
           type: boolean
           description: |
-            R7 ER-17 문맥 기반 그림 제안(2.46.0). `easydoc.illustration-suggestions.enabled`가
+            R7 ER-17 문맥 기반 그림 제안(2.47.0). `easydoc.illustration-suggestions.enabled`가
             켜져 있고 **이용량 단가가 설정돼 있을 때만** true다 — 단가가 없으면 접수가 503이라
             기능을 노출하는 것이 거짓말이 된다. ER-15 카탈로그 토글과는 독립이다.
       description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
@@ -7503,7 +7503,7 @@ components:
           description: 현재 크레딧 계정의 가용량(balance − reserved).
 
     # ---------------------------------------------------------------------
-    # R7 ER-17 (2.46.0) — 문맥 기반 그림 제안. 명세
+    # R7 ER-17 (2.47.0) — 문맥 기반 그림 제안. 명세
     # docs/plans/2026-09-24-r7-er17-suggestion-spec.md §4·§6.
     # ---------------------------------------------------------------------
     IllustrationSuggestionJobCreateRequest:
@@ -8967,6 +8967,17 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.47.0"
+    date: "2026-09-25"
+    revision: "EASY-READ-R7-ILLUSTRATION-SUGGESTIONS"
+    author: codex
+    change: |
+      문맥 기반 그림 제안 작업·결과 조회 및 illustration_suggestions capability를 추가한다.
+      요청 키 멱등성, content revision, 소유권, 이용량 예약·정산을 적용한다.
+      단가 0은 fake worker 전용이며 무료 테스트 UI는 제안·미리보기·임시 적용 흐름을 제공한다.
+      테스트 그림은 서버에 저장하지 않고 본문이나 내려받는 파일을 바꾸지 않는다.
+    ground: "ER-17 및 사용자 요청에 따른 무료 화면 테스트. 실제 이미지 생성은 별도 범위."
+    compatibility: "기본 OFF의 additive API. 기존 카탈로그 토글과 독립이며 DB 마이그레이션은 V36."
   - version: "2.46.0"
     date: "2026-09-24"
     revision: "EASY-READ-R8-FOCUSED-REVIEW"

@@ -9,6 +9,7 @@ import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionParser
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
+import kr.easydoc.core.segment.MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS
 import kr.easydoc.core.segment.splitUnits
 import tools.jackson.databind.ObjectMapper
 import java.time.Clock
@@ -70,7 +71,9 @@ class FakeIllustrationSuggestionJobRunner(
             suggestion.putObject("body_range").put("start", 0).put("end", 0)
             val anchor = suggestion.putArray("source_anchors").addObject()
             anchor.putArray("source_unit_indexes").add(anchorIndex)
-            anchor.put("quote", sourceUnits[anchorIndex])
+            val source = sourceUnits[anchorIndex]
+            val quoteLength = minOf(source.codePointCount(0, source.length), MAX_SOURCE_ANCHOR_QUOTE_CODE_POINTS)
+            anchor.put("quote", source.substring(0, source.offsetByCodePoints(0, quoteLength)))
             suggestion.putArray("scenes").add(SCENE)
             suggestion.putArray("preserved_facts")
             suggestion.put("alt_text_draft", ALT_TEXT)

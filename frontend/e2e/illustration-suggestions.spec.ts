@@ -97,22 +97,25 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     expect(created.request_id).toMatch(/^[0-9a-f-]{36}$/i)
     // 단가 0은 이용량 거래 행을 만들지 않는다(명세 §3).
     expect(created.reserved_credits).toBe(0)
-    await expect(
-      panel.getByText('그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.'),
-    ).toBeVisible()
+    // fake 작업은 첫 폴링 전에 완료될 수 있으므로 중간 상태의 노출 시간을 가정하지 않는다.
 
     // 3. 결과 — fake runner는 원문 첫 줄을 근거로 절차 제안 1건을 낸다.
     await expect(panel.getByRole('heading', { name: '제안 1 · 절차' })).toBeVisible({
       timeout: 90_000,
     })
     await expect(panel.getByText(/원문 1줄:/)).toBeVisible()
-    // 그림 생성은 ER-18이다 — 버튼은 `aria-disabled`로 남겨 초점을 받을 수 있게 두고
-    // (그래야 «왜 못 누르는지»가 낭독된다) 다음 단계를 함께 알린다.
-    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
-    await expect(panel.getByText(/그림 만들기는 다음 단계에서 제공합니다/)).toBeVisible()
+    // 무료 테스트는 외부 호출 없이 생성·확인·적용·제거를 체험한다.
+    await expect(panel.getByText(/무료 테스트 모드:/)).toBeVisible()
+    await panel.getByRole('button', { name: '이 내용으로 그림 만들기' }).click()
+    await expect(panel.getByRole('img')).toBeVisible()
+    const apply = panel.getByRole('button', { name: '문서 미리보기에 추가' })
+    await expect(apply).toBeDisabled()
+    await panel.getByLabel('그림 대체텍스트').fill('확인한 테스트 그림 설명')
+    await panel.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
+    await apply.click()
+    await expect(panel.getByRole('heading', { name: '문서 적용 미리보기' })).toBeVisible()
+    await panel.getByRole('button', { name: '문서 미리보기에서 제거' }).click()
+    await expect(panel.getByRole('heading', { name: '문서 적용 미리보기' })).toHaveCount(0)
 
     // 4. 재방문 — 브라우저 저장소가 아니라 서버 조회로 같은 결과를 되살린다.
     const callsBeforeReload = (await log.apiCalls()).length
@@ -164,10 +167,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const staleResource = (await staleResponse.json()) as IllustrationSuggestionsResource
     expect(staleResource.status).toBe('stale')
     await expect(panel.getByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeVisible()
-    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
+    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveCount(0)
     await expect(panel.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 })

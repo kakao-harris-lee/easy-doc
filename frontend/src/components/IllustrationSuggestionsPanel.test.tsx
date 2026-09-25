@@ -269,6 +269,42 @@ describe('ER-17 그림 제안 패널 — 접수와 진행', () => {
     }
   })
 
+  it('작업 완료 뒤 늦게 도착하는 결과 조회를 취소하지 않는다', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, active_job: job })
+      show()
+      await act(async () => {
+        await Promise.resolve()
+      })
+      let resolveResult: ((value: IllustrationSuggestionsResource) => void) | undefined
+      let resultSignal: AbortSignal | undefined
+      vi.mocked(getIllustrationSuggestionJob).mockResolvedValue({ ...job, status: 'succeeded' })
+      vi.mocked(getIllustrationSuggestions).mockImplementation((_id, signal) => {
+        resultSignal = signal
+        return new Promise((resolve) => {
+          resolveResult = resolve
+        })
+      })
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+        ...jobs,
+        latest_job: { ...job, status: 'succeeded' },
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(resultSignal).toBeDefined()
+      expect(resultSignal?.aborted).toBe(false)
+      await act(async () => {
+        resolveResult?.(ready)
+        await Promise.resolve()
+      })
+      expect(screen.getByText(suggestion.reason)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('폴링이 실패를 받으면 목록이 갱신되기 전에도 진행 문구를 지운다', async () => {
     vi.useFakeTimers()
     try {

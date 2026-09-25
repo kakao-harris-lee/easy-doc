@@ -126,6 +126,37 @@ reload 또는 재생성하여 upstream 주소를 다시 읽게 한다. 문맥 �
 [별도 R7 구현 계획](plans/2026-09-24-contextual-illustration-correction.md)을 따르며,
 기존 카탈로그 토글로 활성화할 수 없다.
 
+### 문맥 기반 그림 무료 테스트
+
+2026-09-25 사용자 요청으로 ER-17 제안 서버·화면을 통합하고 무료 테스트 미리보기를 추가했다.
+루트 `.env`에 다음 값을 설정하고 API·worker·프런트 이미지를 배포한다.
+
+```dotenv
+EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED=true
+EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED=true
+EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS=0
+EASYDOC_WORKER_PROFILES_INCLUDE=local,illustration-suggestion-fake
+EASYDOC_ILLUSTRATIONS_ENABLED=false
+```
+
+일반 문서 변환의 `EASYDOC_LLM_PROVIDER`는 그대로 둔다. 그림 제안 전용 fake runner만
+사용하며 외부 분석·이미지 생성 호출이나 크레딧 차감은 없다. 화면에도 테스트 예시임을 표시한다.
+DB 변경은 이미 적용된 읽기 수준 V35 다음의 **V36**이다.
+
+검수 화면의 ‘그림 제안 확인’ → 제안 근거·구성 확인 → ‘이 내용으로 그림 만들기’ →
+대체텍스트 편집·확인 → ‘문서 미리보기에 추가’ → 제거 순서로 테스트한다.
+제안 작업과 결과는 서버에 저장돼 재방문 시 복구된다. 그림은 장면 구성을 보여 주는
+브라우저 내 테스트 도식이며 적용은 현재 화면의 미리보기에만 반영된다.
+새로고침·화면 이동·본문 저장 시 테스트 그림은 사라지고 본문·다운로드 파일은 바뀌지 않는다.
+실제 문맥 분석 품질, 이미지 provider, 생성 작업의 서버 저장·재방문 복구는 ER-18~20의
+별도 구현·검증 범위다. 이 테스트를 실제 이미지 생성 출시 완료로 표시하지 않는다.
+
+검증: Kotlin `./gradlew build`(3,555 tests), 프런트 check·837 tests·build,
+기존 Playwright 그림 제안 시나리오(요청→미리보기·적용·제거→재방문→stale), Compose 구성을
+통과했다. 작업 완료 시 결과 조회를 중단하던 폴링 경합도 수정하고 지연 응답 회귀 테스트를 추가했다.
+운영 배포 후 V36 적용, API health, worker의 `illustration-suggestion-fake` 프로필,
+공개 프런트 번들, DB·백업 정상 상태를 확인했다. 기존 그림 카탈로그는 계속 OFF다.
+
 ### PostgreSQL 영속성과 백업
 
 원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도

@@ -140,6 +140,24 @@ class IllustrationSuggestionJobRunnerTest {
     }
 
     @Test
+    fun `fake runner 는 긴 원문도 유니코드 문자를 자르지 않고 근거를 인용한다`() {
+        val source = "📄".repeat(1_100)
+        val longInput = IllustrationSuggestionInputSource { IllustrationSuggestionGenerationInput(source, savedBody) }
+
+        val result = FakeIllustrationSuggestionJobRunner(longInput).prepare(job())!!.call()
+
+        assertThat(result).isInstanceOf(IllustrationSuggestionRunResult.Valid::class.java)
+        val valid = result as IllustrationSuggestionRunResult.Valid
+        assertThat(
+            valid.suggestions.suggestions
+                .single()
+                .sourceAnchors
+                .single()
+                .quote,
+        ).isEqualTo("📄".repeat(1_000))
+    }
+
+    @Test
     @DisplayName("fake runner 는 원문 앞의 빈 줄을 건너뛰고, 근거로 삼을 줄이 없으면 '제안 없음'이다")
     fun `fake runner 가 빈 원문을 다룬다`() {
         val leadingBlank =

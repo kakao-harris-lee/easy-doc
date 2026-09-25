@@ -19,6 +19,7 @@ import type {
 import { formatCredits } from '../lib/credits'
 import { USAGE_PATH } from '../routes/paths'
 import { Button } from './ui/Button'
+import { IllustrationTestFlow } from './IllustrationTestFlow'
 
 export interface IllustrationSuggestionsPanelProps {
   conversionId: string
@@ -74,17 +75,21 @@ function bodyRangeLabel(start: number, end: number): string {
   return start === end ? `본문 ${start + 1}줄` : `본문 ${start + 1}–${end + 1}줄`
 }
 
-/** 제안 카드 하나. 편집·적용이 없는 읽기 전용 표시이므로 로컬 상태를 두지 않는다. */
+/** 제안 근거와 구성. 무료 테스트일 때만 별도 미리보기 흐름을 연다. */
 function SuggestionCard({
   suggestion,
   index,
   bodyLines,
   disabledNoteId,
+  testMode,
+  testDisabled,
 }: {
   suggestion: IllustrationSuggestion
   index: number
   bodyLines: readonly string[]
   disabledNoteId: string
+  testMode: boolean
+  testDisabled: boolean
 }) {
   const headingId = useId()
   const excerpt = bodyLines.slice(suggestion.body_range.start, suggestion.body_range.end + 1)
@@ -153,8 +158,15 @@ function SuggestionCard({
           <p className="mt-1 text-sm">{suggestion.alt_text_draft}</p>
         </div>
 
-        <div>
-          {/*
+        {testMode ? (
+          <IllustrationTestFlow
+            suggestion={suggestion}
+            excerpt={excerpt.join('\n')}
+            disabled={testDisabled}
+          />
+        ) : (
+          <div>
+            {/*
             ER-18 이전에는 누를 수 없다. 버튼을 숨기지 않는 이유는 다음 단계가 무엇인지
             화면에서 읽히게 하기 위해서다.
 
@@ -162,16 +174,17 @@ function SuggestionCard({
             못해 낭독기 사용자가 «왜 못 누르는지»를 적어 둔 설명(`aria-describedby`)에
             영영 닿지 못한다. 보이는 모양은 그대로 두고, 눌러도 아무 일도 하지 않는다.
           */}
-          <Button
-            type="button"
-            aria-disabled="true"
-            aria-describedby={disabledNoteId}
-            className="cursor-not-allowed opacity-50"
-            onClick={(event) => event.preventDefault()}
-          >
-            이 내용으로 그림 만들기
-          </Button>
-        </div>
+            <Button
+              type="button"
+              aria-disabled="true"
+              aria-describedby={disabledNoteId}
+              className="cursor-not-allowed opacity-50"
+              onClick={(event) => event.preventDefault()}
+            >
+              이 내용으로 그림 만들기
+            </Button>
+          </div>
+        )}
       </section>
     </li>
   )
@@ -197,6 +210,8 @@ export function IllustrationSuggestionsPanel({
   const [resource, setResource] = useState<IllustrationSuggestionsResource | null>(null)
   const [jobs, setJobs] = useState<IllustrationSuggestionJobCollection | null>(null)
   const [job, setJob] = useState<IllustrationSuggestionJob | null>(null)
+  // 완료 상태를 표시해도 결과 조회가 끝나기 전에는 폴링 effect를 정리하지 않는다.
+  const [pollingJobId, setPollingJobId] = useState<string | null>(null)
   const [pendingCreate, setPendingCreate] = useState<CreateIllustrationSuggestionJobRequest | null>(
     null,
   )
@@ -269,10 +284,12 @@ export function IllustrationSuggestionsPanel({
         setJob(null)
         setResource(nextResource)
         setJobs(nextJobs)
+        setPollingJobId(nextJobs.active_job?.job_id ?? null)
       } catch (caught) {
         if (disposed) return
         setResource(null)
         setJobs(null)
+        setPollingJobId(null)
         setJob(null)
         setPendingCreate(null)
         setError(errorText(caught, 'load'))
@@ -300,8 +317,8 @@ export function IllustrationSuggestionsPanel({
    * 화면에 상태를 쓰지 못하게 한다.
    */
   useEffect(() => {
-    const id = activeJob?.job_id
-    if (id === undefined) return
+    const id = pollingJobId
+    if (id === null || !loaded) return
     const controller = new AbortController()
     let timer = 0
 
@@ -318,6 +335,7 @@ export function IllustrationSuggestionsPanel({
         if (controller.signal.aborted) return false
         setResource(nextResource)
         setJobs(nextJobs)
+        setPollingJobId(nextJobs.active_job?.job_id ?? null)
         return false
       } catch (caught) {
         if (controller.signal.aborted) return false
@@ -340,7 +358,7 @@ export function IllustrationSuggestionsPanel({
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [conversionId, activeJob?.job_id])
+  }, [conversionId, contentRevision, loaded, pollingJobId])
 
   /**
    * 접수에 성공하면 눌렀던 버튼이 사라지고 진행 상태 문구가 그 자리에 온다. 초점을 그대로
@@ -369,6 +387,7 @@ export function IllustrationSuggestionsPanel({
       if (controller.signal.aborted) return
       setResource(nextResource)
       setJobs(nextJobs)
+      setPollingJobId(nextJobs.active_job?.job_id ?? null)
       setJob(null)
       // 서버 상태를 다시 읽었으므로 「결과를 모르는 요청」도 더는 남겨 두지 않는다 —
       // 접수됐다면 위 목록에 나타나고, 아니라면 새 요청으로 다시 시작한다.
@@ -396,6 +415,7 @@ export function IllustrationSuggestionsPanel({
     try {
       const created = await createIllustrationSuggestionJob(conversionId, body)
       setJob(created.job)
+      setPollingJobId(created.job.job_id)
       setJobs((current) =>
         current === null
           ? current
@@ -463,6 +483,12 @@ export function IllustrationSuggestionsPanel({
         있습니다.
       </p>
 
+      {requiredCredits === 0 && (
+        <p className="rounded-md bg-secondary p-3 text-sm font-medium">
+          무료 테스트 모드: 제안과 그림은 화면 흐름 확인용 예시입니다. 실제 AI 문맥 분석이나 이미지
+          생성은 하지 않으며 크레딧을 차감하지 않습니다.
+        </p>
+      )}
       {isLoading && <p role="status">그림 제안 상태를 불러오는 중…</p>}
 
       {!isLoading && error !== null && (
@@ -587,16 +613,28 @@ export function IllustrationSuggestionsPanel({
       {suggestions.length > 0 && (
         <>
           <p id={generationNoteId} className="text-sm text-muted-foreground">
-            그림 만들기는 다음 단계에서 제공합니다. 지금은 제안 내용만 확인할 수 있습니다.
+            {requiredCredits === 0
+              ? '제안을 확인한 뒤 테스트 그림을 만들어 미리보기·적용·제거를 체험할 수 있습니다.'
+              : '그림 만들기는 다음 단계에서 제공합니다. 지금은 제안 내용만 확인할 수 있습니다.'}
           </p>
           <ul className="flex flex-col gap-3">
             {suggestions.map((item, index) => (
               <SuggestionCard
-                key={item.suggestion_id}
+                key={`${conversionId}:${contentRevision}:${status}:${item.suggestion_id}`}
                 suggestion={item}
                 index={index}
                 bodyLines={bodyLines}
                 disabledNoteId={generationNoteId}
+                testMode={requiredCredits === 0}
+                testDisabled={
+                  bodyDirty ||
+                  bodyBusy ||
+                  bodyConflict ||
+                  stale ||
+                  busy ||
+                  activeJob !== null ||
+                  resource?.based_on_content_revision !== contentRevision
+                }
               />
             ))}
           </ul>
