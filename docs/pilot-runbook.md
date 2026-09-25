@@ -114,6 +114,18 @@ D12 길이 상한과 ER-26 평가 상태를 함께 확인한다.
 API·worker의 설정, 공개 프런트 번들의 선택지 활성화, API health와 DB·백업 상태를
 확인했다. 실제 유료 LLM 호출을 통한 품질 평가와 D12 상한 결정은 별도로 남아 있다.
 
+### 기존 그림 카탈로그 표시
+
+`EASYDOC_ILLUSTRATIONS_ENABLED`는 기존 고정 그림 카탈로그와 줄별 수동 배치(ER-15/16)
+설정이다. 문맥 기반 그림 제안·생성 설정이 아니다. 2026-09-25 사용자 지적에 따라
+파일럿에서는 `false`로 바꿨다. 서버의 `review_capabilities.illustrations=false`를 받은
+화면은 ‘그림 목록’과 ‘그림 배치’를 숨긴다. 저장된 배치 데이터는 삭제하지 않는다.
+
+이 설정은 API·worker 재생성으로 적용된다. API를 재생성한 뒤 프런트 nginx도
+reload 또는 재생성하여 upstream 주소를 다시 읽게 한다. 문맥 기반 흐름은
+[별도 R7 구현 계획](plans/2026-09-24-contextual-illustration-correction.md)을 따르며,
+기존 카탈로그 토글로 활성화할 수 없다.
+
 ### PostgreSQL 영속성과 백업
 
 원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도
