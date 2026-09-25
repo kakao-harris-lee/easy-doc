@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.KeyRotationBatch
 import kr.easydoc.infrastructure.actionguide.ActionGuideContentKeyRotation
+import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionResultKeyRotation
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -25,6 +26,7 @@ class KeyRotationRunner(
     private val actionGuideContent: ActionGuideContentKeyRotation,
     private val tableStructure: TableStructureKeyRotation,
     private val reviewHistory: ReviewHistoryKeyRotation,
+    private val illustrationSuggestions: IllustrationSuggestionResultKeyRotation,
 ) : ApplicationRunner,
     ExitCodeGenerator {
     private val log = LoggerFactory.getLogger(KeyRotationRunner::class.java)
@@ -42,6 +44,10 @@ class KeyRotationRunner(
                 log.info("키 회전 [action_guides]: rotated={}", guides)
                 log.info("키 회전 [document_table_structures]: rotated={}", tableStructure.run())
                 log.info("키 회전 [review_snapshots]: rotated={}", reviewHistory.run())
+                log.info(
+                    "키 회전 [illustration_suggestion_results]: rotated={}",
+                    illustrationSuggestions.run(),
+                )
                 SUCCESS
             } catch (failure: RuntimeException) {
                 // 메시지만 남긴다 — 도메인 예외는 개수만 말하고 행 식별자·본문을 담지 않는다.

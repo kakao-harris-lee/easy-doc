@@ -2726,6 +2726,7 @@ describe('R1 검수 지원 패널', () => {
     explanations: false,
     illustrations: false,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   it('capability가 없는 옛 응답에는 검수 패널을 노출하지 않는다', () => {
@@ -3191,6 +3192,7 @@ describe('ER-07 행동 안내 작업 탭', () => {
     explanations: false,
     illustrations: false,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   it('기능이 꺼져 있으면 새 탭과 API 호출을 만들지 않는다', () => {
@@ -3248,6 +3250,7 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     explanations: false,
     illustrations: false,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   it('기능 플래그가 없으면 표 관계와 검수 기록을 모두 숨긴다', () => {
@@ -3372,6 +3375,7 @@ describe('R6 용어 설명 작업 탭', () => {
     explanations: true,
     illustrations: false,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   it('기능 플래그가 없으면 용어 설명을 숨긴다', () => {
@@ -3409,6 +3413,7 @@ describe('R7 그림 목록 작업 탭', () => {
     explanations: false,
     illustrations: true,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   it('기능 플래그가 없으면 그림 목록을 숨긴다', () => {
@@ -3442,6 +3447,7 @@ describe('ER-16 그림 배치', () => {
     explanations: false,
     illustrations: true,
     focused_review: false,
+    illustration_suggestions: false,
   }
 
   function emptyPlacements(revision: number) {

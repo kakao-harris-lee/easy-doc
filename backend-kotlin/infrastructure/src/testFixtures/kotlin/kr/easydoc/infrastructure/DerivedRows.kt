@@ -6,12 +6,12 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * V28~V34 가 문서·변환에 매단 파생 표의 **인구조사와 seeding**.
+ * V28~V35 가 문서·변환에 매단 파생 표의 **인구조사와 seeding**.
  *
  * 보존 만료 파기(`JdbcRetentionPurgeTest`)와 회원 탈퇴(`JdbcAccountDeletionRepositoryTest`)가
  * 같은 CASCADE 범위를 재므로 표 목록과 심는 SQL 을 여기 한 곳에 둔다 — 두 곳에 나눠 두면
- * V35 가 표를 더할 때 한쪽만 늘어나고, 늘지 않은 쪽은 「전부 지워졌다」를 더 작은 집합에서만
- * 확인하면서 계속 초록이다.
+ * 다음 마이그레이션이 표를 더할 때 한쪽만 늘어나고, 늘지 않은 쪽은 「전부 지워졌다」를 더 작은
+ * 집합에서만 확인하면서 계속 초록이다.
  *
  * Spring `JdbcClient` 대신 순수 JDBC 를 쓴다 — testFixtures 클래스패스에 `spring-jdbc` 를
  * 새로 들이지 않기 위해서다(`api` 테스트도 이 산출물을 당긴다).
@@ -20,7 +20,10 @@ object DerivedRows {
     const val DOCUMENT_ID: String = "document_id"
     const val CONVERSION_ID: String = "conversion_id"
 
-    /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
+    /**
+     * `ck_action_guide_jobs_fingerprint_length` 과 V35 의 같은 이름 제약이 정확히 64자를 요구한다.
+     * 두 작업 표가 같은 규칙이라 값 하나를 함께 쓴다.
+     */
     const val ACTION_GUIDE_FINGERPRINT: String =
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
@@ -44,6 +47,9 @@ object DerivedRows {
             "illustration_placements" to CONVERSION_ID,
             "action_guide_candidates" to CONVERSION_ID,
             "action_guides" to CONVERSION_ID,
+            // R7 ER-17 결과(V35). 작업 표(`illustration_suggestion_jobs`)는 V29 와 같은 이유로
+            // FK 없이 감사 행으로 남으므로 여기 없다 — 파기 대상은 제안 본문뿐이다.
+            "illustration_suggestion_results" to CONVERSION_ID,
         )
 
     /**
@@ -78,6 +84,7 @@ object DerivedRows {
         conversionId: UUID,
     ): UUID {
         val jobId = UUID.randomUUID()
+        val suggestionJobId = UUID.randomUUID()
         dataSource.connection.use { connection ->
             seedReviewSupport(connection, conversionId)
             seedTableStructure(connection, documentId)
@@ -85,6 +92,10 @@ object DerivedRows {
             seedIllustrationPlacements(connection, conversionId)
             seedActionGuideJob(connection, JobRow(jobId, ownerId, workspaceId, documentId, conversionId))
             seedActionGuideContent(connection, conversionId, jobId)
+            seedIllustrationSuggestion(
+                connection,
+                JobRow(suggestionJobId, ownerId, workspaceId, documentId, conversionId),
+            )
         }
         return jobId
     }
@@ -231,6 +242,48 @@ object DerivedRows {
         ACTION_GUIDE_FINGERPRINT,
         RESERVED_CREDITS,
     )
+
+    /**
+     * R7 ER-17 작업 한 행과 그 결과 한 행. 작업은 **끝난 상태**로 심는다 — V35 의 문서 삭제
+     * 트리거가 정산하는 대상은 `queued`·`running` 뿐이라 이 fixture 는 그 갈래를 건드리지 않고
+     * CASCADE 범위만 잰다(행동 안내 쪽과 같은 판단).
+     */
+    private fun seedIllustrationSuggestion(
+        connection: Connection,
+        job: JobRow,
+    ) {
+        update(
+            connection,
+            """
+            INSERT INTO illustration_suggestion_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 status, reserved_credits, settlement)
+            VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, 'succeeded', ?, 'consumed')
+            """,
+            job.jobId,
+            UUID.randomUUID(),
+            job.ownerId,
+            job.workspaceId,
+            job.documentId,
+            job.conversionId,
+            ACTION_GUIDE_FINGERPRINT,
+            RESERVED_CREDITS,
+        )
+        update(
+            connection,
+            """
+            INSERT INTO illustration_suggestion_results
+                (id, job_id, conversion_id, based_on_content_revision,
+                 payload_encrypted, encryption_scheme, key_version)
+            VALUES (?, ?, ?, 1, ?, 'aes256gcm-v1', 1)
+            """,
+            UUID.randomUUID(),
+            job.jobId,
+            job.conversionId,
+            PAYLOAD,
+        )
+    }
 
     private fun count(
         connection: Connection,

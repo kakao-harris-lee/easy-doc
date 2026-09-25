@@ -506,6 +506,10 @@ class ValueSlotInvariantReachTest {
                 "ActionGuideJobCreateRequest" to
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_guide_revision":null}""",
+                // R7 ER-17 접수 — 안내문 버전 같은 두 번째 축이 없어 필드가 둘뿐이다.
+                "IllustrationSuggestionJobCreateRequest" to
+                    """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"expected_content_revision":1}""",
                 "ActionGuideSaveRequest" to
                     """{"candidate_id":null,"expected_content_revision":1,
                     "expected_guide_revision":null,"mark_reviewed":false,

@@ -377,7 +377,7 @@ class EnvelopeRotationTest {
             .describedAs("봉인 열이 하나도 없다 — 이 대조가 0건을 훑고 통과한다")
             .isNotEmpty()
 
-        // Billing and action-guide envelopes have separate JDBC CAS rotation tests.
+        // Billing, action-guide and illustration-suggestion envelopes have separate JDBC CAS rotation tests.
         val documentFields =
             EncryptedField.entries.filterNot {
                 it in
@@ -388,6 +388,7 @@ class EnvelopeRotationTest {
                         EncryptedField.ACTION_GUIDE_PAYLOAD,
                         EncryptedField.DOCUMENT_TABLE_STRUCTURE,
                         EncryptedField.REVIEW_HISTORY_SNAPSHOT,
+                        EncryptedField.ILLUSTRATION_SUGGESTION_RESULT,
                     )
             }
         val uncovered = documentFields.filterNot { field -> field in rotationOf(field) }
@@ -434,6 +435,9 @@ class EnvelopeRotationTest {
                 EncryptedField.REVIEW_HISTORY_SNAPSHOT -> error("이력 회전은 JdbcReviewHistoryRepositoryTest에서 검증한다")
 
                 EncryptedField.ILLUSTRATION_PLACEMENTS -> world.rotation.rotateIllustrationPlacement(PLACEMENT)
+
+                // 제안 결과 회전은 `IllustrationSuggestionResultKeyRotationTest` 가 JDBC CAS 로 잰다.
+                EncryptedField.ILLUSTRATION_SUGGESTION_RESULT -> error("제안 결과 회전은 별도 시험이 검증한다")
             }
 
         check(outcome == RotationOutcome.ROTATED) {

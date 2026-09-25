@@ -11,10 +11,16 @@ import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.RetentionPurgeObserver
 import kr.easydoc.application.document.RetentionPurgePolicy
 import kr.easydoc.application.document.RetentionPurgeResult
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionCreditReservation
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobAcquire
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobInsert
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobLease
+import kr.easydoc.application.illustration.suggestion.StoredIllustrationSuggestionJob
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionJobStatus
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.DerivedRows
@@ -25,6 +31,8 @@ import kr.easydoc.infrastructure.auth.JdbcUserRepository
 import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
 import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.illustration.suggestion.JdbcIllustrationSuggestionCreditPort
+import kr.easydoc.infrastructure.illustration.suggestion.JdbcIllustrationSuggestionJobRepository
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -60,6 +68,8 @@ class JdbcRetentionPurgeTest {
     private lateinit var credits: CreditAccountService
     private lateinit var actionGuideJobs: JdbcActionGuideJobRepository
     private lateinit var actionGuideCredits: JdbcActionGuideCreditPort
+    private lateinit var suggestionJobs: JdbcIllustrationSuggestionJobRepository
+    private lateinit var suggestionCredits: JdbcIllustrationSuggestionCreditPort
     private lateinit var tx: TransactionTemplate
     private lateinit var database: DatabaseHandle
     private lateinit var dataSource: DataSource
@@ -82,6 +92,8 @@ class JdbcRetentionPurgeTest {
         credits = CreditAccountService(JdbcCreditAccountRepository(jdbc), enforced = false)
         actionGuideJobs = JdbcActionGuideJobRepository(jdbc)
         actionGuideCredits = JdbcActionGuideCreditPort(jdbc, enforced = false)
+        suggestionJobs = JdbcIllustrationSuggestionJobRepository(jdbc, MAX_ATTEMPTS)
+        suggestionCredits = JdbcIllustrationSuggestionCreditPort(jdbc, enforced = false)
         tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
     }
 
@@ -132,7 +144,7 @@ class JdbcRetentionPurgeTest {
     }
 
     @Test
-    @DisplayName("만료 파기가 V28~V34 파생 행(검수·행동 안내·표 구조·이력·그림 배치)을 함께 지운다")
+    @DisplayName("만료 파기가 V28~V35 파생 행(검수·행동 안내·표 구조·이력·그림 배치·그림 제안)을 함께 지운다")
     fun `만료 파기가 파생 행을 남기지 않는다`() {
         val seeded = seedDocument()
         DerivedRows.requireNonEmptyCensus()
@@ -149,9 +161,12 @@ class JdbcRetentionPurgeTest {
         assertThat(derivedCounts(seeded))
             .withFailMessage("파생 행이 문서와 함께 사라지지 않았다 — 파기 범위가 새고 있다")
             .isEqualTo(everyDerivedTable(0))
-        // 작업 감사행에는 일부러 FK 가 없다(V29 주석) — 청구 근거로 남는다.
+        // 작업 감사행에는 일부러 FK 가 없다(V29·V35 주석) — 청구 근거로 남는다.
         assertThat(countIn("action_guide_jobs", "id", jobId))
             .withFailMessage("작업 감사행이 사라졌다 — 문서가 지워져도 정산 근거는 남아야 한다")
+            .isEqualTo(1)
+        assertThat(countIn("illustration_suggestion_jobs", "conversion_id", seeded.conversionId))
+            .withFailMessage("그림 제안 작업 감사행이 사라졌다 — 결과만 파기하고 정산 근거는 남아야 한다")
             .isEqualTo(1)
     }
 
@@ -306,7 +321,7 @@ class JdbcRetentionPurgeTest {
                 val purging = pool.submit<RetentionPurgeResult> { purge(dryRun = false).run() }
                 awaitBlockedOnLock(purging)
 
-                assertThat(listOf(firstLease.jobId, secondLease.jobId).filter { isRowLocked(it) })
+                assertThat(listOf(firstLease.jobId, secondLease.jobId).filter { isRowLocked(ACTION_GUIDE_JOBS, it) })
                     .withFailMessage("파기가 계정에 닿을 때까지 잠그지 않은 활성 작업 행이 있다 — 정산과 교착한다")
                     .containsExactlyInAnyOrder(firstLease.jobId, secondLease.jobId)
                 pending = purging
@@ -322,6 +337,114 @@ class JdbcRetentionPurgeTest {
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    /**
+     * **한 배치에 두 작업 가족이 섞여도 둘 다 미리 잠기는가** — R7 이 그림 제안 작업을 같은 삭제
+     * trigger 에 합치면서 열린 자리다.
+     *
+     * 계정당 활성 작업은 가족마다 하나씩이라(`uq_…_active_owner`) 한 소유자가 행동 안내 하나와
+     * 그림 제안 하나를 동시에 가질 수 있다 — 위 시험이 두 소유자를 필요로 하던 모양이 이제
+     * **한 소유자로** 만들어진다.
+     *
+     * 장벽은 계정이 아니라 **끝나지 않은 변환 행**이다. 파기는 작업 행을 잠근 **직후**
+     * `lockPendingReservations` 에서 그 행을 기다리므로, 이때는 아직 어떤 trigger 도 돌지 않았다 —
+     * 그 자리에서 잠겨 있는 작업 행은 오직 [DocumentJobLocks] 가 잠근 것이다. 계정을 장벽으로 쓰면
+     * 먼저 처리된 문서의 trigger 가 제 몫을 이미 잠가 둬, 한 가족만 잠그는 코드도 배치 순서에 따라
+     * 초록이 될 수 있다.
+     */
+    @Test
+    @DisplayName("한 배치에 두 작업 가족이 섞여도 활성 작업 행을 모두 먼저 잠근다")
+    fun `배치 삭제가 두 가족의 작업 행을 먼저 잠근다`() {
+        assertBothFamiliesLockedFirst(guideFirst = true)
+    }
+
+    @Test
+    @DisplayName("가족을 맞바꿔도 마찬가지다 — 잠금은 표 이름 순서라 어느 문서에 붙었는지를 타지 않는다")
+    fun `배치 삭제는 가족을 맞바꿔도 작업 행을 먼저 잠근다`() {
+        assertBothFamiliesLockedFirst(guideFirst = false)
+    }
+
+    /** [guideFirst] 가 행동 안내 작업이 붙는 문서를 앞뒤 어느 쪽에 둘지 고른다. */
+    private fun assertBothFamiliesLockedFirst(guideFirst: Boolean) {
+        val first = seedDocument()
+        val second = seedDocument(ownerId = first.ownerId, workspaceId = first.workspaceId)
+        val barrier =
+            seedDocument(
+                creditsReserved = PENDING_CREDITS,
+                ownerId = first.ownerId,
+                workspaceId = first.workspaceId,
+            )
+        val guideLease = startActionGuideJob(if (guideFirst) first else second)
+        val suggestionLease = startIllustrationSuggestionJob(if (guideFirst) second else first)
+        listOf(first, second, barrier).forEach { expire(it.documentId) }
+
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            var pending: Future<RetentionPurgeResult>? = null
+            tx.executeWithoutResult {
+                lockConversion(barrier.conversionId)
+                val purging = pool.submit<RetentionPurgeResult> { purge(dryRun = false).run() }
+                awaitBlockedOnLock(purging)
+
+                assertThat(isRowLocked(ACTION_GUIDE_JOBS, guideLease.jobId))
+                    .withFailMessage("파기가 삭제에 들어가기 전에 행동 안내 작업 행을 잠그지 않았다 — 그 정산과 교착한다")
+                    .isTrue()
+                assertThat(isRowLocked(SUGGESTION_JOBS, suggestionLease.jobId))
+                    .withFailMessage("파기가 삭제에 들어가기 전에 그림 제안 작업 행을 잠그지 않았다 — 그 정산과 교착한다")
+                    .isTrue()
+                pending = purging
+            }
+
+            val result = checkNotNull(pending).get(HANDOFF_SECONDS, TimeUnit.SECONDS)
+
+            assertThat(result.purgedDocuments).isEqualTo(3)
+            assertThat(actionGuideJobColumn(guideLease.jobId, "settlement")).isEqualTo("released")
+            assertThat(suggestionJobColumn(suggestionLease.jobId, "settlement")).isEqualTo("released")
+            val row = checkNotNull(creditRow(first.workspaceId)) { "크레딧 계정 행이 없다" }
+            assertThat(row.reserved)
+                .withFailMessage("파기나 정산 중 한쪽이 교착으로 죽어 예약이 남았다")
+                .isEqualByComparingTo("0")
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    /**
+     * 잠금 자체를 곧바로 잰다 — 위 두 시험은 파기 경로를 통해 보지만, 이 한 건은 「[DocumentJobLocks]
+     * 가 어느 표를 잠그는가」만 본다. 그림 제안 표가 목록에서 빠지면 여기가 먼저 빨개진다.
+     */
+    @Test
+    @DisplayName("DocumentJobLocks 는 두 작업 가족의 활성 행을 모두 잠근다")
+    fun `작업 잠금이 두 가족을 모두 잡는다`() {
+        val guided = seedDocument()
+        val suggested = seedDocument(ownerId = guided.ownerId, workspaceId = guided.workspaceId)
+        credits.ensureAccount(guided.workspaceId)
+        val guideLease = startActionGuideJob(guided)
+        val suggestionLease = startIllustrationSuggestionJob(suggested)
+
+        tx.executeWithoutResult {
+            DocumentJobLocks(jdbc).lockActiveJobs(listOf(guided.documentId, suggested.documentId))
+
+            assertThat(isRowLocked(ACTION_GUIDE_JOBS, guideLease.jobId))
+                .withFailMessage("행동 안내 작업 행이 잠기지 않았다")
+                .isTrue()
+            assertThat(isRowLocked(SUGGESTION_JOBS, suggestionLease.jobId))
+                .withFailMessage("그림 제안 작업 행이 잠기지 않았다 — 그 정산 중인 worker 와 교착한다")
+                .isTrue()
+        }
+    }
+
+    /**
+     * 끝나지 않은 변환 행을 이 트랜잭션에 묶어 둔다 — 파기가 `lockPendingReservations` 에 닿는
+     * 순간을 붙잡는 장벽이다. 그 자리는 작업 행 잠금 **뒤**, 삭제 trigger **앞**이다.
+     */
+    private fun lockConversion(conversionId: UUID) {
+        jdbc
+            .sql("SELECT id FROM conversions WHERE id = :id FOR UPDATE")
+            .param("id", conversionId)
+            .query { rs, _ -> rs.getObject(1, UUID::class.java) }
+            .single()
     }
 
     /** 계정 행을 이 트랜잭션에 묶어 둔다 — 파기가 계정에 닿는 순간을 붙잡는 장벽이다. */
@@ -362,11 +485,14 @@ class JdbcRetentionPurgeTest {
      * 다른 연결에서 `FOR UPDATE NOWAIT` 로 찔러 본다 — 잠겨 있으면 `55P03` 으로 즉시 끊긴다.
      * 실패한 문장은 그 트랜잭션을 통째로 중단시키므로 **반드시 별도 연결**이어야 한다.
      */
-    private fun isRowLocked(jobId: UUID): Boolean =
+    private fun isRowLocked(
+        table: String,
+        jobId: UUID,
+    ): Boolean =
         database.connect().use { connection ->
             connection.autoCommit = false
             try {
-                connection.prepareStatement(PROBE_LOCK_SQL).use { statement ->
+                connection.prepareStatement(probeLockSql(table)).use { statement ->
                     statement.setObject(1, jobId)
                     statement.executeQuery()
                 }
@@ -440,6 +566,74 @@ class JdbcRetentionPurgeTest {
             createdAt = NOW,
             updatedAt = NOW,
         )
+
+    /** 문서 [seeded] 에 provider 호출을 시작한 그림 제안 작업 하나를 남기고 그 리스를 준다. */
+    private fun startIllustrationSuggestionJob(seeded: Seeded): IllustrationSuggestionJobLease {
+        val jobId = UUID.randomUUID()
+        tx.executeWithoutResult {
+            reserveSuggestionCredits(seeded, jobId)
+            val inserted = suggestionJobs.insert(storedSuggestionJob(seeded, jobId))
+            check(inserted is IllustrationSuggestionJobInsert.Inserted) { "그림 제안 작업을 넣지 못했다: $inserted" }
+        }
+        val acquired = tx.execute { suggestionJobs.acquire(WORKER, Duration.ofMinutes(LEASE_MINUTES), MAX_ATTEMPTS) }
+        check(acquired is IllustrationSuggestionJobAcquire.Held) { "그림 제안 작업 리스를 집지 못했다: $acquired" }
+        tx.executeWithoutResult {
+            check(suggestionJobs.markProviderStarted(acquired.lease, UUID.randomUUID(), NOW))
+        }
+        return acquired.lease
+    }
+
+    /** [reserveGuideCredits] 와 같은 이유로 소유 술어에 막히면 `reserved` 만 올린다. */
+    private fun reserveSuggestionCredits(
+        seeded: Seeded,
+        jobId: UUID,
+    ) {
+        val reservation =
+            suggestionCredits.reserve(
+                seeded.ownerId,
+                seeded.workspaceId,
+                seeded.documentId,
+                jobId,
+                Credits(SUGGESTION_CREDITS),
+            )
+        if (reservation is IllustrationSuggestionCreditReservation.Reserved) return
+        jdbc
+            .sql("UPDATE workspace_credit_accounts SET reserved = reserved + :amount WHERE workspace_id = :id")
+            .param("amount", SUGGESTION_CREDITS)
+            .param("id", seeded.workspaceId)
+            .update()
+    }
+
+    private fun storedSuggestionJob(
+        seeded: Seeded,
+        jobId: UUID,
+    ): StoredIllustrationSuggestionJob =
+        StoredIllustrationSuggestionJob(
+            jobId = jobId,
+            ownerId = seeded.ownerId,
+            workspaceId = seeded.workspaceId,
+            documentId = seeded.documentId,
+            conversionId = seeded.conversionId,
+            requestId = UUID.randomUUID(),
+            basedOnContentRevision = 1,
+            reservedCredits = SUGGESTION_CREDITS,
+            status = IllustrationSuggestionJobStatus.QUEUED,
+            failureCode = null,
+            executionId = null,
+            providerStartedAt = null,
+            createdAt = NOW,
+            updatedAt = NOW,
+        )
+
+    private fun suggestionJobColumn(
+        jobId: UUID,
+        column: String,
+    ): String =
+        jdbc
+            .sql("SELECT $column FROM illustration_suggestion_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
 
     private fun actionGuideJobColumn(
         jobId: UUID,
@@ -612,6 +806,13 @@ class JdbcRetentionPurgeTest {
 
         /** `FOR UPDATE NOWAIT` 가 잠긴 행에서 내는 SQLSTATE(`lock_not_available`). */
         const val LOCK_NOT_AVAILABLE: String = "55P03"
-        const val PROBE_LOCK_SQL: String = "SELECT id FROM action_guide_jobs WHERE id = ? FOR UPDATE NOWAIT"
+        const val ACTION_GUIDE_JOBS: String = "action_guide_jobs"
+        const val SUGGESTION_JOBS: String = "illustration_suggestion_jobs"
+
+        /** 정산 중인 그림 제안 작업 1건의 예약. */
+        val SUGGESTION_CREDITS: BigDecimal = BigDecimal.ONE
+
+        /** 표 이름은 이 파일의 상수라 그대로 끼워 넣는다 — 매개변수는 작업 id 뿐이다. */
+        fun probeLockSql(table: String): String = "SELECT id FROM $table WHERE id = ? FOR UPDATE NOWAIT"
     }
 }

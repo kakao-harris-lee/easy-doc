@@ -99,8 +99,13 @@ data class ReviewCapabilities(
     val reviewHistory: Boolean,
     val explanations: Boolean,
     val illustrations: Boolean,
+    /**
+     * R7 ER-17 문맥 기반 그림 제안. 토글이 켜져 있고 **이용량 단가가 설정돼 있을 때만** true 다
+     * (명세 §3·§6) — 단가가 없으면 접수가 503 이라 기능을 노출하는 것이 거짓말이 된다.
+     */
+    val illustrationSuggestions: Boolean,
 ) {
     companion object {
-        val NONE = ReviewCapabilities(false, false, false, false, false, false, false)
+        val NONE = ReviewCapabilities(false, false, false, false, false, false, false, false)
     }
 }

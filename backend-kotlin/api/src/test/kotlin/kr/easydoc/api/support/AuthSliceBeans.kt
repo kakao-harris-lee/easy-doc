@@ -167,6 +167,20 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.illustration.IllustrationPlacementService::class.java)
 
     @Bean
+    fun illustrationSuggestionJobService():
+        kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobService =
+        org.mockito.Mockito.mock(
+            kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobService::class.java,
+        )
+
+    @Bean
+    fun illustrationSuggestionResultService():
+        kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultService =
+        org.mockito.Mockito.mock(
+            kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultService::class.java,
+        )
+
+    @Bean
     fun phoneVerificationService(): kr.easydoc.application.auth.PhoneVerificationService =
         org.mockito.Mockito.mock(kr.easydoc.application.auth.PhoneVerificationService::class.java)
 

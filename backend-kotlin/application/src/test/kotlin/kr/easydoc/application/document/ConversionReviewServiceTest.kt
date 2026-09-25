@@ -507,6 +507,8 @@ class ConversionReviewServiceTest {
                     EncryptedField.REVIEW_HISTORY_SNAPSHOT -> error("이력 스냅샷은 별도 이력 저장소에 쓴다")
 
                     EncryptedField.ILLUSTRATION_PLACEMENTS -> error("검수 저장이 그림 배치 열을 쓰지 않는다")
+
+                    EncryptedField.ILLUSTRATION_SUGGESTION_RESULT -> error("검수 저장이 제안 결과 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

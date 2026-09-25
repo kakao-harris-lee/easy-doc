@@ -35,9 +35,6 @@ data class RetentionProperties(
 @Profile("worker")
 class RetentionPurgeConfiguration {
     @Bean
-    fun documentJobLocks(jdbcClient: JdbcClient): DocumentJobLocks = DocumentJobLocks(jdbcClient)
-
-    @Bean
     fun expiredDocumentPurge(
         jdbcClient: JdbcClient,
         credits: CreditAccountService,

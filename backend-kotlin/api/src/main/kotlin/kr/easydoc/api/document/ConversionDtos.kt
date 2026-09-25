@@ -200,6 +200,7 @@ data class ReviewCapabilitiesResponse(
     @get:JsonProperty("review_history") val reviewHistory: Boolean,
     @get:JsonProperty("explanations") val explanations: Boolean,
     @get:JsonProperty("illustrations") val illustrations: Boolean,
+    @get:JsonProperty("illustration_suggestions") val illustrationSuggestions: Boolean,
 ) {
     companion object {
         fun of(value: kr.easydoc.core.document.ReviewCapabilities): ReviewCapabilitiesResponse =
@@ -211,6 +212,7 @@ data class ReviewCapabilitiesResponse(
                 value.reviewHistory,
                 value.explanations,
                 value.illustrations,
+                value.illustrationSuggestions,
             )
     }
 }

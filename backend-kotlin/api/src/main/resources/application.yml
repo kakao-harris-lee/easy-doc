@@ -87,6 +87,16 @@ easydoc:
   action-guide:
     enabled: ${EASYDOC_ACTION_GUIDE_ENABLED:false}
     worker-enabled: ${EASYDOC_ACTION_GUIDE_WORKER_ENABLED:false}
+  # R7 ER-17 문맥 기반 그림 제안. `easydoc.illustrations`(ER-15 카탈로그)와 독립 토글이다.
+  illustration-suggestions:
+    enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED:false}
+    worker-enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED:false}
+    # 미설정과 0은 다르다 — 미설정이면 접수가 503이고 기능을 노출하지 않는다.
+    credits-per-100-chars: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:}
+    # 문서당 provider 시작 누적 상한은 **접수 쪽이 집행한다**(`JdbcIllustrationSuggestionJobRepository
+    # .insert`). worker yml 에만 두면 운영자가 값을 올려도 api 프로세스는 기본값 3을 계속 쓴다 —
+    # 같은 키·환경변수·기본값을 양쪽에 선언해 두 프로세스가 한 값을 본다.
+    max-provider-attempts-per-conversion: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_PROVIDER_ATTEMPTS:3}
   prompt:
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
     context-explanation-version: ${EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION:BASELINE}

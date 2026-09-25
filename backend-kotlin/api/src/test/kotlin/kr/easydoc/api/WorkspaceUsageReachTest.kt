@@ -85,6 +85,37 @@ class WorkspaceUsageReachTest {
     }
 
     @Test
+    @DisplayName("U-1c 그림 제안 소비만 있는 기간도 크레딧과 by_purpose 에 나온다 (R7 ER-17)")
+    fun `그림 제안 소비가 사용량 응답에 나온다`() {
+        val token = newAccount()
+        val userId = subjectOf(token)
+        val workspaceId = defaultWorkspaceId(token)
+        val documentId = UUID.randomUUID().toString()
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = SUGGESTION_PURPOSE,
+            documentId = documentId,
+            documentCharCount = 1000,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+        )
+        insertSuggestionConsume(workspaceId, userId, documentId, credits = "1.5")
+
+        val body = bodyOf(usage(token, workspaceId))
+
+        // 사유가 집계에서 빠져 있으면 소비 원장이 없는 것으로 보여 문자 수 기반 대체값(1)이 나온다.
+        assertThat((body["credits"] as Number).toDouble()).isEqualTo(1.5)
+        assertThat(body["llm_calls"]).isEqualTo(1)
+        val purposes =
+            (body["by_purpose"] as List<*>).map { (it as Map<*, *>)["purpose"].toString() }
+        assertThat(purposes).containsExactly(SUGGESTION_PURPOSE)
+        // 계약이 선언한 목적 어휘 안의 값이어야 한다.
+        assertThat(ContractSpec.schemaEnum(USAGE_PURPOSE_SCHEMA)).contains(SUGGESTION_PURPOSE)
+    }
+
+    @Test
     @DisplayName("U-1a 기본 집계는 달력 월이 아니라 정확한 현재 이용 주기 시작 시각부터 센다")
     fun `기본 집계는 현재 이용 주기만 센다`() {
         val token = newAccount()
@@ -416,6 +447,23 @@ class WorkspaceUsageReachTest {
         )
     }
 
+    /** R7 ER-17 제안 분석의 소비 원장 한 행. 사유만 다르고 나머지는 변환 소비와 같다. */
+    private fun insertSuggestionConsume(
+        workspaceId: String,
+        userId: String,
+        documentId: String,
+        credits: String,
+    ) {
+        database.execute(
+            """
+            INSERT INTO credit_transactions
+                (id, workspace_id, owner_user_id, document_id, kind, balance_delta, reserved_delta, reason)
+            VALUES ('${UUID.randomUUID()}', '$workspaceId', '$userId', '$documentId', 'consume',
+                    -$credits, -$credits, '$SUGGESTION_PURPOSE')
+            """.trimIndent(),
+        )
+    }
+
     private fun jsonRequest(
         path: String,
         token: String?,
@@ -457,6 +505,10 @@ class WorkspaceUsageReachTest {
         private const val UNPROCESSABLE = 422
 
         private const val USAGE_SCHEMA = "WorkspaceUsageResponse"
+        private const val USAGE_PURPOSE_SCHEMA = "UsagePurpose"
+
+        /** `LlmCallPurpose.ILLUSTRATION_SUGGESTION.wireName`·`CreditReason` 과 같은 값(V35). */
+        private const val SUGGESTION_PURPOSE = "illustration_suggestion"
 
         private const val VALID_PASSWORD = "correct horse battery"
 

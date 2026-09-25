@@ -394,6 +394,7 @@ class OwnershipPredicateGuardTest {
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
         private const val ILLUSTRATION = "$MAIN/illustration"
+        private const val SUGGESTION = "$ILLUSTRATION/suggestion"
 
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
@@ -440,6 +441,11 @@ class OwnershipPredicateGuardTest {
                 // 가리켜 FK 위반이 나던 자리다. 소유 술어(`user_id = :userId`)가 문장에 직접
                 // 있어 아래 미방어 목록에는 없다.
                 "$AUTH/JdbcAccountDeletionRepository.kt | DELETE [documents]",
+                // 그 삭제 직전에 지울 문서 id 를 읽는 SELECT — `DocumentJobLocks` 가 이 배치의
+                // 활성 작업을 미리 잠그는 근거다(문서 여럿을 한 문장으로 지우는 자리라 trigger 의
+                // 문서별 잠금만으로는 worker 와 순서가 엇갈린다). 소유 술어(`user_id = :userId`)가
+                // 문장에 직접 있어 아래 미방어 목록에는 없다.
+                "$AUTH/JdbcAccountDeletionRepository.kt | SELECT [documents]",
                 // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
                 // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
                 // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을
@@ -589,6 +595,23 @@ class OwnershipPredicateGuardTest {
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                // R7 ER-17 그림 제안(V35). provider 입력·접수 잠금·호출 원장·결과 저장/조회는
+                // 전부 사용자 소유 매개변수로 좁힌다. 가운데 세 문장(키 회전)만 운영자 경로라
+                // 아래 미방어 목록에도 같은 이름으로 있다.
+                "$SUGGESTION/IllustrationSuggestionGenerationInput.kt | SELECT [conversions, documents]",
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "SELECT [illustration_suggestion_results]",
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "SELECT [illustration_suggestion_results]",
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "UPDATE [illustration_suggestion_results]",
+                "$SUGGESTION/JdbcIllustrationSuggestionJobRepository.kt | SELECT [conversions, documents]",
+                "$SUGGESTION/JdbcIllustrationSuggestionJobRepository.kt | SELECT [conversions, documents]",
+                "$SUGGESTION/JdbcIllustrationSuggestionLlmCallLedger.kt | SELECT [documents]",
+                "$SUGGESTION/JdbcIllustrationSuggestionResultRepository.kt | " +
+                    "INSERT [conversions, documents, illustration_suggestion_results]",
+                "$SUGGESTION/JdbcIllustrationSuggestionResultRepository.kt | " +
+                    "SELECT [conversions, documents, illustration_suggestion_results]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -710,6 +733,14 @@ class OwnershipPredicateGuardTest {
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                // R7 ER-17 결과 payload 키 회전의 후보 커서·잠금·재봉인. 운영자 배치라 소유자를
+                // 인자로 받을 자리가 없다 — 사용자 경로(입력·접수·결과 조회)는 위 인구조사에만 있다.
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "SELECT [illustration_suggestion_results]",
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "SELECT [illustration_suggestion_results]",
+                "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
+                    "UPDATE [illustration_suggestion_results]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -798,6 +829,9 @@ class OwnershipPredicateGuardTest {
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
 
         // 52 → 58: R2 암호문 가족 둘의 회전 커서·잠금·재봉인 여섯 문장.
-        const val MAX_UNGUARDED_STATEMENTS = 67
+        // 67 → 70: R7 ER-17 결과(`IllustrationSuggestionResultKeyRotation`)의 후보 커서
+        // SELECT·잠금 SELECT·재봉인 UPDATE 셋이다. 같은 기능의 사용자 경로(입력 적재·접수
+        // 잠금·호출 원장·결과 저장/조회)는 소유 매개변수를 SQL 자체에 둬 이 상한을 먹지 않았다.
+        const val MAX_UNGUARDED_STATEMENTS = 70
     }
 }

@@ -220,10 +220,19 @@ class SensitiveToStringReachTest {
          * `IllustrationSuggestionPurpose` 는 enum, `IllustrationSuggestionIdGenerator` 는
          * `fun interface` 라 세지 않는다.
          *
-         * 351 → 353 은 집중 검토의 batch 요청 DTO와 내부 관계 신호 모델이다(2026-09-24).
-         * 둘 다 사용자 문자열을 값 그대로 출력하지 않도록 `toString()` 경계를 유지한다.
+         * 집중 검토 모델 두 개와 그림 제안 모델 서른셋을 함께 포함한다.
+         * 351 → 384 는 R7 ER-17-2 서버 조각이 더한 서른셋이다(2026-09-24). application 의
+         * 포트·뷰 스물다섯(`IllustrationSuggestionJobContext`·`StoredIllustrationSuggestionJob`·
+         * `StoredIllustrationSuggestionResult`·`IllustrationSuggestionJobLease`·
+         * `IllustrationSuggestionJobWorkerPolicy` 와 `IllustrationSuggestionJobInsert`·
+         * `IllustrationSuggestionJobAcquire`·`IllustrationSuggestionCreditReservation`·
+         * `IllustrationSuggestionRunResult` 의 갈래들, 서비스 뷰 넷, `ProcessIllustrationSuggestionJob
+         * .StartResult` 의 `data object` 셋), infrastructure 의 `IllustrationSuggestionProperties`,
+         * api 의 요청·응답 일곱이다. 본문 조각을 든 타입(`IllustrationSuggestionPayload`·
+         * `IllustrationSuggestionAnchorPayload`)은 `toString()` 을 재정의해 개수만 낸다.
+         * `IllustrationSuggestionGenerationInput`·`StartResult.Started` 는 일반 class 라 세지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 353
+        const val EXPECTED_SOURCE_DECLARATIONS = 386
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

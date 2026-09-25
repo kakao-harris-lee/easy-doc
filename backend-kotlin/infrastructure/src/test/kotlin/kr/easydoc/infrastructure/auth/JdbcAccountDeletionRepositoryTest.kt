@@ -5,6 +5,7 @@ import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.DerivedRows
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.document.DocumentJobLocks
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.flywaydb.core.Flyway
@@ -25,6 +26,9 @@ import javax.sql.DataSource
  * 5·6·7.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// 탈퇴 한 번이 지나가는 표가 늘수록 이 파일이 커진다 — 갈래마다 같은 계정·문서 픽스처를
+// 세워야 해서 파일을 가르면 그 조립이 두 벌이 된다(`JdbcUsageReadRepositoryTest` 와 같은 판단).
+@Suppress("LargeClass")
 class JdbcAccountDeletionRepositoryTest {
     private lateinit var database: DatabaseHandle
     private lateinit var jdbcClient: JdbcClient
@@ -42,7 +46,7 @@ class JdbcAccountDeletionRepositoryTest {
             .migrate()
 
         jdbcClient = JdbcClient.create(dataSource())
-        repository = JdbcAccountDeletionRepository(jdbcClient)
+        repository = JdbcAccountDeletionRepository(jdbcClient, DocumentJobLocks(jdbcClient))
         users = JdbcUserRepository(jdbcClient)
     }
 
@@ -155,7 +159,8 @@ class JdbcAccountDeletionRepositoryTest {
 
     /**
      * 활성 행동 안내 작업(`action_guide_jobs` queued/reserved)이 있는 계정의 탈퇴 — `users`
-     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V29 의 BEFORE DELETE trigger 가 해제 거래를
+     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V35 의 BEFORE DELETE trigger
+     * (`trg_documents_settle_jobs`, V29 의 가족별 trigger 를 대체했다)가 해제 거래를
      * 적는다. 그 거래의 `workspace_id`·`owner_user_id` 가 **같은 문장에서 이미 사라진 뒤**면
      * FK 위반으로 탈퇴 전체가 실패한다 — 문서를 사용자보다 먼저 지워야 하는 이유다.
      */
@@ -233,16 +238,16 @@ class JdbcAccountDeletionRepositoryTest {
     }
 
     /**
-     * 수용 기준 5·6·7 의 V28~V34 확장 — 검수 지원(V28)·행동 안내 후보와 안내문(V30)·표
-     * 구조(V32)·검수 이력(V33)·그림 배치(V34)는 전부 `documents`/`conversions` 에
-     * `ON DELETE CASCADE` 로 매달려 있으니 탈퇴 한 번으로 사라져야 한다.
+     * 수용 기준 5·6·7 의 V28~V35 확장 — 검수 지원(V28)·행동 안내 후보와 안내문(V30)·표
+     * 구조(V32)·검수 이력(V33)·그림 배치(V34)·그림 제안 결과(V35)는 전부
+     * `documents`/`conversions` 에 `ON DELETE CASCADE` 로 매달려 있으니 탈퇴 한 번으로 사라져야 한다.
      *
      * 활성 작업이 없는 갈래를 여기서 잰다 — [DerivedRows.seed] 가 심는 작업은 끝난 상태다.
      * 활성(`queued`/`running`) 작업을 쥔 계정의 탈퇴는 위 두 시험이 따로 잰다.
      */
     @Test
-    @DisplayName("문서 있는 계정을 탈퇴하면 V28~V34 파생 행이 전부 0건이 된다")
-    fun `탈퇴가 V28부터 V34까지의 파생 행을 지운다`() {
+    @DisplayName("문서 있는 계정을 탈퇴하면 V28~V35 파생 행이 전부 0건이 된다")
+    fun `탈퇴가 V28부터 V35까지의 파생 행을 지운다`() {
         val userId = insertUser(isAdmin = false, passwordHash = HASH)
         val workspaceId = insertWorkspace(userId)
         val documentId = insertDocument(userId, workspaceId)
@@ -403,6 +408,160 @@ class JdbcAccountDeletionRepositoryTest {
             .param("reservedCredits", RESERVED_CREDITS)
             .param("jobId", jobId)
             .update()
+    }
+
+    /**
+     * 활성 그림 제안 작업(`illustration_suggestion_jobs` queued/reserved)이 있는 계정의 탈퇴 —
+     * V35 의 BEFORE DELETE trigger 가 적는 해제 거래의 `workspace_id`·`owner_user_id` 가 같은
+     * 문장에서 이미 사라진 뒤면 FK 위반으로 탈퇴 전체가 실패한다(V29 와 같은 함정).
+     */
+    @Test
+    @DisplayName("대기 중 그림 제안 작업이 있어도 탈퇴되고 예약이 해제된다")
+    fun `대기 중 그림 제안 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        val jobId = insertIllustrationSuggestionJob(userId, workspaceId, documentId, conversionId, running = false)
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isEqualTo(1)
+
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
+        // 작업 행 자체는 설계상 남는다(FK 가 SET NULL) — 정산 상태만 종결로 바뀐다.
+        assertThat(suggestionJobStateOf(jobId)).isEqualTo("superseded|released")
+    }
+
+    /**
+     * 실행 중(`running`) 제안 작업은 해제 거래에 더해 진행 중 호출 원장을 `outcome_unknown` 으로
+     * 정리한다(V35 함수의 마지막 두 문장).
+     */
+    @Test
+    @DisplayName("실행 중 그림 제안 작업이 있어도 탈퇴되고 진행 중 호출이 outcome_unknown 이 된다")
+    fun `실행 중 그림 제안 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = RESERVED_CREDITS)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        val jobId = insertIllustrationSuggestionJob(userId, workspaceId, documentId, conversionId, running = true)
+        val llmCallId = insertInProgressSuggestionLlmCall(userId, workspaceId, documentId, conversionId, jobId)
+
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(suggestionJobStateOf(jobId)).isEqualTo("superseded|released")
+
+        val call =
+            jdbcClient
+                .sql("SELECT outcome, user_id FROM llm_calls WHERE id = :id")
+                .param("id", llmCallId)
+                .query { rs, _ -> rs.getString("outcome") to rs.getObject("user_id") }
+                .single()
+        assertThat(call.first).isEqualTo("outcome_unknown")
+        assertThat(call.second).isNull()
+    }
+
+    /** `illustration_suggestion_jobs` 의 종결 상태 — 상태와 정산을 한 값으로 읽는다. */
+    private fun suggestionJobStateOf(jobId: UUID): String =
+        jdbcClient
+            .sql("SELECT status || '|' || settlement FROM illustration_suggestion_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
+    /** 활성 그림 제안 작업 한 건 — 운영과 같이 예약 원장 행을 함께 남긴다(V35 부분 UNIQUE). */
+    private fun insertIllustrationSuggestionJob(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        running: Boolean,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO illustration_suggestion_jobs
+                    (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                     expected_content_revision, based_on_content_revision, input_fingerprint,
+                     status, settlement, reserved_credits, provider_attempts, provider_execution_id,
+                     provider_started_at, lease_owner, lease_until, worker_slot)
+                VALUES (:id, :requestId, :userId, :workspaceId, :documentId, :conversionId,
+                        1, 1, :fingerprint, :status, 'reserved', :reservedCredits, :providerAttempts,
+                        :providerExecutionId, :providerStartedAt, :leaseOwner, :leaseUntil, :workerSlot)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("requestId", UUID.randomUUID())
+            .param("userId", userId)
+            .param("workspaceId", workspaceId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("fingerprint", "0".repeat(FINGERPRINT_LENGTH))
+            .param("status", if (running) "running" else "queued")
+            .param("reservedCredits", RESERVED_CREDITS)
+            .param("providerAttempts", if (running) 1 else 0)
+            .param("providerExecutionId", if (running) UUID.randomUUID() else null)
+            .param("providerStartedAt", if (running) Timestamp.from(Instant.now()) else null)
+            .param("leaseOwner", if (running) "worker-fixture" else null)
+            .param("leaseUntil", if (running) Timestamp.from(Instant.now().plusSeconds(LEASE_SECONDS)) else null)
+            .param("workerSlot", if (running) 1 else null)
+            .update()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, illustration_suggestion_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, 'reserve', 0, :reservedCredits,
+                        'illustration_suggestion', :jobId)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("reservedCredits", RESERVED_CREDITS)
+            .param("jobId", id)
+            .update()
+        return id
+    }
+
+    /** 진행 중 제안 호출 원장 한 행 — V29 의 `ck_llm_calls_unfinished_zero_usage` 를 그대로 진다. */
+    private fun insertInProgressSuggestionLlmCall(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        jobId: UUID,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO llm_calls
+                    (id, workspace_id, user_id, document_id, conversion_id, purpose, provider, model,
+                     input_tokens, output_tokens, char_count, document_char_count, outcome,
+                     illustration_suggestion_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, :conversionId, 'illustration_suggestion',
+                        NULL, NULL, 0, 0, 4, 4, 'in_progress', :jobId)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("jobId", jobId)
+            .update()
+        return id
     }
 
     /**

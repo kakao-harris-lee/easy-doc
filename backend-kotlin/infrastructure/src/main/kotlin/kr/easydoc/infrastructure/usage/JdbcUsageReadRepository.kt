@@ -31,7 +31,9 @@ import java.util.UUID
  * `document_char_count` 값을 반복해
  * 담으므로, `document_id`로 distinct 한 뒤에만 합한다 — distinct 하지 않으면 재시도 한
  * 번마다 그 문서의 문자 수가 다시 더해진다. [WorkspaceUsage.credits]는 실제 차감 원장인
- * `credit_transactions`의 `consume` 중 `conversion`·`action_guide` 합을 쓴다. 이 값에는 최초 변환뿐 아니라
+ * `credit_transactions`의 `consume` 중 `conversion`·`action_guide`·`illustration_suggestion` 합을 쓴다.
+ * **차감 사유가 늘면 이 목록도 함께 는다** — 빠뜨리면 실제로 깎인 이용량이 집계에서 사라져
+ * 운영자가 보는 사용량이 청구 근거보다 작아진다. 이 값에는 최초 변환뿐 아니라
  * 성공한 재변환도 들어간다. V15 이전 호출처럼 `consume` 거래가 전혀 없는 기간만 문서별
  * `ceil(document_char_count / 1000)` 합으로 대체한다.
  *
@@ -166,7 +168,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                 FROM credit_transactions
                 WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
                   AND kind = 'consume'
-                  AND reason IN ('conversion', 'action_guide')
+                  AND reason IN ('conversion', 'action_guide', 'illustration_suggestion')
                   AND created_at >= :from AND created_at < :toExclusive
                 HAVING count(*) > 0
                 """.trimIndent(),

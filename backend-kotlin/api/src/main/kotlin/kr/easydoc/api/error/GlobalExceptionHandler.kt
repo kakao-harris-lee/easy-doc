@@ -2,6 +2,7 @@ package kr.easydoc.api.error
 
 import kr.easydoc.application.actionguide.ActionGuideAttemptLimitExceededException
 import kr.easydoc.application.document.UPLOAD_TOO_LARGE_MESSAGE
+import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionAttemptLimitExceededException
 import kr.easydoc.core.exceptions.AdminRequiredException
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
@@ -343,6 +344,11 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         }
 
         is ActionGuideAttemptLimitExceededException -> {
+            HttpStatus.TOO_MANY_REQUESTS to null
+        }
+
+        // R7 ER-17 그림 제안 분석의 문서당 시도 상한 — 위와 같은 축이라 `Retry-After` 가 없다.
+        is IllustrationSuggestionAttemptLimitExceededException -> {
             HttpStatus.TOO_MANY_REQUESTS to null
         }
 

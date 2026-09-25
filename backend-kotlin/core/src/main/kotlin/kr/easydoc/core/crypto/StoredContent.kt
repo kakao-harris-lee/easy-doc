@@ -143,6 +143,12 @@ enum class EncryptedField(val wireName: String) {
 
     /** ER-16 그림 배치 좌표. 행 id에 결속한다 — 변환 한 건에 현재 집합 하나만 있다(이력 없음). */
     ILLUSTRATION_PLACEMENTS("illustration_placements.payload_encrypted"),
+
+    /**
+     * R7 ER-17 그림 제안 분석 결과. 원문 인용·장면·대체텍스트를 담으므로 본문과 같은 보호를
+     * 받으며 결과 행 id 에 결속한다(작업 1건에 결과 1행).
+     */
+    ILLUSTRATION_SUGGESTION_RESULT("illustration_suggestion_results.payload_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

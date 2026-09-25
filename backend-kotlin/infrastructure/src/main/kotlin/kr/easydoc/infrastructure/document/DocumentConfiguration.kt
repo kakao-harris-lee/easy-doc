@@ -39,6 +39,7 @@ import kr.easydoc.infrastructure.actionguide.ActionGuideProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.illustration.IllustrationsProperties
+import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.beans.factory.annotation.Value
@@ -64,6 +65,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
     ActionGuideProperties::class,
     ExplanationsProperties::class,
     IllustrationsProperties::class,
+    IllustrationSuggestionProperties::class,
 )
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
@@ -199,6 +201,7 @@ class DocumentConfiguration {
         @Value("\${easydoc.review-history.enabled:false}") reviewHistoryEnabled: Boolean,
         explanationsProperties: ExplanationsProperties,
         illustrationsProperties: IllustrationsProperties,
+        illustrationSuggestionProperties: IllustrationSuggestionProperties,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -215,6 +218,7 @@ class DocumentConfiguration {
                     reviewHistoryEnabled,
                     explanationsProperties.enabled,
                     illustrationsProperties.enabled,
+                    illustrationSuggestionProperties,
                 ),
         )
 
@@ -375,6 +379,7 @@ internal fun reviewCapabilitiesFor(
     reviewHistoryEnabled: Boolean = false,
     explanationsEnabled: Boolean = false,
     illustrationsEnabled: Boolean = false,
+    illustrationSuggestions: IllustrationSuggestionProperties = IllustrationSuggestionProperties(),
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
@@ -384,4 +389,7 @@ internal fun reviewCapabilitiesFor(
         reviewHistory = reviewHistoryEnabled,
         explanations = explanationsEnabled,
         illustrations = illustrationsEnabled,
+        // 토글만으로는 부족하다 — 이용량 단가가 없으면 접수가 503 이므로 노출하지 않는다(명세 §3).
+        illustrationSuggestions =
+            illustrationSuggestions.enabled && illustrationSuggestions.creditsPer100Chars != null,
     )

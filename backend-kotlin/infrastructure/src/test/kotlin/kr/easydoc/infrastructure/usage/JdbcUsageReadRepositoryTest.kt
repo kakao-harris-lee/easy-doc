@@ -187,6 +187,60 @@ class JdbcUsageReadRepositoryTest {
     }
 
     @Test
+    @DisplayName("그림 제안 소비만 있는 기간도 크레딧 집계에 들어간다 — 사유 목록에서 빠지면 0이 된다")
+    fun `그림 제안 소비를 집계한다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-20T04:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 1_000, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.ILLUSTRATION_SUGGESTION,
+            documentId,
+            documentCharCount = 1_000,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = at,
+        )
+        insertSuggestionCreditConsume(workspaceId, owner, documentId, BigDecimal("1.5"), at)
+
+        val usage = repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        // 소비 원장이 있으므로 문자 수 기반 fallback 이 아니라 실제 차감량이 나와야 한다.
+        assertThat(usage.credits).isEqualByComparingTo("1.5")
+        assertThat(usage.llmCalls).isEqualTo(1)
+        assertThat(usage.byPurpose.single().purpose).isEqualTo(LlmCallPurpose.ILLUSTRATION_SUGGESTION)
+    }
+
+    @Test
+    @DisplayName("변환과 그림 제안 소비가 한 기간에 섞이면 둘을 더한다")
+    fun `변환과 그림 제안 소비를 함께 더한다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-20T04:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 1_000, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId,
+            documentCharCount = 1_000,
+            inputTokens = 1,
+            outputTokens = 1,
+            costUsd = null,
+            calledAt = at,
+        )
+        insertCreditConsume(workspaceId, owner, documentId, BigDecimal("1.0"), at)
+        insertSuggestionCreditConsume(workspaceId, owner, documentId, BigDecimal("0.5"), at.plusSeconds(1))
+
+        val usage = repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        assertThat(usage.credits).isEqualByComparingTo("1.5")
+    }
+
+    @Test
     @DisplayName("행동 안내만 완료되고 예약이 해제되면 문서·문자·크레딧은 0이다")
     fun `해제된 행동 안내 예약은 문서 사용량과 크레딧을 늘리지 않는다`() {
         val owner = newOwner()
@@ -737,6 +791,32 @@ class JdbcUsageReadRepositoryTest {
         credits: Int,
         at: Instant,
     ) = insertCreditConsume(workspaceId, ownerId, documentId, BigDecimal.valueOf(credits.toLong()), at)
+
+    /** R7 ER-17 제안 분석의 소비 한 행. 사유만 다르고 나머지는 변환 소비와 같은 모양이다. */
+    private fun insertSuggestionCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: BigDecimal,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, 'consume', :delta,
+                        :delta, 'illustration_suggestion', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("documentId", documentId)
+            .param("delta", -credits)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
+    }
 
     @Suppress("LongParameterList")
     private fun insertActionGuideCreditTransaction(
