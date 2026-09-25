@@ -93,6 +93,27 @@ api·worker가 재생성되며 잠깐 끊긴다. 이 값은 호스트 `/etc/defa
 `--prefer '^(java)$'`를 전제로 하므로 그 설정이 바뀌면 함께 다시 본다. 반영 확인:
 `docker inspect easy-doc-backend-api-1 --format '{{.HostConfig.OomScoreAdj}}'` → -500.
 
+### 읽기 수준 선택 설정
+
+Docker 배포에서는 루트 `.env`의 `EASYDOC_READING_LEVEL_EXTRA_EASY_ENABLED` 하나로
+API의 `grade_3_4` 접수와 프런트의 `더 쉽게 · 초등 3~4학년 수준` 선택지를 함께 제어한다.
+기본값은 `false`다. Compose는 이 값을 API 환경과 프런트 빌드 인자
+`VITE_EASYDOC_EXTRA_EASY_ENABLED` 양쪽에 전달한다. `frontend/.env.example`은 Vite 로컬
+개발 예시이므로 이 파일만 바꿔서는 Docker 배포 설정이 바뀌지 않는다.
+
+Vite 설정은 JavaScript 번들에 들어가므로 값을 바꾼 뒤에는 프런트 이미지를 다시 빌드하고,
+API와 프런트 컨테이너를 재생성해야 한다. 단순 재시작만으로는 선택지가 바뀌지 않는다.
+운영 활성화 전에는 [읽기 수준 출시 조건](plans/2026-09-24-reading-level-focused-review.md)의
+D12 길이 상한과 ER-26 평가 상태를 함께 확인한다.
+
+집중 검토는 `.env`의 `EASYDOC_REVIEW_SUPPORT_ENABLED=true`와
+`EASYDOC_FOCUSED_REVIEW_ENABLED=true`를 함께 설정하고 API·worker를 재생성한다.
+프런트는 서버가 반환하는 검토 기능 설정을 따르므로 별도 Vite 설정은 없다.
+
+2026-09-25 사용자 활성화 지시에 따라 파일럿에서 읽기 수준 선택과 집중 검토를 켰다.
+API·worker의 설정, 공개 프런트 번들의 선택지 활성화, API health와 DB·백업 상태를
+확인했다. 실제 유료 LLM 호출을 통한 품질 평가와 D12 상한 결정은 별도로 남아 있다.
+
 ### PostgreSQL 영속성과 백업
 
 원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도
