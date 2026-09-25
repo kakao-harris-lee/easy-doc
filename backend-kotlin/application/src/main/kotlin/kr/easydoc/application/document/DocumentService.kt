@@ -186,10 +186,18 @@ class DocumentService(
     /**
      * 문서 한 건을 **즉시 파기한다.** 보존 기간(30일)을 기다리지 않는 경로이고 복구 수단이 없다.
      *
-     * **크레딧 예약을 삭제 앞에서 해제한다**(리뷰 HIGH-1). 변환이 아직 끝나지 않은 채
-     * (`pending`/`processing`) 예약을 쥐고 있는데 문서를 지우면, cascade 삭제로 변환
-     * 행이 함께 사라지는 순간 그 예약을 되돌릴 방법이 사라져 `reserved` 가 영원히
+     * **끝나지 않은 크레딧 예약을 같은 트랜잭션에서 되돌린다**(리뷰 HIGH-1). 변환이 아직
+     * 끝나지 않은 채(`pending`/`processing`) 예약을 쥐고 있는데 문서를 지우면, cascade 삭제로
+     * 변환 행이 함께 사라지는 순간 그 예약을 되돌릴 방법이 사라져 `reserved` 가 영원히
      * 부풀어 오른다 — 되돌릴 수 없는 파기이므로 되돌릴 수 없는 예약도 함께 만들면 안 된다.
+     *
+     * **읽기는 삭제 앞, 이용량 계정 갱신은 삭제 뒤다.** 예약을 읽는 잠금 조회는 `documents` 를
+     * 조인하므로 문서가 아직 있어야 하고, 계정 갱신은 삭제가 끝난 뒤여야 한다 — 문서 삭제
+     * trigger(V29 `settle_action_guide_jobs_for_document`)와 작업 worker 의 정산
+     * (`ProcessActionGuideJob.settle`)이 둘 다 **작업 행을 먼저 잠그고 그다음 계정**이기
+     * 때문이다. 삭제가 계정을 먼저 잡으면 순서가 엇갈려, 삭제는 계정을 든 채 trigger 의
+     * 작업 행 잠금을 기다리고 정산 중인 worker 는 그 계정을 기다린다. 교착에서 정산이 죽으면
+     * **이미 돈을 쓴 호출의 결과가 사라진다** — 사용자가 문서를 지우는, 가장 잦은 경로다.
      */
     fun delete(
         ownerId: UUID,
@@ -197,13 +205,13 @@ class DocumentService(
     ) {
         transaction.inTransaction {
             val reservation = storage.conversions.lockPendingReservation(ownerId, documentId)
-            reservation?.let {
-                credits.release(it.workspaceId, ownerId, documentId, it.conversionId, Credits(it.creditsReserved))
-            }
             // 0행은 「없다」와 「남의 것」을 합친 상태다. 저장소가 그 둘을 가르지 않으므로
             // 여기서도 가를 수 없고, 그것이 소유권 은닉의 형태다.
             if (!storage.documents.deleteOwned(ownerId, documentId)) {
                 throw NotFoundException(DOCUMENT_NOT_FOUND_MESSAGE)
+            }
+            reservation?.let {
+                credits.release(it.workspaceId, ownerId, documentId, it.conversionId, Credits(it.creditsReserved))
             }
         }
     }

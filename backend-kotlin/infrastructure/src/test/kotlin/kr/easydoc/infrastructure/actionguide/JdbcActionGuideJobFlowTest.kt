@@ -1,15 +1,20 @@
 package kr.easydoc.infrastructure.actionguide
 
+import kr.easydoc.application.actionguide.ACTIVE_JOB_CONFLICT_MESSAGE
 import kr.easydoc.application.actionguide.ActionGuideJobAcquire
+import kr.easydoc.application.actionguide.ActionGuideJobCreationView
 import kr.easydoc.application.actionguide.ActionGuideJobInsert
+import kr.easydoc.application.actionguide.ActionGuideJobService
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.credit.Credits
+import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
@@ -22,8 +27,10 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -38,6 +45,7 @@ class JdbcActionGuideJobFlowTest {
     private lateinit var credits: JdbcActionGuideCreditPort
     private lateinit var ledger: JdbcActionGuideLlmCallLedger
     private lateinit var tx: TransactionTemplate
+    private lateinit var service: ActionGuideJobService
 
     @BeforeEach
     fun prepare() {
@@ -54,6 +62,14 @@ class JdbcActionGuideJobFlowTest {
         credits = JdbcActionGuideCreditPort(jdbc, enforced = true)
         ledger = JdbcActionGuideLlmCallLedger(jdbc)
         tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        service =
+            ActionGuideJobService(
+                enabled = true,
+                jobs = jobs,
+                credits = credits,
+                transaction = SpringTransactionRunner(tx),
+                clock = Clock.fixed(NOW, ZoneOffset.UTC),
+            )
     }
 
     @Test
@@ -320,6 +336,105 @@ class JdbcActionGuideJobFlowTest {
 
         assertThat(tx.execute { acquire("worker-b") })
             .isInstanceOf(ActionGuideJobAcquire.RecoverUnknown::class.java)
+    }
+
+    /**
+     * **접수와 정산이 잠금을 같은 순서로 잡는가** — 두 트랜잭션이 같은 계정에서 만나는 자리다.
+     *
+     * 정산(`ProcessActionGuideJob.settle`)은 작업 행을 먼저 잠그고(`markSucceeded`) 그다음 이용량
+     * 계정을 잡는다. 접수가 계정을 **먼저** 잡으면 두 순서가 엇갈려 교착한다 — 접수는 계정을 든 채
+     * 새 작업 INSERT 가 정산 중인 작업의 계정당 활성 부분 UNIQUE(`uq_action_guide_jobs_active_owner`)
+     * 항목이 풀리기를 기다리고, 정산은 그 계정을 기다린다.
+     *
+     * 교착에서 PostgreSQL 이 **정산 쪽을 죽이면** 이미 돈을 쓴 호출의 결과가 사라지고, 작업은
+     * `running` 으로 남아 리스 만료 뒤 `outcome_unknown` 으로 정리되면서 시도 상한만 깎인다.
+     * 그래서 접수는 작업 INSERT 를 계정 예약보다 **먼저** 한다.
+     */
+    @Test
+    @DisplayName("접수는 정산과 같은 순서로 잠금을 잡는다 — 다른 문서의 정산과 교착하지 않는다")
+    fun `접수와 정산이 교착하지 않는다`() {
+        val fixture = seed()
+        val other = seedDocument(fixture.ownerId, fixture.workspaceId)
+        val running = fixture.job()
+        createIdempotently(running)
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
+        tx.executeWithoutResult { assertThat(jobs.markProviderStarted(lease, UUID.randomUUID(), NOW)).isTrue() }
+
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            var admission: Future<ActionGuideJobCreationView>? = null
+            tx.executeWithoutResult {
+                val held = jobs.lockIfHeld(lease)!!
+                check(jobs.markSucceeded(lease, NOW.plusSeconds(1)))
+                val pending =
+                    pool.submit<ActionGuideJobCreationView> {
+                        service.create(fixture.ownerId, other.conversionId, UUID.randomUUID(), 1, null)
+                    }
+                // 접수는 활성 부분 UNIQUE 항목 앞에서 멈춰 서 있어야 한다 — 끝나 있으면 이 시험이
+                // 아무것도 재지 못한다(잠자기로 순서를 맞추면 CI 부하에서 옛 순서도 초록이 된다).
+                assertThatThrownBy { pending.get(BLOCKED_MILLIS, TimeUnit.MILLISECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+                // 옛 순서라면 접수가 이미 계정을 들고 있어 이 소비가 교착한다.
+                credits.consume(held)
+                admission = pending
+            }
+
+            // 정산이 커밋된 뒤 INSERT 가 깨어나 통과해야 한다 — 교착이면 둘 중 하나가 죽는다.
+            val view = checkNotNull(admission).get(HANDOFF_SECONDS, TimeUnit.SECONDS)
+
+            assertThat(view.job.status).isEqualTo(ActionGuideJobStatus.QUEUED)
+            assertThat(settlement(running.jobId)).isEqualTo("consumed")
+            assertThat(jobs.findOwned(fixture.ownerId, fixture.conversionId, running.jobId)?.status)
+                .isEqualTo(ActionGuideJobStatus.SUCCEEDED)
+            // 예약 1.0(정산됨) + 새 접수 0.1 → 잔액 9, 예약 0.1 이 남는다.
+            assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("9")
+            assertThat(accountReserved(fixture.workspaceId)).isEqualByComparingTo(BigDecimal("0.1"))
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    /**
+     * **같은 변환의 접수와 worker 시작 트랜잭션은 교착하지 않는다** — 위 회귀가 기대는 PostgreSQL
+     * 동작을 못 박는다.
+     *
+     * 시작 트랜잭션(`ProcessActionGuideJob.start`)은 작업 행을 `FOR UPDATE` 로 잠근 뒤
+     * `hasCurrentInput` 으로 변환 행을 `FOR NO KEY UPDATE` 로 잡는다. 접수는 반대로 변환 행을
+     * 먼저 잡고 작업을 INSERT 한다 — 순서만 보면 엇갈린다. 그런데도 교착하지 않는 이유는 **행
+     * 잠금만으로는 UNIQUE 색인 탐색이 기다리지 않기** 때문이다: 잠기기만 한(아직 갱신되지 않은)
+     * 작업 행은 접수의 INSERT 를 막지 않아 접수가 409 로 먼저 끝나고 변환 행을 놓는다.
+     *
+     * 이 성질이 깨지면(예: 시작 트랜잭션이 변환 행을 잡기 전에 작업 행을 갱신하도록 바뀌면)
+     * 여기서 걸린다.
+     */
+    @Test
+    @DisplayName("같은 변환의 접수는 worker 시작 트랜잭션과 교착하지 않고 409로 끝난다")
+    fun `접수와 시작 트랜잭션이 교착하지 않는다`() {
+        val fixture = seed()
+        val running = fixture.job()
+        createIdempotently(running)
+        val lease = (tx.execute { acquire("worker-a") } as ActionGuideJobAcquire.Held).lease
+
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            tx.executeWithoutResult {
+                checkNotNull(jobs.lockIfHeld(lease)) { "시작 트랜잭션이 작업 행을 잠그지 못했다" }
+                val pending =
+                    pool.submit<Result<ActionGuideJobCreationView>> {
+                        runCatching {
+                            service.create(fixture.ownerId, fixture.conversionId, UUID.randomUUID(), 1, null)
+                        }
+                    }
+                // 접수는 기다리지 않고 409 로 끝나야 한다 — 여기서 멈추면 아래 변환 행 잠금과 교착한다.
+                assertThat(pending.get(HANDOFF_SECONDS, TimeUnit.SECONDS).exceptionOrNull())
+                    .isInstanceOf(ConflictException::class.java)
+                    .hasMessage(ACTIVE_JOB_CONFLICT_MESSAGE)
+                // 시작 트랜잭션은 이어서 변환 행을 잡는다 — 접수가 이미 놓았으므로 그대로 통과한다.
+                assertThat(jobs.hasCurrentInput(lease, running.basedOnContentRevision)).isTrue()
+            }
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
     private fun createIdempotently(job: StoredActionGuideJob) {
