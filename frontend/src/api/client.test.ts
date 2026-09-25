@@ -6,6 +6,7 @@ import {
   NETWORK_ERROR_STATUS,
   analyzeReviewSupport,
   createActionGuideJob,
+  createDocumentFromFile,
   createDocumentFromText,
   downloadExport,
   downloadActionGuide,
@@ -25,6 +26,7 @@ import {
   saveActionGuide,
   setUnauthorizedHandler,
   updateReviewSupportItem,
+  updateReviewSupportItems,
   illustrationImageUrl,
 } from './client'
 import { readToken, writeToken } from './token'
@@ -145,6 +147,63 @@ describe('review support API', () => {
       state: 'not_applicable',
       reason: '이 문서에는 신청 절차가 없습니다.',
     })
+  })
+
+  it('문단 항목 여러 개를 batch/CAS 경로에 한 요청으로 보낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { status: 'ready', assessment: null }))
+
+    await updateReviewSupportItems('c1', {
+      assessment_id: 'assessment-1',
+      expected_content_revision: 2,
+      expected_review_revision: 5,
+      item_ids: ['item-1', 'item-2'],
+      state: 'confirmed',
+      reason: null,
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/review-support/items`)
+    expect(init?.method).toBe('PUT')
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      item_ids: ['item-1', 'item-2'],
+      expected_content_revision: 2,
+      expected_review_revision: 5,
+    })
+  })
+})
+
+describe('document reading level API', () => {
+  const created = {
+    document_id: 'd1',
+    conversion_id: 'c1',
+    status: 'pending',
+    char_count: 10,
+    reading_level: 'grade_3_4',
+    reserved_credits: 0.2,
+  }
+
+  it('JSON 문서 요청에 선택 수준을 보낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(202, created))
+
+    await createDocumentFromText('본문', null, '제목', false, 'grade_3_4')
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
+    expect(body.reading_level).toBe('grade_3_4')
+  })
+
+  it('multipart 문서 요청에도 같은 선택 수준 문자열을 보낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(202, created))
+
+    await createDocumentFromFile(
+      new File(['본문'], '안내.txt', { type: 'text/plain' }),
+      null,
+      '제목',
+      false,
+      'grade_3_4',
+    )
+
+    const form = fetchMock.mock.calls[0]?.[1]?.body as FormData
+    expect(form.get('reading_level')).toBe('grade_3_4')
   })
 })
 

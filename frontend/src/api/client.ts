@@ -29,8 +29,10 @@ import type {
   ReconvertUnitResponse,
   ReviewHistoryResponse,
   ReviewSupportResponse,
+  ReadingLevel,
   SaveActionGuideRequest,
   UpdateReviewItemRequest,
+  UpdateReviewItemsRequest,
   WorkspaceListResponse,
   WorkspaceNameRequest,
   WorkspaceResponse,
@@ -282,8 +284,9 @@ export async function createDocumentFromText(
   workspaceId: string | null,
   title?: string,
   personalDataAcknowledged = false,
+  readingLevel: ReadingLevel = 'grade_5_6',
 ): Promise<DocumentCreationResult> {
-  const body: DocumentTextRequest = { text, title: title ?? null }
+  const body: DocumentTextRequest = { text, title: title ?? null, reading_level: readingLevel }
   if (workspaceId !== null) {
     body.workspace_id = workspaceId
   }
@@ -308,9 +311,11 @@ export async function createDocumentFromFile(
   workspaceId: string | null,
   title?: string,
   personalDataAcknowledged = false,
+  readingLevel: ReadingLevel = 'grade_5_6',
 ): Promise<DocumentCreationResult> {
   const form = new FormData()
   form.append('file', file)
+  form.append('reading_level', readingLevel)
   if (title !== undefined && title !== '') {
     form.append('title', title)
   }
@@ -447,6 +452,17 @@ export function updateReviewSupportItem(
     `/conversions/${conversionId}/review-support/items/${itemId}`,
     { method: 'PUT', body },
   )
+}
+
+/** 한 문단의 검토 항목들을 같은 revision에서 전부 저장하거나 전부 롤백한다. */
+export function updateReviewSupportItems(
+  conversionId: string,
+  body: UpdateReviewItemsRequest,
+): Promise<ReviewSupportResponse> {
+  return requestJson<ReviewSupportResponse>(`/conversions/${conversionId}/review-support/items`, {
+    method: 'PUT',
+    body,
+  })
 }
 
 /** GET /conversions/{id}/review-history — 최근순 기록을 불투명 cursor로 읽는다. */

@@ -148,7 +148,9 @@ class ProcessConversionJob(
                 SourceFormat.TEXT, SourceFormat.TXT -> null
                 else -> item.structure
             } ?: SourceStructure.allBody(splitUnits(source.value).size)
-        return runtime.heartbeat.whileHeld(lease) { convert.convert(source.value, structure = structure) }
+        return runtime.heartbeat.whileHeld(lease) {
+            convert.convert(source.value, structure = structure, readingLevel = item.readingLevel)
+        }
     }
 
     private fun persist(
@@ -198,6 +200,7 @@ class ProcessConversionJob(
                 record = record,
                 calledAt = record.calledAt,
                 documentCharCount = item.charCount,
+                readingLevel = item.readingLevel,
             )
         }
 

@@ -1,3 +1,5 @@
+import type { ReadingLevel } from '../api/types'
+
 /** A billing step is one tenth of a credit for each 100 source characters. */
 export const CREDIT_CHAR_STEP = 100
 
@@ -7,6 +9,16 @@ export function creditsForCharCount(charCount: number): number {
     return 0
   }
   return Math.ceil(charCount / CREDIT_CHAR_STEP) / 10
+}
+
+/** Apply the customer-visible reading-level multiplier in whole tenth-credit units. */
+export function creditsForReadingLevel(baseCredits: number, readingLevel: ReadingLevel): number {
+  if (!Number.isFinite(baseCredits) || baseCredits <= 0) {
+    return 0
+  }
+  const baseUnits = Math.ceil(baseCredits * 10 - Number.EPSILON)
+  const units = readingLevel === 'grade_3_4' ? Math.ceil(baseUnits * 1.2) : baseUnits
+  return units / 10
 }
 
 /** Credit amounts are wire values in tenths; tolerate binary floating point noise in display. */

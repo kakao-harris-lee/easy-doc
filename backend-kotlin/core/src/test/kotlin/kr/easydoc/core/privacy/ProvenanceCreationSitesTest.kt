@@ -36,8 +36,8 @@ class ProvenanceCreationSitesTest {
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 8,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 2,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 13,
-                        // Round 2 added a separate action-guide prompt assertion with its own draft.
-                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 4,
+                        // Action-guide and grade 3~4 repair assertions each create a review-only draft.
+                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 5,
                     ),
                 "ReviewedBody" to
                     mapOf(

@@ -9,6 +9,7 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
@@ -222,6 +223,7 @@ internal class FakeConversionRepository(
     val inserted = mutableListOf<Pair<UUID, Pair<String, Int>>>()
     val depthWhenInserted = mutableListOf<Int>()
     val insertedCreditsReserved = mutableListOf<BigDecimal>()
+    val insertedReadingLevels = mutableListOf<ReadingLevel>()
 
     override fun insertPending(
         id: UUID,
@@ -229,10 +231,30 @@ internal class FakeConversionRepository(
         scheme: String,
         keyVersion: Int,
         creditsReserved: BigDecimal,
+    ): Conversion = insert(id, documentId, scheme, keyVersion, creditsReserved, ReadingLevel.GRADE_5_6)
+
+    override fun insertPending(
+        id: UUID,
+        documentId: UUID,
+        scheme: String,
+        keyVersion: Int,
+        creditsReserved: BigDecimal,
+        readingLevel: ReadingLevel,
+    ): Conversion = insert(id, documentId, scheme, keyVersion, creditsReserved, readingLevel)
+
+    @Suppress("LongParameterList")
+    private fun insert(
+        id: UUID,
+        documentId: UUID,
+        scheme: String,
+        keyVersion: Int,
+        creditsReserved: BigDecimal,
+        readingLevel: ReadingLevel,
     ): Conversion {
         inserted += id to (scheme to keyVersion)
         depthWhenInserted += transaction.depth
         insertedCreditsReserved += creditsReserved
+        insertedReadingLevels += readingLevel
         return Conversion(
             id = id,
             documentId = documentId,

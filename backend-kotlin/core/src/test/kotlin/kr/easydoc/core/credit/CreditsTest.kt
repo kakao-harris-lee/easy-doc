@@ -1,5 +1,6 @@
 package kr.easydoc.core.credit
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.exceptions.InvalidInputException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -47,6 +48,18 @@ class CreditsTest {
         expected: String,
     ) {
         assertThat(Credits.requiredFor(charCount).amount).isEqualByComparingTo(expected)
+    }
+
+    @ParameterizedTest(name = "기본 {0}크레딧 -> 더 쉽게 {1}크레딧")
+    @CsvSource("1, 0.2", "101, 0.3", "901, 1.2")
+    fun `더 쉬운 수준은 기존 단위의 1점2배를 올림한다`(
+        charCount: Int,
+        expected: String,
+    ) {
+        assertThat(Credits.requiredFor(charCount, ReadingLevel.GRADE_3_4).amount)
+            .isEqualByComparingTo(expected)
+        assertThat(Credits.requiredFor(charCount, ReadingLevel.GRADE_5_6))
+            .isEqualTo(Credits.requiredFor(charCount))
     }
 
     @Test

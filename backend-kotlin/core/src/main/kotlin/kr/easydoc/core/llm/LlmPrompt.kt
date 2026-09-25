@@ -1,5 +1,6 @@
 package kr.easydoc.core.llm
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.easyread.DocumentIdGenerator
 import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.FactIssue
@@ -41,6 +42,7 @@ class LlmPrompt private constructor(
             explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
             /** 문단 재변환에서만 쓰는 저장 쉬운 글 앞부분 문맥. */
             priorBodyContext: String? = null,
+            readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
         ): LlmPrompt =
             LlmPrompt(
                 system =
@@ -52,6 +54,7 @@ class LlmPrompt private constructor(
                         hasReviewedDictionaryContext =
                             explanationVersion == ExplanationPromptVersion.R3 &&
                                 dictionaryContext?.isNotBlank() == true,
+                        readingLevel = readingLevel,
                     ),
                 user =
                     buildUserPrompt(
@@ -82,6 +85,7 @@ class LlmPrompt private constructor(
             explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
             /** 문단 재변환에서만 쓰는 저장 쉬운 글 앞부분 문맥. */
             priorBodyContext: String? = null,
+            readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
         ): LlmPrompt {
             val repair =
                 buildRepairPrompt(
@@ -93,6 +97,7 @@ class LlmPrompt private constructor(
                     sourceText,
                     explanationVersion,
                     priorBodyContext,
+                    readingLevel,
                 )
             return LlmPrompt(system = repair.system, user = repair.user)
         }
@@ -105,10 +110,16 @@ class LlmPrompt private constructor(
             source: String,
             converted: String,
             facts: List<RequiredFact>,
+            readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
         ): LlmPrompt {
             val factLines = facts.joinToString("\n") { "- ${it.canonical}" }
             return LlmPrompt(
-                system = JUDGE_SYSTEM,
+                system =
+                    if (readingLevel == ReadingLevel.GRADE_3_4) {
+                        JUDGE_SYSTEM.replace("초등학교 5~6학년", "초등학교 3~4학년")
+                    } else {
+                        JUDGE_SYSTEM
+                    },
                 user = "필수 사실:\n$factLines\n\n원문:\n$source\n\n변환:\n$converted",
             )
         }

@@ -102,6 +102,8 @@ class ConversionQueryService(
             failureCode = stored.failureCode,
             contentRevision = 0,
             reviewCapabilities = reviewCapabilities,
+            readingLevel = stored.readingLevel,
+            reservedCredits = stored.reservedCredits,
         )
 
     private fun completed(
@@ -135,6 +137,8 @@ class ConversionQueryService(
             failureCode = stored.failureCode,
             contentRevision = stored.contentRevision,
             reviewCapabilities = reviewCapabilities,
+            readingLevel = stored.readingLevel,
+            reservedCredits = stored.reservedCredits,
         )
     }
 

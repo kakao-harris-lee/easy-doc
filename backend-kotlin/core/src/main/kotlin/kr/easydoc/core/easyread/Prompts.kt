@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.privacy.UserContent
 import java.security.SecureRandom
@@ -54,6 +55,13 @@ internal val ROLE =
     당신은 공공문서를 초등학교 5~6학년 수준의 어휘와 문장으로 다시 쓰는 편집자입니다. 문서의 대상과 관계없이 이 수준을 유지하고 자연스러운 존댓말을 쓰세요.
     원문의 의미와 조건 보존을 가장 우선합니다. 그 안에서 쉬운 어휘, 자연스러운 문맥, 간결한 문장을 만드세요.
     누가 어떤 조건에서 무엇을 하는지 분명하게 쓰세요. 관련된 문장은 한 문단으로 묶고 문장 사이의 이유·조건·대조 관계를 이어 주세요. 길이만 맞추려고 문장을 끊지 마세요.
+    """.trimIndent()
+
+internal val EXTRA_EASY_ROLE =
+    """
+    당신은 공공문서를 초등학교 3~4학년 수준의 어휘와 문장으로 다시 쓰는 편집자입니다. 문서의 대상과 관계없이 이 수준을 유지하고 자연스러운 존댓말을 쓰세요.
+    원문의 의미와 조건 보존을 가장 우선합니다. 어려운 말과 압축된 표현은 더 쉬운 일상어로 풀어 설명하세요. 필요한 경우 문장이 조금 길어져도 괜찮지만 같은 내용을 불필요하게 반복하지 마세요.
+    한 문장에는 한 가지 핵심 내용을 담고, 누가 어떤 조건에서 무엇을 하는지 분명하게 쓰세요. 관련된 문장은 한 문단으로 묶고 문장 사이의 이유·조건·대조 관계를 이어 주세요.
     """.trimIndent()
 
 /** 새로 만든 예문으로 문장 연결과 가능성 보존을 함께 보여 준다. */
@@ -246,18 +254,21 @@ private fun renderStyleRules(): String =
  * (다중 run 경로) [STRUCTURE_QUOTE_GUARD] 절을 추가하고, 없으면(`null`, 상한 접힘 문장,
  * 단위 문장 경로) 아무것도 늘지 않는다 — B1 이 이 인자의 기본값(`null`)에서 유지된다.
  */
+@Suppress("LongParameterList")
 fun buildSystemPrompt(
     @Suppress("UNUSED_PARAMETER") documentText: String,
     structureSection: String? = null,
     explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
     hasPriorBodyContext: Boolean = false,
     hasReviewedDictionaryContext: Boolean = false,
+    readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
 ): String =
     editingInstructions(
         structureSection,
         explanationVersion,
         hasPriorBodyContext,
         hasReviewedDictionaryContext,
+        readingLevel,
     ).joinToString(SECTION_SEPARATOR)
 
 /** 변환과 보정은 같은 편집 기준을 사용한다. 어휘 자료와 본문은 user 메시지에서만 전달한다. */
@@ -266,9 +277,10 @@ private fun editingInstructions(
     explanationVersion: ExplanationPromptVersion,
     hasPriorBodyContext: Boolean,
     hasReviewedDictionaryContext: Boolean,
+    readingLevel: ReadingLevel,
 ): List<String> =
     listOfNotNull(
-        ROLE,
+        if (readingLevel == ReadingLevel.GRADE_3_4) EXTRA_EASY_ROLE else ROLE,
         "[변환 규칙]\n${renderStyleRules()}",
         "[원문 사실 보존]\n$SOURCE_FIDELITY_INSTRUCTION",
         "[문장 연결 예시]\n$SPLIT_EXAMPLES",
@@ -447,6 +459,7 @@ fun buildRepairPrompt(
     explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
     /** 문단 재변환에서만 쓰는, 대상 단위보다 앞선 저장 쉬운 글 문맥. */
     priorBodyContext: String? = null,
+    readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
 ): RepairPrompt {
     val listed = renderViolations(violations)
     val repairInstructions =
@@ -461,6 +474,7 @@ fun buildRepairPrompt(
                 explanationVersion,
                 priorBodyContext?.isNotBlank() == true,
                 hasReviewedDictionaryContext = false,
+                readingLevel = readingLevel,
             ) + repairInstructions
         ).joinToString(SECTION_SEPARATOR)
     val convertedId = documentIds.next()

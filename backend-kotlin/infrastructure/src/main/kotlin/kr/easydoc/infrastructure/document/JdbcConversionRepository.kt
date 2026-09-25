@@ -11,6 +11,7 @@ import kr.easydoc.application.document.StoredExport
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
@@ -33,6 +34,15 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         scheme: String,
         keyVersion: Int,
         creditsReserved: BigDecimal,
+    ): Conversion = insertPending(id, documentId, scheme, keyVersion, creditsReserved, ReadingLevel.GRADE_5_6)
+
+    override fun insertPending(
+        id: UUID,
+        documentId: UUID,
+        scheme: String,
+        keyVersion: Int,
+        creditsReserved: BigDecimal,
+        readingLevel: ReadingLevel,
     ): Conversion =
         try {
             jdbc
@@ -43,6 +53,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 .param("scheme", scheme)
                 .param("keyVersion", keyVersion)
                 .param("creditsReserved", creditsReserved)
+                .param("readingLevel", readingLevel.wireName)
                 .query { rs, _ -> ConversionRows.toConversion(rs) }
                 .single()
         } catch (failure: DataIntegrityViolationException) {
@@ -378,7 +389,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                    c.encryption_scheme, c.key_version,
                    c.reviewed_at, f.submitted_at AS feedback_submitted_at,
                    c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code,
-                   c.content_revision
+                   c.content_revision, c.reading_level, c.credits_reserved
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
             LEFT JOIN conversion_feedback f
@@ -389,8 +400,9 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
 
         val INSERT_PENDING_SQL =
             """
-            INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version, credits_reserved)
-            VALUES (:id, :documentId, :status, :scheme, :keyVersion, :creditsReserved)
+            INSERT INTO conversions
+                (id, document_id, status, encryption_scheme, key_version, credits_reserved, reading_level)
+            VALUES (:id, :documentId, :status, :scheme, :keyVersion, :creditsReserved, :readingLevel)
             RETURNING id, document_id, status, failure_code, created_at, updated_at
             """.trimIndent()
 
@@ -494,6 +506,8 @@ private object ConversionRows {
             outputTokens = rs.getObject("output_tokens", Int::class.javaObjectType),
             failureCode = rs.getString("failure_code"),
             contentRevision = rs.getLong("content_revision"),
+            readingLevel = ReadingLevel.ofWireName(rs.getString("reading_level")),
+            reservedCredits = rs.getBigDecimal("credits_reserved"),
         )
     }
 

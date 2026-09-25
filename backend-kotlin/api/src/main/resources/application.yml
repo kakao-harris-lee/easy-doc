@@ -75,6 +75,7 @@ easydoc:
     call-budget: ${EASYDOC_RECONVERSION_CALL_BUDGET:20}
   review-support:
     enabled: ${EASYDOC_REVIEW_SUPPORT_ENABLED:false}
+    focused-review-enabled: ${EASYDOC_FOCUSED_REVIEW_ENABLED:false}
   table-relations:
     enabled: ${EASYDOC_TABLE_RELATIONS_ENABLED:false}
   review-history:

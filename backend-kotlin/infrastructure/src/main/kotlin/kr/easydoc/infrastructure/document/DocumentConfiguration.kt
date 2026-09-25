@@ -120,6 +120,7 @@ class DocumentConfiguration {
         transactionRunner: TransactionRunner,
         users: UserRepository,
         credits: CreditAccountService,
+        @Value("\${easydoc.reading-level.extra-easy-enabled:false}") extraEasyEnabled: Boolean,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -129,6 +130,7 @@ class DocumentConfiguration {
             transaction = transactionRunner,
             users = users,
             credits = credits,
+            extraEasyEnabled = extraEasyEnabled,
         )
 
     /**
@@ -251,6 +253,7 @@ class DocumentConfiguration {
             assessments = assessments,
             cipher = cipher,
             transaction = transactionRunner,
+            focusedReviewEnabled = properties.focusedReviewEnabled,
             reviewHistory = reviewHistory,
         )
 
@@ -375,6 +378,7 @@ internal fun reviewCapabilitiesFor(
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
+        focusedReview = reviewSupport.enabled && reviewSupport.focusedReviewEnabled,
         actionGuide = actionGuide.enabled,
         tableRelations = tableRelationsEnabled,
         reviewHistory = reviewHistoryEnabled,

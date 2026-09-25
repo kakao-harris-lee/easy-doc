@@ -69,6 +69,7 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     id: 'c1',
     document_id: 'd1',
     status: 'done',
+    reading_level: 'grade_5_6',
     // 기본값은 붙여넣기다 — 원본 파일이 없으니 유지할 서식도 없고, TXT로 내려받는다.
     source_format: 'text',
     export_format: 'txt',

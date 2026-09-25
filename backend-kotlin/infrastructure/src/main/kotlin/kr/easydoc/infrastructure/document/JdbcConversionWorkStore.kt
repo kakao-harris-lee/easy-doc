@@ -7,6 +7,7 @@ import kr.easydoc.application.conversion.ConversionWorkStore
 import kr.easydoc.application.conversion.LlmAttribution
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.math.BigDecimal
@@ -18,7 +19,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
         jdbc
             .sql(
                 """
-                SELECT c.id, c.document_id, c.status, c.credits_reserved,
+                SELECT c.id, c.document_id, c.status, c.credits_reserved, c.reading_level,
                        d.source_text_encrypted, d.encryption_scheme, d.key_version,
                        d.workspace_id, d.user_id, d.char_count, d.source_unit_kinds, d.source_format
                 FROM conversions c
@@ -48,6 +49,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                     // SourceStructure.allBody 로 접어서 쓴다.
                     structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
                     creditsReserved = rs.getBigDecimal("credits_reserved"),
+                    readingLevel = ReadingLevel.ofWireName(rs.getString("reading_level")),
                 )
             }.optional()
             .orElse(null)

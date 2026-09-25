@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { LoaderCircle, RefreshCcw, Undo2 } from 'lucide-react'
+import { CheckCircle2, LoaderCircle, RefreshCcw, Search, Undo2 } from 'lucide-react'
 
-import type { SegmentConfidence } from '../api/types'
+import type { ReviewItem, SegmentConfidence } from '../api/types'
 import { cn } from '../lib/utils'
 import { alignUnitMap, reindexUnitMap, spliceUnitText, type ReviewUnit } from '../review/unitMap'
 import { Badge } from './ui/Badge'
@@ -113,6 +113,15 @@ export interface SegmentedResultEditorProps {
   /** 각 단위 행의 「재시도」 버튼(Part C-2/C-3). 없으면 그 버튼을 아예 그리지
    * 않는다 — 재시도는 문단 대응이 있는 화면에서만 뜻이 있다. */
   retry?: SegmentedResultRetryProps
+  /** focused-review가 켜진 경우에만 제공한다. 이때 모든 대응 배지는 숨긴다. */
+  focusedReview?: {
+    itemsByUnit: ReadonlyMap<number, ReviewItem[]>
+    disabled: boolean
+    saving: boolean
+    onCompare: (items: ReviewItem[], trigger: HTMLButtonElement) => void
+    onConfirm: (items: ReviewItem[]) => void
+    onNotApplicable: (item: ReviewItem, reason: string) => void
+  }
 }
 
 /** 신뢰도 배지 표현. 색만으로 가르지 않도록 문구를 함께 둔다(§8.1). */
@@ -157,6 +166,12 @@ interface UnitRowProps {
   onRetryClick: (index: number) => void
   revertDisabled: boolean
   onRevertClick: (index: number) => void
+  reviewItems?: ReviewItem[]
+  reviewDisabled: boolean
+  reviewSaving: boolean
+  onReviewCompare?: (items: ReviewItem[], trigger: HTMLButtonElement) => void
+  onReviewConfirm?: (items: ReviewItem[]) => void
+  onReviewNotApplicable?: (item: ReviewItem, reason: string) => void
 }
 
 /**
@@ -184,15 +199,37 @@ const UnitRow = memo(function UnitRow({
   onRetryClick,
   revertDisabled,
   onRevertClick,
+  reviewItems,
+  reviewDisabled,
+  reviewSaving,
+  onReviewCompare,
+  onReviewConfirm,
+  onReviewNotApplicable,
 }: UnitRowProps) {
   const ordinal = index + 1
+  const [reasonItemId, setReasonItemId] = useState<string | null>(null)
+  const [reasonDrafts, setReasonDrafts] = useState<Record<string, string>>({})
+  const hasReviewItems = reviewItems !== undefined && reviewItems.length > 0
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className={cn(
+        'flex flex-col gap-1 rounded-[10px]',
+        hasReviewItems && 'border-2 border-warning/50 bg-warning-surface p-3',
+      )}
+    >
       {/* 배지는 왼쪽, 재시도·되돌리기는 오른쪽(Part C-2). */}
       <div className="flex items-center justify-between gap-2">
-        <Badge tone={badge.tone} withIcon={false} aria-hidden="true">
-          {badge.label}
-        </Badge>
+        {reviewItems === undefined ? (
+          <Badge tone={badge.tone} withIcon={false} aria-hidden="true">
+            {badge.label}
+          </Badge>
+        ) : hasReviewItems ? (
+          <Badge tone="warning" withIcon={false}>
+            검토 필요 {reviewItems.length}개
+          </Badge>
+        ) : (
+          <span />
+        )}
         <div className="flex items-center gap-1">
           {showRetry && (
             <Button
@@ -258,6 +295,87 @@ const UnitRow = memo(function UnitRow({
         onMouseEnter={() => onHoverUnit(hoverSourceIndexes)}
         onMouseLeave={() => onHoverUnit([])}
       />
+      {hasReviewItems && (
+        <div className="mt-1 rounded-[8px] bg-card p-3 text-sm">
+          <p className="font-semibold">원문과 뜻이 같은지 확인해 주세요.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={reviewDisabled}
+              onClick={(event) => onReviewCompare?.(reviewItems, event.currentTarget)}
+            >
+              <Search className="size-4" aria-hidden="true" />
+              원문과 비교
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              loading={reviewSaving}
+              disabled={reviewDisabled}
+              onClick={() => onReviewConfirm?.(reviewItems)}
+            >
+              {!reviewSaving && <CheckCircle2 className="size-4" aria-hidden="true" />}이 문단
+              확인했어요
+            </Button>
+          </div>
+          <details className="mt-2">
+            <summary className="min-h-11 cursor-pointer py-2 font-semibold">해당 없음 처리</summary>
+            <ul className="flex flex-col gap-3">
+              {reviewItems.map((item, itemIndex) => (
+                <li key={item.item_id} className="rounded-[8px] border border-border p-3">
+                  <p>
+                    {item.kind === 'missing_fact' ? '누락 의심' : '조건 관계 확인'} {itemIndex + 1}
+                  </p>
+                  {reasonItemId === item.item_id ? (
+                    <>
+                      <label
+                        className="mt-2 block font-semibold"
+                        htmlFor={`focused-review-reason-${index}-${item.item_id}`}
+                      >
+                        해당하지 않는 이유
+                      </label>
+                      <textarea
+                        id={`focused-review-reason-${index}-${item.item_id}`}
+                        className="mt-1 min-h-20 w-full rounded-[8px] border border-input bg-background px-3 py-2"
+                        value={reasonDrafts[item.item_id] ?? ''}
+                        disabled={reviewDisabled}
+                        onChange={(event) =>
+                          setReasonDrafts((current) => ({
+                            ...current,
+                            [item.item_id]: Array.from(event.target.value).slice(0, 500).join(''),
+                          }))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={
+                          reviewDisabled || (reasonDrafts[item.item_id] ?? '').trim() === ''
+                        }
+                        onClick={() =>
+                          onReviewNotApplicable?.(item, (reasonDrafts[item.item_id] ?? '').trim())
+                        }
+                      >
+                        사유와 함께 저장
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={reviewDisabled}
+                      onClick={() => setReasonItemId(item.item_id)}
+                    >
+                      해당 없음
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
     </div>
   )
 })
@@ -297,6 +415,7 @@ export function SegmentedResultEditor({
   onCandidateInsert,
   onCandidateClose,
   retry,
+  focusedReview,
 }: SegmentedResultEditorProps) {
   const refs = useRef<Array<HTMLTextAreaElement | null>>([])
   const pendingFocusRef = useRef<{ index: number; caret: number } | null>(null)
@@ -626,7 +745,11 @@ export function SegmentedResultEditor({
               <UnitRow
                 index={index}
                 text={unit}
-                label={unitLabel(index, mapUnit)}
+                label={
+                  focusedReview === undefined
+                    ? unitLabel(index, mapUnit)
+                    : `쉬운 글 문단 ${index + 1}`
+                }
                 badge={badge}
                 highlighted={highlighted}
                 disabled={disabled}
@@ -642,6 +765,16 @@ export function SegmentedResultEditor({
                 onRetryClick={handleRetryClick}
                 revertDisabled={revertDisabled}
                 onRevertClick={handleRevertClick}
+                reviewItems={
+                  focusedReview === undefined
+                    ? undefined
+                    : (focusedReview.itemsByUnit.get(index) ?? [])
+                }
+                reviewDisabled={focusedReview?.disabled ?? false}
+                reviewSaving={focusedReview?.saving ?? false}
+                onReviewCompare={focusedReview?.onCompare}
+                onReviewConfirm={focusedReview?.onConfirm}
+                onReviewNotApplicable={focusedReview?.onNotApplicable}
               />
             )}
             {/* 재변환 후보 카드(계획 §4 결정 3, §6 S5) — 이 단위 바로 아래에 앉힌다.

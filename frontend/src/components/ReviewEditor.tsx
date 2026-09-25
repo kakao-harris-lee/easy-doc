@@ -11,8 +11,23 @@ import { Download, Save, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { HISTORY_PATH } from '../routes/paths'
 
-import { ApiError, downloadExport, getConversion, reconvertUnit, saveReview } from '../api/client'
-import type { ConversionResponse, ExportFormat } from '../api/types'
+import {
+  analyzeReviewSupport,
+  ApiError,
+  downloadExport,
+  getConversion,
+  getReviewSupport,
+  reconvertUnit,
+  saveReview,
+  updateReviewSupportItems,
+} from '../api/client'
+import type {
+  ConversionResponse,
+  ExportFormat,
+  ReviewItem,
+  ReviewItemState,
+  ReviewSupportResponse,
+} from '../api/types'
 import { cn } from '../lib/utils'
 import { computeEasyTextFingerprint } from '../review/fingerprint'
 import type { DocumentSource } from '../review/sourceText'
@@ -231,6 +246,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     withBaselines(conversion.segment_map?.units ?? [], initialText),
   )
   const [paragraphComparison, setParagraphComparison] = useState(false)
+  const focusedReviewEnabled =
+    conversion.review_capabilities?.review_support === true &&
+    conversion.review_capabilities.focused_review === true
+  const [focusedReview, setFocusedReview] = useState<ReviewSupportResponse | null>(null)
+  const [focusedReviewLoading, setFocusedReviewLoading] = useState(false)
+  const [focusedReviewSaving, setFocusedReviewSaving] = useState(false)
+  const [focusedReviewRetry, setFocusedReviewRetry] = useState(0)
+  const [focusedReviewMessage, setFocusedReviewMessage] = useState<{
+    kind: 'error' | 'status'
+    text: string
+  } | null>(null)
 
   function handleDraftChange(next: string) {
     setUnitMap((current) => reconcileUnitMap(draft, next, current))
@@ -659,9 +685,103 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 되돌아가는 상태는 서로 다른 보기처럼 보이지만 실제 결과가 같아 사용자를 속인다.
    */
   const unitCount = draft.split('\n').length
+  const initialUnitCount = initialText.split('\n').length
+  const serverSegmentMapValid =
+    conversion.segment_map !== null &&
+    conversion.segment_map.easy_unit_count === initialUnitCount &&
+    conversion.segment_map.units.length === initialUnitCount &&
+    conversion.segment_map.units.every(
+      (unit, index) =>
+        unit.easy_unit_index === index &&
+        unit.source_unit_indexes.every(
+          (sourceIndex) =>
+            Number.isInteger(sourceIndex) &&
+            sourceIndex >= 0 &&
+            sourceIndex < conversion.segment_map!.source_unit_count,
+        ),
+    )
+  const focusedCoverageLimited =
+    focusedReviewEnabled && focusedReview?.assessment?.coverage === 'limited'
   const supportsParagraphComparison =
-    conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
-  const useSegmentedEditor = paragraphComparison && supportsParagraphComparison
+    serverSegmentMapValid &&
+    unitMap.length === unitCount &&
+    unitCount <= MAX_SEGMENTED_UNITS &&
+    !focusedCoverageLimited
+  const useSegmentedEditor =
+    supportsParagraphComparison && (focusedReviewEnabled || paragraphComparison)
+
+  const focusedAssessment = focusedReview?.assessment ?? null
+  const focusedStale =
+    focusedReview?.status === 'stale' ||
+    (focusedAssessment !== null && focusedAssessment.content_revision !== contentRevision)
+  const focusedPendingItems = (focusedAssessment?.items ?? []).filter(
+    (item) => item.state === 'needs_review',
+  )
+  const focusedCompletedItems = (focusedAssessment?.items ?? []).filter(
+    (item) => item.state !== 'needs_review',
+  )
+  const focusedItemsByUnit = useMemo(() => {
+    const grouped = new Map<number, ReviewItem[]>()
+    if (dirty || focusedStale) return grouped
+    for (const item of focusedPendingItems) {
+      for (const index of item.easy_unit_indexes.filter(
+        (candidate) => Number.isInteger(candidate) && candidate >= 0 && candidate < unitCount,
+      )) {
+        const current = grouped.get(index) ?? []
+        if (!current.some((candidateItem) => candidateItem.item_id === item.item_id)) {
+          grouped.set(index, [...current, item])
+        }
+      }
+    }
+    return grouped
+  }, [dirty, focusedPendingItems, focusedStale, unitCount])
+  const focusedUnlocatedItems = focusedPendingItems.filter(
+    (item) =>
+      !item.easy_unit_indexes.some(
+        (candidate) => Number.isInteger(candidate) && candidate >= 0 && candidate < unitCount,
+      ),
+  )
+
+  useEffect(() => {
+    if (!focusedReviewEnabled || contentRevision < 1) return
+    let active = true
+    void Promise.resolve()
+      .then(() => {
+        if (!active) return null
+        setFocusedReviewLoading(true)
+        setFocusedReviewMessage(null)
+        return analyzeReviewSupport(conversion.id, {
+          expected_content_revision: contentRevision,
+        })
+      })
+      .then((next) => {
+        if (active && next !== null) setFocusedReview(next)
+      })
+      .catch((caught: unknown) => {
+        if (!active) return
+        if (caught instanceof ApiError && caught.status === 409) {
+          setContentConflict(true)
+          setFocusedReviewMessage({
+            kind: 'error',
+            text: '다른 화면에서 본문이 바뀌었습니다. 최신 내용을 불러온 뒤 다시 분석해 주세요.',
+          })
+        } else {
+          setFocusedReviewMessage({
+            kind: 'error',
+            text:
+              caught instanceof ApiError
+                ? caught.message
+                : '검토할 부분을 찾지 못했습니다. 다시 시도해 주세요.',
+          })
+        }
+      })
+      .finally(() => {
+        if (active) setFocusedReviewLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [conversion.id, contentRevision, focusedReviewEnabled, focusedReviewRetry])
 
   /**
    * 이미 쉬운 글 규칙을 통과한 원본 단위 색인(계획 §11). 원문은 읽기 전용이라 이 목록을
@@ -815,6 +935,83 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
 
   function markContentConflict(): void {
     setContentConflict(true)
+  }
+
+  async function updateFocusedItems(
+    items: ReviewItem[],
+    state: ReviewItemState,
+    reason: string | null = null,
+  ): Promise<void> {
+    if (
+      focusedAssessment === null ||
+      items.length === 0 ||
+      dirty ||
+      focusedStale ||
+      contentConflict
+    ) {
+      return
+    }
+    setFocusedReviewSaving(true)
+    setFocusedReviewMessage(null)
+    try {
+      const next = await updateReviewSupportItems(conversion.id, {
+        assessment_id: focusedAssessment.assessment_id,
+        expected_content_revision: contentRevision,
+        expected_review_revision: focusedAssessment.review_revision,
+        item_ids: Array.from(new Set(items.map((item) => item.item_id))),
+        state,
+        reason,
+      })
+      setFocusedReview(next)
+      setHistoryRefreshToken((value) => value + 1)
+      setFocusedReviewMessage({ kind: 'status', text: '검토 표시를 저장했습니다.' })
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) {
+        try {
+          const latest = await getReviewSupport(conversion.id)
+          setFocusedReview(latest)
+          if (
+            latest.status === 'stale' ||
+            (latest.assessment !== null && latest.assessment.content_revision !== contentRevision)
+          ) {
+            markContentConflict()
+          }
+          setFocusedReviewMessage({
+            kind: 'status',
+            text: '다른 화면에서 내용이나 검토 표시가 바뀌어 최신 상태를 불러왔습니다.',
+          })
+        } catch (reloadError) {
+          setFocusedReviewMessage({
+            kind: 'error',
+            text:
+              reloadError instanceof ApiError
+                ? `최신 검토 상태를 불러오지 못했습니다. ${reloadError.message}`
+                : '최신 검토 상태를 불러오지 못했습니다. 다시 시도해 주세요.',
+          })
+        }
+      } else {
+        setFocusedReviewMessage({
+          kind: 'error',
+          text:
+            caught instanceof ApiError
+              ? caught.message
+              : '검토 표시를 저장하지 못했습니다. 다시 시도해 주세요.',
+        })
+      }
+    } finally {
+      setFocusedReviewSaving(false)
+    }
+  }
+
+  function navigateFocusedItems(items: ReviewItem[], trigger: HTMLButtonElement): void {
+    const indexes = Array.from(
+      new Set(
+        items.flatMap((item) =>
+          item.source_anchors.flatMap((anchor) => anchor.source_unit_indexes),
+        ),
+      ),
+    ).sort((left, right) => left - right)
+    handleReviewSourceNavigation(indexes, trigger)
   }
 
   async function copyCurrentDraft(): Promise<void> {
@@ -1249,7 +1446,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         hidden={activeTask !== 'body'}
         className={cn('flex flex-col', activeTask !== 'body' && 'hidden')}
       >
-        {supportsParagraphComparison && (
+        {supportsParagraphComparison && !focusedReviewEnabled && (
           <div className="mb-3 flex justify-end">
             <Button
               type="button"
@@ -1385,6 +1582,133 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               </Badge>
             </div>
 
+            {focusedReviewEnabled && (
+              <div className="mb-3 flex flex-col gap-2">
+                {focusedReviewLoading && <p role="status">검토할 부분을 찾고 있어요.</p>}
+                {focusedReviewMessage !== null && (
+                  <p
+                    className={focusedReviewMessage.kind === 'error' ? 'form-error' : 'field-hint'}
+                    role={focusedReviewMessage.kind === 'error' ? 'alert' : 'status'}
+                  >
+                    {focusedReviewMessage.text}
+                  </p>
+                )}
+                {focusedReviewMessage?.kind === 'error' && !contentConflict && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={dirty || focusedReviewLoading || focusedReviewSaving}
+                    onClick={() => setFocusedReviewRetry((value) => value + 1)}
+                  >
+                    검토 분석 다시 시도
+                  </Button>
+                )}
+                {!dirty && !focusedStale && focusedCoverageLimited && (
+                  <p className="rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+                    자동 검사가 일부만 이루어졌습니다. 문서 전체도 확인해 주세요.
+                  </p>
+                )}
+                {!dirty &&
+                  !focusedStale &&
+                  !focusedReviewLoading &&
+                  focusedReview?.status === 'ready' &&
+                  focusedAssessment?.items.length === 0 && (
+                    <p className="field-hint">자동 검사에서 추가 표시를 찾지 못했습니다.</p>
+                  )}
+                {dirty && (
+                  <p className="rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+                    저장하면 검토할 부분을 다시 찾습니다.
+                  </p>
+                )}
+                {!dirty &&
+                  !focusedStale &&
+                  supportsParagraphComparison &&
+                  focusedItemsByUnit.size > 0 && (
+                    <p className="text-sm font-semibold text-warning">
+                      검토 필요한 문단 {focusedItemsByUnit.size}개
+                    </p>
+                  )}
+                {!dirty &&
+                  !focusedStale &&
+                  (supportsParagraphComparison
+                    ? focusedUnlocatedItems.length > 0
+                    : focusedPendingItems.length > 0) && (
+                    <section className="rounded-[10px] border border-warning/30 bg-warning-surface p-3">
+                      <h3 className="font-semibold text-warning">
+                        {supportsParagraphComparison
+                          ? `결과에서 위치를 찾지 못한 검토 항목 ${focusedUnlocatedItems.length}개`
+                          : `문서 전체에서 확인할 검토 항목 ${focusedPendingItems.length}개`}
+                      </h3>
+                      {!supportsParagraphComparison && (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          문단 대응표가 없거나 분석 범위가 제한되어 전체 글에서 확인합니다.
+                        </p>
+                      )}
+                      <ul className="mt-2 flex flex-col gap-2">
+                        {(supportsParagraphComparison
+                          ? focusedUnlocatedItems
+                          : focusedPendingItems
+                        ).map((item) => (
+                          <li key={item.item_id} className="rounded-[8px] bg-card p-3 text-sm">
+                            <p className="font-semibold">
+                              {item.kind === 'missing_fact' ? '누락 의심' : '조건 관계 확인'}
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                disabled={source.state.status !== 'ready' || focusedReviewSaving}
+                                onClick={(event) =>
+                                  navigateFocusedItems([item], event.currentTarget)
+                                }
+                              >
+                                원문과 비교
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                loading={focusedReviewSaving}
+                                disabled={contentConflict}
+                                onClick={() => void updateFocusedItems([item], 'confirmed')}
+                              >
+                                확인했어요
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                {focusedCompletedItems.length > 0 && !dirty && !focusedStale && (
+                  <details className="rounded-[10px] border border-border px-3 py-1 text-sm">
+                    <summary className="min-h-11 cursor-pointer py-3 font-semibold">
+                      확인 완료 {focusedCompletedItems.length}개
+                    </summary>
+                    <ul className="pb-3">
+                      {focusedCompletedItems.map((item) => (
+                        <li
+                          key={item.item_id}
+                          className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-2"
+                        >
+                          <span>
+                            {item.kind === 'missing_fact' ? '누락 의심' : '조건 관계 확인'}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={focusedReviewSaving || contentConflict}
+                            onClick={() => void updateFocusedItems([item], 'needs_review')}
+                          >
+                            다시 열기
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+
             {/* 재변환 호출 예산(계획 §4 결정 3, §6 S5) — 한 번도 재변환을 부르지
                 않았으면 아직 모르는 값이라 그리지 않는다(부르지도 않은 예산을 숫자로
                 지어내지 않는다). */}
@@ -1422,6 +1746,24 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   onRetry: (easyIndex, sourceIndex) =>
                     void handleReconvertUnit(sourceIndex, { fromEasyUnitIndex: easyIndex }),
                 }}
+                focusedReview={
+                  focusedReviewEnabled
+                    ? {
+                        itemsByUnit: focusedItemsByUnit,
+                        disabled:
+                          dirty ||
+                          focusedStale ||
+                          focusedReviewSaving ||
+                          contentConflict ||
+                          source.state.status !== 'ready',
+                        saving: focusedReviewSaving,
+                        onCompare: navigateFocusedItems,
+                        onConfirm: (items) => void updateFocusedItems(items, 'confirmed'),
+                        onNotApplicable: (item, reason) =>
+                          void updateFocusedItems([item], 'not_applicable', reason),
+                      }
+                    : undefined
+                }
               />
             ) : (
               <>
@@ -1573,7 +1915,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           })}
         </div>
 
-        {conversion.review_capabilities?.review_support === true && (
+        {conversion.review_capabilities?.review_support === true && !focusedReviewEnabled && (
           <ReviewSupportPanel
             conversionId={conversion.id}
             contentRevision={contentRevision}

@@ -31,7 +31,8 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
         "(:id$index, :conversionId$index, :documentId$index, :workspaceId$index, :userId$index, " +
             ":purpose$index, :provider$index, :model$index, :inputTokens$index, :outputTokens$index, " +
             ":latencyMs$index, :estimatedCostUsd$index, :pricingInput$index, :pricingOutput$index, " +
-            ":charCount$index, :documentCharCount$index, :calledAt$index, :outcome$index, :failureClass$index)"
+            ":charCount$index, :documentCharCount$index, :calledAt$index, :outcome$index, :failureClass$index, " +
+            ":readingLevel$index)"
 
     private fun bind(
         spec: JdbcClient.StatementSpec,
@@ -66,6 +67,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
             // 생기면 이 INSERT가 `varchar(64)` 제약(V18)에 걸려 트랜잭션 전체(완료 저장
             // 포함)를 실패시킨다. 원장 열 하나의 값 손실이 완료 저장 실패보다 싸다.
             .param("failureClass$index", entry.record.failureClass?.take(FAILURE_CLASS_MAX_LENGTH))
+            .param("readingLevel$index", entry.readingLevel?.wireName)
 
     private companion object {
         /** `llm_calls.failure_class` 열 폭(V18 `character varying(64)`)과 같은 값. */
@@ -77,7 +79,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
                 id, conversion_id, document_id, workspace_id, user_id,
                 purpose, provider, model, input_tokens, output_tokens,
                 latency_ms, estimated_cost_usd, pricing_input_usd_per_mtok, pricing_output_usd_per_mtok,
-                char_count, document_char_count, called_at, outcome, failure_class
+                char_count, document_char_count, called_at, outcome, failure_class, reading_level
             ) VALUES
             """.trimIndent()
     }

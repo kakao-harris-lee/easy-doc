@@ -36,6 +36,7 @@ object AuthenticatedEndpoints {
             // 피드백도 같은 사유로 **따로** 넣는다 — 위 항목이 하위 경로를 덮지 않는다.
             "/conversions/{conversion_id}/feedback",
             "/conversions/{conversion_id}/review-support",
+            "/conversions/{conversion_id}/review-support/items",
             "/conversions/{conversion_id}/review-support/items/{item_id}",
             "/conversions/{conversion_id}/review-history",
             "/conversions/{conversion_id}/review-history/export",

@@ -8,9 +8,11 @@ import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.DocumentSourceView
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.TableCellStructure
 import kr.easydoc.core.document.TableStructure
 import kr.easydoc.core.privacy.CONTENT_MASK
+import java.math.BigDecimal
 
 // 민감 필드 부재 검증: `DocumentDtoLeakTest`.
 
@@ -46,9 +48,14 @@ data class DocumentTextRequest
         @param:JsonProperty("personal_data_acknowledged")
         @param:JsonSetter(nulls = Nulls.SET)
         val personalDataAcknowledgedRaw: Boolean? = null,
+        @param:JsonProperty("reading_level")
+        @param:JsonSetter(nulls = Nulls.SET)
+        val readingLevelRaw: String? = null,
     ) {
         /** 검출됐는데 이 값이 참이 아니면 422다. 생략·명시적 `null` 은 거짓이다. */
         val personalDataAcknowledged: Boolean get() = personalDataAcknowledgedRaw ?: false
+        val readingLevel: ReadingLevel
+            get() = readingLevelRaw?.let(ReadingLevel::ofWireName) ?: ReadingLevel.GRADE_5_6
 
         /** **본문도 제목도 작업 공간 원문도 찍지 않는다** — 셋 다 사용자가 준 임의 문자열이다. */
         override fun toString(): String =
@@ -68,6 +75,8 @@ data class DocumentCreatedResponse private constructor(
     @get:JsonProperty("conversion_id") val conversionId: String,
     @get:JsonProperty("status") val status: String,
     @get:JsonProperty("char_count") val charCount: Int,
+    @get:JsonProperty("reading_level") val readingLevel: String,
+    @get:JsonProperty("reserved_credits") val reservedCredits: BigDecimal,
 ) {
     companion object {
         fun of(accepted: AcceptedUpload): DocumentCreatedResponse =
@@ -76,6 +85,8 @@ data class DocumentCreatedResponse private constructor(
                 conversionId = accepted.conversionId.toString(),
                 status = accepted.status.wireName,
                 charCount = accepted.charCount,
+                readingLevel = accepted.readingLevel.wireName,
+                reservedCredits = accepted.reservedCredits,
             )
     }
 }

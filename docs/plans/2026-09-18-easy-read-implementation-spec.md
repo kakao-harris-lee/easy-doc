@@ -1,5 +1,7 @@
 # 쉬운글 개선 구현 명세
 
+**2026-09-24 추가·로컬 구현:** 읽기 수준 선택과 집중 검토 UX의 구현 경계는 [추가 계획](2026-09-24-reading-level-focused-review.md)을 따른다. 아래 §9.1의 ER-21~25 계약·저장·UI를 로컬 구현했고, 실제 품질 평가와 운영 출시는 ER-26으로 남았다.
+
 **2026-09-24 R7 정정:** §9의 카탈로그 한정·생성 제외 설계를 문맥 기반 제안과 요청형 이미지 생성으로 교체했다. [상세 수정 계획](2026-09-24-contextual-illustration-correction.md)은 후속 구현 명세이며 현행 API 계약을 이미 변경했다는 뜻은 아니다.
 
 작성일: 2026-09-18 · 상태(2026-09-20): **R1과 R2 로컬 기능(ER-07) 구현, R3 프롬프트 opt-in 기반(PR #135) 반영, ER-08 수용 기준과 이후 단계는 제안 명세**. 현행 계약 `easy-doc-v1.yaml` 2.41.0에 행동 안내 작업·후보·저장·TXT 출력 경로를 반영하고 사용자 화면을 fake E2E로 검증했다. 기본 OFF이며 배포·실제 모델 품질 평가는 아직 수행하지 않았다.
@@ -67,7 +69,7 @@ R1/R2는 저장된 추출 원문을 `splitUnits`로 나눈 0 기반 줄 위치�
 
 ### 4.1 진단과 사람 확인
 
-`ReviewItem.kind`는 `missing_fact | relation_check`이다. 누락 의심은 기존 규칙 검사 결과로 만들고, 관계 확인은 ‘대상’, ‘모두/하나’, ‘예외’, ‘기한과 행동’, ‘금액과 적용 대상’의 고정 5항목을 항상 제공한다. 규칙으로 찾은 조건 표현은 관련 원문을 보여 주는 보조 신호이며 AND/OR 동등성을 증명하지 않는다.
+`ReviewItem.kind`는 `missing_fact | relation_check`이다. ER-24 전 현행 구현은 누락 의심을 기존 규칙 검사 결과로 만들고 관계 확인 5항목을 항상 제공한다. ER-24 focused-review가 활성화되면 고정 5항목은 폐지하고 실제 규칙 신호가 있는 관계 항목만 만든다. 어느 경로도 AND/OR 동등성을 자동으로 증명하지 않는다.
 
 - `item_id`: 분석 스냅샷 내부 UUID. 본문 조각을 식별자로 사용하지 않는다.
 - `rule_code`: 제한된 규칙 식별자. 사용자에게는 별도 한국어 설명을 보여 준다.
@@ -82,7 +84,7 @@ R1/R2는 저장된 추출 원문을 `splitUnits`로 나눈 0 기반 줄 위치�
 
 `ReviewAssessment`는 `assessment_id`, `content_revision`, `analyzer_version`, `review_revision`, `coverage`, `items`를 갖는다. `coverage`는 `supported | limited`이며 제한 사유는 `mapping_unavailable | signal_limit | ambiguous_source` 배열이다. `supported`도 정해진 규칙을 실행했다는 뜻이다.
 
-신호는 최대 100개 + 고정 5항목. 초과하면 100개만 노출하고 `signal_limit`을 명시한다. 문서 전체 확인 안내는 유지한다. 분석 스냅샷은 같은 conversion/content_revision/analyzer_version 조합에 하나만 만든다. 분석기 버전이 바뀌면 새 스냅샷을 만들고 이전 확인 상태를 이월하지 않는다.
+응답 항목은 관계 신호를 포함해 최대 100개다. 초과하면 100개만 노출하고 `signal_limit`을 명시한다. focused-review OFF의 롤백 모드에서는 고정 관계 5항목을 상한 안에서 보존한다. 문서 전체 확인 안내는 유지한다. 분석 스냅샷은 같은 conversion/content_revision/analyzer_version 조합에 하나만 만든다. 분석기 버전이 바뀌면 새 스냅샷을 만들고 이전 확인 상태를 이월하지 않는다.
 
 GET은 저장된 상태만 읽는다. POST 분석은 명시적 호출로 최신 저장 본문을 동기 분석한다. 클라이언트는 최초 패널 진입 시 자동으로 이 무과금 POST를 호출할 수 있다. 분석 중 본문 버전이 바뀌면 결과 커밋 전 비교하여 409로 반환한다.
 
@@ -191,6 +193,16 @@ R7은 원문·쉬운 글·주변 조건을 함께 분석해 그림으로 설명�
 
 초기에는 웹 미리보기·이미지 개별 내려받기를 제공하고 DOCX/HWPX 삽입은 서식 검증 후 별도 범위로 결정한다. 기존 카탈로그·수동 배치(ER-15/16)는 호환성을 유지한다. 분석 시점, 작업 상태, 비용·기능 토글 및 저장 경계는 [R7 수정 계획 §4~6](2026-09-24-contextual-illustration-correction.md#4-구현-경계와-데이터-설계)을 따른다. provider·고객 요금·달러 예산이 미정인 동안 fake로 검증하며 실제 유료 호출은 별도 승인한다.
 
+### 9.1 R8 읽기 수준과 R1 집중 검토 개편
+
+`ReadingLevel` wire enum은 `grade_5_6 | grade_3_4`다. `DocumentTextRequest`와 multipart `DocumentFileRequest`의 optional `reading_level` 생략은 `grade_5_6`이다. `conversions.reading_level`은 `NOT NULL DEFAULT 'grade_5_6'`와 CHECK를 갖고, `DocumentCreatedResponse`·`ConversionResponse`와 worker 작업 입력에 포함한다. 최초 변환·보정·문단 재변환은 저장된 값을 사용하며 기존 프롬프트 실험 버전 축과 합치지 않는다.
+
+접수 응답은 서버가 실제 예약한 `reserved_credits`를 반환한다. D11은 현행 0.1크레딧 단위 수를 `baseUnits`라 할 때 `grade_3_4`에 `ceil(baseUnits × 1.2)` 단위를 적용하도록 구현했다. 이는 고객 요금이며 provider 입력/출력 토큰 원가와 분리한다. `llm_calls`에는 삭제 후에도 분석 가능한 `reading_level` 스냅샷을 둔다. 접수 뒤 실제 토큰을 이유로 추가 청구하지 않는다.
+
+더 쉬운 결과는 길어질 수 있으므로 입력·provider 출력·검수 저장 상한을 ER-21에서 함께 정한다. 상한 위반 결과를 자르거나 `grade_5_6`으로 자동 대체하지 않는다. 생성 전 거절 또는 실패·예약 반환을 명시하고, 1:N 문단 증가와 200단위 지도 제한을 검증한다.
+
+검수 분석기는 관계 체크리스트 5종을 항상 만들지 않고 실제 규칙 신호만 `needs_review`로 반환한다. 기존 `easy_unit_indexes`를 결과 문단 연결에 사용하며 빈 위치는 문서 수준 항목으로 유지한다. 기존 단건 item API는 호환을 위해 남기고 `{assessment_id, expected_content_revision, expected_review_revision, item_ids, state}`를 받는 트랜잭션 batch/CAS를 additive로 추가한다. 한 문단 확인이 일부 item에만 저장되지 않게 하고 기존 item별 이력·재열기 의미는 유지한다.
+
 ## 10. 저장·암호화·삭제
 
 | 단계 | 제안 저장 | 수명·보호 |
@@ -200,6 +212,7 @@ R7은 원문·쉬운 글·주변 조건을 함께 분석해 그림으로 설명�
 | R4 | 문서 표 구조 payload | 원문과 함께 암호화; 좌표만으로 본문 유추 가능한 데이터도 본문 취급 |
 | R5 | review_events + 제한된 버전 스냅샷 | 문서 수명 내 보관, 원문 재사용용 장기 축적 금지 |
 | R7 | 문맥 제안·생성 작업·비공개 이미지·명시적 적용 상태 | 본문 버전 연결, 암호화·소유권·키 회전·문서 수명 적용. DB 밖 이미지도 삭제/만료/탈퇴 시 파기 |
+| R8 | conversions.reading_level, llm_calls 수준 스냅샷 | 기존 행은 grade_5_6. 수준은 사용자 내용이 아니지만 변환·비용 재현에 필요한 enum으로 보존 |
 
 새 암호화 payload마다 record ID/field AAD를 구분하고 키 회전 대상에 등록한다. 평문 메타는 ID·상태·정수 버전·시간·enum·비용/토큰 숫자로 제한한다. 사용자 내용·quote·메모·제목·본문 hash를 로그/메트릭 label에 넣지 않는다.
 
@@ -213,7 +226,7 @@ R7의 이미지 바이너리는 UTF-8 텍스트 payload 상한과 별도로 제�
 
 ## 11. 기능 설정·호환·관측
 
-제안 설정은 `easydoc.features.review-support`, `action-guide`, `table-relations`, `review-history`, `explanations`, `illustrations`이며 기본 OFF다. R3 프롬프트도 이전 버전을 선택할 수 있는 명시적 버전 설정을 둔다. 실제 이름·환경변수 매핑은 구현 PR에서 확정한다.
+제안 설정은 `easydoc.features.review-support`, `action-guide`, `table-relations`, `review-history`, `explanations`, `illustrations`이며 기본 OFF다. ER-21~25는 서버 `EASYDOC_READING_LEVEL_EXTRA_EASY_ENABLED`, 프런트 `VITE_EASYDOC_EXTRA_EASY_ENABLED`, 서버 `EASYDOC_FOCUSED_REVIEW_ENABLED`로 분리했고 모두 기본 OFF다. focused-review OFF에서는 기존 검수 패널로 롤백한다. R3 프롬프트도 이전 버전을 선택할 수 있는 명시적 버전 설정을 둔다.
 
 서버 기능 OFF면 신규 API는 404, UI는 항목을 숨긴다. 기존 본문 저장·변환·내려받기는 동작한다. 새 필드는 additive로 추가하고 같은 PR의 API 소비자를 갱신한다. migration은 확장 방식으로 적용하며 rollback에 컬럼 DROP을 사용하지 않는다.
 

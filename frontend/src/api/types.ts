@@ -11,6 +11,9 @@
 /** 변환 상태. 백엔드 conversions.status CHECK 제약과 같은 값 집합이다. */
 export type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
 
+/** 사용자가 요청한 쉬운 글 표현 수준. 생략한 요청은 서버가 grade_5_6으로 해석한다. */
+export type ReadingLevel = 'grade_5_6' | 'grade_3_4'
+
 /**
  * 내보내기 형식. 계약 `components/schemas/ExportFormat`.
  * **`'pdf'`는 없다** — PDF 렌더러가 없어 서버가 422로 거절한다.
@@ -162,6 +165,8 @@ export interface DocumentTextRequest {
    * 422(`X-Personal-Data-Kinds` 헤더로 종류를 낸다).
    */
   personal_data_acknowledged?: boolean
+  /** 생략하면 기존 동작인 grade_5_6. */
+  reading_level?: ReadingLevel
 }
 
 /** POST /documents 응답 (202 — 변환은 아직 시작 전). */
@@ -171,6 +176,9 @@ export interface DocumentCreatedResponse {
   status: ConversionStatus
   /** 공백 포함 문자 수. 100자마다 0.1크레딧을 올림하는 환산의 기준값. */
   char_count: number
+  reading_level: ReadingLevel
+  /** 접수 시점에 서버가 예약한 고객 크레딧. 이후 토큰 사용량으로 늘어나지 않는다. */
+  reserved_credits: number
 }
 
 /**
@@ -284,6 +292,8 @@ export interface ReviewCapabilities {
   review_history: boolean
   explanations: boolean
   illustrations: boolean
+  /** 결과 문단에 실제 검토 신호만 합쳐 표시하는 새 UX가 켜졌는지. */
+  focused_review: boolean
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
@@ -291,6 +301,7 @@ export interface ConversionResponse {
   id: string
   document_id: string
   status: ConversionStatus
+  reading_level: ReadingLevel
   /** 원본 형식. **결과 필드가 아니라 문서 메타라** 완료 전에도 실려 온다. */
   source_format: SourceFormat
   /**
@@ -412,6 +423,11 @@ export interface UpdateReviewItemRequest {
   expected_review_revision: number
   state: ReviewItemState
   reason: string | null
+}
+
+/** 문단에 연결된 여러 항목을 한 CAS 트랜잭션으로 함께 갱신한다. */
+export interface UpdateReviewItemsRequest extends UpdateReviewItemRequest {
+  item_ids: string[]
 }
 
 // --- R5 검수 기록 ---

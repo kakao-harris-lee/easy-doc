@@ -18,6 +18,7 @@ import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.TableStructurePayloadCodec
 import kr.easydoc.core.exceptions.DocumentExtractionException
@@ -44,6 +45,41 @@ import java.util.UUID
 
 /** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
+    @Test
+    fun `더 쉬운 수준은 기능이 꺼져 있으면 거절한다`() {
+        val world = World(extraEasyEnabled = false)
+
+        assertThatThrownBy {
+            world.service.createFromText(
+                OWNER,
+                "충분한 단어가 있는 본문",
+                null,
+                null,
+                readingLevel = ReadingLevel.GRADE_3_4,
+            )
+        }.isInstanceOf(InvalidInputException::class.java)
+            .hasMessage("초등 3~4학년 수준 변환은 현재 사용할 수 없습니다")
+        assertThat(world.documents.inserted).isEmpty()
+    }
+
+    @Test
+    fun `더 쉬운 수준은 선택과 올림된 예약액을 함께 저장한다`() {
+        val world = World(extraEasyEnabled = true)
+
+        val accepted =
+            world.service.createFromText(
+                OWNER,
+                "충분한 단어가 있는 본문",
+                null,
+                null,
+                readingLevel = ReadingLevel.GRADE_3_4,
+            )
+
+        assertThat(world.conversions.insertedReadingLevels).containsExactly(ReadingLevel.GRADE_3_4)
+        assertThat(accepted.readingLevel).isEqualTo(ReadingLevel.GRADE_3_4)
+        assertThat(accepted.reservedCredits).isEqualByComparingTo("0.2")
+    }
+
     @Test
     fun `새 문서의 빈 표 목록은 과거 문서의 메타데이터 없음과 구분한다`() {
         val stored = mutableMapOf<UUID, EncryptedContent>()
@@ -768,6 +804,7 @@ class DocumentServiceTest {
          */
         extractedStructure: SourceStructure? = null,
         tableStructures: DocumentTableStructureRepository? = null,
+        extraEasyEnabled: Boolean = false,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
@@ -802,6 +839,7 @@ class DocumentServiceTest {
                 transaction = transaction,
                 users = users,
                 credits = credits,
+                extraEasyEnabled = extraEasyEnabled,
             )
     }
 

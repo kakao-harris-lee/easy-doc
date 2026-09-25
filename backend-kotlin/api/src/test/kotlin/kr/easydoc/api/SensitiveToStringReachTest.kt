@@ -219,8 +219,11 @@ class SensitiveToStringReachTest {
          * 낸다(명세 §4) — `altTextDraft` 가 `text` 토큰에 걸려 이 게이트의 표본 대상이다.
          * `IllustrationSuggestionPurpose` 는 enum, `IllustrationSuggestionIdGenerator` 는
          * `fun interface` 라 세지 않는다.
+         *
+         * 351 → 353 은 집중 검토의 batch 요청 DTO와 내부 관계 신호 모델이다(2026-09-24).
+         * 둘 다 사용자 문자열을 값 그대로 출력하지 않도록 `toString()` 경계를 유지한다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 351
+        const val EXPECTED_SOURCE_DECLARATIONS = 353
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

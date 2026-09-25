@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.45.0"
+  version: "2.46.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 65개다** — 제품 64개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 66개다** — 제품 65개 + 헬스 체크 1개.
     이 수는 `paths`의 HTTP 오퍼레이션을 직접 센 값이다. 2.39.0에는 62개였고,
     2.40.0에서 별도 행동 안내문 `GET`·`PUT /conversions/{conversion_id}/action-guide`와
     `GET /conversions/{conversion_id}/action-guide/export` 셋이 더해졌다. 이전 산문의
@@ -2891,6 +2891,7 @@ paths:
         '422':
           description: |
             빈 본문 · 20,000자 초과 · **개인정보 경고용 검출**(2.31.0, 아래 헤더 참고) ·
+            `extra-easy` 기능이 꺼진 상태의 `grade_3_4` 요청 ·
             지원하지 않는 형식 · 추출 실패 ·
             **텍스트로 저장할 수 없는 문자**(`x-stored-text-domain`) · 잘못된 JSON ·
             `workspace_id` 형식 오류 · 필드 누락.
@@ -3562,8 +3563,9 @@ paths:
       summary: 현재 저장 본문을 규칙으로 분석한다
       security: [{ HTTPBearer: [] }]
       description: |
-        기존 사실 보존 규칙으로 누락 의심 신호를 만들고 고정 관계 확인 항목 5개를 더한다.
-        LLM 호출과 크레딧 차감은 없다. 같은 본문 버전과 분석기 버전의 스냅샷은 재사용한다.
+        기존 사실 보존 규칙에서 실제 근거가 발견된 고신뢰 신호만 만든다. 고정 관계 확인
+        항목을 문서마다 채우지 않는다. LLM 호출과 크레딧 차감은 없다. 같은 본문 버전과
+        분석기 버전의 스냅샷은 재사용한다.
       requestBody:
         required: true
         content:
@@ -3586,6 +3588,51 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '409':
           description: 완료 전이거나 분석 중 본문 버전이 바뀌었다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/review-support/items:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [documents]
+      operationId: updateReviewSupportItems
+      summary: 한 문단의 검토 항목들을 트랜잭션으로 함께 저장한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        요청의 모든 `item_ids`가 같은 assessment에 속하고 현재 revision들과 맞을 때만
+        전부 갱신한다. 하나라도 없거나 stale이면 일부 저장 없이 전체를 거절한다. 같은
+        ID의 중복, 빈 배열, `not_applicable`인데 비어 있는 reason은 422다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewSupportItemsUpdateRequest' }
+      responses:
+        '200':
+          description: 갱신된 전체 검수 스냅샷
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSupportResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 검수 지원 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 본문·분석·확인 버전이 바뀌었다. 어떤 item도 저장하지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5968,6 +6015,13 @@ components:
         넓어져 **현재보다 타입 안전성이 떨어진다**. 교체가 퇴보가 되면 안 되므로
         여기서 enum으로 고정한다(계획 §2.2 "변환 상태 유지"의 이행).
 
+    ReadingLevel:
+      type: string
+      enum: [grade_5_6, grade_3_4]
+      description: |
+        쉬운 글의 목표 표현 수준. 생략한 문서 접수와 기존 행은 `grade_5_6`이다.
+        교육 평가나 특정 독자의 실제 이해를 보증하는 값이 아니다.
+
     ExportFormat:
       type: string
       enum: [docx, txt, hwpx]
@@ -6443,6 +6497,12 @@ components:
             않는다 — 검출된 종류는 `X-Personal-Data-Kinds` 헤더로 낸다.
             이용자가 화면의 "이대로 진행"을 누르면 **같은 요청**을 이 값만 `true`로
             바꿔 다시 보낸다 — 값 자체는 바꾸지 않는다(자동 마스킹이 아니다).
+        reading_level:
+          allOf: [{ $ref: '#/components/schemas/ReadingLevel' }]
+          default: grade_5_6
+          description: |
+            생략하면 `grade_5_6`. `grade_3_4`는 `extra-easy` 토글이 켜진 경우에만
+            접수하며, 꺼져 있으면 문서·변환·크레딧 예약 없이 422다.
 
     DocumentFileRequest:
       type: object
@@ -6450,8 +6510,8 @@ components:
       description: |
         파일 업로드 요청 (multipart/form-data 모드).
         **FastAPI 자동 생성 OpenAPI에는 이 요청 본문이 없다** — 손으로 적었다.
-        React `createDocumentFromFile`은 `file`·`workspace_id`·(검출 재전송일 때만)
-        `personal_data_acknowledged`를 보낸다.
+        React `createDocumentFromFile`은 `file`·`reading_level`·`workspace_id`·(검출
+        재전송일 때만) `personal_data_acknowledged`를 보낸다.
       properties:
         file:
           type: string
@@ -6481,10 +6541,15 @@ components:
             폼 값은 전부 문자열이다 — `"true"`만 참으로 다루고, 생략·그 밖의 값은 거짓이다.
             `DocumentTextRequest.personal_data_acknowledged`와 같은 규칙(2.31.0, 개인정보
             경고용 검출 계획 §2.2)이며 두 팔이 같은 검출·확인 처분을 탄다.
+        reading_level:
+          type: string
+          enum: [grade_5_6, grade_3_4]
+          default: grade_5_6
+          description: JSON 요청과 같은 enum·생략 기본값·기능 OFF 422 규칙을 쓰는 문자열 파트.
 
     DocumentCreatedResponse:
       type: object
-      required: [document_id, conversion_id, status, char_count]
+      required: [document_id, conversion_id, status, char_count, reading_level, reserved_credits]
       description: 업로드 접수 응답. 변환은 아직 시작되지 않았다(202).
       properties:
         document_id: { type: string, format: uuid }
@@ -6496,6 +6561,14 @@ components:
         char_count:
           type: integer
           description: 공백 포함 문자 수. 크레딧 환산(100자 단위마다 0.1크레딧, 올림)의 기준값이다.
+        reading_level: { $ref: '#/components/schemas/ReadingLevel' }
+        reserved_credits:
+          type: number
+          minimum: 0
+          multipleOf: 0.1
+          description: |
+            접수 트랜잭션에서 실제 예약한 고객 크레딧. `grade_3_4`는 기본 0.1크레딧
+            단위 수에 1.2를 곱해 올림한다. 접수 뒤 실제 토큰 사용량으로 추가 예약하지 않는다.
 
     ConversionReviewRequest:
       type: object
@@ -6525,7 +6598,7 @@ components:
       type: object
       required:
         [id, document_id, status, source_format, export_format, export_format_choices,
-         format_preservation, easy_text, edited_text, reviewed_at, feedback_submitted_at,
+         format_preservation, easy_text, edited_text, reviewed_at, feedback_submitted_at, reading_level,
          segment_map, model, provider_name,
          input_tokens, output_tokens, failure_code, content_revision, review_capabilities]
       description: |
@@ -6547,6 +6620,7 @@ components:
         id: { type: string, format: uuid }
         document_id: { type: string, format: uuid }
         status: { $ref: '#/components/schemas/ConversionStatus' }
+        reading_level: { $ref: '#/components/schemas/ReadingLevel' }
         source_format:
           $ref: '#/components/schemas/SourceFormat'
           description: |
@@ -6696,7 +6770,7 @@ components:
 
     ReviewCapabilities:
       type: object
-      required: [review_support, action_guide, table_relations, review_history, explanations, illustrations]
+      required: [review_support, action_guide, table_relations, review_history, explanations, illustrations, focused_review]
       properties:
         review_support: { type: boolean }
         action_guide: { type: boolean }
@@ -6706,6 +6780,11 @@ components:
         illustrations:
           type: boolean
           description: '`easydoc.illustrations.enabled` 토글에 연결된다(ER-15, 2.44.0).'
+        focused_review:
+          type: boolean
+          description: |
+            서버 환경 `EASYDOC_FOCUSED_REVIEW_ENABLED`(기본 `false`)에서 유도한다. 참이면
+            결과 문단 통합 UX와 batch/CAS API를 사용하고, 거짓이면 기존 패널을 유지한다.
       description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
 
     ReviewHistoryResponse:
@@ -6772,6 +6851,19 @@ components:
           maxLength: 500
           description: "`not_applicable`일 때 필수인 담당자 메모. 서버가 정규화 후 코드 포인트로 잰다."
 
+    ReviewSupportItemsUpdateRequest:
+      allOf:
+        - { $ref: '#/components/schemas/ReviewSupportItemUpdateRequest' }
+        - type: object
+          required: [item_ids]
+          properties:
+            item_ids:
+              type: array
+              minItems: 1
+              maxItems: 100
+              uniqueItems: true
+              items: { type: string, format: uuid }
+
     ReviewSupportResponse:
       type: object
       required: [status, assessment]
@@ -6804,7 +6896,7 @@ components:
             enum: [mapping_unavailable, signal_limit, ambiguous_source]
         items:
           type: array
-          maxItems: 105
+          maxItems: 100
           items: { $ref: '#/components/schemas/ReviewItem' }
 
     ReviewItem:
@@ -8508,6 +8600,23 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.46.0"
+    date: "2026-09-24"
+    revision: "EASY-READ-R8-FOCUSED-REVIEW"
+    author: codex
+    change: |
+      문서 접수에 optional `reading_level`(`grade_5_6 | grade_3_4`)을 추가하고 생략은
+      기존 `grade_5_6`으로 고정한다. 접수 응답은 `reading_level`과 실제 예약한
+      `reserved_credits`, 변환 조회는 저장된 `reading_level`을 반환한다. `grade_3_4`는
+      extra-easy 토글 OFF에서 422이며 고객 크레딧은 기본 0.1 단위 수의 1.2배를 올림한다.
+
+      focused-review 토글을 capability로 공개하고, 실제 신호만 반환하는 분석과 문단 단위
+      트랜잭션 `PUT /conversions/{conversion_id}/review-support/items`를 추가한다. 기존 단건
+      item API는 호환을 위해 유지한다.
+    ground: "G2: ER-21~25와 AC-R8-a/b, AC-R1-e/f 구현 요구."
+    compatibility: |
+      요청 필드는 optional이고 생략 시 기존 동작이다. 응답 필드와 capability 키, batch
+      오퍼레이션은 additive다. 두 기능 토글은 기본 OFF이며 기존 단건 검수 흐름을 유지한다.
   - version: "2.45.0"
     date: "2026-09-23"
     revision: "EASY-READ-R7-ILLUSTRATION-PLACEMENT"

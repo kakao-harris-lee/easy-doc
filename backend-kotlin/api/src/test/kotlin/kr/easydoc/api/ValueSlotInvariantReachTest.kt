@@ -499,6 +499,10 @@ class ValueSlotInvariantReachTest {
                 "ReviewSupportItemUpdateRequest" to
                     """{"assessment_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_review_revision":0,"state":"confirmed"}""",
+                "ReviewSupportItemsUpdateRequest" to
+                    """{"assessment_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"expected_content_revision":1,"expected_review_revision":0,""" +
+                    """"item_ids":["00000000-0000-0000-0000-000000000002"],"state":"confirmed"}""",
                 "ActionGuideJobCreateRequest" to
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_guide_revision":null}""",

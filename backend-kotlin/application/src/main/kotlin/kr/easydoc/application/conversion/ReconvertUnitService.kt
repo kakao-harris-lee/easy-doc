@@ -10,6 +10,7 @@ import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -135,7 +136,7 @@ class ReconvertUnitService(
             }
 
         val unit = sourceUnits[sourceUnitIndex]
-        val requiredCredits = Credits.requiredFor(unit.length)
+        val requiredCredits = Credits.requiredFor(unit.length, stored.readingLevel)
 
         // 예약(트랜잭션 1) — 대상 원문 분량의 크레딧과 최대 LLM 호출을 함께 잡는다.
         // 호출 예산이 없으면 같은 트랜잭션에서 크레딧 예약을 즉시 되돌리고 429로 끝낸다.
@@ -157,6 +158,7 @@ class ReconvertUnitService(
                 documentCharCount = source.charCount,
                 requiredCredits = requiredCredits,
                 consumeCredits = false,
+                readingLevel = stored.readingLevel,
             )
             throw ReconversionConcurrencyExhaustedException(CONCURRENCY_LIMIT_MESSAGE)
         }
@@ -174,6 +176,7 @@ class ReconvertUnitService(
                     structure = unitStructure,
                     purpose = LlmCallPurpose.RECONVERT,
                     priorBodyContext = priorBodyContext,
+                    readingLevel = stored.readingLevel,
                 )
             } finally {
                 reconversionGate.release()
@@ -190,6 +193,7 @@ class ReconvertUnitService(
             result,
             documentCharCount = source.charCount,
             requiredCredits = requiredCredits,
+            readingLevel = stored.readingLevel,
         )
     }
 
@@ -298,6 +302,7 @@ class ReconvertUnitService(
         result: ConversionResult,
         documentCharCount: Int,
         requiredCredits: Credits,
+        readingLevel: ReadingLevel,
     ): ReconvertUnitResult =
         when (result) {
             is ConversionResult.Failed -> {
@@ -314,6 +319,7 @@ class ReconvertUnitService(
                     documentCharCount = documentCharCount,
                     requiredCredits = requiredCredits,
                     consumeCredits = false,
+                    readingLevel = readingLevel,
                 )
                 throw ExternalServiceUnavailableException(PROVIDER_UNREACHABLE_MESSAGE)
             }
@@ -330,6 +336,7 @@ class ReconvertUnitService(
                         documentCharCount = documentCharCount,
                         requiredCredits = requiredCredits,
                         consumeCredits = true,
+                        readingLevel = readingLevel,
                     )
                 ReconvertUnitResult(
                     sourceUnitIndex = sourceUnitIndex,
@@ -362,6 +369,7 @@ class ReconvertUnitService(
         calls: List<LlmCallRecord> = emptyList(),
         requiredCredits: Credits,
         consumeCredits: Boolean,
+        readingLevel: ReadingLevel,
     ): Int =
         transaction.inTransaction {
             val remaining =
@@ -383,6 +391,7 @@ class ReconvertUnitService(
                             record = record,
                             calledAt = record.calledAt,
                             documentCharCount = documentCharCount,
+                            readingLevel = readingLevel,
                         )
                     },
                 )

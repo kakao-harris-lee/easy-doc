@@ -2,6 +2,7 @@ package kr.easydoc.application.conversion
 
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.segment.SourceStructure
 import java.math.BigDecimal
@@ -108,6 +109,7 @@ class ConversionWorkItem(
      * 계획 §2 결정 5).
      */
     val creditsReserved: BigDecimal = BigDecimal.ZERO,
+    val readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
 ) {
     override fun toString(): String =
         "ConversionWorkItem($conversionId, doc=$documentId, ${status.wireName}, " +

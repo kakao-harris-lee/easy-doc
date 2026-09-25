@@ -380,6 +380,7 @@ class ConversionReadContractTest {
                 "export_format",
                 "export_format_choices",
                 "format_preservation",
+                "reading_level",
                 "content_revision",
                 "review_capabilities",
             )

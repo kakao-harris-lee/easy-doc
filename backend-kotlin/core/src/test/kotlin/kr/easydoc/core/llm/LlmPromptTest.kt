@@ -1,5 +1,6 @@
 package kr.easydoc.core.llm
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.easyread.DICTIONARY_CONTEXT_GUARD
 import kr.easydoc.core.easyread.DICTIONARY_CONTEXT_TAG_NAME
 import kr.easydoc.core.easyread.DocumentIdGenerator
@@ -35,6 +36,24 @@ class LlmPromptTest {
     fun `judge는 사실뿐 아니라 독해 수준과 문맥을 평가한다`() {
         val prompt = LlmPrompt.forJudge("원문", "짧지만 이해하기 어려운 변환문", emptyList())
         assertThat(prompt.system).contains("초등학교 5~6학년", "문맥", "조건", "뜻을 설명")
+    }
+
+    @Test
+    fun `더 쉬운 수준은 최초 변환과 보정과 judge에 같은 목표를 쓴다`() {
+        val prompts =
+            listOf(
+                LlmPrompt.forConversion("원문", readingLevel = ReadingLevel.GRADE_3_4),
+                LlmPrompt.forRepair(
+                    ModelDraft("초안"),
+                    emptyList(),
+                    sourceText = "원문",
+                    readingLevel = ReadingLevel.GRADE_3_4,
+                ),
+                LlmPrompt.forJudge("원문", "변환문", emptyList(), ReadingLevel.GRADE_3_4),
+            )
+
+        assertThat(prompts.map { it.system }).allMatch { "초등학교 3~4학년" in it }
+        assertThat(prompts.map { it.system }).allMatch { "초등학교 5~6학년" !in it }
     }
 
     @Test

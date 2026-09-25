@@ -9,6 +9,7 @@ import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.MISSING_FILE_PART_MESSAGE
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.exceptions.InvalidInputException
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
@@ -52,6 +53,7 @@ class DocumentController(
                 title = request.title,
                 rawWorkspaceId = request.workspaceId,
                 personalDataAcknowledged = request.personalDataAcknowledged,
+                readingLevel = request.readingLevel,
             ),
         )
 
@@ -73,6 +75,9 @@ class DocumentController(
                 title = request.getParameter(TITLE_PART),
                 rawWorkspaceId = request.getParameter(WORKSPACE_ID_PART),
                 personalDataAcknowledged = request.getParameter(PERSONAL_DATA_ACKNOWLEDGED_PART) == TRUE_VALUE,
+                readingLevel =
+                    request.getParameter(READING_LEVEL_PART)?.let(ReadingLevel::ofWireName)
+                        ?: ReadingLevel.GRADE_5_6,
             ),
         )
     }
@@ -166,6 +171,7 @@ class DocumentController(
 
         /** 계약 `DocumentFileRequest.personal_data_acknowledged` — 폼 값은 문자열이라 [TRUE_VALUE] 와 비교한다. */
         const val PERSONAL_DATA_ACKNOWLEDGED_PART = "personal_data_acknowledged"
+        const val READING_LEVEL_PART = "reading_level"
         const val TRUE_VALUE = "true"
 
         /** 계약 `paths./documents.get.parameters` 의 이름 둘. */

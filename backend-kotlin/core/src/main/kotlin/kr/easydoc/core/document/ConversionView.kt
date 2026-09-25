@@ -3,6 +3,7 @@ package kr.easydoc.core.document
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.segment.SegmentMap
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -57,6 +58,8 @@ data class ConversionView(
     val contentRevision: Long = if (status.exposesResult) 1 else 0,
     /** 서버 설정과 구현 범위에서 유도한 검수 기능 노출 정보. */
     val reviewCapabilities: ReviewCapabilities = ReviewCapabilities.NONE,
+    val readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
+    val reservedCredits: BigDecimal = BigDecimal.ZERO,
 ) {
     /**
      * 계약 `ConversionResponse.description` 의 **「결과 필드」 열** 중 하나라도 값을 들었는가.
@@ -90,6 +93,7 @@ data class ConversionView(
 
 data class ReviewCapabilities(
     val reviewSupport: Boolean,
+    val focusedReview: Boolean,
     val actionGuide: Boolean,
     val tableRelations: Boolean,
     val reviewHistory: Boolean,
@@ -97,6 +101,6 @@ data class ReviewCapabilities(
     val illustrations: Boolean,
 ) {
     companion object {
-        val NONE = ReviewCapabilities(false, false, false, false, false, false)
+        val NONE = ReviewCapabilities(false, false, false, false, false, false, false)
     }
 }

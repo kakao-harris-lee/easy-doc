@@ -21,11 +21,11 @@ import {
 } from '../api/client'
 import type { DocumentCreationResult } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
-import type { DocumentListItem } from '../api/types'
+import type { DocumentListItem, ReadingLevel } from '../api/types'
 import { useAuth } from '../auth/context'
 import { chooseNextAction } from '../conversion/nextAction'
 import { countChars } from '../lib/charCount'
-import { creditsForCharCount, formatCredits } from '../lib/credits'
+import { creditsForCharCount, creditsForReadingLevel, formatCredits } from '../lib/credits'
 import {
   conversionPath,
   EMAIL_VERIFICATION_PATH,
@@ -110,6 +110,11 @@ const PDF_EXTRACTION_NOTICE =
   'PDF는 읽는 순서·표·다단 구성에 따라 텍스트가 일부 누락되거나 잘못 추출될 수 있습니다. 변환 후 원문과 결과를 꼭 확인해 주세요. 결과는 레이아웃과 스타일 없이 TXT로 내려받습니다.'
 
 type InputMode = 'text' | 'file'
+
+/** 서버 토글과 함께 켠 배포에서만 더 쉬운 수준을 선택하게 한다. */
+function extraEasyEnabled(): boolean {
+  return import.meta.env.VITE_EASYDOC_EXTRA_EASY_ENABLED === 'true'
+}
 
 /** 상한을 사람이 읽는 표기로. */
 function chars(count: number): string {
@@ -244,6 +249,7 @@ export function UploadPage() {
   const fileFormatGuideId = useId()
 
   const [mode, setMode] = useState<InputMode>('text')
+  const [readingLevel, setReadingLevel] = useState<ReadingLevel>('grade_5_6')
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -306,7 +312,8 @@ export function UploadPage() {
   // 필요 크레딧 — 원문 100자마다 0.1크레딧을 올림해 클라이언트에서 미리 계산한다.
   // 서버가 최종 판단(`Credits.requiredFor`)하지만, 상한과 같은 이유로 여기서도 먼저
   // 보여준다.
-  const neededCredits = creditsForCharCount(charCount)
+  const baseCredits = creditsForCharCount(charCount)
+  const neededCredits = creditsForReadingLevel(baseCredits, readingLevel)
   // 80% 미만에서는 보조 글자색이다. 여유가 많을 때까지 경고색을 쓰면 실제로 위험한
   // 순간에 색이 아무 말도 하지 못한다(§6.2).
   const nearLimit = !tooLong && charCount >= MAX_CHARS * COUNTER_WARNING_RATIO
@@ -573,7 +580,13 @@ export function UploadPage() {
         setError(`${MIN_WORDS}단어 이상인 문장을 입력해 주세요.`)
         return
       }
-      await submit(() => createDocumentFromText(text, workspaceId, titleTrimmed), text)
+      await submit(
+        () =>
+          readingLevel === 'grade_5_6'
+            ? createDocumentFromText(text, workspaceId, titleTrimmed)
+            : createDocumentFromText(text, workspaceId, titleTrimmed, false, readingLevel),
+        text,
+      )
       return
     }
     if (file === null) {
@@ -584,7 +597,11 @@ export function UploadPage() {
       setError(`파일이 너무 큽니다. ${formatBytes(MAX_UPLOAD_BYTES)} 이내 파일로 나눠 올려 주세요.`)
       return
     }
-    await submit(() => createDocumentFromFile(file, workspaceId, titleTrimmed))
+    await submit(() =>
+      readingLevel === 'grade_5_6'
+        ? createDocumentFromFile(file, workspaceId, titleTrimmed)
+        : createDocumentFromFile(file, workspaceId, titleTrimmed, false, readingLevel),
+    )
   }
 
   /**
@@ -597,14 +614,24 @@ export function UploadPage() {
    */
   async function handleProceedWithPersonalData(): Promise<void> {
     if (mode === 'text') {
-      await submit(() => createDocumentFromText(text, workspaceId, titleTrimmed, true), text)
+      await submit(
+        () =>
+          readingLevel === 'grade_5_6'
+            ? createDocumentFromText(text, workspaceId, titleTrimmed, true)
+            : createDocumentFromText(text, workspaceId, titleTrimmed, true, readingLevel),
+        text,
+      )
       return
     }
     if (file === null) {
       setPersonalDataWarning(null)
       return
     }
-    await submit(() => createDocumentFromFile(file, workspaceId, titleTrimmed, true))
+    await submit(() =>
+      readingLevel === 'grade_5_6'
+        ? createDocumentFromFile(file, workspaceId, titleTrimmed, true)
+        : createDocumentFromFile(file, workspaceId, titleTrimmed, true, readingLevel),
+    )
   }
 
   function selectMode(next: InputMode) {
@@ -763,6 +790,51 @@ export function UploadPage() {
               </label>
             </fieldset>
 
+            <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <legend className="col-span-full mb-1 text-[15px] font-semibold">
+                어느 정도로 쉽게 바꿀까요?
+              </legend>
+              <label
+                className={`flex min-h-24 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-3 ${readingLevel === 'grade_5_6' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+              >
+                <span className="flex items-center gap-2 font-semibold">
+                  <input
+                    className="accent-primary"
+                    type="radio"
+                    name="reading-level"
+                    value="grade_5_6"
+                    checked={readingLevel === 'grade_5_6'}
+                    onChange={() => setReadingLevel('grade_5_6')}
+                  />
+                  기본 · 초등 5~6학년 수준
+                </span>
+                <span className="mt-1 pl-6 text-sm text-muted-foreground">
+                  짧은 문장과 쉬운 표현으로 바꿔요.
+                </span>
+              </label>
+              {extraEasyEnabled() && (
+                <label
+                  className={`flex min-h-24 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-3 ${readingLevel === 'grade_3_4' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+                >
+                  <span className="flex items-center gap-2 font-semibold">
+                    <input
+                      className="accent-primary"
+                      type="radio"
+                      name="reading-level"
+                      value="grade_3_4"
+                      checked={readingLevel === 'grade_3_4'}
+                      onChange={() => setReadingLevel('grade_3_4')}
+                    />
+                    더 쉽게 · 초등 3~4학년 수준
+                  </span>
+                  <span className="mt-1 pl-6 text-sm text-muted-foreground">
+                    설명이 더 길어질 수 있어요. 기본보다 최소 1.2배의 크레딧이 필요하고, 0.1크레딧
+                    단위로 올림해 더 커질 수 있어요.
+                  </span>
+                </label>
+              )}
+            </fieldset>
+
             {mode === 'text' ? (
               <div className="field">
                 <label htmlFor={textareaId}>바꿀 글</label>
@@ -846,7 +918,8 @@ export function UploadPage() {
                   />
                   <p className="field-hint" id={`${fileId}-hint`}>
                     {SUPPORTED_FORMAT_LABEL} 파일, {formatBytes(MAX_UPLOAD_BYTES)} 이내. 파일에서
-                    뽑은 글자 수가 {chars(MAX_CHARS)}자를 넘으면 변환할 수 없습니다.
+                    뽑은 글자 수가 {chars(MAX_CHARS)}자를 넘으면 변환할 수 없습니다. 필요 크레딧은
+                    파일에서 추출한 글자 수를 기준으로 계산합니다.
                   </p>
                 </div>
                 {file !== null && (

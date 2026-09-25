@@ -1,5 +1,6 @@
 package kr.easydoc.application.conversion
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.llm.LlmCallRecord
 import java.time.Instant
 import java.util.UUID
@@ -28,6 +29,7 @@ data class LlmCallEntry(
     val record: LlmCallRecord,
     val calledAt: Instant,
     val documentCharCount: Int,
+    val readingLevel: ReadingLevel? = null,
 )
 
 /**

@@ -9,7 +9,8 @@
 - API 계약: [`../contracts/easy-doc-v1.yaml`](../contracts/easy-doc-v1.yaml)
 - 파일럿 실행: [`pilot-runbook.md`](pilot-runbook.md)
 - 골든 데이터 수집: [`golden-collection-plan.md`](golden-collection-plan.md)
-- 쉬운글 개선 개발 문서: [로드맵·실행·명세·UX·검증 지도](plans/2026-09-18-easy-read-improvement-roadmap.md) — 문서 작성 완료, 구현 미착수
+- 쉬운글 개선 개발 문서: [로드맵·실행·명세·UX·검증 지도](plans/2026-09-18-easy-read-improvement-roadmap.md) — 단계별 구현 기록과 미구현 범위
+- 추가 계획: [읽기 수준 선택·집중 검토 UX](plans/2026-09-24-reading-level-focused-review.md) — ER-21~25 로컬 구현·검증 완료, ER-26과 운영 출시는 미완료
 
 ## 자료 성격
 

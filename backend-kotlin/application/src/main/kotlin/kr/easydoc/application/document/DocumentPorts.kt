@@ -6,6 +6,7 @@ import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
@@ -302,6 +303,8 @@ data class StoredConversion(
     val outputTokens: Int?,
     val failureCode: String?,
     val contentRevision: Long = if (status.exposesResult) 1 else 0,
+    val readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
+    val reservedCredits: BigDecimal = BigDecimal.ZERO,
 ) {
     /** 로그 허용목록 그대로 — 식별자·상태·형식·실패 코드뿐이다. */
     override fun toString(): String =
@@ -352,6 +355,17 @@ interface ConversionRepository {
         keyVersion: Int,
         creditsReserved: BigDecimal = BigDecimal.ZERO,
     ): Conversion
+
+    /** 수준 선택을 저장하는 새 경로. 기존 포트 대역은 기본 수준으로 안전하게 호환한다. */
+    @Suppress("LongParameterList")
+    fun insertPending(
+        id: UUID,
+        documentId: UUID,
+        scheme: String,
+        keyVersion: Int,
+        creditsReserved: BigDecimal,
+        readingLevel: ReadingLevel,
+    ): Conversion = insertPending(id, documentId, scheme, keyVersion, creditsReserved)
 
     /**
      * **내** 변환 한 건을 읽는다. 없거나 내 것이 아니거나 **문서의 보존 기간이 지났으면**

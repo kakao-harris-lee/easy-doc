@@ -773,6 +773,7 @@ class ConversionReadReachTest {
                 EXPORT_FORMAT_PROPERTY,
                 EXPORT_FORMAT_CHOICES_PROPERTY,
                 FORMAT_PRESERVATION_PROPERTY,
+                "reading_level",
                 "content_revision",
                 "review_capabilities",
             )

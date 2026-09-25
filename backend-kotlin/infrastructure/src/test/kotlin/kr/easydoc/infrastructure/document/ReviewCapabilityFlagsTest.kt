@@ -12,6 +12,7 @@ class ReviewCapabilityFlagsTest {
 
         assertThat(capabilities.actionGuide).isFalse()
         assertThat(capabilities.reviewSupport).isFalse()
+        assertThat(capabilities.focusedReview).isFalse()
         assertThat(capabilities.tableRelations).isFalse()
         assertThat(capabilities.reviewHistory).isFalse()
         assertThat(capabilities.explanations).isFalse()
@@ -27,6 +28,25 @@ class ReviewCapabilityFlagsTest {
 
         assertThat(capabilities.actionGuide).isTrue()
         assertThat(capabilities.reviewSupport).isTrue()
+        assertThat(capabilities.focusedReview).isFalse()
+    }
+
+    @Test
+    fun `집중 검토는 검토 기능 안의 독립 롤백 플래그다`() {
+        val on =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(enabled = true, focusedReviewEnabled = true),
+                ActionGuideProperties(),
+            )
+        val reviewOff =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(enabled = false, focusedReviewEnabled = true),
+                ActionGuideProperties(),
+            )
+
+        assertThat(on.reviewSupport).isTrue()
+        assertThat(on.focusedReview).isTrue()
+        assertThat(reviewOff.focusedReview).isFalse()
     }
 
     @Test

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { creditsForCharCount, formatCredits, isCreditAmount } from './credits'
+import {
+  creditsForCharCount,
+  creditsForReadingLevel,
+  formatCredits,
+  isCreditAmount,
+} from './credits'
 
 describe('fractional credit policy', () => {
   it.each([
@@ -18,6 +23,12 @@ describe('fractional credit policy', () => {
     expect(formatCredits(0.1 + 0.2)).toBe('0.3')
     expect(formatCredits(1)).toBe('1')
     expect(formatCredits(1.1)).toBe('1.1')
+  })
+
+  it('rounds the extra-easy 1.2 multiplier up to the next tenth of a credit', () => {
+    expect(creditsForReadingLevel(0.1, 'grade_5_6')).toBe(0.1)
+    expect(creditsForReadingLevel(0.1, 'grade_3_4')).toBe(0.2)
+    expect(creditsForReadingLevel(1.1, 'grade_3_4')).toBe(1.4)
   })
 
   it('accepts signed nonzero tenths for admin adjustments only', () => {

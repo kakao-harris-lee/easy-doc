@@ -14,6 +14,7 @@ import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.document.MIN_CONVERTIBLE_WORDS
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.TableStructure
 import kr.easydoc.core.document.TableStructurePayloadCodec
@@ -47,6 +48,8 @@ data class AcceptedUpload(
     val status: ConversionStatus,
     val charCount: Int,
     val creditBalance: BigDecimal,
+    val readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
+    val reservedCredits: BigDecimal = BigDecimal.ZERO,
 )
 
 /**
@@ -72,7 +75,7 @@ private class UploadContent(
 )
 
 /** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "TooManyFunctions")
 class DocumentService(
     private val storage: DocumentStorage,
     private val workspaces: WorkspaceLookup,
@@ -88,6 +91,7 @@ class DocumentService(
      * 컴파일되므로, 협력자 여덟 곳의 테스트 호출부를 명시적으로 고치는 쪽을 택했다.
      */
     private val credits: CreditAccountService,
+    private val extraEasyEnabled: Boolean = false,
 ) {
     private val log = LoggerFactory.getLogger(DocumentService::class.java)
 
@@ -107,8 +111,10 @@ class DocumentService(
          * 참이 아니면 [PersonalDataDetectedException] 이 던져진다(`store`).
          */
         personalDataAcknowledged: Boolean = false,
+        readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
     ): AcceptedUpload {
         requireVerifiedEmail(ownerId)
+        requireEnabled(readingLevel)
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
         // 붙여넣기에는 원본 파일이 없다 — `null` 이 그 사실이다.
@@ -117,6 +123,7 @@ class DocumentService(
             UploadContent(text, SourceFormat.TEXT, original = null),
             title,
             personalDataAcknowledged,
+            readingLevel,
         ) {
             parseWorkspaceId(rawWorkspaceId)
         }
@@ -136,8 +143,10 @@ class DocumentService(
         rawWorkspaceId: String?,
         /** [createFromText] 의 같은 이름 인자와 같다 — 두 팔이 같은 검출·확인 규칙을 탄다. */
         personalDataAcknowledged: Boolean = false,
+        readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
     ): AcceptedUpload {
         requireVerifiedEmail(ownerId)
+        requireEnabled(readingLevel)
         // 크기 판정이 추출보다 먼저다 — 계약이 정한 순서이고, 상한을 넘는 바이트를 파서에
         // 넘기지 않는 것이 압축 폭탄 방어의 첫 단계이기도 하다(I-10).
         if (bytes.size > MAX_UPLOAD_BYTES) throw UploadTooLargeException(UPLOAD_TOO_LARGE_MESSAGE)
@@ -158,7 +167,7 @@ class DocumentService(
         // 검수본으로 새 텍스트 파일을 만드는 자연스러운 경로를 그대로 탄다.
         val original = if (extracted.format == SourceFormat.TXT) null else PlainBytes(bytes)
         val content = UploadContent(extracted.text, extracted.format, original, extracted.structure, extracted.tables)
-        return store(ownerId, content, title, personalDataAcknowledged) {
+        return store(ownerId, content, title, personalDataAcknowledged, readingLevel) {
             parseWorkspaceId(rawWorkspaceId)
         }
     }
@@ -204,12 +213,13 @@ class DocumentService(
      *
      * [requestedWorkspaceId] 는 **지연 평가다** — 형식 판정의 자리를 아래 한 줄로 못박는다.
      */
-    @Suppress("ThrowsCount")
+    @Suppress("ThrowsCount", "LongMethod")
     private fun store(
         ownerId: UUID,
         content: UploadContent,
         givenTitle: String?,
         personalDataAcknowledged: Boolean,
+        readingLevel: ReadingLevel,
         requestedWorkspaceId: () -> UUID?,
     ): AcceptedUpload {
         // 저장 경계에서 개행을 통일한다 — 붙여넣기·파일 추출 두 팔이 함께 지나는 이 자리
@@ -261,7 +271,7 @@ class DocumentService(
 
         val sealedTables = storage.tableStructures?.let { cipher.sealTables(documentId, content.extractedTables) }
 
-        val requiredCredits = Credits.requiredFor(charCount)
+        val requiredCredits = Credits.requiredFor(charCount, readingLevel)
 
         return transaction.inTransaction {
             val resolvedWorkspaceId = resolveWorkspaceId(ownerId, workspaceId)
@@ -298,6 +308,7 @@ class DocumentService(
                     scheme = cipher.writeScheme,
                     keyVersion = cipher.writeKeyVersion,
                     creditsReserved = requiredCredits.amount,
+                    readingLevel = readingLevel,
                 )
             storage.queue.enqueue(conversionId)
 
@@ -307,6 +318,8 @@ class DocumentService(
                 status = conversion.status,
                 charCount = charCount,
                 creditBalance = reservation.available,
+                readingLevel = readingLevel,
+                reservedCredits = requiredCredits.amount,
             )
         }
     }
@@ -325,6 +338,12 @@ class DocumentService(
         val user = users.findById(ownerId) ?: return
         if (user.emailVerifiedAt == null) {
             throw EmailNotVerifiedException(EMAIL_VERIFICATION_REQUIRED_MESSAGE)
+        }
+    }
+
+    private fun requireEnabled(readingLevel: ReadingLevel) {
+        if (readingLevel == ReadingLevel.GRADE_3_4 && !extraEasyEnabled) {
+            throw InvalidInputException(EXTRA_EASY_DISABLED_MESSAGE)
         }
     }
 
@@ -389,6 +408,8 @@ class DocumentService(
         workspaces.findOwnedId(ownerId, workspaceId)
             ?: throw NotFoundException(WORKSPACE_NOT_FOUND_FOR_DOCUMENT_MESSAGE)
 }
+
+private const val EXTRA_EASY_DISABLED_MESSAGE = "초등 3~4학년 수준 변환은 현재 사용할 수 없습니다"
 
 /** Empty metadata distinguishes a new document without tables from an unprocessed old document. */
 private fun ContentCipher.sealTables(

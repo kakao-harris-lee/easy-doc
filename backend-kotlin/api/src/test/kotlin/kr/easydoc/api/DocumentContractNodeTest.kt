@@ -166,6 +166,7 @@ class DocumentContractNodeTest {
                 TITLE_PROPERTY,
                 WORKSPACE_ID_PROPERTY,
                 PERSONAL_DATA_ACKNOWLEDGED_PROPERTY,
+                READING_LEVEL_PROPERTY,
             )
         assertThat(ContractSpec.schemaRequired(FILE_REQUEST_SCHEMA)).containsExactly(FILE_PROPERTY)
 
@@ -332,6 +333,7 @@ class DocumentContractNodeTest {
         const val FILE_PROPERTY = "file"
         const val WORKSPACE_ID_PROPERTY = "workspace_id"
         const val PERSONAL_DATA_ACKNOWLEDGED_PROPERTY = "personal_data_acknowledged"
+        const val READING_LEVEL_PROPERTY = "reading_level"
 
         const val JSON_MEDIA_TYPE = "application/json"
         const val MULTIPART_MEDIA_TYPE = "multipart/form-data"

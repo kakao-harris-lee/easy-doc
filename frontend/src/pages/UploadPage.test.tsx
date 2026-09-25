@@ -88,6 +88,8 @@ function documentCreationResult(
       conversion_id: 'c1',
       status: 'pending',
       char_count: 7,
+      reading_level: 'grade_5_6',
+      reserved_credits: 0.1,
       ...overrides,
     },
     creditBalance,
@@ -150,6 +152,77 @@ beforeEach(() => {
 })
 
 describe('업로드 화면', () => {
+  describe('읽기 수준 선택', () => {
+    it('기능 플래그가 없으면 기본 수준만 보인다', () => {
+      renderPage()
+
+      expect(screen.getByRole('radio', { name: /기본 · 초등 5~6학년 수준/ })).toBeChecked()
+      expect(screen.queryByRole('radio', { name: /더 쉽게/ })).not.toBeInTheDocument()
+    })
+
+    it('더 쉽게를 고르면 붙여넣기 예상 크레딧을 1.2배 후 0.1 단위로 올림하고 요청에 유지한다', async () => {
+      vi.stubEnv('VITE_EASYDOC_EXTRA_EASY_ENABLED', 'true')
+      try {
+        const user = userEvent.setup()
+        vi.mocked(createDocumentFromText).mockResolvedValue(
+          documentCreationResult({ reading_level: 'grade_3_4', reserved_credits: 0.3 }),
+        )
+        renderPage()
+        const text = '하나 둘 셋 넷 '.padEnd(101, '가')
+
+        await user.type(screen.getByLabelText('문서 제목'), '더 쉬운 안내')
+        fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
+        await user.click(screen.getByRole('radio', { name: /더 쉽게 · 초등 3~4학년 수준/ }))
+
+        expect(screen.getByText('필요 크레딧 0.3')).toBeInTheDocument()
+        expect(screen.getByText(/설명이 더 길어질 수 있어요/)).toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        expect(createDocumentFromText).toHaveBeenCalledWith(
+          text,
+          'w1',
+          '더 쉬운 안내',
+          false,
+          'grade_3_4',
+        )
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    })
+
+    it('개인정보 경고 재전송에도 선택한 수준을 유지한다', async () => {
+      vi.stubEnv('VITE_EASYDOC_EXTRA_EASY_ENABLED', 'true')
+      try {
+        const user = userEvent.setup()
+        vi.mocked(createDocumentFromText)
+          .mockRejectedValueOnce(
+            new ApiError(422, '개인정보로 보이는 내용이 있습니다.', null, null, null, null, [
+              'rrn',
+            ]),
+          )
+          .mockResolvedValueOnce(
+            documentCreationResult({ reading_level: 'grade_3_4', reserved_credits: 0.2 }),
+          )
+        renderPage()
+
+        await user.type(screen.getByLabelText('문서 제목'), '개인정보 안내')
+        await user.type(screen.getByLabelText('바꿀 글'), '주민번호 내용을 확인해 주세요')
+        await user.click(screen.getByRole('radio', { name: /더 쉽게 · 초등 3~4학년 수준/ }))
+        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        await user.click(await screen.findByRole('button', { name: '이대로 진행' }))
+
+        expect(createDocumentFromText).toHaveBeenLastCalledWith(
+          '주민번호 내용을 확인해 주세요',
+          'w1',
+          '개인정보 안내',
+          true,
+          'grade_3_4',
+        )
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    })
+  })
+
   it('파일보다 글 붙여넣기를 권장하고 이유를 먼저 알린다', () => {
     renderPage()
 

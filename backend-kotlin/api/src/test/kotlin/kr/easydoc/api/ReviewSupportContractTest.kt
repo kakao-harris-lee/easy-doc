@@ -90,6 +90,34 @@ class ReviewSupportContractTest {
         assertThat(invalidReview.status).isEqualTo(422)
     }
 
+    @Test
+    fun `배치 갱신의 빈 item ids와 중복 item ids는 422다`() {
+        val owner = newOwner()
+        val path = "/conversions/${UUID.randomUUID()}/review-support/items"
+        val assessmentId = UUID.randomUUID()
+        val itemId = UUID.randomUUID()
+
+        val empty =
+            mockMvc
+                .put(path) {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = batchUpdateBody(assessmentId, emptyList())
+                }.andReturn()
+                .response
+        val duplicate =
+            mockMvc
+                .put(path) {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = batchUpdateBody(assessmentId, listOf(itemId, itemId))
+                }.andReturn()
+                .response
+
+        assertThat(empty.status).isEqualTo(422)
+        assertThat(duplicate.status).isEqualTo(422)
+    }
+
     private fun updateBody(
         assessmentId: UUID,
         contentRevision: Long,
@@ -97,6 +125,13 @@ class ReviewSupportContractTest {
     ): String =
         """{"assessment_id":"$assessmentId","expected_content_revision":$contentRevision,""" +
             """"expected_review_revision":$reviewRevision,"state":"confirmed"}"""
+
+    private fun batchUpdateBody(
+        assessmentId: UUID,
+        itemIds: List<UUID>,
+    ): String =
+        """{"assessment_id":"$assessmentId","expected_content_revision":1,"expected_review_revision":0,""" +
+            """"item_ids":[${itemIds.joinToString(",") { "\"$it\"" }}],"state":"confirmed"}"""
 
     private fun newOwner(): UUID {
         val id = users.create("review-support-${UUID.randomUUID()}@example.test", STUB_HASH).id

@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.UnitKind
@@ -11,6 +12,17 @@ import org.junit.jupiter.api.Test
 /** 프롬프트 생성의 성질을 고정한다. 문자열 전문 대조는 `PromptTextSnapshotTest` 가 한다. */
 class PromptsTest {
     private fun systemPromptOf(text: String): String = buildSystemPrompt(text)
+
+    @Test
+    fun `기본 수준 프롬프트는 그대로이고 더 쉬운 수준만 별도 지시를 쓴다`() {
+        val baseline = buildSystemPrompt("본문")
+        val explicitBaseline = buildSystemPrompt("본문", readingLevel = ReadingLevel.GRADE_5_6)
+        val extraEasy = buildSystemPrompt("본문", readingLevel = ReadingLevel.GRADE_3_4)
+
+        assertThat(explicitBaseline).isEqualTo(baseline)
+        assertThat(extraEasy).contains("초등학교 3~4학년", "한 문장에는 한 가지 핵심 내용")
+        assertThat(extraEasy).doesNotContain("초등학교 5~6학년")
+    }
 
     @Test
     fun `제목과 안내 표식은 변환과 보정에서 같은 항목에 보존한다`() {

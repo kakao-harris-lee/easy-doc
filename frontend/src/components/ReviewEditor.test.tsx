@@ -28,6 +28,7 @@ import {
   saveFeedback,
   saveReview,
   updateReviewSupportItem,
+  updateReviewSupportItems,
 } from '../api/client'
 import { lookupTerm } from '../api/dictionary'
 import type {
@@ -85,6 +86,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   analyzeReviewSupport: vi.fn(),
   getReviewSupport: vi.fn(),
   updateReviewSupportItem: vi.fn(),
+  updateReviewSupportItems: vi.fn(),
 }))
 
 vi.mock('../api/dictionary', async (importOriginal) => ({
@@ -128,6 +130,7 @@ beforeEach(() => {
   vi.mocked(analyzeReviewSupport).mockReset()
   vi.mocked(getReviewSupport).mockReset()
   vi.mocked(updateReviewSupportItem).mockReset()
+  vi.mocked(updateReviewSupportItems).mockReset()
 })
 
 afterEach(() => {
@@ -2722,6 +2725,7 @@ describe('R1 검수 지원 패널', () => {
     review_history: false,
     explanations: false,
     illustrations: false,
+    focused_review: false,
   }
 
   it('capability가 없는 옛 응답에는 검수 패널을 노출하지 않는다', () => {
@@ -2988,6 +2992,196 @@ describe('R1 검수 지원 패널', () => {
   })
 })
 
+describe('ER-25 결과 문단 집중 검토', () => {
+  const capabilities = {
+    review_support: true,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: false,
+    focused_review: true,
+  }
+
+  function focusedResponse(items: ReviewItem[], reviewRevision = 1): ReviewSupportResponse {
+    return {
+      status: 'ready',
+      assessment: {
+        assessment_id: 'assessment-1',
+        content_revision: 1,
+        analyzer_version: 'rules-v2',
+        review_revision: reviewRevision,
+        coverage: 'supported',
+        limitations: [],
+        items,
+      },
+    }
+  }
+
+  it('자동 분석 후 실제 신호가 있는 문단만 한 마크로 묶고 batch로 확인한다', async () => {
+    const user = userEvent.setup()
+    const items = [
+      reviewItem({ item_id: 'item-1', easy_unit_indexes: [0] }),
+      reviewItem({ item_id: 'item-2', easy_unit_indexes: [0], rule_code: 'exception_scope' }),
+    ]
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(focusedResponse(items))
+    vi.mocked(updateReviewSupportItems).mockResolvedValue(
+      focusedResponse(
+        items.map((item) => ({ ...item, state: 'confirmed', confirmed_by: 'u1' })),
+        2,
+      ),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: '첫 문단\n둘째 문단',
+          segment_map: segmentMap({
+            source_unit_count: 2,
+            units: [
+              segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0] }),
+              segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1] }),
+            ],
+          }),
+          review_capabilities: capabilities,
+        })}
+        source={sourceReady('원문 하나\n원문 둘')}
+      />,
+    )
+
+    expect(await screen.findByText('검토 필요 2개')).toBeInTheDocument()
+    expect(screen.getByText('검토 필요한 문단 1개')).toBeInTheDocument()
+    expect(screen.queryByText('대응 확인')).not.toBeInTheDocument()
+    expect(screen.queryByText('추정')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '문단별 상세 비교' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '이 문단 확인했어요' }))
+
+    expect(updateReviewSupportItems).toHaveBeenCalledWith('c1', {
+      assessment_id: 'assessment-1',
+      expected_content_revision: 1,
+      expected_review_revision: 1,
+      item_ids: ['item-1', 'item-2'],
+      state: 'confirmed',
+      reason: null,
+    })
+    expect(screen.queryByText('검토 필요 2개')).not.toBeInTheDocument()
+    expect(screen.getByText('확인 완료 2개')).toBeInTheDocument()
+  })
+
+  it('위치 없는 항목은 결과 상단에 남기고 편집 중에는 낡은 마크를 숨긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(
+      focusedResponse([
+        reviewItem({ item_id: 'mapped', easy_unit_indexes: [0] }),
+        reviewItem({ item_id: 'unlocated', easy_unit_indexes: [] }),
+      ]),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: '첫 문단',
+          segment_map: segmentMap({
+            units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0] })],
+          }),
+          review_capabilities: capabilities,
+        })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(await screen.findByText('결과에서 위치를 찾지 못한 검토 항목 1개')).toBeInTheDocument()
+    expect(screen.getByText('검토 필요 1개')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('쉬운 글 문단 1'), '!')
+    expect(screen.getByText('저장하면 검토할 부분을 다시 찾습니다.')).toBeInTheDocument()
+    expect(screen.queryByText('검토 필요 1개')).not.toBeInTheDocument()
+  })
+
+  it('대응표가 없으면 전체 textarea와 상단 검토 요약을 유지한다', async () => {
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(
+      focusedResponse([reviewItem({ easy_unit_indexes: [0] })]),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({ segment_map: null, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(await screen.findByText('문서 전체에서 확인할 검토 항목 1개')).toBeInTheDocument()
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeInTheDocument()
+    expect(screen.queryByLabelText('쉬운 글 문단 1')).not.toBeInTheDocument()
+  })
+
+  it('분석이 제한되면 문단 마크 대신 전체 글과 제한 안내를 보여 준다', async () => {
+    const response = focusedResponse([reviewItem({ easy_unit_indexes: [0] })])
+    response.assessment!.coverage = 'limited'
+    response.assessment!.limitations = ['signal_limit']
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(response)
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: '첫 문단',
+          segment_map: segmentMap({
+            units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0] })],
+          }),
+          review_capabilities: capabilities,
+        })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(
+      await screen.findByText('자동 검사가 일부만 이루어졌습니다. 문서 전체도 확인해 주세요.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('문서 전체에서 확인할 검토 항목 1개')).toBeInTheDocument()
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeInTheDocument()
+    expect(screen.queryByLabelText('쉬운 글 문단 1')).not.toBeInTheDocument()
+  })
+
+  it('분석 요청이 실패하면 본문을 다시 불러오지 않고 재시도할 수 있다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport)
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValueOnce(focusedResponse([]))
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: '검토 분석 다시 시도' }))
+    await waitFor(() => expect(analyzeReviewSupport).toHaveBeenCalledTimes(2))
+    expect(
+      await screen.findByText('자동 검사에서 추가 표시를 찾지 못했습니다.'),
+    ).toBeInTheDocument()
+  })
+
+  it('확인 충돌 후 다른 본문 버전의 분석이 준비됐어도 최신 본문을 불러오게 한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(
+      focusedResponse([reviewItem({ easy_unit_indexes: [] })]),
+    )
+    vi.mocked(updateReviewSupportItems).mockRejectedValue(new ApiError(409, '본문 버전 충돌'))
+    const latest = focusedResponse([])
+    latest.assessment!.content_revision = 2
+    vi.mocked(getReviewSupport).mockResolvedValue(latest)
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: '확인했어요' }))
+    expect(
+      await screen.findByText('다른 화면에서 저장한 최신 내용과 충돌했습니다.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '최신 내용 불러오기' })).toBeInTheDocument()
+  })
+})
+
 describe('ER-07 행동 안내 작업 탭', () => {
   const capabilities = {
     review_support: false,
@@ -2996,6 +3190,7 @@ describe('ER-07 행동 안내 작업 탭', () => {
     review_history: false,
     explanations: false,
     illustrations: false,
+    focused_review: false,
   }
 
   it('기능이 꺼져 있으면 새 탭과 API 호출을 만들지 않는다', () => {
@@ -3052,6 +3247,7 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     review_history: true,
     explanations: false,
     illustrations: false,
+    focused_review: false,
   }
 
   it('기능 플래그가 없으면 표 관계와 검수 기록을 모두 숨긴다', () => {
@@ -3175,6 +3371,7 @@ describe('R6 용어 설명 작업 탭', () => {
     review_history: false,
     explanations: true,
     illustrations: false,
+    focused_review: false,
   }
 
   it('기능 플래그가 없으면 용어 설명을 숨긴다', () => {
@@ -3211,6 +3408,7 @@ describe('R7 그림 목록 작업 탭', () => {
     review_history: false,
     explanations: false,
     illustrations: true,
+    focused_review: false,
   }
 
   it('기능 플래그가 없으면 그림 목록을 숨긴다', () => {
@@ -3243,6 +3441,7 @@ describe('ER-16 그림 배치', () => {
     review_history: false,
     explanations: false,
     illustrations: true,
+    focused_review: false,
   }
 
   function emptyPlacements(revision: number) {

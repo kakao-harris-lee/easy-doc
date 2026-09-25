@@ -143,6 +143,7 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("failure_code") val failureCode: String?,
     @get:JsonProperty("content_revision") val contentRevision: Long,
     @get:JsonProperty("review_capabilities") val reviewCapabilities: ReviewCapabilitiesResponse,
+    @get:JsonProperty("reading_level") val readingLevel: String,
 ) {
     /** 본문 둘은 표식과 길이만 남긴다. */
     override fun toString(): String =
@@ -185,6 +186,7 @@ data class ConversionResponse private constructor(
                 failureCode = view.failureCode,
                 contentRevision = view.contentRevision,
                 reviewCapabilities = ReviewCapabilitiesResponse.of(view.reviewCapabilities),
+                readingLevel = view.readingLevel.wireName,
             )
         }
     }
@@ -192,6 +194,7 @@ data class ConversionResponse private constructor(
 
 data class ReviewCapabilitiesResponse(
     @get:JsonProperty("review_support") val reviewSupport: Boolean,
+    @get:JsonProperty("focused_review") val focusedReview: Boolean,
     @get:JsonProperty("action_guide") val actionGuide: Boolean,
     @get:JsonProperty("table_relations") val tableRelations: Boolean,
     @get:JsonProperty("review_history") val reviewHistory: Boolean,
@@ -202,6 +205,7 @@ data class ReviewCapabilitiesResponse(
         fun of(value: kr.easydoc.core.document.ReviewCapabilities): ReviewCapabilitiesResponse =
             ReviewCapabilitiesResponse(
                 value.reviewSupport,
+                value.focusedReview,
                 value.actionGuide,
                 value.tableRelations,
                 value.reviewHistory,

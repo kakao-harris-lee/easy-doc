@@ -1,5 +1,6 @@
 package kr.easydoc.application.conversion
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.easyread.DocumentIdGenerator
 import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.FactIssue
@@ -112,6 +113,7 @@ class ConvertDocumentUseCase(
          * 않는다.
          */
         priorBodyContext: String? = null,
+        readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
     ): ConversionResult =
         Pass(
             provider,
@@ -127,6 +129,7 @@ class ConvertDocumentUseCase(
                     priorBodyContext
                         ?.takeIf { purpose == LlmCallPurpose.RECONVERT }
                         ?.takeIf { explanationPromptVersion == ExplanationPromptVersion.R3 },
+                readingLevel = readingLevel,
             ),
             purpose,
             clock,
@@ -142,6 +145,7 @@ private class StructureInput(
     val options: StructureHintOptions,
     val explanationVersion: ExplanationPromptVersion,
     val priorBodyContext: String?,
+    val readingLevel: ReadingLevel,
 )
 
 /** 변환 1건의 실행 상태. */
@@ -204,6 +208,7 @@ private class Pass(
                 structureSection,
                 explanationVersion,
                 structureInput.priorBodyContext,
+                structureInput.readingLevel,
             )
         val charCount = source.length
 
@@ -276,6 +281,7 @@ private class Pass(
                 source,
                 explanationVersion,
                 structureInput.priorBodyContext,
+                structureInput.readingLevel,
             )
         val candidate =
             (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text

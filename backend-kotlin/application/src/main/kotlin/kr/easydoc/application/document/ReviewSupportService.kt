@@ -130,6 +130,7 @@ class ReviewSupportService(
     private val assessments: ReviewAssessmentRepository,
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,
+    private val focusedReviewEnabled: Boolean = false,
     private val clock: Clock = Clock.systemUTC(),
     private val reviewHistory: ReviewHistoryAppender = NoOpReviewHistoryAppender,
 ) {
@@ -143,13 +144,15 @@ class ReviewSupportService(
                 val conversion =
                     conversions.findOwnedResult(ownerId, conversionId)
                         ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
-                conversion to assessments.findLatestOwned(ownerId, conversionId)
+                val exact =
+                    assessments.findExact(ownerId, conversionId, conversion.contentRevision, analyzerVersion)
+                conversion to (exact ?: assessments.findLatestOwned(ownerId, conversionId))
             }
         if (stored == null) return ReviewSupportView(ReviewSupportStatus.NOT_GENERATED, null)
         val current =
             conversion.status == ConversionStatus.DONE &&
                 stored.contentRevision == conversion.contentRevision &&
-                stored.analyzerVersion == ANALYZER_VERSION
+                stored.analyzerVersion == analyzerVersion
         return ReviewSupportView(if (current) ReviewSupportStatus.READY else ReviewSupportStatus.STALE, open(stored))
     }
 
@@ -170,7 +173,7 @@ class ReviewSupportService(
                 if (locked.contentRevision != expectedContentRevision) {
                     throw ConflictException(CONTENT_REVISION_CONFLICT_MESSAGE)
                 }
-                assessments.findExact(ownerId, conversionId, expectedContentRevision, ANALYZER_VERSION)?.let {
+                assessments.findExact(ownerId, conversionId, expectedContentRevision, analyzerVersion)?.let {
                     return@inTransaction it
                 }
                 val source =
@@ -183,15 +186,15 @@ class ReviewSupportService(
                         EncryptedField.DOCUMENT_SOURCE_TEXT,
                     )
                 val body = currentBody(locked) ?: throw ConflictException(CONVERSION_NOT_DONE_MESSAGE)
-                val analysis = analyzeReviewSupport(sourceText.value, body.value)
+                val analysis = analyzeReviewSupport(sourceText.value, body.value, focusedReviewEnabled)
                 val id = UUID.randomUUID()
                 val payload = seal(id, analysis)
                 val candidate =
-                    StoredReviewAssessment(id, conversionId, expectedContentRevision, ANALYZER_VERSION, 0, payload)
+                    StoredReviewAssessment(id, conversionId, expectedContentRevision, analyzerVersion, 0, payload)
                 if (assessments.insert(ownerId, candidate)) {
                     candidate
                 } else {
-                    assessments.findExact(ownerId, conversionId, expectedContentRevision, ANALYZER_VERSION)
+                    assessments.findExact(ownerId, conversionId, expectedContentRevision, analyzerVersion)
                         ?: throw StorageException(REVIEW_SUPPORT_STORAGE_MESSAGE)
                 }
             }
@@ -208,11 +211,37 @@ class ReviewSupportService(
         expectedReviewRevision: Long,
         state: ReviewItemState,
         reason: String?,
+    ): ReviewSupportView =
+        updateItems(
+            ownerId,
+            conversionId,
+            listOf(itemId),
+            assessmentId,
+            expectedContentRevision,
+            expectedReviewRevision,
+            state,
+            reason,
+        )
+
+    /** 한 문단에 묶인 항목을 하나의 payload CAS와 트랜잭션으로 변경한다. */
+    @Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod", "ThrowsCount")
+    fun updateItems(
+        ownerId: UUID,
+        conversionId: UUID,
+        itemIds: List<UUID>,
+        assessmentId: UUID,
+        expectedContentRevision: Long,
+        expectedReviewRevision: Long,
+        state: ReviewItemState,
+        reason: String?,
     ): ReviewSupportView {
         requireEnabled()
         requireContentRevision(expectedContentRevision)
         if (expectedReviewRevision < 0 || expectedReviewRevision > MAX_SAFE_REVISION) {
             throw InvalidInputException(REVIEW_REVISION_INVALID_MESSAGE)
+        }
+        if (itemIds.isEmpty() || itemIds.size > MAX_BATCH_ITEMS || itemIds.distinct().size != itemIds.size) {
+            throw InvalidInputException(REVIEW_ITEM_IDS_INVALID_MESSAGE)
         }
         val normalizedReason = normalizeReason(state, reason)
         val updated =
@@ -226,43 +255,60 @@ class ReviewSupportService(
                 val stored =
                     assessments.lockOwned(ownerId, conversionId, assessmentId)
                         ?: throw NotFoundException(REVIEW_ITEM_NOT_FOUND_MESSAGE)
-                if (stored.contentRevision != expectedContentRevision || stored.analyzerVersion != ANALYZER_VERSION) {
+                if (stored.contentRevision != expectedContentRevision || stored.analyzerVersion != analyzerVersion) {
                     throw ConflictException(CONTENT_REVISION_CONFLICT_MESSAGE)
                 }
                 if (stored.reviewRevision != expectedReviewRevision) {
                     throw ConflictException(REVIEW_REVISION_CONFLICT_MESSAGE)
                 }
                 val analysis = openAnalysis(stored)
-                val itemIndex = analysis.items.indexOfFirst { it.itemId == itemId }
-                if (itemIndex < 0) throw NotFoundException(REVIEW_ITEM_NOT_FOUND_MESSAGE)
-                val current = analysis.items[itemIndex]
-                if (current.state == state && current.reason == normalizedReason) return@inTransaction stored
-                val marked =
-                    current.copy(
-                        state = state,
-                        reason = normalizedReason,
-                        confirmedBy = if (state == ReviewItemState.NEEDS_REVIEW) null else ownerId,
-                        confirmedAt = if (state == ReviewItemState.NEEDS_REVIEW) null else Instant.now(clock),
+                val itemsById = analysis.items.associateBy { it.itemId }
+                if (itemIds.any { it !in itemsById }) throw NotFoundException(REVIEW_ITEM_NOT_FOUND_MESSAGE)
+                val changedIds =
+                    itemIds.filter { itemId ->
+                        val current = itemsById.getValue(itemId)
+                        current.state != state || current.reason != normalizedReason
+                    }
+                if (changedIds.isEmpty()) return@inTransaction stored
+                val changedIdSet = changedIds.toSet()
+                val confirmedAt = if (state == ReviewItemState.NEEDS_REVIEW) null else Instant.now(clock)
+                val nextAnalysis =
+                    analysis.copy(
+                        items =
+                            analysis.items.map { current ->
+                                if (current.itemId !in changedIdSet) {
+                                    current
+                                } else {
+                                    current.copy(
+                                        state = state,
+                                        reason = normalizedReason,
+                                        confirmedBy = if (state == ReviewItemState.NEEDS_REVIEW) null else ownerId,
+                                        confirmedAt = confirmedAt,
+                                    )
+                                }
+                            },
                     )
-                val nextAnalysis = analysis.copy(items = analysis.items.toMutableList().also { it[itemIndex] = marked })
                 val nextRevision = stored.reviewRevision + 1
                 val nextPayload = seal(stored.assessmentId, nextAnalysis)
                 if (!assessments.update(ownerId, assessmentId, stored.reviewRevision, nextPayload, nextRevision)) {
                     throw ConflictException(REVIEW_REVISION_CONFLICT_MESSAGE)
                 }
-                appendItemHistory(
-                    ReviewHistoryItemMutation(
-                        ownerId = ownerId,
-                        conversionId = conversionId,
-                        contentRevision = expectedContentRevision,
-                        assessmentId = assessmentId,
-                        itemId = itemId,
-                        reviewRevision = nextRevision,
-                        state = state,
-                        contentText = currentBody(locked)?.value,
-                        analysis = nextAnalysis,
-                    ),
-                )
+                val contentText = currentBody(locked)?.value
+                changedIds.forEach { changedItemId ->
+                    appendItemHistory(
+                        ReviewHistoryItemMutation(
+                            ownerId = ownerId,
+                            conversionId = conversionId,
+                            contentRevision = expectedContentRevision,
+                            assessmentId = assessmentId,
+                            itemId = changedItemId,
+                            reviewRevision = nextRevision,
+                            state = state,
+                            contentText = contentText,
+                            analysis = nextAnalysis,
+                        ),
+                    )
+                }
                 stored.copy(reviewRevision = nextRevision, payload = nextPayload)
             }
         return ReviewSupportView(ReviewSupportStatus.READY, open(updated))
@@ -347,9 +393,14 @@ class ReviewSupportService(
         if (value < 1 || value > MAX_SAFE_REVISION) throw InvalidInputException(CONTENT_REVISION_INVALID_MESSAGE)
     }
 
+    private val analyzerVersion: String
+        get() = if (focusedReviewEnabled) FOCUSED_ANALYZER_VERSION else LEGACY_ANALYZER_VERSION
+
     companion object {
-        const val ANALYZER_VERSION = "fact-preservation-v1"
+        const val LEGACY_ANALYZER_VERSION = "fact-preservation-v1"
+        const val FOCUSED_ANALYZER_VERSION = "focused-review-v1"
         const val MAX_REASON_CHARS = 500
+        const val MAX_BATCH_ITEMS = 100
     }
 }
 
@@ -432,6 +483,7 @@ private object ReviewPayloadCodec {
 
 const val REVIEW_REVISION_CONFLICT_MESSAGE: String = "검수 표시가 바뀌었습니다. 다시 불러와 주세요"
 const val REVIEW_ITEM_NOT_FOUND_MESSAGE: String = "검수 항목을 찾을 수 없습니다"
+const val REVIEW_ITEM_IDS_INVALID_MESSAGE: String = "검수 항목 목록이 올바르지 않습니다"
 const val REVIEW_REASON_TOO_LONG_MESSAGE: String = "메모는 500자 이하여야 합니다"
 const val REVIEW_REASON_REQUIRED_MESSAGE: String = "해당 없음에는 메모가 필요합니다"
 const val REVIEW_SUPPORT_STORAGE_MESSAGE: String = "검수 결과를 저장하지 못했습니다"

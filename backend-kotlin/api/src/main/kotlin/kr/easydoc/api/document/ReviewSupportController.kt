@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.Size
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.document.ReviewAssessmentView
@@ -52,11 +53,8 @@ class ReviewSupportController(private val service: ReviewSupportService) {
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(ITEM_ID) itemId: UUID,
         @Valid @RequestBody request: ReviewSupportItemUpdateRequest,
-    ): ResponseEntity<ReviewSupportResponse> {
-        val state =
-            ReviewItemState.entries.singleOrNull { it.wireName == request.state }
-                ?: throw InvalidInputException("검수 상태가 올바르지 않습니다")
-        return response(
+    ): ResponseEntity<ReviewSupportResponse> =
+        response(
             service.updateItem(
                 ownerId = user.id,
                 conversionId = conversionId,
@@ -64,11 +62,37 @@ class ReviewSupportController(private val service: ReviewSupportService) {
                 assessmentId = request.assessmentId,
                 expectedContentRevision = request.expectedContentRevision,
                 expectedReviewRevision = request.expectedReviewRevision,
-                state = state,
+                state = stateOf(request.state),
+                reason = request.reason,
+            ),
+        )
+
+    @PutMapping(REVIEW_SUPPORT_ITEMS_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun updateItems(
+        user: AuthenticatedUser,
+        @PathVariable(CONVERSION_ID) conversionId: UUID,
+        @Valid @RequestBody request: ReviewSupportItemsUpdateRequest,
+    ): ResponseEntity<ReviewSupportResponse> {
+        if (request.itemIds.distinct().size != request.itemIds.size) {
+            throw InvalidInputException("검수 항목 목록이 올바르지 않습니다")
+        }
+        return response(
+            service.updateItems(
+                ownerId = user.id,
+                conversionId = conversionId,
+                itemIds = request.itemIds,
+                assessmentId = request.assessmentId,
+                expectedContentRevision = request.expectedContentRevision,
+                expectedReviewRevision = request.expectedReviewRevision,
+                state = stateOf(request.state),
                 reason = request.reason,
             ),
         )
     }
+
+    private fun stateOf(value: String): ReviewItemState =
+        ReviewItemState.entries.singleOrNull { it.wireName == value }
+            ?: throw InvalidInputException("검수 상태가 올바르지 않습니다")
 
     private fun response(view: ReviewSupportView): ResponseEntity<ReviewSupportResponse> =
         ResponseEntity
@@ -80,6 +104,7 @@ class ReviewSupportController(private val service: ReviewSupportService) {
 
     private companion object {
         const val REVIEW_SUPPORT_PATH = "/conversions/{conversion_id}/review-support"
+        const val REVIEW_SUPPORT_ITEMS_PATH = "$REVIEW_SUPPORT_PATH/items"
         const val REVIEW_SUPPORT_ITEM_PATH = "$REVIEW_SUPPORT_PATH/items/{item_id}"
         const val CONVERSION_ID = "conversion_id"
         const val ITEM_ID = "item_id"
@@ -115,6 +140,32 @@ data class ReviewSupportItemUpdateRequest
         override fun toString(): String =
             "ReviewSupportItemUpdateRequest(assessmentId=$assessmentId, contentRevision=$expectedContentRevision, " +
                 "reviewRevision=$expectedReviewRevision, state=$state, reason=$CONTENT_MASK ${reason?.length ?: 0}자)"
+    }
+
+data class ReviewSupportItemsUpdateRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("assessment_id") val assessmentId: UUID,
+        @param:JsonProperty("expected_content_revision")
+        @field:Min(1)
+        @field:Max(9_007_199_254_740_991)
+        val expectedContentRevision: Long,
+        @param:JsonProperty("expected_review_revision")
+        @field:Min(0)
+        @field:Max(9_007_199_254_740_991)
+        val expectedReviewRevision: Long,
+        @param:JsonProperty("item_ids")
+        @field:Size(min = 1, max = 100)
+        val itemIds: List<UUID>,
+        @param:JsonProperty("state") val state: String,
+        @param:JsonProperty("reason")
+        @param:JsonSetter(nulls = Nulls.SET)
+        val reason: String? = null,
+    ) {
+        override fun toString(): String =
+            "ReviewSupportItemsUpdateRequest(assessmentId=$assessmentId, " +
+                "contentRevision=$expectedContentRevision, reviewRevision=$expectedReviewRevision, " +
+                "items=${itemIds.size}, state=$state, reason=$CONTENT_MASK ${reason?.length ?: 0}자)"
     }
 
 data class ReviewSupportResponse(

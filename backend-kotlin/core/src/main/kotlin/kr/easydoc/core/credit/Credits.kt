@@ -1,5 +1,6 @@
 package kr.easydoc.core.credit
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.exceptions.InvalidInputException
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -49,6 +50,18 @@ class Credits(amount: BigDecimal) {
             require(charCount >= 0) { "문자 수는 음수일 수 없습니다: $charCount" }
             val units = (charCount.toLong() + CHARS_PER_CREDIT_UNIT - 1) / CHARS_PER_CREDIT_UNIT
             return Credits(BigDecimal.valueOf(units, 1))
+        }
+
+        /** 더 쉬운 단계는 기존 0.1 단위 수량의 1.2배를 올림한다. */
+        fun requiredFor(
+            charCount: Int,
+            readingLevel: ReadingLevel,
+        ): Credits {
+            val base = requiredFor(charCount)
+            if (readingLevel == ReadingLevel.GRADE_5_6) return base
+            val baseUnits = base.amount.movePointRight(1)
+            val chargedUnits = baseUnits.multiply(BigDecimal("1.2")).setScale(0, RoundingMode.CEILING)
+            return Credits(chargedUnits.movePointLeft(1))
         }
     }
 }
