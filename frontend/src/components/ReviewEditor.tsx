@@ -44,6 +44,7 @@ import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
 import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
+import { IllustrationSuggestionsPanel } from './IllustrationSuggestionsPanel'
 import { IllustrationsPanel } from './IllustrationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
 import { TableRelationsPanel } from './TableRelationsPanel'
@@ -1272,6 +1273,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
   const illustrationsEnabled = conversion.review_capabilities?.illustrations === true
+  // R7 ER-17 — 기존 `illustrations` 토글과 독립이다(명세 §6). 이용량 단가가 없으면
+  // 서버가 false 로 보고하므로 화면은 이 값만 보고 패널을 그린다.
+  const illustrationSuggestionsEnabled =
+    conversion.review_capabilities?.illustration_suggestions === true
   const taskOptions: TaskKey[] = [
     'body',
     ...(guideEnabled ? ['guide' as const] : []),
@@ -1951,6 +1956,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               setIllustrationPlacementCount(count)
               setIllustrationPlacementsStale(stale)
             }}
+          />
+        )}
+
+        {illustrationSuggestionsEnabled && (
+          <IllustrationSuggestionsPanel
+            conversionId={conversion.id}
+            contentRevision={contentRevision}
+            bodyDirty={dirty}
+            bodyBusy={busy}
+            bodyConflict={contentConflict}
+            // 제안이 가리키는 줄은 **저장된** 본문 기준이다. 편집 중인 `draft`를 주면
+            // 저장하지 않은 수정이 제안의 근거처럼 보인다.
+            savedBody={savedText}
           />
         )}
       </div>

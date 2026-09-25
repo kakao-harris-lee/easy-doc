@@ -212,6 +212,20 @@ export const ROUTES = {
    * 저장(ER-16, CAS). 본문 revision 불일치는 409, 검증 실패는 422.
    */
   illustrationPlacementsWrite: { method: 'PUT', ok: 200, conflict: 409 },
+  /**
+   * 계약 `paths./conversions/{conversion_id}/illustration-suggestion-jobs.get` — 제안 분석
+   * 작업과 예상 이용량 조회(R7 ER-17). 기능 OFF·타인·만료는 404다.
+   */
+  illustrationSuggestionJobs: { method: 'GET', ok: 200 },
+  /**
+   * 계약 `paths./conversions/{conversion_id}/illustration-suggestion-jobs.post` — 멱등
+   * 작업 접수. 이용량 단가 미설정은 503, 활성 작업·revision 불일치는 409다.
+   */
+  illustrationSuggestionJobCreate: { method: 'POST', accepted: 202, conflict: 409 },
+  /** 계약 `paths./conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}.get` — 작업 상태. */
+  illustrationSuggestionJobRead: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/illustration-suggestions.get` — 최신 제안 결과. */
+  illustrationSuggestionsRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
   dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
   /**
