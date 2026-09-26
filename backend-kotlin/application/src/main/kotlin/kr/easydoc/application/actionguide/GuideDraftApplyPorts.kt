@@ -42,7 +42,9 @@ data class StoredGuideDraftApplication(
     val command: GuideDraftApplyCommand,
     val appliedContentRevision: Long,
     val previousBody: EncryptedContent,
-)
+) {
+    override fun toString(): String = "StoredGuideDraftApplication(snapshotId=$snapshotId)"
+}
 
 /** Mandatory snapshots and the body CAS share the caller's transaction, independent of R5 flags. */
 interface GuideDraftApplyRepository {
