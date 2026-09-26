@@ -548,6 +548,7 @@ export function IllustrationSuggestionsPanel({
                   <Button
                     type="button"
                     variant="outline"
+                    className="min-h-11"
                     disabled={busy}
                     aria-describedby={costId}
                     onClick={() => {
@@ -559,6 +560,7 @@ export function IllustrationSuggestionsPanel({
                 ) : (
                   <Button
                     type="button"
+                    className="min-h-11"
                     disabled={busy || bodyDirty || bodyBusy || bodyConflict || insufficientCredits}
                     // 차감량은 버튼 이름이 아니라 설명으로 붙인다 — 이름에 넣으면 상태가
                     // 바뀔 때마다 버튼 이름이 달라져 같은 조작을 다른 것으로 읽게 된다.

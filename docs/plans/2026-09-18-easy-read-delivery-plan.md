@@ -73,6 +73,8 @@ ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구
 
 ### 3.1 현재 완료 증거
 
+- 2026-09-26 R2 후속: ER-27 미리보기 수정과 ER-28의 계약·fake 분석·암호화 저장 기반을 [PR #162](https://github.com/kakao-harris-lee/easy-doc/pull/162)로 제출했다. ER-28 전체나 ER-29~32의 완료는 아니며 실제 생성 경로는 활성화하지 않았다. 최신 테스트·리뷰·재시작 결과는 [구현 기록](../reports/2026-09-26-r2-implementation.md)을 따른다.
+
 - 2026-09-24 정정: 아래 ER-15/16 테스트 통과는 고정 카탈로그와 배치만 검증했다. 문맥 제안·새 이미지 생성의 검증 증거가 아니며 ER-17~20은 미착수다. 과거 기록에 나온 AC-R7-a/b는 기존 범위 기준으로 보존한다.
 
 - 2026-09-23 후속 범위(2): R7 그림 배치(ER-16)를 구현했으며 토글은 ER-15의 `easydoc.illustrations.enabled`(기본 OFF)를 그대로 쓴다. 검수자가 쉬운 글 줄마다 카탈로그 그림을 골라 저장하면(`PUT /conversions/{conversion_id}/illustration-placements`, 계약 2.45.0, `expected_content_revision` CAS) 변환당 하나의 암호화 payload(V34 `illustration_placements`, 최대 10건, cascade 삭제, 키 회전 등록)로 보관하고, 본문이 바뀌어 `content_revision`이 오르면 `stale=true`로 돌려주되 지우지 않는다. 화면은 dirty면 저장을 막고, stale이면 배지와 함께 미리보기에서 그림을 내리며, 저장된 배치는 웹 미리보기(`figure`+대체텍스트)로만 보이고 다운로드 버튼 옆에 「배치한 그림은 파일에 들어가지 않습니다」를 명시한다(AC-R7-b의 「이미지 미포함 출력은 사용자에게 명시」). DOCX/HWPX 이미지 삽입은 명세대로 별도 범위로 남긴다. Kotlin 전체 빌드 5개 모듈 3,316개 테스트(Testcontainers 실 DB 포함), React check·60개 파일/779개 테스트·build, Compose 기본·CI·E2E 구성을 통과했으며 유료 provider 호출은 0회다. e2e `frontend/e2e/illustration-placement.spec.ts`를 일회용 스택(fake LLM)에서 실행해 **1 통과 / 0 실패**(배치 저장 → 미리보기 → 안내문 → 본문 재저장 → stale 배지)를 확인했다.
