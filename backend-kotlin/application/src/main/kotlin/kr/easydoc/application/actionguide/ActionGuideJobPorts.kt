@@ -10,6 +10,11 @@ import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
+enum class ActionGuideOperation(val wireName: String) {
+    GUIDE("guide"),
+    ANALYSIS("analysis"),
+}
+
 /** 접수 시 잠가 읽는 변환·문서 스냅샷. 소유권과 보존 기간은 저장소가 함께 확인한다. */
 data class ActionGuideJobContext(
     val workspaceId: UUID,
@@ -37,6 +42,7 @@ data class StoredActionGuideJob(
     val providerStartedAt: Instant?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val operation: ActionGuideOperation = ActionGuideOperation.GUIDE,
 )
 
 sealed interface ActionGuideJobInsert {
@@ -104,6 +110,18 @@ interface ActionGuideJobRepository {
     fun findLatestOwned(
         ownerId: UUID,
         conversionId: UUID,
+    ): StoredActionGuideJob?
+
+    fun findActiveOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob?
+
+    fun findLatestOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
     ): StoredActionGuideJob?
 
     /** [maxLeaseAttempts]를 넘겨 다시 얻은 미시작 작업은 [ActionGuideJobAcquire.DeadLettered]로 돌려준다. */
@@ -201,6 +219,11 @@ sealed interface ActionGuideRunResult {
     data class Valid(
         override val record: LlmCallRecord,
         val candidate: ActionGuideCandidate,
+    ) : ActionGuideRunResult
+
+    data class ValidAnalysis(
+        override val record: LlmCallRecord,
+        val snapshot: GuideAnalysisSnapshot,
     ) : ActionGuideRunResult
 
     data class Invalid(override val record: LlmCallRecord) : ActionGuideRunResult

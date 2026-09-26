@@ -43,6 +43,8 @@ class ProcessActionGuideJob(
     private val transaction: TransactionRunner,
     private val policy: ActionGuideJobWorkerPolicy,
     private val clock: Clock = Clock.systemUTC(),
+    private val analyses: GuideAnalysisRepository? = null,
+    private val operationEnabled: (ActionGuideOperation) -> Boolean = { true },
 ) {
     private val log = LoggerFactory.getLogger(ProcessActionGuideJob::class.java)
 
@@ -100,6 +102,7 @@ class ProcessActionGuideJob(
     private fun start(lease: ActionGuideJobLease): StartResult =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction StartResult.Dropped
+            if (!operationEnabled(job.operation)) return@inTransaction supersede(lease, job)
             // 입력 확정까지 변환 행 잠금 안에서 끝낸다. 시작을 커밋한 뒤에 입력을 읽으면 그 사이의
             // 본문 수정이 호출 없는 OUTCOME_UNKNOWN이 되어 쓰지도 않은 시도를 상한에서 깎는다.
             if (!jobs.hasCurrentInput(lease, job.basedOnContentRevision)) {
@@ -129,6 +132,7 @@ class ProcessActionGuideJob(
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction ActionGuideJobOutcome.DROPPED
             when (result) {
                 is ActionGuideRunResult.Valid -> {
+                    require(job.operation == ActionGuideOperation.GUIDE)
                     require(result.record.outcome == LlmCallOutcome.COMPLETED)
                     if (!jobs.hasCurrentInput(lease, job.basedOnContentRevision)) {
                         if (!jobs.markSuperseded(lease, clock.instant())) {
@@ -169,6 +173,10 @@ class ProcessActionGuideJob(
                     }
                 }
 
+                is ActionGuideRunResult.ValidAnalysis -> {
+                    settleAnalysis(lease, job, executionId, result)
+                }
+
                 is ActionGuideRunResult.Invalid -> {
                     require(result.record.outcome == LlmCallOutcome.COMPLETED)
                     if (!jobs.markFailed(lease, ActionGuideJobFailureCode.RESULT_INVALID, clock.instant())) {
@@ -190,6 +198,33 @@ class ProcessActionGuideJob(
                 }
             }
         }
+
+    /** Analysis storage, request alias, ledger and settlement share the held-job transaction. */
+    private fun settleAnalysis(
+        lease: ActionGuideJobLease,
+        job: StoredActionGuideJob,
+        executionId: UUID,
+        result: ActionGuideRunResult.ValidAnalysis,
+    ): ActionGuideJobOutcome {
+        require(job.operation == ActionGuideOperation.ANALYSIS)
+        require(result.record.outcome == LlmCallOutcome.COMPLETED)
+        require(result.snapshot.basedOnContentRevision == job.basedOnContentRevision)
+        val current = jobs.hasCurrentInput(lease, job.basedOnContentRevision)
+        val changed =
+            if (current) jobs.markSucceeded(lease, clock.instant()) else jobs.markSuperseded(lease, clock.instant())
+        if (!changed) return ActionGuideJobOutcome.DROPPED
+        if (current) {
+            val repository = checkNotNull(analyses) { "행동 분석 저장소가 설정되지 않았습니다" }
+            repository.insert(job.ownerId, job.conversionId, result.snapshot.copy(originJobId = job.jobId))
+            repository.bindRequest(job.ownerId, job.conversionId, job.requestId, result.snapshot.analysisId)
+            ledger.complete(job, executionId, result.record)
+            credits.consume(job)
+        } else {
+            ledger.complete(job, executionId, result.record)
+            credits.release(job)
+        }
+        return ActionGuideJobOutcome.COMPLETED
+    }
 
     /** 입력이 더 이상 유효하지 않다 — 호출 없이 예약을 반환한다. 시도 상한(D04)에 세지 않는다. */
     private fun supersede(

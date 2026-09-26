@@ -67,7 +67,9 @@ class ActionGuideJobController(
     ): ResponseEntity<ActionGuideJobResponse> {
         val job = service.get(user.id, conversionId, jobId)
         val candidate =
-            if (job.status == ActionGuideJobStatus.SUCCEEDED) {
+            if (job.status == ActionGuideJobStatus.SUCCEEDED &&
+                job.operation == kr.easydoc.application.actionguide.ActionGuideOperation.GUIDE
+            ) {
                 contentService.candidateForJob(user.id, conversionId, jobId)
             } else {
                 null
@@ -135,6 +137,7 @@ data class ActionGuideJobResponse(
     @get:JsonProperty("candidate_id") val candidateId: UUID? = null,
     @get:JsonProperty("candidate_state") val candidateState: String? = null,
     @get:JsonProperty("content") val content: ActionGuideContentPayload? = null,
+    val operation: String = "guide",
 ) {
     companion object {
         fun of(
@@ -153,6 +156,7 @@ data class ActionGuideJobResponse(
                 candidate?.candidateId,
                 candidate?.state,
                 candidate?.let { ActionGuideContentPayload.of(it.content) },
+                view.operation.wireName,
             )
     }
 }

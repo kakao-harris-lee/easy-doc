@@ -506,6 +506,27 @@ class ValueSlotInvariantReachTest {
                 "ActionGuideJobCreateRequest" to
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_guide_revision":null}""",
+                "GuideAnalysisRevisionRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0}""",
+                "ResolveGuideSignalRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0,""" +
+                    """"note":"검토","body_unit_indexes":[],"body_quote":null}""",
+                "CorrectGuideAnalysisRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0,""" +
+                    """"suitability":"non_guide","action_presence":"none","reason":"배경","evidence":[],"actions":[],""" +
+                    """"coverage":[]}""",
+                "CreateGuideDraftRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0,""" +
+                    """"request_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"analysis_id":"00000000-0000-0000-0000-000000000002","mode":"additional_guide"}""",
+                "ReviewGuideDraftRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0,""" +
+                    """"expected_draft_revision":1,"confirmed_block_ids":[]}""",
+                "ApplyGuideDraftRequest" to
+                    """{"expected_content_revision":1,"expected_analysis_revision":1,"expected_review_revision":0,""" +
+                    """"request_id":"00000000-0000-0000-0000-000000000001","expected_draft_revision":1}""",
+                "CreateActionGuideAnalysisRequest" to
+                    """{"request_id":"00000000-0000-0000-0000-000000000001","expected_content_revision":1}""",
                 // R7 ER-17 접수 — 안내문 버전 같은 두 번째 축이 없어 필드가 둘뿐이다.
                 "IllustrationSuggestionJobCreateRequest" to
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +

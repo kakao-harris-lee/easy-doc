@@ -8,6 +8,12 @@ import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.actionguide.ActionGuideSection
 import kr.easydoc.core.actionguide.ActionGuideSectionKind
 import kr.easydoc.core.actionguide.ActionGuideSectionStatus
+import kr.easydoc.core.actionguide.GuideActionPresence
+import kr.easydoc.core.actionguide.GuideAnalysisResult
+import kr.easydoc.core.actionguide.GuideCoverageStatus
+import kr.easydoc.core.actionguide.GuideSourceUnit
+import kr.easydoc.core.actionguide.GuideSuitability
+import kr.easydoc.core.actionguide.GuideUnitAssessment
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.exceptions.DecryptionFailedException
@@ -260,6 +266,71 @@ class ProcessActionGuideJobTest {
         assertThat(world.credits.consumes).isZero()
     }
 
+    @Test
+    fun `분석 성공은 v1 후보 없이 분석과 요청 별칭을 저장하고 한 번 정산한다`() {
+        val world = World()
+        val analyses = RecordingAnalyses()
+        world.jobs.rows[JOB] = storedJob().copy(operation = ActionGuideOperation.ANALYSIS)
+        var callDepth = -1
+        world.runner =
+            ActionGuideJobRunner {
+                ActionGuideProviderCall {
+                    callDepth = world.transaction.depth
+                    analysisResult()
+                }
+            }
+        assertThat(world.processor(analyses).processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(callDepth).isZero()
+        assertThat(analyses.saved).isNotNull()
+        assertThat(analyses.boundRequest).isEqualTo(REQUEST)
+        assertThat(world.contents.candidates).isEmpty()
+        assertThat(world.ledger.completes).isEqualTo(1)
+        assertThat(world.credits.consumes).isEqualTo(1)
+    }
+
+    @Test
+    fun `분석 저장 실패는 성공 상태와 소비를 롤백한다`() {
+        val world = World()
+        world.jobs.rows[JOB] = storedJob().copy(operation = ActionGuideOperation.ANALYSIS)
+        val analyses = RecordingAnalyses().apply { failInsert = true }
+        world.runner = ActionGuideJobRunner { ActionGuideProviderCall { analysisResult() } }
+        assertThatThrownBy { world.processor(analyses).processNext() }.isInstanceOf(StorageException::class.java)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.RUNNING)
+        assertThat(world.ledger.completes).isZero()
+        assertThat(world.credits.consumes).isZero()
+        assertThat(analyses.boundRequest).isNull()
+    }
+
+    @Test
+    fun `분석 호출 중 본문 변경은 결과를 버리고 예약을 반환한다`() {
+        val world = World()
+        world.jobs.rows[JOB] = storedJob().copy(operation = ActionGuideOperation.ANALYSIS)
+        val analyses = RecordingAnalyses()
+        world.runner =
+            ActionGuideJobRunner {
+                ActionGuideProviderCall {
+                    world.jobs.currentInput = false
+                    analysisResult()
+                }
+            }
+        assertThat(world.processor(analyses).processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(analyses.saved).isNull()
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.SUPERSEDED)
+        assertThat(world.credits.releases).isEqualTo(1)
+        assertThat(world.credits.consumes).isZero()
+    }
+
+    @Test
+    fun `분석 토글 OFF는 아직 시작하지 않은 분석만 호출 없이 반환한다`() {
+        val world = World()
+        world.jobs.rows[JOB] = storedJob().copy(operation = ActionGuideOperation.ANALYSIS)
+        world.runner = ActionGuideJobRunner { error("분석을 호출하면 안 됩니다") }
+        assertThat(world.processor(operationEnabled = { it == ActionGuideOperation.GUIDE }).processNext())
+            .isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(world.ledger.starts).isZero()
+        assertThat(world.credits.releases).isEqualTo(1)
+    }
+
     private class World(started: Boolean = false) {
         val lease = ActionGuideJobLease(JOB, "worker-1", 1)
         val jobs = FakeActionGuideJobs()
@@ -280,18 +351,98 @@ class ProcessActionGuideJobTest {
             jobs.acquired = ActionGuideJobAcquire.Held(lease)
         }
 
-        fun processor() =
-            ProcessActionGuideJob(
-                jobs,
-                credits,
-                ledger,
-                contents,
-                cipher,
-                runner,
-                transaction,
-                ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30), ARBITRARY_MAX_LEASE_ATTEMPTS),
-                Clock.fixed(NOW, ZoneOffset.UTC),
-            )
+        fun processor(
+            analyses: GuideAnalysisRepository? = null,
+            operationEnabled: (ActionGuideOperation) -> Boolean = { true },
+        ) = ProcessActionGuideJob(
+            jobs,
+            credits,
+            ledger,
+            contents,
+            cipher,
+            runner,
+            transaction,
+            ActionGuideJobWorkerPolicy("worker-1", Duration.ofSeconds(30), ARBITRARY_MAX_LEASE_ATTEMPTS),
+            Clock.fixed(NOW, ZoneOffset.UTC),
+            analyses = analyses,
+            operationEnabled = operationEnabled,
+        )
+    }
+}
+
+private fun analysisResult() =
+    ActionGuideRunResult.ValidAnalysis(
+        completedRecord(),
+        GuideAnalysisSnapshot(
+            UUID.randomUUID(),
+            3,
+            1,
+            listOf(GuideSourceUnit(0, "소개")),
+            "소개",
+            "grade_5_6",
+            GuideAnalysisResult(
+                GuideSuitability.NON_GUIDE,
+                GuideActionPresence.NONE,
+                "설명 자료",
+                emptyList(),
+                emptyList(),
+                listOf(GuideUnitAssessment(0, GuideCoverageStatus.CONTEXT, emptyList())),
+                emptyList(),
+                false,
+            ),
+            NOW,
+        ),
+    )
+
+private class RecordingAnalyses : GuideAnalysisRepository {
+    var saved: GuideAnalysisSnapshot? = null
+    var boundRequest: UUID? = null
+    var failInsert = false
+
+    override fun lockInput(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): GuideAnalysisInput? = null
+
+    override fun findRequest(
+        ownerId: UUID,
+        conversionId: UUID,
+        requestId: UUID,
+    ): GuideAnalysisSnapshot? = null
+
+    override fun findRevision(
+        ownerId: UUID,
+        conversionId: UUID,
+        revision: Long,
+    ): GuideAnalysisSnapshot? = null
+
+    override fun find(
+        ownerId: UUID,
+        conversionId: UUID,
+        analysisId: UUID,
+    ): GuideAnalysisSnapshot? = null
+
+    override fun latest(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): GuideAnalysisSnapshot? = null
+
+    override fun insert(
+        ownerId: UUID,
+        conversionId: UUID,
+        snapshot: GuideAnalysisSnapshot,
+    ) {
+        if (failInsert) throw StorageException("snapshot failure")
+        saved = snapshot
+    }
+
+    override fun bindRequest(
+        ownerId: UUID,
+        conversionId: UUID,
+        requestId: UUID,
+        analysisId: UUID,
+    ) {
+        boundRequest = requestId
     }
 }
 

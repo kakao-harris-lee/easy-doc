@@ -33,6 +33,7 @@ export interface ActionGuidePanelProps {
   onSaveBody: () => Promise<number | null>
   onDirtyChange?: (dirty: boolean) => void
   onReviewed?: () => void
+  allowCreate?: boolean
 }
 
 const SECTIONS: readonly { kind: ActionGuideSectionKind; label: string }[] = [
@@ -103,6 +104,7 @@ export function ActionGuidePanel({
   onSaveBody,
   onDirtyChange,
   onReviewed,
+  allowCreate = true,
 }: ActionGuidePanelProps) {
   const headingId = useId()
   const [resource, setResource] = useState<ActionGuideResource | null>(null)
@@ -732,7 +734,7 @@ export function ActionGuidePanel({
         )}
       </details>
 
-      {!isLoading && jobs !== null && (
+      {!isLoading && jobs !== null && (allowCreate || activeJob !== null || unknownCreate) && (
         <div className="space-y-3 rounded-md border border-border p-4">
           <p>
             현재 저장된 본문으로 별도 안내문을 만듭니다. 본문은 바뀌지 않습니다. 원문에 안내가
@@ -848,25 +850,70 @@ export function ActionGuidePanel({
         </p>
       )}
       {candidate !== null && (
-        <div className="space-y-3 rounded-md border border-primary p-4">
-          <h3 className="font-semibold">새 안내문 후보</h3>
-          <p>생성된 후보를 확인하고 직접 적용해 주세요. 현재 안내문은 자동으로 바뀌지 않습니다.</p>
+        <section
+          aria-labelledby={`${headingId}-candidate`}
+          className="space-y-3 rounded-md border border-primary p-4"
+        >
+          <h3 id={`${headingId}-candidate`} className="font-semibold">
+            행동 안내 보조자료 미리보기
+          </h3>
+          <p>
+            기존 문서와 함께 읽는 보조자료입니다. 문서 전체의 내용을 담고 있지는 않습니다. 원문과
+            비교하여 확인한 뒤 적용해 주세요. 현재 안내문은 자동으로 바뀌지 않습니다.
+          </p>
           {dirty && (
             <p role="alert">
               현재 안내문의 저장하지 않은 편집 내용이 있습니다. 먼저 저장하거나 현재 안내문을 유지해
               주세요.
             </p>
           )}
-          <div className="max-h-48 space-y-2 overflow-auto text-sm">
+          <div className="space-y-4 text-sm">
             {SECTIONS.map(({ kind, label }) => {
               const section = candidate.content?.sections.find((item) => item.kind === kind)
               return (
-                <p key={kind}>
-                  <strong>{label}:</strong>{' '}
-                  {section?.status === 'not_in_source'
-                    ? '원문에 안내 없음'
-                    : section?.items.map((item) => item.text).join(' / ') || '확인 필요'}
-                </p>
+                <section key={kind} aria-label={label} className="space-y-2">
+                  <h4 className="font-semibold">{label}</h4>
+                  <p>
+                    {section?.status === 'not_in_source'
+                      ? '원문에 안내 없음'
+                      : section?.status === 'available'
+                        ? '원문 근거 있음 · 내용을 비교해 주세요'
+                        : '확인 필요'}
+                  </p>
+                  {section?.status !== 'not_in_source' && (
+                    <ul className="space-y-2">
+                      {section?.items.map((item, index) => (
+                        <li key={index} className="space-y-2 rounded-md bg-secondary p-3">
+                          <p className="whitespace-pre-wrap">{item.text}</p>
+                          {item.cautions.map((caution, cautionIndex) => (
+                            <p key={cautionIndex} className="whitespace-pre-wrap">
+                              <strong>주의:</strong> {caution}
+                            </p>
+                          ))}
+                          {item.source_anchors.length === 0 ? (
+                            <p>원문 근거 확인 필요</p>
+                          ) : (
+                            <details>
+                              <summary className="cursor-pointer">
+                                원문 근거 보기 ({item.source_anchors.length}개)
+                              </summary>
+                              {item.source_anchors.map((anchor, anchorIndex) => (
+                                <blockquote
+                                  key={anchorIndex}
+                                  className="mt-2 whitespace-pre-wrap border-l-2 border-primary pl-3"
+                                >
+                                  원문{' '}
+                                  {anchor.source_unit_indexes.map((line) => line + 1).join(', ')}행:{' '}
+                                  {anchor.quote}
+                                </blockquote>
+                              ))}
+                            </details>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
               )
             })}
           </div>
@@ -896,7 +943,7 @@ export function ActionGuidePanel({
               현재 안내문 유지
             </Button>
           </div>
-        </div>
+        </section>
       )}
 
       {!isLoading && draft !== null && guide !== null && (

@@ -5,6 +5,7 @@ import kr.easydoc.application.actionguide.ActionGuideJobContext
 import kr.easydoc.application.actionguide.ActionGuideJobInsert
 import kr.easydoc.application.actionguide.ActionGuideJobLease
 import kr.easydoc.application.actionguide.ActionGuideJobRepository
+import kr.easydoc.application.actionguide.ActionGuideOperation
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
@@ -75,7 +76,8 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
                 .param("conversionId", job.conversionId)
                 .param("expectedContentRevision", job.basedOnContentRevision)
                 .param("expectedGuideRevision", job.expectedGuideRevision)
-                .param("fingerprint", fingerprint(job.basedOnContentRevision, job.expectedGuideRevision))
+                .param("fingerprint", fingerprint(job.basedOnContentRevision, job.expectedGuideRevision, job.operation))
+                .param("operation", job.operation.wireName)
                 .param("status", job.status.wireName)
                 .param("reservedCredits", job.reservedCredits)
                 .param("createdAt", utc(job.createdAt))
@@ -107,6 +109,18 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
         ownerId: UUID,
         conversionId: UUID,
     ): StoredActionGuideJob? = findOne(LATEST_SQL, ownerId, conversionId)
+
+    override fun findActiveOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob? = findForOperation(ACTIVE_OPERATION_SQL, ownerId, conversionId, operation)
+
+    override fun findLatestOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob? = findForOperation(LATEST_OPERATION_SQL, ownerId, conversionId, operation)
 
     override fun acquire(
         owner: String,
@@ -240,6 +254,21 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             .param("updatedAt", utc(updatedAt))
             .update() == 1
 
+    private fun findForOperation(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob? =
+        jdbc
+            .sql(sql)
+            .param("ownerId", ownerId)
+            .param("conversionId", conversionId)
+            .param("operation", operation.wireName)
+            .query(::mapJob)
+            .optional()
+            .orElse(null)
+
     private fun findOne(
         sql: String,
         ownerId: UUID,
@@ -273,16 +302,19 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             providerStartedAt = rs.getObject("provider_started_at", OffsetDateTime::class.java)?.toInstant(),
             createdAt = rs.getObject("created_at", OffsetDateTime::class.java).toInstant(),
             updatedAt = rs.getObject("updated_at", OffsetDateTime::class.java).toInstant(),
+            operation = ActionGuideOperation.entries.single { it.wireName == rs.getString("operation") },
         )
 
     private fun fingerprint(
         contentRevision: Long,
         guideRevision: Long?,
+        operation: ActionGuideOperation,
     ): String =
         MessageDigest
             .getInstance("SHA-256")
-            .digest("$contentRevision:${guideRevision ?: "null"}".toByteArray(StandardCharsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .digest(
+                "${operation.wireName}:$contentRevision:${guideRevision ?: "null"}".toByteArray(StandardCharsets.UTF_8),
+            ).joinToString("") { "%02x".format(it) }
 
     private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
 
@@ -294,7 +326,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             """
             id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
             expected_guide_revision, based_on_content_revision, reserved_credits, status,
-            failure_code, provider_execution_id, provider_started_at, created_at, updated_at
+            failure_code, provider_execution_id, provider_started_at, created_at, updated_at, operation
             """.trimIndent()
 
         val LOCK_CONTEXT_SQL =
@@ -312,8 +344,21 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             """.trimIndent()
 
         val OWNED_REQUEST_SQL =
-            "SELECT $JOB_COLUMNS FROM action_guide_jobs WHERE owner_user_id = :ownerId " +
-                "AND conversion_id = :conversionId AND request_id = :requestId"
+            """
+            SELECT $JOB_COLUMNS FROM action_guide_jobs
+            WHERE owner_user_id = :ownerId AND conversion_id = :conversionId
+              AND (request_id = :requestId OR (
+                  operation = 'analysis' AND request_id IN (
+                      SELECT original.request_id
+                      FROM action_guide_analysis_requests requested
+                      JOIN action_guide_analysis_requests original
+                        ON original.conversion_id = requested.conversion_id
+                       AND original.analysis_id = requested.analysis_id
+                      WHERE requested.conversion_id = :conversionId AND requested.request_id = :requestId
+                  )
+              ))
+            ORDER BY (request_id = :requestId) DESC LIMIT 1
+            """.trimIndent()
         val OWNED_ID_SQL =
             "SELECT $JOB_COLUMNS FROM action_guide_jobs WHERE owner_user_id = :ownerId " +
                 "AND conversion_id = :conversionId AND id = :jobId"
@@ -324,16 +369,24 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             "SELECT $JOB_COLUMNS FROM action_guide_jobs WHERE owner_user_id = :ownerId " +
                 "AND conversion_id = :conversionId ORDER BY created_at DESC LIMIT 1"
 
+        val ACTIVE_OPERATION_SQL =
+            "SELECT $JOB_COLUMNS FROM action_guide_jobs WHERE owner_user_id = :ownerId " +
+                "AND conversion_id = :conversionId AND operation = :operation " +
+                "AND status IN ('queued','running') ORDER BY created_at DESC LIMIT 1"
+        val LATEST_OPERATION_SQL =
+            "SELECT $JOB_COLUMNS FROM action_guide_jobs WHERE owner_user_id = :ownerId " +
+                "AND conversion_id = :conversionId AND operation = :operation ORDER BY created_at DESC LIMIT 1"
+
         val INSERT_SQL =
             """
             INSERT INTO action_guide_jobs
                 (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
                  expected_content_revision, expected_guide_revision, based_on_content_revision,
-                 input_fingerprint, status, reserved_credits, created_at, updated_at)
+                 input_fingerprint, status, reserved_credits, created_at, updated_at, operation)
             VALUES
                 (:id, :requestId, :ownerId, :workspaceId, :documentId, :conversionId,
                  :expectedContentRevision, :expectedGuideRevision, :expectedContentRevision,
-                 :fingerprint, :status, :reservedCredits, :createdAt, :updatedAt)
+                 :fingerprint, :status, :reservedCredits, :createdAt, :updatedAt, :operation)
             ON CONFLICT DO NOTHING
             """.trimIndent()
 

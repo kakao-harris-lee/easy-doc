@@ -7,7 +7,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
-import type { ActionGuideResource } from '../src/api/types'
+import type {
+  ActionGuideResource,
+  ActionGuideWorkflow,
+  ConversionResponse,
+  GuideDraft,
+} from '../src/api/types'
 import { ROUTES } from './contract'
 import {
   API_BASE_URL,
@@ -33,7 +38,32 @@ interface CreatedJob {
 }
 
 /** 각 시나리오가 다른 계정·문서를 쓰므로 테스트 간 작업·이용량 상태를 공유하지 않는다. */
-async function openConvertedDocument(page: Page): Promise<string> {
+async function openConvertedDocument(page: Page, legacy = true): Promise<string> {
+  if (legacy) {
+    // v1 클라이언트 호환 시나리오. 실제 v1 API/DB/worker는 그대로 사용한다.
+    await page.route(
+      (url) =>
+        url.origin === new URL(API_BASE_URL).origin &&
+        /\/conversions\/[0-9a-f-]+$/.test(url.pathname),
+      async (route) => {
+        if (route.request().method() !== 'GET') return route.continue()
+        const response = await route.fetch()
+        if (!response.ok()) return route.fulfill({ response })
+        const body = (await response.json()) as ConversionResponse
+        return route.fulfill({
+          response,
+          json: {
+            ...body,
+            review_capabilities: {
+              ...body.review_capabilities,
+              action_guide_workflow: false,
+              action_guide_workflow_read: false,
+            },
+          },
+        })
+      },
+    )
+  }
   const account = newAccount()
   await signUpAndLand(page, account)
   await verifyEmail(page, account)
@@ -115,6 +145,10 @@ test.describe('ER-07 행동 안내', () => {
     await expect(page.getByRole('button', { name: '초안 사용' })).toBeVisible({
       timeout: 90_000,
     })
+    const preview = page.getByRole('region', { name: '행동 안내 보조자료 미리보기' })
+    await expect(preview).toBeVisible()
+    await expect(preview.getByText(/문서 전체의 내용을 담고 있지는 않습니다/)).toBeVisible()
+    await expect(preview.getByText('원문에 안내 없음', { exact: true })).toHaveCount(6)
     const recoveredCalls = (await log.apiCalls()).slice(callsBeforeReload).map(signature)
     expect(recoveredCalls).toContain(
       `${ROUTES.actionGuideRead.method} ${guidePath} ${ROUTES.actionGuideRead.ok}`,
@@ -151,6 +185,8 @@ test.describe('ER-07 행동 안내', () => {
       .getByRole('button', { name: '항목 추가' })
       .click()
     await page.getByRole('textbox', { name: '신청할 수 있는 사람 1번 내용' }).fill(SOURCE_TEXT)
+    const caution = '납부하려는 경우에만 해당합니다.'
+    await page.getByRole('textbox', { name: '신청할 수 있는 사람 1번 주의할 점' }).fill(caution)
     await page
       .getByRole('combobox', { name: '신청할 수 있는 사람 1번 원문 근거' })
       .selectOption('0')
@@ -207,6 +243,7 @@ test.describe('ER-07 행동 안내', () => {
     expect(path).not.toBeNull()
     const txt = await readFile(path as string, 'utf8')
     expect(txt).toContain(SOURCE_TEXT)
+    expect(txt).toContain(caution)
     expect(txt).toContain('원문에 안내가 없습니다')
 
     // 다른 화면이 먼저 저장한 상태를 실제 API에 만든다. 첫 화면에서 편집한 내용은
@@ -350,4 +387,129 @@ test.describe('ER-07 행동 안내', () => {
     await expect(page.getByText(/이전 본문으로 만든 안내문입니다/)).toBeVisible()
     await expect(page.getByRole('button', { name: 'TXT로 내려받기' })).toBeDisabled()
   })
+})
+
+test('ER-30 행동 분석부터 추가 안내 저장과 전체 보완의 미확인 본문 반영까지', async ({ page }) => {
+  test.setTimeout(180_000)
+  const conversionId = await openConvertedDocument(page, false)
+  const base = `/conversions/${conversionId}`
+  await page.getByRole('tab', { name: '행동 안내', exact: true }).click()
+  await page.getByRole('button', { name: '행동 확인', exact: true }).click()
+  const [created] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url() === api(`${base}/action-guide-analysis-jobs`) &&
+        response.request().method() === 'POST',
+    ),
+    page.getByRole('button', { name: /크레딧으로 행동 분석/ }).click(),
+  ])
+  expect(created.status(), await created.text()).toBe(202)
+  await expect(page.getByRole('region', { name: '원문에서 찾은 행동' })).toBeVisible({
+    timeout: 90_000,
+  })
+  const token = await storedToken(page)
+  const stateResponse = await page.request.get(api(`${base}/action-guide-workflow`), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(stateResponse.status()).toBe(200)
+  const state = (await stateResponse.json()) as ActionGuideWorkflow
+  if (!state.analysis) throw new Error('완료된 분석 없음')
+  const storedBody = state.analysis.saved_body ?? ''
+  expect(storedBody).not.toBe('')
+  for (const signal of state.analysis.signals ?? []) {
+    if (signal.resolved) continue
+    expect(signal.resolvable, signal.detail).toBe(true)
+    const region = page.getByRole('region', { name: signal.detail, exact: true })
+    if (signal.kind === 'source_body') {
+      for (const checkbox of await region.getByRole('checkbox').all()) await checkbox.check()
+      await expect(region.getByRole('textbox', { name: '현재 본문의 근거 문구' })).not.toHaveValue(
+        '',
+      )
+    }
+    await region
+      .getByRole('textbox', { name: '이 항목을 확인한 내용' })
+      .fill('원문 전체와 현재 본문을 비교하여 해당 항목을 확인했습니다.')
+    const [resolved] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/signals/${signal.id}`) && response.request().method() === 'PUT',
+      ),
+      region.getByRole('button', { name: '이 항목 검토 저장' }).click(),
+    ])
+    expect(resolved.status(), await resolved.text()).toBe(200)
+  }
+  await page
+    .getByRole('checkbox', {
+      name: '이 분석의 행동·조건·미기재 정보를 원문과 대조했습니다.',
+    })
+    .check()
+  await page.getByRole('button', { name: '행동 분석 검토 저장', exact: true }).click()
+  await expect(page.getByRole('button', { name: '단계별 추가 안내 만들기' })).toBeEnabled()
+  await page.getByRole('button', { name: '단계별 추가 안내 만들기' }).click()
+  const additional = page.getByRole('region', { name: '단계별 추가 안내 미리보기', exact: true })
+  await expect(additional).toBeVisible()
+  for (const check of await additional
+    .getByRole('checkbox', { name: '이 행동 안내와 조건을 확인했습니다.' })
+    .all())
+    await check.check()
+  await additional.getByRole('button', { name: '안내 검토 저장', exact: true }).click()
+  await expect(
+    additional.getByRole('button', { name: '단계별 추가 안내 TXT 내려받기' }),
+  ).toBeEnabled()
+  await expect(additional.getByRole('button', { name: '전체 본문에 반영' })).toHaveCount(0)
+  const [draftResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url() === api(`${base}/action-guide-drafts`) &&
+        response.request().method() === 'POST',
+    ),
+    page.getByRole('button', { name: '전체 문서 보완 만들기' }).click(),
+  ])
+  expect(draftResponse.status(), await draftResponse.text()).toBe(201)
+  const fullDraft = (await draftResponse.json()) as GuideDraft
+  expect(fullDraft.body).toContain(storedBody)
+  const full = page.getByRole('region', { name: '전체 문서 보완 미리보기', exact: true })
+  await expect(full.getByRole('button', { name: '전체 본문에 반영' })).toBeDisabled()
+  for (const check of await full
+    .getByRole('checkbox', { name: '이 행동 안내와 조건을 확인했습니다.' })
+    .all())
+    await check.check()
+  await full.getByRole('button', { name: '안내 검토 저장', exact: true }).click()
+  await full.getByRole('checkbox', { name: /이 보완본을 전체 본문에 반영/ }).check()
+  const [applied] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/action-guide-drafts/${fullDraft.draft_id}/apply`) &&
+        response.request().method() === 'POST',
+    ),
+    full.getByRole('button', { name: '전체 본문에 반영' }).click(),
+  ])
+  expect(applied.status(), await applied.text()).toBe(200)
+  await expect(
+    page.getByText('전체 보완을 본문에 반영했습니다. 본문 검토와 확인 저장은 별도로 해 주세요.'),
+  ).toBeVisible()
+  const latestResponse = await page.request.get(api(base), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  const latest = (await latestResponse.json()) as ConversionResponse
+  expect(latest.edited_text).toBe(fullDraft.body)
+  expect(latest.reviewed_at).toBeNull()
+  expect(latest.content_revision).toBeGreaterThan(state.analysis.based_on_content_revision)
+  await page.getByRole('button', { name: '이전 본문 목록 열기' }).click()
+  await page
+    .getByRole('button', { name: `본문 버전 ${state.analysis.based_on_content_revision} 열기` })
+    .click()
+  await expect(page.getByRole('textbox', { name: '선택한 이전 본문' })).toHaveValue(storedBody)
+  const [previousDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: '이전 본문 TXT 보관' }).click(),
+  ])
+  const previousPath = await previousDownload.path()
+  if (!previousPath) throw new Error('이전 본문 보관 파일 없음')
+  expect(await readFile(previousPath, 'utf8')).toBe(storedBody)
+  await page.getByRole('tab', { name: '본문 검수', exact: true }).click()
+  await expect(page.getByText('저장된 본문 · 확인 필요', { exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: '쉬운 글 결과 (고칠 수 있습니다)' })).toHaveValue(
+    fullDraft.body,
+  )
 })

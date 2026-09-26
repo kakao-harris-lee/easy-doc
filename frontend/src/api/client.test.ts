@@ -1015,3 +1015,23 @@ describe('createDocumentFromText — 개인정보 경고용 검출 헤더', () =
     })
   })
 })
+
+describe('action guide analysis API', () => {
+  it('uses separate analysis routes and preserves the explicit request and revision', async () => {
+    const { createActionGuideAnalysis, getLatestActionGuideAnalysis, getActionGuideAnalysis } =
+      await import('./client')
+    const body = { request_id: 'request-analysis', expected_content_revision: 4 }
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(200, { provenance: 'fake', generation_enabled: false }),
+    )
+    await createActionGuideAnalysis('c1', body)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/action-guide-analyses`)
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify(body))
+    await getLatestActionGuideAnalysis('c1')
+    await getActionGuideAnalysis('c1', 'a1')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/action-guide-analyses/a1`,
+    )
+    expect(fetchMock.mock.calls[1]?.[1]?.method ?? 'GET').toBe('GET')
+  })
+})

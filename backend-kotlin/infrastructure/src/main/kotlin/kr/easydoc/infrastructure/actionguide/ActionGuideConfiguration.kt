@@ -8,8 +8,10 @@ import kr.easydoc.application.actionguide.ActionGuideJobRunner
 import kr.easydoc.application.actionguide.ActionGuideJobService
 import kr.easydoc.application.actionguide.ActionGuideJobWorkerPolicy
 import kr.easydoc.application.actionguide.ActionGuideLlmCallLedger
+import kr.easydoc.application.actionguide.ActionGuideOperation
 import kr.easydoc.application.actionguide.ActionGuideProviderCall
 import kr.easydoc.application.actionguide.ActionGuideRunResult
+import kr.easydoc.application.actionguide.GuideAnalysisRepository
 import kr.easydoc.application.actionguide.ProcessActionGuideJob
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
@@ -27,6 +29,7 @@ import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.LlmProviderConfiguration
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -47,6 +50,7 @@ data class ActionGuideProperties(
     val owner: String = "",
     val leaseDurationSeconds: Long = DEFAULT_LEASE_SECONDS,
     val maxLeaseAttempts: Int = DEFAULT_MAX_LEASE_ATTEMPTS,
+    val analysisEnabled: Boolean = false,
 ) {
     companion object {
         const val DEFAULT_LEASE_SECONDS: Long = 120
@@ -81,7 +85,14 @@ class ActionGuideConfiguration {
         jobs: ActionGuideJobRepository,
         credits: ActionGuideCreditPort,
         transactionRunner: TransactionRunner,
-    ): ActionGuideJobService = ActionGuideJobService(properties.enabled, jobs, credits, transactionRunner)
+    ): ActionGuideJobService =
+        ActionGuideJobService(
+            properties.enabled,
+            jobs,
+            credits,
+            transactionRunner,
+            analysisEnabled = properties.analysisEnabled,
+        )
 
     @Suppress("LongParameterList")
     @Bean
@@ -132,11 +143,24 @@ class ActionGuideDrainWorkerConfiguration {
         ledger: ActionGuideLlmCallLedger,
         contents: ActionGuideContentRepository,
         cipher: ContentCipher,
-        runner: ActionGuideJobRunner,
+        @Qualifier("disabledActionGuideJobRunner") runner: ActionGuideJobRunner,
         transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
+        analyses: GuideAnalysisRepository? = null,
+        properties: ActionGuideProperties = ActionGuideProperties(),
     ): ProcessActionGuideJob =
-        ProcessActionGuideJob(jobs, credits, ledger, contents, cipher, runner, transactionRunner, policy)
+        ProcessActionGuideJob(
+            jobs,
+            credits,
+            ledger,
+            contents,
+            cipher,
+            runner,
+            transactionRunner,
+            policy,
+            analyses = analyses,
+            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
+        )
 }
 
 /** ER-05 검증 전용. 이 프로필 없이는 fake runner와 poller 처리 빈이 만들어지지 않는다. */
@@ -152,8 +176,13 @@ class FakeActionGuideWorkerConfiguration {
         workerPolicy(properties)
 
     @Bean
-    fun fakeActionGuideJobRunner(): ActionGuideJobRunner =
-        ActionGuideJobRunner {
+    fun fakeActionGuideJobRunner(
+        @Qualifier("guideAnalysisJobRunner") analysisRunner: ActionGuideJobRunner? = null,
+    ): ActionGuideJobRunner =
+        ActionGuideJobRunner { job ->
+            if (job.operation == ActionGuideOperation.ANALYSIS) {
+                return@ActionGuideJobRunner checkNotNull(analysisRunner).prepare(job)
+            }
             ActionGuideProviderCall {
                 val record =
                     LlmCallRecord(
@@ -191,11 +220,24 @@ class FakeActionGuideWorkerConfiguration {
         ledger: ActionGuideLlmCallLedger,
         contents: ActionGuideContentRepository,
         cipher: ContentCipher,
-        runner: ActionGuideJobRunner,
+        @Qualifier("fakeActionGuideJobRunner") runner: ActionGuideJobRunner,
         transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
+        analyses: GuideAnalysisRepository? = null,
+        properties: ActionGuideProperties = ActionGuideProperties(),
     ): ProcessActionGuideJob =
-        ProcessActionGuideJob(jobs, credits, ledger, contents, cipher, runner, transactionRunner, policy)
+        ProcessActionGuideJob(
+            jobs,
+            credits,
+            ledger,
+            contents,
+            cipher,
+            runner,
+            transactionRunner,
+            policy,
+            analyses = analyses,
+            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
+        )
 }
 
 /** 실제 호출은 intake와 worker 플래그를 함께 켠 worker 프로필에서만 가능하다. */
@@ -216,6 +258,7 @@ class ProviderActionGuideWorkerConfiguration {
         cipher: ContentCipher,
         llmProperties: LlmProperties,
         environment: Environment,
+        @Qualifier("guideAnalysisJobRunner") analysisRunner: ActionGuideJobRunner? = null,
     ): ActionGuideJobRunner {
         // 별도 provider 인스턴스에 90초 응답 제한을 둔다. 변환 worker의 긴 출력·타임아웃은 건드리지 않는다.
         val boundedProperties =
@@ -224,7 +267,14 @@ class ProviderActionGuideWorkerConfiguration {
                 readTimeout = Duration.ofSeconds(ACTION_GUIDE_PROVIDER_TIMEOUT_SECONDS),
             )
         val provider = LlmProviderConfiguration().llmProvider(boundedProperties, environment)
-        return ProviderActionGuideJobRunner(JdbcActionGuideInputSource(jdbcClient, cipher), provider)
+        val legacy = ProviderActionGuideJobRunner(JdbcActionGuideInputSource(jdbcClient, cipher), provider)
+        return ActionGuideJobRunner { job ->
+            if (job.operation == ActionGuideOperation.ANALYSIS) {
+                checkNotNull(analysisRunner).prepare(job)
+            } else {
+                legacy.prepare(job)
+            }
+        }
     }
 
     @Suppress("LongParameterList")
@@ -235,11 +285,24 @@ class ProviderActionGuideWorkerConfiguration {
         ledger: ActionGuideLlmCallLedger,
         contents: ActionGuideContentRepository,
         cipher: ContentCipher,
-        runner: ActionGuideJobRunner,
+        @Qualifier("providerActionGuideJobRunner") runner: ActionGuideJobRunner,
         transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
+        analyses: GuideAnalysisRepository? = null,
+        properties: ActionGuideProperties = ActionGuideProperties(),
     ): ProcessActionGuideJob =
-        ProcessActionGuideJob(jobs, credits, ledger, contents, cipher, runner, transactionRunner, policy)
+        ProcessActionGuideJob(
+            jobs,
+            credits,
+            ledger,
+            contents,
+            cipher,
+            runner,
+            transactionRunner,
+            policy,
+            analyses = analyses,
+            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
+        )
 }
 
 private fun workerPolicy(properties: ActionGuideProperties): ActionGuideJobWorkerPolicy =

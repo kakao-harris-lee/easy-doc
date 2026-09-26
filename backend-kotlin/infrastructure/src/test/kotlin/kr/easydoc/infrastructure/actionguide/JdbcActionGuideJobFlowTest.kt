@@ -5,6 +5,7 @@ import kr.easydoc.application.actionguide.ActionGuideJobAcquire
 import kr.easydoc.application.actionguide.ActionGuideJobCreationView
 import kr.easydoc.application.actionguide.ActionGuideJobInsert
 import kr.easydoc.application.actionguide.ActionGuideJobService
+import kr.easydoc.application.actionguide.ActionGuideOperation
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
@@ -435,6 +436,78 @@ class JdbcActionGuideJobFlowTest {
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    @Test
+    fun `analysis operation round trips and latest reads remain separated from v1`() {
+        val fixture = seed()
+        val guide = fixture.job()
+        startAndSucceed(guide)
+        val analysis = fixture.job().copy(operation = ActionGuideOperation.ANALYSIS, createdAt = NOW.plusSeconds(2))
+        assertThat(tx.execute { jobs.insert(analysis) }).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+        assertThat(jobs.findOwned(fixture.ownerId, fixture.conversionId, analysis.jobId)?.operation)
+            .isEqualTo(ActionGuideOperation.ANALYSIS)
+        assertThat(
+            jobs.findLatestOwnedForOperation(fixture.ownerId, fixture.conversionId, ActionGuideOperation.GUIDE)?.jobId,
+        ).isEqualTo(guide.jobId)
+        assertThat(jobs.findActiveOwnedForOperation(fixture.ownerId, fixture.conversionId, ActionGuideOperation.GUIDE))
+            .isNull()
+        assertThat(
+            jobs
+                .findLatestOwnedForOperation(
+                    fixture.ownerId,
+                    fixture.conversionId,
+                    ActionGuideOperation.ANALYSIS,
+                )?.jobId,
+        ).isEqualTo(analysis.jobId)
+    }
+
+    @Test
+    fun `analysis and legacy operations share the three provider start limit`() {
+        val fixture = seed()
+        startAndSucceed(fixture.job())
+        startAndSucceed(fixture.job().copy(operation = ActionGuideOperation.ANALYSIS))
+        startAndSucceed(fixture.job().copy(operation = ActionGuideOperation.ANALYSIS))
+        assertThat(tx.execute { jobs.insert(fixture.job()) }).isEqualTo(ActionGuideJobInsert.AttemptLimit)
+        assertThat(tx.execute { jobs.insert(fixture.job().copy(operation = ActionGuideOperation.ANALYSIS)) })
+            .isEqualTo(ActionGuideJobInsert.AttemptLimit)
+    }
+
+    @Test
+    fun `free analysis request aliases cannot be reused as a paid legacy job`() {
+        val fixture = seed()
+        val analysis = fixture.job().copy(operation = ActionGuideOperation.ANALYSIS)
+        startAndSucceed(analysis)
+        val analysisId = UUID.randomUUID()
+        val alias = UUID.randomUUID()
+        jdbc
+            .sql(
+                """
+                INSERT INTO action_guide_analyses
+                    (id, conversion_id, based_on_content_revision, payload_encrypted, encryption_scheme, key_version)
+                VALUES (:id, :conversionId, 1, :payload, 'aes256gcm-v1', 1)
+                """.trimIndent(),
+            ).param("id", analysisId)
+            .param("conversionId", fixture.conversionId)
+            .param("payload", byteArrayOf(1))
+            .update()
+        listOf(analysis.requestId, alias).forEach { requestId ->
+            jdbc
+                .sql(
+                    """
+                    INSERT INTO action_guide_analysis_requests(conversion_id, request_id, analysis_id)
+                    VALUES (:conversionId, :requestId, :analysisId)
+                    """.trimIndent(),
+                ).param("conversionId", fixture.conversionId)
+                .param("requestId", requestId)
+                .param("analysisId", analysisId)
+                .update()
+        }
+        assertThat(jobs.findByRequestId(fixture.ownerId, fixture.conversionId, alias)?.jobId)
+            .isEqualTo(analysis.jobId)
+        assertThatThrownBy { service.create(fixture.ownerId, fixture.conversionId, alias, 1, null) }
+            .isInstanceOf(ConflictException::class.java)
+        assertThat(jobCount(fixture.conversionId)).isEqualTo(1)
     }
 
     private fun createIdempotently(job: StoredActionGuideJob) {

@@ -31,6 +31,10 @@ internal class ActionGuideR2LaneReport(
         val repetition = run ?: 1
         val measurement =
             when (result) {
+                is ActionGuideRunResult.ValidAnalysis -> {
+                    error("v1 품질 레인은 행동 분석 결과를 평가하지 않습니다")
+                }
+
                 is ActionGuideRunResult.Valid -> {
                     ActionGuideR2Measurement(
                         documentId = documentId,

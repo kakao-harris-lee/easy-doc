@@ -565,6 +565,7 @@ test.describe('접근성 — 320px', () => {
     await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
       timeout: 90_000,
     })
+    await expect(page.getByRole('button', { name: '그림 제안 확인', exact: true })).toBeVisible()
     overflow = await horizontalOverflow(page)
     expect(overflow.culprits.join('\n'), '검수가 가로로 넘친다').toBe('')
     expect(undersized(await touchTargets(page)), '검수의 작은 터치 대상').toEqual([])

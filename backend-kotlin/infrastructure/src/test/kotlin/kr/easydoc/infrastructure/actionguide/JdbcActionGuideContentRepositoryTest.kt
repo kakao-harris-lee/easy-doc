@@ -255,6 +255,133 @@ class JdbcActionGuideContentRepositoryTest {
         ).isEqualTo("안내 본문")
     }
 
+    @Test
+    @Suppress("LongMethod") // One persisted snapshot exercises its full encryption and deletion lifecycle.
+    fun `analysis snapshots enforce ownership retention encryption and cascade deletion`() {
+        val fixture = seed()
+        val analyses = JdbcGuideAnalysisRepository(jdbc, cipher)
+        val input = analyses.lockInput(fixture.ownerId, fixture.conversionId)
+        assertThat(input?.sourceText).isEqualTo("저장 원문")
+        assertThat(input?.savedBody).isEqualTo("저장 변환글")
+        assertThat(input?.readingLevel).isEqualTo("grade_5_6")
+        val snapshot =
+            kr.easydoc.application.actionguide.GuideAnalysisSnapshot(
+                UUID.randomUUID(),
+                1,
+                1,
+                listOf(
+                    kr.easydoc.core.actionguide
+                        .GuideSourceUnit(0, "private source"),
+                ),
+                "private edited body",
+                "grade_5_6",
+                kr.easydoc.core.actionguide.GuideAnalysisResult(
+                    kr.easydoc.core.actionguide.GuideSuitability.UNCERTAIN,
+                    kr.easydoc.core.actionguide.GuideActionPresence.UNCERTAIN,
+                    "fake",
+                    emptyList(),
+                    emptyList(),
+                    listOf(
+                        kr.easydoc.core.actionguide.GuideUnitAssessment(
+                            0,
+                            kr.easydoc.core.actionguide.GuideCoverageStatus.NEEDS_REVIEW,
+                            emptyList(),
+                        ),
+                    ),
+                    listOf("unreviewed"),
+                    false,
+                ),
+                Instant.now(),
+            )
+        analyses.insert(fixture.ownerId, fixture.conversionId, snapshot)
+        val request = UUID.randomUUID()
+        analyses.bindRequest(fixture.ownerId, fixture.conversionId, request, snapshot.analysisId)
+        assertThat(analyses.findRequest(fixture.ownerId, fixture.conversionId, request)).isEqualTo(snapshot)
+        assertThat(analyses.find(UUID.randomUUID(), fixture.conversionId, snapshot.analysisId)).isNull()
+        assertThat(analyses.find(fixture.ownerId, UUID.randomUUID(), snapshot.analysisId)).isNull()
+        val updated =
+            snapshot.copy(
+                analysisRevision = 2,
+                reviewRevision = 1,
+                signals =
+                    listOf(
+                        kr.easydoc.application.actionguide
+                            .GuideReviewSignal("s1", "extraction", listOf(0), null, "확인"),
+                    ),
+            )
+        assertThat(analyses.replace(fixture.ownerId, fixture.conversionId, 1, 0, updated)).isTrue()
+        assertThat(analyses.replace(fixture.ownerId, fixture.conversionId, 1, 0, snapshot)).isFalse()
+        assertThat(analyses.findRequest(fixture.ownerId, fixture.conversionId, request)).isEqualTo(updated)
+        val drafts = JdbcGuideDraftRepository(jdbc, cipher)
+        val draftRequest = UUID.randomUUID()
+        val draft =
+            kr.easydoc.application.actionguide.GuideDraft(
+                UUID.randomUUID(),
+                snapshot.analysisId,
+                2,
+                1,
+                1,
+                1,
+                kr.easydoc.core.actionguide.GuideOutputMode.ADDITIONAL_GUIDE,
+                "private supplementary body",
+                emptyList(),
+                false,
+                Instant.now(),
+            )
+        drafts.insertOwned(fixture.ownerId, fixture.conversionId, draftRequest, draft)
+        assertThat(drafts.findRequest(fixture.ownerId, fixture.conversionId, draftRequest)).isEqualTo(draft)
+        assertThat(drafts.findOwned(UUID.randomUUID(), fixture.conversionId, draft.draftId)).isNull()
+        assertThat(
+            drafts.replaceOwned(
+                fixture.ownerId,
+                fixture.conversionId,
+                1,
+                draft.copy(draftRevision = 2, reviewed = true),
+            ),
+        ).isTrue()
+        assertThat(drafts.replaceOwned(fixture.ownerId, fixture.conversionId, 1, draft)).isFalse()
+        val ciphertext =
+            jdbc
+                .sql("SELECT payload_encrypted FROM action_guide_analyses WHERE id=:id")
+                .param("id", snapshot.analysisId)
+                .query { rs, _ -> rs.getBytes(1) }
+                .single()
+        assertThat(String(ciphertext, Charsets.UTF_8)).doesNotContain("private source", "private edited body")
+        val rotatedCipher =
+            AesGcmContentCipher(
+                mapOf(
+                    1 to Secret(Base64.getEncoder().encodeToString(ByteArray(32) { 7 })),
+                    2 to Secret(Base64.getEncoder().encodeToString(ByteArray(32) { 9 })),
+                ),
+                2,
+            )
+        val rotation =
+            ActionGuideContentKeyRotation(
+                jdbc,
+                rotatedCipher,
+                TransactionTemplate(DataSourceTransactionManager(dataSource)),
+                10,
+            )
+        assertThat(rotation.runAnalyses()).isEqualTo(1)
+        assertThat(rotation.runAnalyses()).isZero()
+        assertThat(
+            JdbcGuideAnalysisRepository(jdbc, rotatedCipher)
+                .find(fixture.ownerId, fixture.conversionId, snapshot.analysisId),
+        ).isEqualTo(updated)
+        jdbc
+            .sql("UPDATE documents SET retention_expires_at=now()-interval '1 second' WHERE id=:id")
+            .param("id", fixture.documentId)
+            .update()
+        assertThat(analyses.latest(fixture.ownerId, fixture.conversionId)).isNull()
+        assertThatThrownBy {
+            analyses.insert(fixture.ownerId, fixture.conversionId, snapshot.copy(analysisId = UUID.randomUUID()))
+        }.isInstanceOf(kr.easydoc.core.exceptions.StorageException::class.java)
+        jdbc.sql("DELETE FROM documents WHERE id=:id").param("id", fixture.documentId).update()
+        assertThat(count("action_guide_drafts")).isZero()
+        assertThat(count("action_guide_analyses")).isZero()
+        assertThat(count("action_guide_analysis_requests")).isZero()
+    }
+
     private fun seed(): Fixture {
         val fixture = Fixture(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
         jdbc
@@ -279,8 +406,10 @@ class JdbcActionGuideContentRepositoryTest {
             ).param("id", fixture.documentId)
             .param("owner", fixture.ownerId)
             .param("workspace", fixture.workspaceId)
-            .param("bytes", byteArrayOf(1))
-            .update()
+            .param(
+                "bytes",
+                cipher.encrypt(PlainBody("저장 원문"), fixture.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT).bytes,
+            ).update()
         jdbc
             .sql(
                 """
@@ -290,8 +419,10 @@ class JdbcActionGuideContentRepositoryTest {
                 """.trimIndent(),
             ).param("id", fixture.conversionId)
             .param("document", fixture.documentId)
-            .param("bytes", byteArrayOf(2))
-            .update()
+            .param(
+                "bytes",
+                cipher.encrypt(PlainBody("저장 변환글"), fixture.conversionId, EncryptedField.CONVERSION_EASY_TEXT).bytes,
+            ).update()
         return fixture
     }
 

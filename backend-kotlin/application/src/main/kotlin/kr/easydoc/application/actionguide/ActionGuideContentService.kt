@@ -73,13 +73,12 @@ class ActionGuideContentService(
     fun get(
         ownerId: UUID,
         conversionId: UUID,
-    ): ActionGuideResourceView {
-        requireEnabled()
-        return transaction.inTransaction {
+    ): ActionGuideResourceView =
+        transaction.inTransaction {
             val context = ownedContext(ownerId, conversionId)
             val stored = contents.findGuideOwned(ownerId, conversionId)
-            val active = jobs.findActiveOwned(ownerId, conversionId)
-            val latest = active ?: jobs.findLatestOwned(ownerId, conversionId)
+            val active = jobs.findActiveOwnedForOperation(ownerId, conversionId, ActionGuideOperation.GUIDE)
+            val latest = active ?: jobs.findLatestOwnedForOperation(ownerId, conversionId, ActionGuideOperation.GUIDE)
             val guide = stored?.let { openGuide(it, context.contentRevision) }
             ActionGuideResourceView(
                 guide?.status ?: ActionGuideStatus.NOT_GENERATED,
@@ -88,14 +87,12 @@ class ActionGuideContentService(
                 latest?.jobId,
             )
         }
-    }
 
     fun candidateForJob(
         ownerId: UUID,
         conversionId: UUID,
         jobId: UUID,
     ): ActionGuideCandidateView? {
-        requireEnabled()
         return transaction.inTransaction {
             val context = ownedContext(ownerId, conversionId)
             val job =
@@ -236,7 +233,6 @@ class ActionGuideContentService(
         conversionId: UUID,
         guideRevision: Long,
     ): ByteArray {
-        requireEnabled()
         if (guideRevision !in 1..MAX_JS_SAFE_INTEGER) {
             throw InvalidInputException("행동 안내문 버전이 올바르지 않습니다")
         }

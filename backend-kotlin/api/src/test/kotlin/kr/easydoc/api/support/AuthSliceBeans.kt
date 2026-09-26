@@ -139,12 +139,32 @@ import java.util.concurrent.ConcurrentHashMap
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
+    fun guideAnalysisIntakeService(): kr.easydoc.application.actionguide.GuideAnalysisIntakeService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.GuideAnalysisIntakeService::class.java)
+
+    @Bean
+    fun guideAnalysisReviewService(): kr.easydoc.application.actionguide.GuideAnalysisReviewService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.GuideAnalysisReviewService::class.java)
+
+    @Bean
+    fun guideDraftService(): kr.easydoc.application.actionguide.GuideDraftService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.GuideDraftService::class.java)
+
+    @Bean
+    fun guideDraftApplyService(): kr.easydoc.application.actionguide.GuideDraftApplyService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.GuideDraftApplyService::class.java)
+
+    @Bean
     fun actionGuideJobService(): kr.easydoc.application.actionguide.ActionGuideJobService =
         org.mockito.Mockito.mock(kr.easydoc.application.actionguide.ActionGuideJobService::class.java)
 
     @Bean
     fun actionGuideContentService(): kr.easydoc.application.actionguide.ActionGuideContentService =
         org.mockito.Mockito.mock(kr.easydoc.application.actionguide.ActionGuideContentService::class.java)
+
+    @Bean
+    fun actionGuideAnalysisService(): kr.easydoc.application.actionguide.ActionGuideAnalysisService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.ActionGuideAnalysisService::class.java)
 
     @Bean
     fun reviewSupportService(): kr.easydoc.application.document.ReviewSupportService =

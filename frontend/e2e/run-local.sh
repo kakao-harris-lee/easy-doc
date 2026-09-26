@@ -151,6 +151,7 @@ else
   export EASYDOC_REVIEW_SUPPORT_ENABLED=true
   # R2 행동 안내도 일회용 스택에서만 켠다. worker는 아래 fake profile로 외부 호출을 막는다.
   export EASYDOC_ACTION_GUIDE_ENABLED=true
+  export EASYDOC_ACTION_GUIDE_ANALYSIS_ENABLED=true
   # R4/R5도 일회용 브라우저 검증에서만 기본 활성화한다. 제품 기본값은 false다.
   export EASYDOC_TABLE_RELATIONS_ENABLED="${EASYDOC_TABLE_RELATIONS_ENABLED:-true}"
   export EASYDOC_REVIEW_HISTORY_ENABLED="${EASYDOC_REVIEW_HISTORY_ENABLED:-true}"

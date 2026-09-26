@@ -500,6 +500,9 @@ class ConversionReviewServiceTest {
 
                     EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
                     EncryptedField.ACTION_GUIDE_PAYLOAD,
+                    EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
+                    EncryptedField.ACTION_GUIDE_DRAFT_PAYLOAD,
+                    EncryptedField.ACTION_GUIDE_PREVIOUS_BODY,
                     -> error("검수 저장이 행동 안내문 열을 쓰지 않는다")
 
                     EncryptedField.DOCUMENT_TABLE_STRUCTURE -> error("검수 저장이 표 구조 열을 쓰지 않는다")
