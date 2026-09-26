@@ -43,7 +43,7 @@ async function openConvertedDocument(page: Page): Promise<string> {
   ])
   expect(response.status()).toBe(ROUTES.documentCreate.accepted)
   const { conversion_id: conversionId } = (await response.json()) as CreatedDocument
-  await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+  await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
     timeout: 90_000,
   })
   return conversionId
@@ -62,6 +62,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const jobsPath = `${conversionPath}/illustration-suggestion-jobs`
 
     // 1. 요청 전 — 무엇을 하는지·차감량·파일에 그림이 들어가지 않는다는 점을 먼저 읽힌다.
+    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 제안' })
     await expect(panel.getByRole('heading', { name: '그림 제안' })).toBeVisible()
     await expect(panel.getByText(/이 단계에서는 그림을 만들지 않습니다/)).toBeVisible()
@@ -120,9 +121,10 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     // 4. 재방문 — 브라우저 저장소가 아니라 서버 조회로 같은 결과를 되살린다.
     const callsBeforeReload = (await log.apiCalls()).length
     await page.reload()
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
+    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
     await expect(panel.getByRole('heading', { name: '제안 1 · 절차' })).toBeVisible({
       timeout: 90_000,
     })

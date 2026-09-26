@@ -39,7 +39,7 @@ test.describe('R4 표 관계', () => {
     const { conversion_id: conversionId } = (await created.json()) as { conversion_id: string }
     const conversionPath = `/conversions/${conversionId}`
 
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
     await expect(page.getByRole('heading', { name: '표 관계' })).toBeVisible()

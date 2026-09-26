@@ -84,7 +84,7 @@ describe('변환 폴링', () => {
     expect(screen.getByRole('status')).toHaveTextContent('쉬운 글로 바꾸고 있습니다')
 
     await tick()
-    expect(screen.getByRole('heading', { name: '쉬운 글 검수' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '쉬운 글 확인' })).toBeInTheDocument()
   })
 
   it('실패하면 원인 → 보존된 것 → 다음 행동 순서로 보여준다', async () => {

@@ -74,7 +74,7 @@ test.describe('사전 팝업 조회 흐름', () => {
     ])
 
     // worker 가 fake LLM 으로 끝낼 때까지 기다린다 — E13 과 같은 대기다.
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
 

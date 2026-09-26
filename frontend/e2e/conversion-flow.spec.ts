@@ -110,7 +110,7 @@ test.describe('변환 수직 흐름', () => {
     expect(new URL(page.url()).pathname).toBe(conversionPath)
 
     // worker 가 fake LLM 으로 끝낼 때까지 기다린다 — 폴링 UI 가 검수 화면으로 바뀐다.
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
 
@@ -197,7 +197,7 @@ test.describe('변환 수직 흐름', () => {
     ).not.toBeVisible()
 
     // R5는 기존 변환·검수 흐름 위에 얹힌다. 기능 플래그를 켠 E2E 실행에서만
-    // 기록 탭을 열어 서버 cursor 목록, 본문 revision 불일치, TXT 내려받기를 함께 잰다.
+    // 수정 기록을 펼쳐 서버 cursor 목록, 본문 revision 불일치, TXT 내려받기를 함께 잰다.
     if (process.env.EASYDOC_REVIEW_HISTORY_ENABLED === 'true') {
       const historyPath = `${conversionPath}/review-history`
       const [historyResponse] = await Promise.all([
@@ -206,7 +206,7 @@ test.describe('변환 수직 흐름', () => {
             response.url() === api(`${historyPath}?limit=20`) &&
             response.request().method() === 'GET',
         ),
-        page.getByRole('tab', { name: '검수 기록', exact: true }).click(),
+        page.getByRole('button', { name: '수정 기록 보기', exact: true }).click(),
       ])
       expect(historyResponse.status()).toBe(200)
       await expect(page.getByText('검수 항목 확인', { exact: true })).toBeVisible()
@@ -221,16 +221,20 @@ test.describe('변환 수직 흐름', () => {
             response.url() === api(historyExportPath) && response.request().method() === 'GET',
         ),
         historyDownloadPromise,
-        page.getByRole('button', { name: 'TXT로 내려받기', exact: true }).click(),
+        page
+          .getByRole('region', { name: '검수 기록', exact: true })
+          .getByRole('button', { name: 'TXT로 내려받기', exact: true })
+          .click(),
       ])
       expect(historyExportResponse.status()).toBe(200)
       expect(historyDownload.suggestedFilename()).toBe('review-history.txt')
       expect(await historyDownload.path()).not.toBeNull()
-      await page.getByRole('tab', { name: '본문 검수', exact: true }).click()
+      await page.getByRole('button', { name: '수정 기록 접기', exact: true }).click()
     }
 
     // 검수를 마친 자리에서 파일럿 판정용 피드백을 남긴다 — 백엔드는 done 이 아닌 변환에
     // 대해 409 로 막으므로, 이 단계는 검수 저장 뒤에 와야 한다.
+    await page.getByRole('button', { name: '의견 보내기 (선택)', exact: true }).click()
     await page.getByLabel('조금 고쳐서 쓰겠다').check()
     await page.getByLabel('4점').check()
     await page.getByLabel('이번 건 소요 시간(분)').fill(FEEDBACK_MINUTES)

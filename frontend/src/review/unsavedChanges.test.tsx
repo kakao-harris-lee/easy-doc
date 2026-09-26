@@ -90,7 +90,7 @@ describe('저장하지 않은 검수 수정', () => {
     await user.click(screen.getByRole('link', { name: '변환 기록' }))
 
     expect(confirm).toHaveBeenCalled()
-    expect(screen.getByRole('heading', { name: '쉬운 글 검수' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '쉬운 글 확인' })).toBeInTheDocument()
     expect(
       screen.queryByRole('heading', { name: '변환한 문서를 확인합니다' }),
     ).not.toBeInTheDocument()
@@ -114,7 +114,7 @@ describe('저장하지 않은 검수 수정', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderEditor()
 
-    await screen.findByRole('heading', { name: '쉬운 글 검수' })
+    await screen.findByRole('heading', { name: '쉬운 글 확인' })
     await user.click(screen.getByRole('link', { name: '변환 기록' }))
 
     expect(confirm).not.toHaveBeenCalled()

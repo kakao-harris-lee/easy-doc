@@ -54,13 +54,14 @@ test.describe('R7 그림 목록', () => {
           response.request().method() === ROUTES.illustrationsRead.method &&
           response.url() === api(ROUTES.illustrationsRead.path),
       ),
-      expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+      expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
         timeout: 90_000,
       }),
     ])
     expect(illustrationsResponse.status()).toBe(ROUTES.illustrationsRead.ok)
 
     // 패널 안으로 범위를 좁힌다 — section이 aria-labelledby를 가져 role=region이다.
+    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 목록' })
     await expect(panel.getByRole('heading', { name: '그림 목록' })).toBeVisible()
     // ER-16(본문 삽입·이미지 포함 출력) 미구현을 사용자에게 명시하는 안내문.
