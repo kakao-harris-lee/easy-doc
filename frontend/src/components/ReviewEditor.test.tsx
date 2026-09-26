@@ -16,6 +16,9 @@ import {
   ApiError,
   downloadExport,
   getActionGuide,
+  getActionGuideWorkflow,
+  createActionGuideJob,
+  createActionGuideAnalysisJob,
   getConversion,
   getExplanations,
   getIllustrationPlacements,
@@ -79,6 +82,9 @@ vi.mock('../api/client', async (importOriginal) => ({
   reconvertUnit: vi.fn(),
   getConversion: vi.fn(),
   getActionGuide: vi.fn(),
+  getActionGuideWorkflow: vi.fn(),
+  createActionGuideJob: vi.fn(),
+  createActionGuideAnalysisJob: vi.fn(),
   getExplanations: vi.fn(),
   getIllustrations: vi.fn(),
   getIllustrationPlacements: vi.fn(),
@@ -467,9 +473,20 @@ describe('검수 에디터', () => {
 
     expect(screen.queryByText(/의견 보냄/)).not.toBeInTheDocument()
 
+    expect(screen.getByRole('button', { name: '의견 보내기 (선택)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.getByLabelText('조금 고쳐서 쓰겠다')).not.toBeVisible()
+    await user.click(screen.getByRole('button', { name: '의견 보내기 (선택)' }))
     await user.click(screen.getByLabelText('조금 고쳐서 쓰겠다'))
     await user.click(screen.getByLabelText('4점'))
     await user.type(screen.getByLabelText('이번 건 소요 시간(분)'), '25')
+    await user.click(screen.getByRole('button', { name: '의견 접기' }))
+    expect(screen.getByLabelText('이번 건 소요 시간(분)')).not.toBeVisible()
+    await user.click(screen.getByRole('button', { name: '의견 보내기 (선택)' }))
+    expect(screen.getByLabelText('이번 건 소요 시간(분)')).toHaveValue(25)
+    expect(screen.getByLabelText('조금 고쳐서 쓰겠다')).toBeChecked()
     await user.click(screen.getByRole('button', { name: '의견 보내기' }))
 
     expect(await screen.findByText(/^의견 보냄 · /)).toBeInTheDocument()
@@ -3188,65 +3205,51 @@ describe('ER-25 결과 문단 집중 검토', () => {
   })
 })
 
-describe('ER-07 행동 안내 작업 탭', () => {
-  const capabilities = {
-    review_support: false,
-    action_guide: true,
-    table_relations: false,
-    review_history: false,
-    explanations: false,
-    illustrations: false,
-    focused_review: false,
-    illustration_suggestions: false,
-  }
-
-  it('기능이 꺼져 있으면 새 탭과 API 호출을 만들지 않는다', () => {
-    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
-
-    expect(screen.queryByRole('tab', { name: '행동 안내' })).not.toBeInTheDocument()
-    expect(getActionGuide).not.toHaveBeenCalled()
-  })
-
-  it('행동 안내 탭을 처음 열 때 조회하고 본문 편집을 숨기며 돌아오면 보존한다', async () => {
+describe('쉬운 글 중심 결과 화면', () => {
+  it('행동 안내 capability가 모두 켜져도 화면이나 요청을 만들지 않고 본문을 편집한다', async () => {
     const user = userEvent.setup()
-    vi.mocked(getActionGuide).mockResolvedValue({
-      status: 'not_generated',
-      guide: null,
-      active_job_id: null,
-      latest_job_id: null,
-    })
-    vi.mocked(listActionGuideJobs).mockResolvedValue({
-      active_job: null,
-      latest_job: null,
-      required_credits: 2,
-      available_credits: 10,
-    })
+    const edited = '직접 고친 쉬운 글입니다.'
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({ edited_text: edited, content_revision: 2 }),
+    )
     render(
       <ReviewEditor
-        conversion={conversion({ review_capabilities: capabilities })}
+        conversion={conversion({
+          review_capabilities: {
+            review_support: false,
+            table_relations: false,
+            explanations: false,
+            illustrations: false,
+            focused_review: false,
+            illustration_suggestions: false,
+            action_guide: true,
+            action_guide_workflow: true,
+            action_guide_workflow_read: true,
+            review_history: false,
+          },
+        })}
         source={sourceReady('원문')}
       />,
     )
-
-    const guideTab = screen.getByRole('tab', { name: '행동 안내' })
-    const bodyTab = screen.getByRole('tab', { name: '본문 검수' })
-    const bodyEditor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    expect(screen.getByRole('heading', { name: '쉬운 글 확인', level: 1 })).toBeVisible()
+    expect(screen.queryByRole('tablist', { name: '작업 선택' })).not.toBeInTheDocument()
+    expect(screen.queryByText('행동 안내', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('행동 확인과 문서 보완')).not.toBeInTheDocument()
+    const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    await user.clear(editor)
+    await user.type(editor, edited)
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+    expect(saveReview).toHaveBeenCalledWith('c1', edited, 1)
+    expect(editor).toBeVisible()
     expect(getActionGuide).not.toHaveBeenCalled()
-    expect(bodyEditor).toBeVisible()
-
-    await user.click(guideTab)
-    await waitFor(() => expect(getActionGuide).toHaveBeenCalledWith('c1', expect.anything()))
-    expect(guideTab).toHaveAttribute('aria-selected', 'true')
-    expect(bodyEditor).not.toBeVisible()
-
-    await user.click(bodyTab)
-    expect(bodyEditor).toBeVisible()
-    await user.click(guideTab)
-    expect(getActionGuide).toHaveBeenCalledTimes(1)
+    expect(listActionGuideJobs).not.toHaveBeenCalled()
+    expect(getActionGuideWorkflow).not.toHaveBeenCalled()
+    expect(createActionGuideJob).not.toHaveBeenCalled()
+    expect(createActionGuideAnalysisJob).not.toHaveBeenCalled()
   })
 })
 
-describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
+describe('R4 표 관계와 접힌 수정 기록', () => {
   const capabilities = {
     review_support: false,
     action_guide: false,
@@ -3266,7 +3269,7 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     expect(getReviewHistory).not.toHaveBeenCalled()
   })
 
-  it('표는 원문 좌표를 읽고 검수 기록은 탭을 연 뒤에만 조회한다', async () => {
+  it('수정 기록을 펼쳐도 저장하지 않은 본문과 저장 버튼은 계속 보이고 다시 접을 수 있다', async () => {
     const user = userEvent.setup()
     vi.mocked(getReviewHistory).mockResolvedValue({
       conversion_id: 'c1',
@@ -3302,11 +3305,29 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     expect(screen.getByText('단위: 원')).toBeInTheDocument()
     expect(getReviewHistory).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('tab', { name: '검수 기록' }))
+    await user.click(screen.getByRole('button', { name: '수정 기록 보기' }))
     await waitFor(() =>
       expect(getReviewHistory).toHaveBeenCalledWith('c1', { limit: 20 }, expect.any(AbortSignal)),
     )
-    expect(screen.getByText('아직 검수 기록이 없습니다.')).toBeInTheDocument()
+    expect(screen.getByText('아직 검수 기록이 없습니다.')).toBeVisible()
+    const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    await user.clear(editor)
+    await user.type(editor, '저장하지 않은 수정')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: '수정 기록 접기' }))
+    expect(screen.getByText('아직 검수 기록이 없습니다.')).not.toBeVisible()
+    expect(editor).toBeVisible()
+    expect(editor).toHaveValue('저장하지 않은 수정')
+    const reopen = screen.getByRole('button', { name: '수정 기록 보기' })
+    expect(reopen).toHaveAttribute('aria-expanded', 'false')
+    reopen.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('button', { name: '수정 기록 접기' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByText('아직 검수 기록이 없습니다.')).toBeVisible()
+    expect(getReviewHistory).toHaveBeenCalledTimes(1)
   })
 
   it('원문을 불러오는 동안에는 표 관계의 미지원 안내를 먼저 보여주지 않는다', () => {
@@ -3335,7 +3356,7 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     expect(screen.getByText('원문에서 확인된 표가 없습니다.')).toBeInTheDocument()
   })
 
-  it('활성화된 검수 기록 기능이 사라지면 본문 검수 탭으로 돌아간다', async () => {
+  it('수정 기록 기능이 사라져도 본문은 계속 표시한다', async () => {
     const user = userEvent.setup()
     vi.mocked(getReviewHistory).mockResolvedValue({
       conversion_id: 'c1',
@@ -3355,8 +3376,8 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
       />,
     )
 
-    await user.click(screen.getByRole('tab', { name: '검수 기록' }))
-    expect(await screen.findByRole('heading', { name: '검수 기록', level: 1 })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '수정 기록 보기' }))
+    expect(await screen.findByText('아직 검수 기록이 없습니다.')).toBeVisible()
 
     view.rerender(
       <ReviewEditor
@@ -3365,7 +3386,7 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
       />,
     )
 
-    expect(screen.getByRole('tab', { name: '본문 검수' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('button', { name: '수정 기록 접기' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
     expect(screen.queryByRole('heading', { name: '검수 기록', level: 1 })).not.toBeInTheDocument()
   })
@@ -3426,6 +3447,9 @@ describe('R7 그림 목록 작업 탭', () => {
 
     expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
     expect(getIllustrations).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('button', { name: '그림으로 설명하기 (선택)' }),
+    ).not.toBeInTheDocument()
   })
 
   it('기능이 켜져 있으면 그림 목록을 보이고 조회한다', async () => {
@@ -3438,6 +3462,12 @@ describe('R7 그림 목록 작업 탭', () => {
       />,
     )
 
+    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
     await waitFor(() => expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal)))
   })
@@ -3483,6 +3513,12 @@ describe('ER-16 그림 배치', () => {
       />,
     )
 
+    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('heading', { name: '그림 배치' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
     await waitFor(() =>
       expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
@@ -3643,6 +3679,12 @@ describe('ER-17 그림 제안', () => {
       />,
     )
 
+    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 제안' })).toBeInTheDocument()
     await waitFor(() =>
       expect(getIllustrationSuggestions).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
@@ -3660,6 +3702,7 @@ describe('ER-17 그림 제안', () => {
       />,
     )
 
+    await user.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
     await screen.findByRole('button', { name: '그림 제안 확인' })
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), '수정')
 

@@ -232,7 +232,7 @@ const SCREENS: readonly {
       vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
       renderAt(REVIEW_WITH_SOURCE)
     },
-    settle: () => screen.findByRole('heading', { name: '쉬운 글 검수' }),
+    settle: () => screen.findByRole('heading', { name: '쉬운 글 확인' }),
   },
   {
     // 위 「검수」 픽스처는 `segment_map: null`이라 옛 단일 textarea 경로만 훑는다 —
@@ -272,7 +272,7 @@ const SCREENS: readonly {
     // 훑는다(MEDIUM 리뷰). 결과 단위 textarea에서 두 글자를 선택하고 디바운스가
     // 끝날 때까지 기다린다(이 파일은 가짜 타이머를 쓰지 않으므로 실제 250ms를 기다린다).
     settle: async () => {
-      const heading = await screen.findByRole('heading', { name: '쉬운 글 검수' })
+      const heading = await screen.findByRole('heading', { name: '쉬운 글 확인' })
       vi.mocked(lookupTerm).mockResolvedValue({
         query: '3월',
         candidates: [
@@ -332,7 +332,7 @@ const SCREENS: readonly {
       })
     },
     settle: async () => {
-      const heading = await screen.findByRole('heading', { name: '쉬운 글 검수' })
+      const heading = await screen.findByRole('heading', { name: '쉬운 글 확인' })
       const fingerprint = await computeEasyTextFingerprint(
         '3월 2일부터 신청할 수 있어요.\n주민센터로 가세요.',
       )
@@ -674,7 +674,7 @@ describe('⑦  탭으로 갈린 좁은 화면에서도 원문이 먼저다', () 
     }))
     vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
     renderAt(REVIEW_WITH_SOURCE)
-    await screen.findByRole('heading', { name: '쉬운 글 검수' })
+    await screen.findByRole('heading', { name: '쉬운 글 확인' })
 
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['원문', '쉬운 글'])
 

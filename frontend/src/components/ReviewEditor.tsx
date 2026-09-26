@@ -41,8 +41,6 @@ import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
-import { ActionGuidePanel } from './ActionGuidePanel'
-import { ActionGuideWorkflowPanel } from './ActionGuideWorkflowPanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
 import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 import { IllustrationSuggestionsPanel } from './IllustrationSuggestionsPanel'
@@ -110,7 +108,6 @@ const PANELS = [
 ] as const
 
 type PanelKey = (typeof PANELS)[number]['key']
-type TaskKey = 'body' | 'guide' | 'history'
 
 /**
  * 이 변환을 내려받을 수 있는 형식(들).
@@ -314,17 +311,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const [pendingFormat, setPendingFormat] = useState<ExportFormat | null>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
-  const [activeTask, setActiveTask] = useState<TaskKey>('body')
-  const [guideVisited, setGuideVisited] = useState(false)
+  const [illustrationsOpen, setIllustrationsOpen] = useState(false)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [historyVisited, setHistoryVisited] = useState(false)
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
-  const [guideDirty, setGuideDirty] = useState(false)
-  const [guideWorkflowDirty, setGuideWorkflowDirty] = useState(false)
-  const [guideApplying, setGuideApplying] = useState(false)
-  const [guideWorkflowIntake, setGuideWorkflowIntake] = useState(
-    conversion.review_capabilities?.action_guide_workflow === true,
-  )
-  const taskTabRefs = useRef<Partial<Record<TaskKey, HTMLButtonElement | null>>>({})
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
   /** 검수 항목의 「원문 보기」에서 이동했다가 돌아갈 버튼과 복귀 UI 상태. */
@@ -661,7 +652,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }
 
   const dirty = draft !== savedText
-  const busy = pending !== null || guideApplying
+  const busy = pending !== null
   /** 내려받기 버튼이 도는 중인지. 저장을 먼저 하는 경로도 같은 버튼이 돈다. */
   const downloading = pending === 'download' || pending === 'saveAndDownload'
   const splitView = useSplitView()
@@ -858,7 +849,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 탭을 닫거나 새로고침하는 경로. 브라우저는 우리 문구 대신 자기 확인창을 띄우므로
   // preventDefault만 하면 된다(문구 지정은 최신 브라우저에서 무시된다).
   useEffect(() => {
-    const unsaved = dirty || guideDirty || guideWorkflowDirty
+    const unsaved = dirty
     setUnsavedChanges(unsaved)
     if (!unsaved) {
       return
@@ -868,7 +859,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, guideDirty, guideWorkflowDirty])
+  }, [dirty])
 
   // 화면을 떠날 때 경고 상태를 반드시 끈다 — 켜진 채로 두면 다음 화면에서 이유 없이
   // "저장하지 않은 수정이 있다"고 묻는다.
@@ -1280,12 +1271,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           detail: null,
         }
 
-  const guideWorkflowEnabled = conversion.review_capabilities?.action_guide_workflow === true
-  const guideWorkflowReadable =
-    guideWorkflowEnabled || conversion.review_capabilities?.action_guide_workflow_read === true
-  const guideEnabled =
-    conversion.review_capabilities?.action_guide === true || guideWorkflowReadable
-  const LegacyGuideContainer = guideWorkflowReadable ? 'details' : 'div'
   const historyEnabled = conversion.review_capabilities?.review_history === true
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
@@ -1294,44 +1279,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 서버가 false 로 보고하므로 화면은 이 값만 보고 패널을 그린다.
   const illustrationSuggestionsEnabled =
     conversion.review_capabilities?.illustration_suggestions === true
-  const taskOptions: TaskKey[] = [
-    'body',
-    ...(guideEnabled ? ['guide' as const] : []),
-    ...(historyEnabled ? ['history' as const] : []),
-  ]
-
-  /**
-   * capability가 갱신되어 현재 작업이 사라질 수 있다(예: 기록 탭을 열어 둔 채
-   * 오래된 변환 응답을 새로 받는 경우). 커밋 뒤 effect로 고치면 잠깐 빈 작업판과
-   * 사라진 탭을 함께 노출하므로, 탭이 실제로 존재하는 렌더에서만 본문으로 돌린다.
-   */
-  if (!taskOptions.includes(activeTask)) {
-    setActiveTask('body')
-  }
-
-  function handleTaskTabKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
-    const currentIndex = taskOptions.indexOf(activeTask)
-    if (currentIndex < 0 || taskOptions.length < 2) return
-    const nextIndex =
-      event.key === 'End'
-        ? taskOptions.length - 1
-        : event.key === 'Home'
-          ? 0
-          : event.key === 'ArrowRight'
-            ? (currentIndex + 1) % taskOptions.length
-            : event.key === 'ArrowLeft'
-              ? (currentIndex - 1 + taskOptions.length) % taskOptions.length
-              : -1
-    if (nextIndex < 0) return
-    const next = taskOptions[nextIndex]
-    if (next === undefined) return
-    event.preventDefault()
-    setActiveTask(next)
-    if (next === 'guide') setGuideVisited(true)
-    if (next === 'history') setHistoryVisited(true)
-    taskTabRefs.current[next]?.focus()
-  }
-
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
       {/* §6.4 상단 줄: 왼쪽은 HITL 고지, 오른쪽은 저장 상태다.
@@ -1348,13 +1295,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         {/* 이 화면에서 "저장했는가"를 말하는 곳은 여기 하나다. 저장 여부는 토스트로
             흘려보내지 않고 화면에 남긴다(§9). 색만으로 구분하지 않도록 배지에 문구와
             아이콘을 함께 둔다(§8.1). */}
-        <div
-          hidden={activeTask !== 'body'}
-          className={cn(
-            'flex shrink-0 flex-col items-start gap-2 sm:items-end',
-            activeTask !== 'body' && 'hidden',
-          )}
-        >
+        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
             <Badge tone={status.tone}>{status.label}</Badge>
             {status.detail !== null && (
@@ -1406,68 +1347,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             ref={headingRef}
             tabIndex={-1}
           >
-            {activeTask === 'guide'
-              ? '행동 안내'
-              : activeTask === 'history'
-                ? '검수 기록'
-                : '쉬운 글 검수'}
+            쉬운 글 확인
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
-            {activeTask === 'guide'
-              ? '원문과 별도 안내문을 비교하고, 필요한 내용을 직접 확인해 주세요.'
-              : activeTask === 'history'
-                ? '서버가 기록한 검수 행위를 최근 순서로 확인해 주세요.'
-                : '원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.'}
+            원문과 비교해 필요한 내용을 고치고, 저장한 뒤 내려받으세요.
           </p>
         </div>
       </header>
 
-      {taskOptions.length > 1 && (
-        <div
-          className="flex gap-1 rounded-[12px] border border-border bg-muted p-1"
-          role="tablist"
-          aria-label="작업 선택"
-        >
-          {taskOptions.map((task) => (
-            <button
-              key={task}
-              ref={(node) => {
-                taskTabRefs.current[task] = node
-              }}
-              type="button"
-              role="tab"
-              id={`${editorId}-${task}-task-tab`}
-              aria-controls={`${editorId}-${task}-task-panel`}
-              aria-selected={activeTask === task}
-              tabIndex={activeTask === task ? 0 : -1}
-              className={cn(
-                'min-h-11 flex-1 rounded-[10px] px-3 text-[15px] font-semibold transition-colors',
-                activeTask === task
-                  ? 'bg-card text-primary shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              onClick={() => {
-                setActiveTask(task)
-                if (task === 'guide') setGuideVisited(true)
-                if (task === 'history') setHistoryVisited(true)
-              }}
-              onKeyDown={handleTaskTabKeyDown}
-            >
-              {task === 'body' ? '본문 검수' : task === 'guide' ? '행동 안내' : '검수 기록'}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
             묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
-      <div
-        id={taskOptions.length > 1 ? `${editorId}-body-task-panel` : undefined}
-        role={taskOptions.length > 1 ? 'tabpanel' : undefined}
-        aria-labelledby={taskOptions.length > 1 ? `${editorId}-body-task-tab` : undefined}
-        hidden={activeTask !== 'body'}
-        className={cn('flex flex-col', activeTask !== 'body' && 'hidden')}
-      >
+      <div className="flex flex-col">
         {supportsParagraphComparison && !focusedReviewEnabled && (
           <div className="mb-3 flex justify-end">
             <Button
@@ -1619,7 +1509,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={dirty || focusedReviewLoading || focusedReviewSaving || guideApplying}
+                    disabled={dirty || focusedReviewLoading || focusedReviewSaving}
                     onClick={() => setFocusedReviewRetry((value) => value + 1)}
                   >
                     검토 분석 다시 시도
@@ -1690,7 +1580,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                                 type="button"
                                 variant="secondary"
                                 loading={focusedReviewSaving}
-                                disabled={contentConflict || guideApplying}
+                                disabled={contentConflict}
                                 onClick={() => void updateFocusedItems([item], 'confirmed')}
                               >
                                 확인했어요
@@ -1718,7 +1608,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                           <Button
                             type="button"
                             variant="ghost"
-                            disabled={focusedReviewSaving || contentConflict || guideApplying}
+                            disabled={focusedReviewSaving || contentConflict}
                             onClick={() => void updateFocusedItems([item], 'needs_review')}
                           >
                             다시 열기
@@ -1961,47 +1851,81 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           />
         )}
 
-        {illustrationsEnabled && <IllustrationsPanel />}
+        {(illustrationsEnabled || illustrationSuggestionsEnabled) && (
+          <section aria-label="선택 그림" className="mt-4 rounded-xl border border-border p-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              aria-expanded={illustrationsOpen}
+              aria-controls={`${editorId}-illustrations-panel`}
+              onClick={() => setIllustrationsOpen((current) => !current)}
+            >
+              {illustrationsOpen ? '그림 설명 접기' : '그림으로 설명하기 (선택)'}
+            </Button>
+            <div
+              id={`${editorId}-illustrations-panel`}
+              hidden={!illustrationsOpen}
+              className="mt-4"
+            >
+              {illustrationsEnabled && <IllustrationsPanel />}
 
-        {illustrationsEnabled && (
-          <IllustrationPlacementPanel
-            conversionId={conversion.id}
-            contentRevision={contentRevision}
-            dirty={dirty}
-            units={draft.split('\n')}
-            onPlacementsChange={(count, stale) => {
-              setIllustrationPlacementCount(count)
-              setIllustrationPlacementsStale(stale)
-            }}
-          />
-        )}
+              {illustrationsEnabled && (
+                <IllustrationPlacementPanel
+                  conversionId={conversion.id}
+                  contentRevision={contentRevision}
+                  dirty={dirty}
+                  units={draft.split('\n')}
+                  onPlacementsChange={(count, stale) => {
+                    setIllustrationPlacementCount(count)
+                    setIllustrationPlacementsStale(stale)
+                  }}
+                />
+              )}
 
-        {illustrationSuggestionsEnabled && (
-          <IllustrationSuggestionsPanel
-            conversionId={conversion.id}
-            contentRevision={contentRevision}
-            bodyDirty={dirty}
-            bodyBusy={busy}
-            bodyConflict={contentConflict}
-            // 제안이 가리키는 줄은 **저장된** 본문 기준이다. 편집 중인 `draft`를 주면
-            // 저장하지 않은 수정이 제안의 근거처럼 보인다.
-            savedBody={savedText}
-          />
+              {illustrationSuggestionsEnabled && (
+                <IllustrationSuggestionsPanel
+                  conversionId={conversion.id}
+                  contentRevision={contentRevision}
+                  bodyDirty={dirty}
+                  bodyBusy={busy}
+                  bodyConflict={contentConflict}
+                  // 제안이 가리키는 줄은 **저장된** 본문 기준이다. 편집 중인 `draft`를 주면
+                  // 저장하지 않은 수정이 제안의 근거처럼 보인다.
+                  savedBody={savedText}
+                />
+              )}
+            </div>
+          </section>
         )}
       </div>
 
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
-      <div hidden={activeTask !== 'body'} className={activeTask === 'body' ? '' : 'hidden'}>
+      <div>
         {!hasFeedback && (
-          <ReviewFeedback
-            conversionId={conversion.id}
-            onSubmitted={(submittedAt) => {
-              setFeedbackSubmittedAt(submittedAt)
-              setFeedbackJustSubmitted(true)
-            }}
-          />
+          <section aria-label="선택 의견" className="rounded-xl border border-border p-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="min-h-11"
+              aria-expanded={feedbackOpen}
+              aria-controls={`${editorId}-feedback-panel`}
+              onClick={() => setFeedbackOpen((current) => !current)}
+            >
+              {feedbackOpen ? '의견 접기' : '의견 보내기 (선택)'}
+            </Button>
+            <div id={`${editorId}-feedback-panel`} hidden={!feedbackOpen} className="mt-4">
+              <ReviewFeedback
+                conversionId={conversion.id}
+                onSubmitted={(submittedAt) => {
+                  setFeedbackSubmittedAt(submittedAt)
+                  setFeedbackJustSubmitted(true)
+                }}
+              />
+            </div>
+          </section>
         )}
         {feedbackJustSubmitted && (
           <div
@@ -2020,84 +1944,31 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         )}
       </div>
 
-      {guideEnabled && (
-        <div
-          id={`${editorId}-guide-task-panel`}
-          role="tabpanel"
-          aria-labelledby={`${editorId}-guide-task-tab`}
-          hidden={activeTask !== 'guide'}
-          className={activeTask === 'guide' ? '' : 'hidden'}
-        >
-          {guideVisited && (
-            <>
-              {guideWorkflowReadable && (
-                <ActionGuideWorkflowPanel
-                  conversionId={conversion.id}
-                  contentRevision={contentRevision}
-                  savedBody={savedText}
-                  bodyDirty={dirty || guideDirty}
-                  bodyBusy={busy || reconvertPendingIndex !== null || focusedReviewSaving}
-                  bodyConflict={contentConflict}
-                  onDirtyChange={setGuideWorkflowDirty}
-                  onIntakeEnabledChange={setGuideWorkflowIntake}
-                  onBodyApplying={setGuideApplying}
-                  onBodyConflict={markContentConflict}
-                  onBodyApplied={(latest) => {
-                    const text = latest.edited_text ?? latest.easy_text ?? ''
-                    setDraft(text)
-                    setSavedText(text)
-                    setContentRevision(latest.content_revision)
-                    setReviewedAt(latest.reviewed_at)
-                    setPreservation(latest.format_preservation)
-                    setUnitMap(withBaselines(latest.segment_map?.units ?? [], text))
-                    setContentConflict(false)
-                    setCandidate(null)
-                    setHistoryRefreshToken((value) => value + 1)
-                  }}
-                />
-              )}
-              <LegacyGuideContainer
-                {...(guideWorkflowReadable ? { open: !guideWorkflowIntake } : {})}
-              >
-                {guideWorkflowReadable && (
-                  <summary className="min-h-11 cursor-pointer py-3">
-                    이전 행동 안내 자료와 작업
-                  </summary>
-                )}
-                <ActionGuidePanel
-                  conversionId={conversion.id}
-                  contentRevision={contentRevision}
-                  bodyDirty={dirty || guideWorkflowDirty}
-                  bodyBusy={busy}
-                  bodyConflict={contentConflict}
-                  source={source}
-                  onSaveBody={handleSave}
-                  onDirtyChange={setGuideDirty}
-                  onReviewed={() => setHistoryRefreshToken((value) => value + 1)}
-                  allowCreate={!guideWorkflowIntake}
-                />
-              </LegacyGuideContainer>
-            </>
-          )}
-        </div>
-      )}
-
       {historyEnabled && (
-        <div
-          id={`${editorId}-history-task-panel`}
-          role="tabpanel"
-          aria-labelledby={`${editorId}-history-task-tab`}
-          hidden={activeTask !== 'history'}
-          className={activeTask === 'history' ? '' : 'hidden'}
-        >
-          {historyVisited && (
-            <ReviewHistoryPanel
-              conversionId={conversion.id}
-              contentRevision={contentRevision}
-              refreshToken={historyRefreshToken}
-            />
-          )}
-        </div>
+        <section aria-label="수정 기록" className="rounded-xl border border-border p-4">
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            aria-expanded={historyOpen}
+            aria-controls={`${editorId}-history-panel`}
+            onClick={() => {
+              setHistoryOpen((current) => !current)
+              setHistoryVisited(true)
+            }}
+          >
+            {historyOpen ? '수정 기록 접기' : '수정 기록 보기'}
+          </Button>
+          <div id={`${editorId}-history-panel`} hidden={!historyOpen} className="mt-4">
+            {historyVisited && (
+              <ReviewHistoryPanel
+                conversionId={conversion.id}
+                contentRevision={contentRevision}
+                refreshToken={historyRefreshToken}
+              />
+            )}
+          </div>
+        </section>
       )}
     </section>
   )

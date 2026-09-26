@@ -355,13 +355,13 @@ test.describe('접근성 — 키보드', () => {
     expect(await focusedOutlineWidth(page)).toBe(`${FOCUS_RING_PX}px`)
 
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
 
     // --- 검수 --------------------------------------------------------------------
     // 에디터가 나타나면 초점은 새 화면의 제목으로 옮겨 온다 — 거기서 이어서 Tab 한다.
-    expect(await focusedStop(page)).toContain('쉬운 글 검수')
+    expect(await focusedStop(page)).toContain('쉬운 글 확인')
 
     // #30 이후 결과 패널은 `role="group"`(그 자체는 Tab 정거장이 아니다)이고, 실제로
     // 초점을 받는 것은 단위마다 하나씩인 textarea다(`aria-label`이 "쉬운 글 단위 1, …"로
@@ -562,9 +562,11 @@ test.describe('접근성 — 320px', () => {
     expect(overflow.culprits.join('\n'), '변환 진행이 가로로 넘친다').toBe('')
 
     // 검수 — 좁은 화면에서는 원문/쉬운 글이 탭으로 갈린다.
-    await expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
+    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '의견 보내기 (선택)', exact: true }).click()
     await expect(page.getByRole('button', { name: '그림 제안 확인', exact: true })).toBeVisible()
     overflow = await horizontalOverflow(page)
     expect(overflow.culprits.join('\n'), '검수가 가로로 넘친다').toBe('')

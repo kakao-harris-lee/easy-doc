@@ -61,7 +61,7 @@ test.describe('R6 용어 설명', () => {
           response.request().method() === ROUTES.explanationsRead.method &&
           /\/conversions\/[^/]+\/explanations$/.test(response.url()),
       ),
-      expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+      expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
         timeout: 90_000,
       }),
     ])

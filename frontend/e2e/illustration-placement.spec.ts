@@ -60,12 +60,13 @@ test.describe('ER-16 그림 배치', () => {
           response.url() === api(placementsPath) &&
           response.request().method() === ROUTES.illustrationPlacementsRead.method,
       ),
-      expect(page.getByRole('heading', { name: '쉬운 글 검수' })).toBeVisible({
+      expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
         timeout: 90_000,
       }),
     ])
     expect(placementsResponse.status()).toBe(ROUTES.illustrationPlacementsRead.ok)
 
+    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 배치' })
     await expect(panel.getByRole('heading', { name: '그림 배치' })).toBeVisible()
 
