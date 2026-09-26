@@ -50,8 +50,8 @@ internal fun requireFakeAnalysisConfiguration(environment: Environment): Boolean
     val fake = "action-guide-analysis-fake" in profiles
     val local = profiles.any { it in setOf("local", "test") }
     val production = profiles.any { it in setOf("prod", "production", "pilot") }
-    check(!enabled || (fake && local && !production)) {
-        "행동 분석은 local/test의 action-guide-analysis-fake 프로필에서만 사용할 수 있습니다"
+    check(!fake || (local && !production)) {
+        "행동 분석 fake 프로필은 local/test에서만 사용할 수 있습니다"
     }
-    return enabled
+    return enabled && fake
 }

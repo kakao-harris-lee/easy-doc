@@ -390,6 +390,8 @@ class OwnershipPredicateGuardTest {
         private const val MAIN = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure"
         private const val ACTION_GUIDE = "$MAIN/actionguide"
         private const val ACTION_GUIDE_CONTENT = "$ACTION_GUIDE/JdbcActionGuideContentRepository.kt"
+        private const val DRAFT_APPLY = "$ACTION_GUIDE/JdbcGuideDraftApplyRepository.kt"
+        private const val DRAFT = "$ACTION_GUIDE/JdbcGuideDraftRepository.kt"
         private const val AUTH = "$MAIN/auth"
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
@@ -413,6 +415,13 @@ class OwnershipPredicateGuardTest {
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guides]",
                 // provider 입력은 작업의 owner+보존기간+본문 revision을 같은 질의에서 확인한다.
                 "$ACTION_GUIDE/ActionGuideGenerationInput.kt | SELECT [conversions, documents]",
+                // Operator-only key rotation of recovery snapshots and reviewed draft payloads.
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | UPDATE [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_drafts]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_drafts]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | UPDATE [action_guide_drafts]",
                 // 후보 저장/조회 및 안내문 저장/조회는 모두 사용자 소유·보존 술어가 있다.
                 "$ACTION_GUIDE_CONTENT | INSERT [action_guide_candidates, conversions, documents]",
                 "$ACTION_GUIDE_CONTENT | SELECT [action_guide_candidates, conversions, documents]",
@@ -428,8 +437,17 @@ class OwnershipPredicateGuardTest {
                 // ER-28 user paths all enforce owner and retention in SQL.
                 "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | SELECT [conversions, documents]",
                 "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | INSERT [action_guide_analyses, conversions, documents]",
+                "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | UPDATE [action_guide_analyses, conversions, documents]",
                 "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | INSERT [action_guide_analyses, conversions, documents]",
                 "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | SELECT [action_guide_analyses, conversions, documents]",
+                // Apply, recovery reads and draft edits retain owner + retention predicates in SQL.
+                "$DRAFT_APPLY | SELECT [action_guide_body_snapshots, conversions, documents]",
+                "$DRAFT_APPLY | SELECT [action_guide_body_snapshots, conversions, documents]",
+                "$DRAFT_APPLY | INSERT [action_guide_body_snapshots, conversions, documents]",
+                "$DRAFT_APPLY | UPDATE [conversions, documents]",
+                "$DRAFT | INSERT [action_guide_analyses, action_guide_drafts, conversions, documents]",
+                "$DRAFT | UPDATE [action_guide_drafts, conversions, documents]",
+                "$DRAFT | SELECT [action_guide_drafts, conversions, documents]",
                 // 어드민 최소(A1, 2026-09-07) — 관리자 워크스페이스 상세의 「최근 변환」과
                 // 오류 화면(`GET /admin/errors`) 셋 다 아래 미방어 목록에도 있다 — 관리자는
                 // 의도적으로 워크스페이스를 가로지른다(사유는 그쪽에 적었다). `admin`
@@ -665,6 +683,13 @@ class OwnershipPredicateGuardTest {
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guides]",
+                // Operator-only rotate-keys: same row/AAD re-encryption; no user-visible plaintext.
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | UPDATE [action_guide_body_snapshots]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_drafts]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | SELECT [action_guide_drafts]",
+                "$ACTION_GUIDE/GuideDraftApplyKeyRotation.kt | UPDATE [action_guide_drafts]",
                 // 어드민 최소(A1, 2026-09-07) — 위 EXPECTED_STATEMENTS 주석과 같은 사유.
                 // 관리자 전용 조회라 소유 술어가 없다(의도적 설계, 관리자는 워크스페이스를
                 // 가로지른다) — `AdminConversionQueryRepository` KDoc.
@@ -846,6 +871,7 @@ class OwnershipPredicateGuardTest {
         // SELECT·잠금 SELECT·재봉인 UPDATE 셋이다. 같은 기능의 사용자 경로(입력 적재·접수
         // 잠금·호출 원장·결과 저장/조회)는 소유 매개변수를 SQL 자체에 둬 이 상한을 먹지 않았다.
         // 70 -> 73: analysis snapshot cursor, row lock and re-encryption in rotate-keys only.
-        const val MAX_UNGUARDED_STATEMENTS = 73
+        // 73 -> 79: previous-body and draft payload rotation, three exact statements per family.
+        const val MAX_UNGUARDED_STATEMENTS = 79
     }
 }

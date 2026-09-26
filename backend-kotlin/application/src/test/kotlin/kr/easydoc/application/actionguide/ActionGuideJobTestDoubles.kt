@@ -112,6 +112,24 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
         conversionId: UUID,
     ): StoredActionGuideJob? = rows.values.lastOrNull { it.ownerId == ownerId && it.conversionId == conversionId }
 
+    override fun findActiveOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob? =
+        rows.values.lastOrNull {
+            it.ownerId == ownerId && it.conversionId == conversionId && it.operation == operation && it.status.active
+        }
+
+    override fun findLatestOwnedForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        operation: ActionGuideOperation,
+    ): StoredActionGuideJob? =
+        rows.values.lastOrNull {
+            it.ownerId == ownerId && it.conversionId == conversionId && it.operation == operation
+        }
+
     override fun acquire(
         owner: String,
         leaseDuration: Duration,

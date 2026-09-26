@@ -1,6 +1,9 @@
 package kr.easydoc.infrastructure.actionguide
 
 import kr.easydoc.application.actionguide.ActionGuideRunResult
+import kr.easydoc.application.actionguide.GuideAnalysisInput
+import kr.easydoc.application.actionguide.GuideAnalysisRepository
+import kr.easydoc.application.actionguide.GuideAnalysisSnapshot
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.exceptions.LlmProviderException
@@ -75,6 +78,99 @@ class ProviderActionGuideJobRunnerTest {
         assertThat(ProviderActionGuideJobRunner(input, provider).prepare(job())).isNull()
         assertThat(provider.calls).isZero()
     }
+
+    @Test
+    fun `analysis real runner passes both bodies and reading level and creates unreviewed signals`() {
+        val provider = RecordingProvider(validAnalysis())
+        val call = checkNotNull(ProviderGuideAnalysisJobRunner(analysisInput(), provider).prepare(job()))
+        assertThat(provider.calls).isZero()
+        val result = call.call() as ActionGuideRunResult.ValidAnalysis
+        assertThat(provider.calls).isEqualTo(1)
+        assertThat(provider.lastPrompt?.user).contains("신청하세요.", "담당자가 편집한 본문")
+        assertThat(provider.lastPrompt?.system).contains("grade_3_4")
+        assertThat(provider.lastOptions?.maxTokens).isEqualTo(8_192)
+        assertThat(result.snapshot.provenance).isEqualTo("provider")
+        assertThat(result.snapshot.reviewed).isFalse()
+        assertThat(result.snapshot.result.extractionReviewComplete).isFalse()
+        assertThat(result.snapshot.signals).isNotEmpty().allMatch { !it.resolved }
+        assertThat(result.record.outcome).isEqualTo(LlmCallOutcome.COMPLETED)
+    }
+
+    @Test
+    fun `analysis real runner keeps truncated invalid and provider error outcomes distinct`() {
+        val clipped = RecordingProvider(validAnalysis(), LlmFinishReason.MAX_TOKENS)
+        val failure = RecordingProvider(validAnalysis(), throwsProviderError = true)
+        assertThat(checkNotNull(ProviderGuideAnalysisJobRunner(analysisInput(), clipped).prepare(job())).call())
+            .isInstanceOf(ActionGuideRunResult.Invalid::class.java)
+        val failed = checkNotNull(ProviderGuideAnalysisJobRunner(analysisInput(), failure).prepare(job())).call()
+        assertThat(failed).isInstanceOf(ActionGuideRunResult.ProviderFailed::class.java)
+        assertThat(failed.record.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
+        assertThat(clipped.calls).isEqualTo(1)
+        assertThat(failure.calls).isEqualTo(1)
+    }
+
+    @Test
+    fun `analysis stale preparation never starts provider`() {
+        val provider = RecordingProvider(validAnalysis())
+        assertThat(
+            ProviderGuideAnalysisJobRunner(analysisInput(), provider).prepare(job().copy(basedOnContentRevision = 2)),
+        ).isNull()
+        assertThat(provider.calls).isZero()
+    }
+
+    private fun validAnalysis(): String {
+        val absent = """{"status":"NOT_IN_SOURCE","text":null,"evidence":[]}"""
+        return """{"suitability":"GUIDE","actionPresence":"FOUND","reason":"신청 안내","evidence":[],
+            "actions":[{"id":"a1","instruction":{"status":"PRESENT","text":"신청하세요.",
+            "evidence":[{"sourceUnitIndexes":[0],"quote":"신청하세요."}]},
+            "actor":$absent,"beneficiaries":$absent,"conditions":[],"deadline":$absent,
+            "preparation":$absent,"contact":$absent,"afterActionIds":[],"orderEvidence":[]}],
+            "coverage":[{"sourceUnitId":0,"status":"ACTION","actionIds":["a1"]}],"extractionReviewComplete":true}"""
+    }
+
+    private fun analysisInput(): GuideAnalysisRepository =
+        object : GuideAnalysisRepository {
+            override fun lockInput(
+                ownerId: UUID,
+                conversionId: UUID,
+            ) = GuideAnalysisInput(1, "신청하세요.", "담당자가 편집한 본문", "grade_3_4", true)
+
+            override fun findRequest(
+                ownerId: UUID,
+                conversionId: UUID,
+                requestId: UUID,
+            ): GuideAnalysisSnapshot? = null
+
+            override fun findRevision(
+                ownerId: UUID,
+                conversionId: UUID,
+                revision: Long,
+            ): GuideAnalysisSnapshot? = null
+
+            override fun find(
+                ownerId: UUID,
+                conversionId: UUID,
+                analysisId: UUID,
+            ): GuideAnalysisSnapshot? = null
+
+            override fun latest(
+                ownerId: UUID,
+                conversionId: UUID,
+            ): GuideAnalysisSnapshot? = null
+
+            override fun insert(
+                ownerId: UUID,
+                conversionId: UUID,
+                snapshot: GuideAnalysisSnapshot,
+            ) = error("prepare must only read")
+
+            override fun bindRequest(
+                ownerId: UUID,
+                conversionId: UUID,
+                requestId: UUID,
+                analysisId: UUID,
+            ) = error("prepare must only read")
+        }
 
     private fun job(): StoredActionGuideJob =
         StoredActionGuideJob(

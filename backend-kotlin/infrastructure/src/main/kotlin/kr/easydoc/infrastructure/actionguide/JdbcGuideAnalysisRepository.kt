@@ -93,7 +93,13 @@ class JdbcGuideAnalysisRepository(
         ownerId: UUID,
         conversionId: UUID,
         revision: Long,
-    ): GuideAnalysisSnapshot? = select(ownerId, conversionId, "AND a.based_on_content_revision = :key", revision)
+    ): GuideAnalysisSnapshot? =
+        select(
+            ownerId,
+            conversionId,
+            "AND a.based_on_content_revision = :key ORDER BY a.created_at DESC LIMIT 1",
+            revision,
+        )
 
     override fun find(
         ownerId: UUID,
@@ -104,7 +110,7 @@ class JdbcGuideAnalysisRepository(
     override fun latest(
         ownerId: UUID,
         conversionId: UUID,
-    ): GuideAnalysisSnapshot? = select(ownerId, conversionId, "ORDER BY a.based_on_content_revision DESC LIMIT 1")
+    ): GuideAnalysisSnapshot? = select(ownerId, conversionId, "ORDER BY a.created_at DESC, a.id DESC LIMIT 1")
 
     override fun insert(
         ownerId: UUID,
@@ -137,6 +143,48 @@ class JdbcGuideAnalysisRepository(
                 .param("keyVersion", sealed.keyVersion)
                 .update()
         if (inserted != 1) throw StorageException("행동 분석을 저장하지 못했습니다")
+    }
+
+    override fun replace(
+        ownerId: UUID,
+        conversionId: UUID,
+        expectedAnalysisRevision: Long,
+        expectedReviewRevision: Long,
+        snapshot: GuideAnalysisSnapshot,
+    ): Boolean {
+        val sealed =
+            cipher.encryptBytes(
+                PlainBytes(GuideAnalysisSnapshotCodec.encode(snapshot)),
+                snapshot.analysisId,
+                EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
+            )
+        return jdbc
+            .sql(
+                """
+                UPDATE action_guide_analyses a SET payload_encrypted = :payload,
+                    encryption_scheme = :scheme, key_version = :keyVersion,
+                    analysis_revision = :analysisRevision, review_revision = :reviewRevision
+                FROM conversions c JOIN documents d ON d.id = c.document_id
+                WHERE a.id = :id AND a.conversion_id = c.id AND c.id = :conversionId
+                    AND d.user_id = :ownerId AND d.retention_expires_at > now()
+                    AND c.content_revision = :contentRevision AND a.analysis_revision = :expectedAnalysis
+                    AND a.review_revision = :expectedReview
+                """.trimIndent(),
+            ).param("payload", sealed.bytes)
+            .param("scheme", sealed.scheme)
+            .param("keyVersion", sealed.keyVersion)
+            .param("analysisRevision", snapshot.analysisRevision)
+            .param("reviewRevision", snapshot.reviewRevision)
+            .param("id", snapshot.analysisId)
+            .param("conversionId", conversionId)
+            .param("ownerId", ownerId)
+            .param("contentRevision", snapshot.basedOnContentRevision)
+            .param(
+                "expectedAnalysis",
+                expectedAnalysisRevision,
+            ).param("expectedReview", expectedReviewRevision)
+            .update() ==
+            1
     }
 
     override fun bindRequest(

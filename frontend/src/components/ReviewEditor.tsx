@@ -42,6 +42,7 @@ import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPa
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
+import { ActionGuideWorkflowPanel } from './ActionGuideWorkflowPanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
 import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 import { IllustrationSuggestionsPanel } from './IllustrationSuggestionsPanel'
@@ -318,6 +319,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [historyVisited, setHistoryVisited] = useState(false)
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
   const [guideDirty, setGuideDirty] = useState(false)
+  const [guideWorkflowDirty, setGuideWorkflowDirty] = useState(false)
+  const [guideApplying, setGuideApplying] = useState(false)
+  const [guideWorkflowIntake, setGuideWorkflowIntake] = useState(
+    conversion.review_capabilities?.action_guide_workflow === true,
+  )
   const taskTabRefs = useRef<Partial<Record<TaskKey, HTMLButtonElement | null>>>({})
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
@@ -655,7 +661,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }
 
   const dirty = draft !== savedText
-  const busy = pending !== null
+  const busy = pending !== null || guideApplying
   /** 내려받기 버튼이 도는 중인지. 저장을 먼저 하는 경로도 같은 버튼이 돈다. */
   const downloading = pending === 'download' || pending === 'saveAndDownload'
   const splitView = useSplitView()
@@ -852,7 +858,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 탭을 닫거나 새로고침하는 경로. 브라우저는 우리 문구 대신 자기 확인창을 띄우므로
   // preventDefault만 하면 된다(문구 지정은 최신 브라우저에서 무시된다).
   useEffect(() => {
-    const unsaved = dirty || guideDirty
+    const unsaved = dirty || guideDirty || guideWorkflowDirty
     setUnsavedChanges(unsaved)
     if (!unsaved) {
       return
@@ -862,7 +868,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty, guideDirty])
+  }, [dirty, guideDirty, guideWorkflowDirty])
 
   // 화면을 떠날 때 경고 상태를 반드시 끈다 — 켜진 채로 두면 다음 화면에서 이유 없이
   // "저장하지 않은 수정이 있다"고 묻는다.
@@ -1253,14 +1259,20 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     : reviewedAt === null
       ? {
           tone: 'info' as const,
-          label: '저장 전',
+          label:
+            savedText !== (conversion.easy_text ?? '') || conversion.edited_text !== null
+              ? '저장된 본문 · 확인 필요'
+              : '저장 전',
           // 의견을 보낸 뒤에는 「아직 …이 없습니다」가 "내 제출이 실패했나"로 읽힌다.
           // 저장하지 않았다는 사실은 그대로 두되, 아직 할 일이 남았다는 뜻으로 들리지
           // 않게 완료형으로 적는다. 무엇을 보냈는지는 옆의 「의견 보냄」이 말한다.
           // 누락된 값은 제출하지 않은 것으로 취급한다.
-          detail: hasFeedback
-            ? '고쳐서 저장한 내용은 없습니다. 결과는 AI 초안 그대로입니다.'
-            : '아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.',
+          detail:
+            savedText !== (conversion.easy_text ?? '') || conversion.edited_text !== null
+              ? '저장된 본문입니다. 내용을 검토한 뒤 확인 저장해 주세요.'
+              : hasFeedback
+                ? '고쳐서 저장한 내용은 없습니다. 결과는 AI 초안 그대로입니다.'
+                : '아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.',
         }
       : {
           tone: 'success' as const,
@@ -1268,7 +1280,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           detail: null,
         }
 
-  const guideEnabled = conversion.review_capabilities?.action_guide === true
+  const guideWorkflowEnabled = conversion.review_capabilities?.action_guide_workflow === true
+  const guideWorkflowReadable =
+    guideWorkflowEnabled || conversion.review_capabilities?.action_guide_workflow_read === true
+  const guideEnabled =
+    conversion.review_capabilities?.action_guide === true || guideWorkflowReadable
+  const LegacyGuideContainer = guideWorkflowReadable ? 'details' : 'div'
   const historyEnabled = conversion.review_capabilities?.review_history === true
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
@@ -1602,7 +1619,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={dirty || focusedReviewLoading || focusedReviewSaving}
+                    disabled={dirty || focusedReviewLoading || focusedReviewSaving || guideApplying}
                     onClick={() => setFocusedReviewRetry((value) => value + 1)}
                   >
                     검토 분석 다시 시도
@@ -1673,7 +1690,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                                 type="button"
                                 variant="secondary"
                                 loading={focusedReviewSaving}
-                                disabled={contentConflict}
+                                disabled={contentConflict || guideApplying}
                                 onClick={() => void updateFocusedItems([item], 'confirmed')}
                               >
                                 확인했어요
@@ -1701,7 +1718,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                           <Button
                             type="button"
                             variant="ghost"
-                            disabled={focusedReviewSaving || contentConflict}
+                            disabled={focusedReviewSaving || contentConflict || guideApplying}
                             onClick={() => void updateFocusedItems([item], 'needs_review')}
                           >
                             다시 열기
@@ -2012,17 +2029,55 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           className={activeTask === 'guide' ? '' : 'hidden'}
         >
           {guideVisited && (
-            <ActionGuidePanel
-              conversionId={conversion.id}
-              contentRevision={contentRevision}
-              bodyDirty={dirty}
-              bodyBusy={busy}
-              bodyConflict={contentConflict}
-              source={source}
-              onSaveBody={handleSave}
-              onDirtyChange={setGuideDirty}
-              onReviewed={() => setHistoryRefreshToken((value) => value + 1)}
-            />
+            <>
+              {guideWorkflowReadable && (
+                <ActionGuideWorkflowPanel
+                  conversionId={conversion.id}
+                  contentRevision={contentRevision}
+                  savedBody={savedText}
+                  bodyDirty={dirty || guideDirty}
+                  bodyBusy={busy || reconvertPendingIndex !== null || focusedReviewSaving}
+                  bodyConflict={contentConflict}
+                  onDirtyChange={setGuideWorkflowDirty}
+                  onIntakeEnabledChange={setGuideWorkflowIntake}
+                  onBodyApplying={setGuideApplying}
+                  onBodyConflict={markContentConflict}
+                  onBodyApplied={(latest) => {
+                    const text = latest.edited_text ?? latest.easy_text ?? ''
+                    setDraft(text)
+                    setSavedText(text)
+                    setContentRevision(latest.content_revision)
+                    setReviewedAt(latest.reviewed_at)
+                    setPreservation(latest.format_preservation)
+                    setUnitMap(withBaselines(latest.segment_map?.units ?? [], text))
+                    setContentConflict(false)
+                    setCandidate(null)
+                    setHistoryRefreshToken((value) => value + 1)
+                  }}
+                />
+              )}
+              <LegacyGuideContainer
+                {...(guideWorkflowReadable ? { open: !guideWorkflowIntake } : {})}
+              >
+                {guideWorkflowReadable && (
+                  <summary className="min-h-11 cursor-pointer py-3">
+                    이전 행동 안내 자료와 작업
+                  </summary>
+                )}
+                <ActionGuidePanel
+                  conversionId={conversion.id}
+                  contentRevision={contentRevision}
+                  bodyDirty={dirty || guideWorkflowDirty}
+                  bodyBusy={busy}
+                  bodyConflict={contentConflict}
+                  source={source}
+                  onSaveBody={handleSave}
+                  onDirtyChange={setGuideDirty}
+                  onReviewed={() => setHistoryRefreshToken((value) => value + 1)}
+                  allowCreate={!guideWorkflowIntake}
+                />
+              </LegacyGuideContainer>
+            </>
           )}
         </div>
       )}

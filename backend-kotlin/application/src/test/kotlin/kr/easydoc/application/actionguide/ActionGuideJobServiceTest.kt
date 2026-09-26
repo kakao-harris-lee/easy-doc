@@ -102,7 +102,7 @@ class ActionGuideJobServiceTest {
     }
 
     @Test
-    fun `feature OFF는 저장소를 보지 않고 404 계약이다`() {
+    fun `feature OFF여도 소유권 없는 작업은 404다`() {
         val world = World(enabled = false)
         world.jobs.context = null
 
@@ -142,7 +142,61 @@ class ActionGuideJobServiceTest {
         assertThat(world.jobs.rows).hasSize(MAX_PROVIDER_STARTED_ATTEMPTS + 1)
     }
 
-    private class World(enabled: Boolean = true) {
+    @Test
+    fun `분석은 기존 안내 revision과 무관하고 기존 비용으로 한 번 예약된다`() {
+        val world = World(analysisEnabled = true)
+        world.jobs.context = defaultContext().copy(guideRevision = 4)
+        val first = world.service.createAnalysis(OWNER, CONVERSION, REQUEST, 3)
+        val repeated = world.service.createAnalysis(OWNER, CONVERSION, REQUEST, 3)
+        assertThat(first.job.operation).isEqualTo(ActionGuideOperation.ANALYSIS)
+        assertThat(repeated.job.jobId).isEqualTo(first.job.jobId)
+        assertThat(first.job.reservedCredits).isEqualByComparingTo("1.5")
+        assertThat(world.credits.reserveCalls).isEqualTo(1)
+        assertThat(world.service.list(OWNER, CONVERSION).latestJob).isNull()
+        assertThat(
+            world.service
+                .list(OWNER, CONVERSION, ActionGuideOperation.ANALYSIS)
+                .activeJob
+                ?.jobId,
+        ).isEqualTo(first.job.jobId)
+    }
+
+    @Test
+    fun `분석과 v1은 같은 request id를 다른 작업에 재사용하지 않는다`() {
+        val world = World(analysisEnabled = true)
+        world.jobs.rows[JOB] = storedJob()
+        assertThatThrownBy { world.service.createAnalysis(OWNER, CONVERSION, REQUEST, 3) }
+            .isInstanceOf(ConflictException::class.java)
+        assertThat(world.credits.reserveCalls).isZero()
+    }
+
+    @Test
+    fun `새 분석 OFF와 전체 OFF는 접수만 막고 기존 작업은 읽을 수 있다`() {
+        val world = World(enabled = false, analysisEnabled = false)
+        world.jobs.rows[JOB] = storedJob().copy(operation = ActionGuideOperation.ANALYSIS)
+        assertThat(world.service.get(OWNER, CONVERSION, JOB).operation).isEqualTo(ActionGuideOperation.ANALYSIS)
+        assertThat(world.service.list(OWNER, CONVERSION, ActionGuideOperation.ANALYSIS).latestJob).isNotNull()
+        assertThatThrownBy { world.service.createAnalysis(OWNER, CONVERSION, UUID.randomUUID(), 3) }
+            .isInstanceOf(NotFoundException::class.java)
+        val analysisOff = World()
+        assertThatThrownBy { analysisOff.service.createAnalysis(OWNER, CONVERSION, REQUEST, 3) }
+            .isInstanceOf(NotFoundException::class.java)
+        assertThat(analysisOff.credits.reserveCalls).isZero()
+    }
+
+    @Test
+    fun `분석은 기존 v1 provider 시작 시도 한도를 공유한다`() {
+        val world = World(analysisEnabled = true)
+        world.seedTerminalJobs(MAX_PROVIDER_STARTED_ATTEMPTS, providerStarted = true)
+        assertThatThrownBy { world.service.createAnalysis(OWNER, CONVERSION, UUID.randomUUID(), 3) }
+            .isInstanceOf(ActionGuideAttemptLimitExceededException::class.java)
+        assertThat(world.credits.reserveCalls).isZero()
+    }
+
+    private class World(
+        enabled: Boolean = true,
+        analysisEnabled: Boolean = false,
+    ) {
         val jobs = FakeActionGuideJobs()
         val credits = RecordingActionGuideCredits()
         val service =
@@ -152,6 +206,7 @@ class ActionGuideJobServiceTest {
                 credits,
                 DirectTransaction(jobs),
                 Clock.fixed(NOW, ZoneOffset.UTC),
+                analysisEnabled = analysisEnabled,
             )
 
         /** 이미 끝난 과거 시도를 쌓는다. [providerStarted] 가 시도로 셀지 여부를 가른다. */

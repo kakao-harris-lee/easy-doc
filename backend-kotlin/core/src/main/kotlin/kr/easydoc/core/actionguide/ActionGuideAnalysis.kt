@@ -122,6 +122,25 @@ object GuideAnalysisPolicy {
             requireValid(action.afterActionIds.isEmpty() == action.orderEvidence.isEmpty())
             action.orderEvidence.forEach { validateAnchor(it, sourceUnits) }
             requireValid(result.coverage.any { action.id in it.actionIds })
+            val groundedUnits =
+                (
+                    listOf(
+                        action.instruction,
+                        action.actor,
+                        action.beneficiaries,
+                        action.deadline,
+                        action.preparation,
+                        action.contact,
+                    ) + action.conditions
+                ).flatMap { it.evidence }.flatMap { it.sourceUnitIndexes }.toSet()
+            requireValid(result.coverage.filter { action.id in it.actionIds }.all { it.sourceUnitId in groundedUnits })
+        }
+        val pending = result.actions.associate { it.id to it.afterActionIds.toMutableSet() }.toMutableMap()
+        while (pending.isNotEmpty()) {
+            val ready = pending.filterValues { it.isEmpty() }.keys
+            requireValid(ready.isNotEmpty())
+            ready.forEach { pending.remove(it) }
+            pending.values.forEach { it.removeAll(ready) }
         }
         // Neither a full mapping nor a model's claim of absence proves semantic completeness.
         if (result.extractionReviewComplete) {

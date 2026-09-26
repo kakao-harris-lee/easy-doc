@@ -419,9 +419,18 @@ class EnvelopeColumnWriteGuardTest {
                 // R2 후보/안내문 회전 두 문장. 각 표의 payload와 봉투 세대는 함께 바꾼다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
                     "ActionGuideContentKeyRotation.kt",
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "GuideDraftApplyKeyRotation.kt",
                 // R2 안내문 CAS 갱신 문장도 payload와 봉투를 한 번에 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
                     "JdbcActionGuideContentRepository.kt",
+                // Analysis review, full apply and draft review atomically replace complete envelopes.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "JdbcGuideAnalysisRepository.kt",
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "JdbcGuideDraftApplyRepository.kt",
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "JdbcGuideDraftRepository.kt",
                 // 피드백 의견의 회전 UPDATE 하나와, 피드백 제출/재제출 upsert
                 // (`ON CONFLICT (conversion_id) DO UPDATE SET`) 하나 — 문장 둘이다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
@@ -464,6 +473,8 @@ class EnvelopeColumnWriteGuardTest {
                     "JdbcTossBillingStore.kt",
                 // 피드백 구버전 쓰기 호환 테스트가 옛 upsert SQL을 그대로 심는다 — 같은
                 // `ON CONFLICT (conversion_id) DO UPDATE SET`이라 봉투를 함께 쓴다.
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "GuideDraftApplyIntegrationTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/" +
                     "ConversionFeedbackStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
@@ -536,7 +547,8 @@ class EnvelopeColumnWriteGuardTest {
          * (`IllustrationSuggestionResultKeyRotation.rotateOne`) 하나다 — payload 와 봉투 두 값을
          * 같은 문장에서 쓴다.
          * 39 -> 40: ER-28 analysis key rotation writes payload and both envelope columns together.
+         * 40 -> 46: two rotations, analysis/draft review, full apply and large-body fixture.
          */
-        const val EXPECTED_STATEMENTS = 40
+        const val EXPECTED_STATEMENTS = 46
     }
 }

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.47.0"
+  version: "2.48.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,11 +49,9 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 66개다** — 제품 65개 + 헬스 체크 1개.
-    이 수는 `paths`의 HTTP 오퍼레이션을 직접 센 값이다. 2.39.0에는 62개였고,
-    2.40.0에서 별도 행동 안내문 `GET`·`PUT /conversions/{conversion_id}/action-guide`와
-    `GET /conversions/{conversion_id}/action-guide/export` 셋이 더해졌다. 이전 산문의
-    누적 집계는 일부 경로를 누락했으므로 제거했다. 경로·메서드 목록의 정본은 아래 `paths`다.
+    **HTTP 오퍼레이션은 91개다** — 제품 90개 + 헬스 체크 1개.
+    2.48.0은 실제 행동 분석·항목별 검토·두 모드 보완·전체 반영과 이전 본문 조회를 추가한다.
+    경로·메서드 목록의 정본은 아래 `paths`다.
 
     ## 경로 접두사
     애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
@@ -3701,8 +3699,8 @@ paths:
       summary: 최신 행동 분석 스냅샷 조회
       security: [{ HTTPBearer: [] }]
       description: |
-        ER-28 local/test fake 기반이다. 기본 OFF이며 실제 판단·행동 추출·유료 호출은 수행하지 않는다.
-        반환 provenance=fake, generation_enabled=false. 원문 전체 대응은 의미 보존 완료를 뜻하지 않는다.
+        저장된 fake 또는 provider 분석을 읽는다. 새 실제 분석은 action-guide-analysis-jobs에 명시적으로 요청한다.
+        신규 요청 OFF도 저장 분석 읽기를 유지한다. 원문 전체 대응은 의미 보존 완료를 뜻하지 않는다.
         GET은 분석을 실행하지 않는다. 본문이 바뀐 분석은 stale이며 allowed_modes는 비어 있다.
       responses:
         '200':
@@ -3716,7 +3714,7 @@ paths:
                   analysis:
                     anyOf: [{ $ref: '#/components/schemas/ActionGuideAnalysis' }, { type: 'null' }]
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { description: 기능 비활성 또는 문서 없음·타인 소유·만료 }
+        '404': { description: 문서 없음·타인 소유·만료 }
         '422': { $ref: '#/components/responses/ValidationFailed' }
     post:
       tags: [documents]
@@ -3767,7 +3765,369 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ActionGuideAnalysis' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { description: 기능 비활성 또는 분석 없음·타인 소유·만료 }
+        '404': { description: 분석 없음·타인 소유·만료 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+    put:
+      tags: [documents]
+      operationId: correctGuideAnalysis
+      summary: 근거 있는 행동·적합성 분석 교정
+      security: [{ HTTPBearer: [] }]
+      description: |
+        원문 전체 분모와 인용·행동 관계를 재검증하고 analysis/review revision을 올린다. 기존 검토와 결과는 무효화한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CorrectGuideAnalysisRequest' }
+      responses:
+        '200':
+          description: 근거 있는 행동·적합성 분석 교정
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionGuideAnalysis' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-workflow:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getActionGuideWorkflow
+      summary: 분석·보완 자료와 사전 비용 조회
+      security: [{ HTTPBearer: [] }]
+      description: |
+        조회는 모델을 호출하지 않는다. 신규 요청 토글 OFF도 저장 분석·자료 읽기는 유지한다.
+        intake_enabled는 기존 enabled와 analysis-enabled가 모두 참일 때만 참이다.
+        분석은 기존 R2 한 호출 크레딧을 사용하고 후속 두 모드 구성은 추가 호출·과금 0이다.
+      responses:
+        '200':
+          description: 분석·보완 자료와 사전 비용 조회
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionGuideWorkflow' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-analysis-jobs:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [documents]
+      operationId: createActionGuideAnalysisJob
+      summary: 명시적 비동기 행동 분석 요청
+      security: [{ HTTPBearer: [] }]
+      description: |
+        서버가 원문 전체·현재 본문·읽기 수준을 고정한다. provider는 트랜잭션 밖에서 최대 한 번 호출하며 자동 재시도하지 않는다.
+        같은 요청 키는 같은 입력에 멱등이다. 같은 본문·분석기 버전의 분석은 무료 재사용하고 fake 기반을 실제 분석으로 승격하지 않는다.
+        v1과 분석이 문서당 provider 시작 3회 상한과 예약·정산·복구 원장을 공유한다. 행동 없음/불확실도 정상 분석 결과이며 비용을 소비한다.
+        provider 실패·잘린 출력·잘못된 구조·입력 stale은 기존 정책대로 예약을 반환한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateActionGuideAnalysisRequest' }
+      responses:
+        '202':
+          description: 명시적 비동기 행동 분석 요청
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Credit-Balance:
+              schema: { type: string, examples: ["0.0", "0.1", "1.0"] }
+              description: 접수 또는 무료 재사용 후 가용 크레딧
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionGuideJobResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '402': { description: 분석 요청에 필요한 가용 크레딧 부족 }
+        '429': { description: v1 안내 생성과 분석의 합산 provider 시작 횟수 3회 초과 }
+
+  /conversions/{conversion_id}/action-guide-analyses/{analysis_id}/signals/{signal_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: analysis_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: signal_id
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      tags: [documents]
+      operationId: resolveGuideAnalysisSignal
+      summary: 항목별 근거 대조 기록
+      security: [{ HTTPBearer: [] }]
+      description: |
+        source_body는 현재 본문 안의 실제 인용을 요구한다. 해결 불가 신호는 확인 표시로 지울 수 없다.
+        검토 revision을 올리고 기존 검토 완료를 해제한다. source_body/fact_difference는 전체 보완을 차단한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResolveGuideSignalRequest' }
+      responses:
+        '200':
+          description: 항목별 근거 대조 기록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionGuideAnalysis' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-analyses/{analysis_id}/review:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: analysis_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [documents]
+      operationId: reviewGuideAnalysis
+      summary: 현재 분석의 행동 추출 검토 완료
+      security: [{ HTTPBearer: [] }]
+      description: |
+        추출·미기재·읽기 수준 검토가 남으면 거절한다. 전체 원문↔본문 검토가 남으면 추가 안내만 허용할 수 있다.
+        모델의 검토 완료 주장이나 구조 대응률은 사람 검토를 대신하지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GuideAnalysisRevisionRequest' }
+      responses:
+        '200':
+          description: 현재 분석의 행동 추출 검토 완료
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionGuideAnalysis' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-drafts:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [documents]
+      operationId: createGuideDraft
+      summary: 검토한 행동으로 종류별 보완 자료 저장
+      security: [{ HTTPBearer: [] }]
+      description: |
+        서버 allowed_modes로 허용된 모드만 구성한다. 추가 안내는 별도 자료이며 원문 전체 대체본이 아니다.
+        전체 보완은 현재 저장 본문을 그대로 유지하고 행동 블록을 추가한다. 20000 코드포인트 초과는 축약 없이 422다.
+        같은 request_id/분석·검토·본문 버전·mode는 같은 자료를 반환한다. 모델 추가 호출과 추가 크레딧은 없다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGuideDraftRequest' }
+      responses:
+        '201':
+          description: 검토한 행동으로 종류별 보완 자료 저장
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuideDraft' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-drafts/{draft_id}/review:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: draft_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [documents]
+      operationId: reviewGuideDraft
+      summary: 행동 블록별 대조 확인
+      security: [{ HTTPBearer: [] }]
+      description: |
+        현재 분석·본문·결과 버전에 대해 모든 블록 ID를 확인해야 한다. 결과 revision을 올린다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewGuideDraftRequest' }
+      responses:
+        '200':
+          description: 행동 블록별 대조 확인
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GuideDraft' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-drafts/{draft_id}/apply:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: draft_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [documents]
+      operationId: applyGuideDraft
+      summary: 확인한 전체 보완을 미확인 본문으로 반영
+      security: [{ HTTPBearer: [] }]
+      description: |
+        full_document만 허용한다. 본문·분석·검토·결과 CAS와 미해결 신호를 확인한다.
+        R5 토글과 무관하게 이전 본문을 암호화 보관하고 새 미확인 본문을 같은 트랜잭션으로 저장한다. 스냅샷 실패 시 롤백한다.
+        새 반영은 본문 revision을 1 올려 파생 자료를 무효화한다. 동일 요청 재전송은 재반영하지 않는다.
+        반영은 검토 완료를 뜻하지 않으며 reviewed_at=null이다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApplyGuideDraftRequest' }
+      responses:
+        '200':
+          description: 확인한 전체 보완을 미확인 본문으로 반영
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApplyGuideDraftResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-drafts/{draft_id}/export:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: draft_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: downloadGuideDraft
+      summary: 확인한 현재 보완 자료 TXT 내보내기
+      security: [{ HTTPBearer: [] }]
+      description: |
+        종류별 파일명은 additional-action-guide.txt 또는 full-document-supplement.txt다.
+        미확인 또는 stale 자료는 409다. 신규 요청 OFF라도 소유권·보존·버전·확인 조건에 맞는 출력은 유지한다.
+      responses:
+        '200':
+          description: 확인한 현재 보완 자료 TXT 내보내기
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            Content-Disposition:
+              schema: { type: string }
+              description: 산출물 종류별 TXT 파일명
+          content:
+            text/plain:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-previous-bodies:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getGuidePreviousBodies
+      summary: 전체 반영 이전 본문 보관 목록
+      security: [{ HTTPBearer: [] }]
+      responses:
+        '200':
+          description: 전체 반영 이전 본문 보관 목록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/GuidePreviousBody' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+
+  /conversions/{conversion_id}/action-guide-previous-bodies/{snapshot_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getGuidePreviousBody
+      summary: 복구할 수 있는 이전 본문 조회
+      security: [{ HTTPBearer: [] }]
+      description: |
+        신규 요청 토글과 무관하게 소유권과 문서 보존기간을 검사한다. 조회 자체는 현재 본문을 바꾸지 않는다.
+      responses:
+        '200':
+          description: 복구할 수 있는 이전 본문 조회
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+          content:
+            application/json:
+              schema: { type: object, required: [body], properties: { body: { type: string } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: 자원이 없거나 타인 소유 또는 보존기간 만료. 신규 요청은 비활성 기능도 404. }
+        '409': { description: 본문·분석·검토·결과 버전 또는 요청 키 충돌, 미해결 검토 항목 }
         '422': { $ref: '#/components/responses/ValidationFailed' }
 
   /conversions/{conversion_id}/action-guide:
@@ -3796,7 +4156,7 @@ paths:
               schema: { $ref: '#/components/schemas/ActionGuideResourceResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 없거나 내 것이 아니거나 만료됐다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3881,7 +4241,7 @@ paths:
               schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 없거나 내 것이 아니거나 만료됐다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3922,7 +4282,7 @@ paths:
               schema: { $ref: '#/components/schemas/ActionGuideJobCollectionResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 없거나 내 것이 아니거나 만료됐다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -4007,7 +4367,7 @@ paths:
               schema: { $ref: '#/components/schemas/ActionGuideJobResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -7040,6 +7400,12 @@ components:
       properties:
         review_support: { type: boolean }
         action_guide: { type: boolean }
+        action_guide_workflow:
+          type: boolean
+          description: 행동 분석·보완 흐름 지원 여부. 실제 새 요청 허용은 workflow 응답의 intake_enabled로 판단한다.
+        action_guide_workflow_read:
+          type: boolean
+          description: 저장된 분석·보완·이전본문 조회 지원. 신규 요청 토글과 독립이다.
         table_relations: { type: boolean }
         review_history: { type: boolean }
         explanations: { type: boolean }
@@ -7432,7 +7798,7 @@ components:
         analysis_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
         based_on_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
         state: { type: string, enum: [current, stale] }
-        provenance: { type: string, const: fake }
+        provenance: { type: string, enum: [fake, provider] }
         reading_level: { type: string, enum: [grade_5_6, grade_3_4] }
         suitability: { type: string, enum: [guide, non_guide, mixed, uncertain] }
         action_presence: { type: string, enum: [found, none, uncertain] }
@@ -7473,9 +7839,479 @@ components:
         allowed_modes:
           type: array
           items: { type: string, enum: [additional_guide, full_document] }
-          description: 서버가 산출한 내용상 모드 적합성. 실제 생성은 generation_enabled도 참이어야 하며 현재는 항상 비활성.
-        generation_enabled: { type: boolean, const: false }
+          description: 서버가 검토 상태와 본문 대응에 따라 허용한 모드. 신규 구성에는 workflow generation_enabled도 필요하다.
+        generation_enabled:
+          type: boolean
+          description: 이 분석의 내용·검토 상태상 구성 준비 여부. 실제 신규 요청 허용은 workflow의 generation_enabled도 확인한다.
+        analyzer_version: { type: string }
+        review_revision: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        reviewed: { type: boolean }
+        saved_body: { type: string }
+        body_units:
+          type: array
+          items: { $ref: '#/components/schemas/GuideSourceUnit' }
+        signals:
+          type: array
+          items: { $ref: '#/components/schemas/GuideReviewSignal' }
         created_at: { type: string, format: date-time }
+
+    GuideSourceUnit:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - text
+      properties:
+        id:
+          type: integer
+          minimum: 0
+        text:
+          type: string
+    GuideUnitAssessment:
+      type: object
+      additionalProperties: false
+      required:
+        - source_unit_id
+        - status
+        - action_ids
+      properties:
+        source_unit_id:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum:
+            - action
+            - context
+            - needs_review
+        action_ids:
+          type: array
+          items:
+            type: string
+    GuideReviewSignal:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - kind
+        - source_unit_ids
+        - action_id
+        - detail
+        - resolved
+        - resolvable
+        - resolution_note
+        - body_unit_indexes
+        - body_quote
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum:
+            - source_body
+            - extraction
+            - missing_information
+            - fact_difference
+            - reading_level
+        source_unit_ids:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+        action_id:
+          anyOf:
+            - type: string
+            - type: "null"
+        detail:
+          type: string
+        resolved:
+          type: boolean
+        resolvable:
+          type: boolean
+        resolution_note:
+          anyOf:
+            - type: string
+            - type: "null"
+        body_unit_indexes:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+        body_quote:
+          anyOf:
+            - type: string
+            - type: "null"
+    GuideAnalysisRevisionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+    ResolveGuideSignalRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+        - note
+        - body_unit_indexes
+        - body_quote
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        note:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        body_unit_indexes:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+        body_quote:
+          anyOf:
+            - type: string
+            - type: "null"
+    CorrectGuideAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+        - suitability
+        - action_presence
+        - reason
+        - evidence
+        - actions
+        - coverage
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        suitability:
+          type: string
+          enum:
+            - guide
+            - non_guide
+            - mixed
+            - uncertain
+        action_presence:
+          type: string
+          enum:
+            - found
+            - none
+            - uncertain
+        reason:
+          type: string
+          minLength: 1
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActionGuideSourceAnchor"
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractedGuideAction"
+        coverage:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideUnitAssessment"
+    GuideDraftBlock:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - action_id
+        - text
+        - cautions
+        - evidence
+      properties:
+        id:
+          type: string
+        action_id:
+          type: string
+        text:
+          type: string
+        cautions:
+          type: array
+          items:
+            type: string
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/ActionGuideSourceAnchor"
+    GuideDraft:
+      type: object
+      additionalProperties: false
+      required:
+        - draft_id
+        - analysis_id
+        - analysis_revision
+        - analysis_review_revision
+        - based_on_content_revision
+        - draft_revision
+        - mode
+        - body
+        - blocks
+        - reviewed
+        - state
+        - created_at
+      properties:
+        draft_id:
+          type: string
+          format: uuid
+        analysis_id:
+          type: string
+          format: uuid
+        analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        analysis_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        based_on_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        draft_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        mode:
+          type: string
+          enum:
+            - additional_guide
+            - full_document
+        body:
+          type: string
+          maxLength: 20000
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideDraftBlock"
+        reviewed:
+          type: boolean
+        state:
+          type: string
+          enum:
+            - current
+            - stale
+        created_at:
+          type: string
+          format: date-time
+    CreateGuideDraftRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+        - request_id
+        - analysis_id
+        - mode
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        request_id:
+          type: string
+          format: uuid
+        analysis_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum:
+            - additional_guide
+            - full_document
+    ReviewGuideDraftRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+        - expected_draft_revision
+        - confirmed_block_ids
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        expected_draft_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        confirmed_block_ids:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    ApplyGuideDraftRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - expected_content_revision
+        - expected_analysis_revision
+        - expected_review_revision
+        - request_id
+        - expected_draft_revision
+      properties:
+        expected_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_analysis_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        expected_review_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        request_id:
+          type: string
+          format: uuid
+        expected_draft_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+    ApplyGuideDraftResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - content_revision
+        - previous_snapshot_id
+        - replayed
+      properties:
+        content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        previous_snapshot_id:
+          type: string
+          format: uuid
+        replayed:
+          type: boolean
+    ActionGuideWorkflow:
+      type: object
+      additionalProperties: false
+      required:
+        - intake_enabled
+        - generation_enabled
+        - required_credits
+        - available_credits
+        - generation_credits
+        - analysis
+        - active_job
+        - latest_job
+        - drafts
+      properties:
+        intake_enabled:
+          type: boolean
+        generation_enabled:
+          type: boolean
+        required_credits:
+          type: number
+          minimum: 0
+        available_credits:
+          type: number
+        generation_credits:
+          type: number
+          const: 0
+        analysis:
+          anyOf:
+            - $ref: "#/components/schemas/ActionGuideAnalysis"
+            - type: "null"
+        active_job:
+          anyOf:
+            - $ref: "#/components/schemas/ActionGuideJobResponse"
+            - type: "null"
+        latest_job:
+          anyOf:
+            - $ref: "#/components/schemas/ActionGuideJobResponse"
+            - type: "null"
+        drafts:
+          type: array
+          items:
+            $ref: "#/components/schemas/GuideDraft"
+    GuidePreviousBody:
+      type: object
+      additionalProperties: false
+      required:
+        - snapshot_id
+        - draft_id
+        - previous_content_revision
+        - applied_content_revision
+      properties:
+        snapshot_id:
+          type: string
+          format: uuid
+        draft_id:
+          type: string
+          format: uuid
+        previous_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        applied_content_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
 
     ActionGuideSectionKind:
       type: string
@@ -7627,8 +8463,9 @@ components:
       type: object
       required:
         [job_id, request_id, status, based_on_content_revision, reserved_credits,
-         failure_code, created_at, updated_at, candidate_id, candidate_state, content]
+         failure_code, created_at, updated_at, candidate_id, candidate_state, content, operation]
       properties:
+        operation: { type: string, enum: [guide, analysis] }
         job_id: { type: string, format: uuid }
         request_id: { type: string, format: uuid }
         status: { $ref: '#/components/schemas/ActionGuideJobStatus' }

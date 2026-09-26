@@ -11,8 +11,6 @@ class GuideAnalysisConfigurationTest {
         assertThat(requireFakeAnalysisConfiguration(MockEnvironment())).isFalse()
         val enabled = MockEnvironment().withProperty("easydoc.action-guide.analysis-enabled", "true")
         listOf(
-            emptyArray(),
-            arrayOf("local"),
             arrayOf("action-guide-analysis-fake"),
             arrayOf("local", "action-guide-analysis-fake", "production"),
         ).forEach { profiles ->
@@ -23,6 +21,8 @@ class GuideAnalysisConfigurationTest {
                 )
             }.isInstanceOf(IllegalStateException::class.java)
         }
+        enabled.setActiveProfiles("production")
+        assertThat(requireFakeAnalysisConfiguration(enabled)).isFalse()
         enabled.setActiveProfiles("test", "action-guide-analysis-fake")
         assertThat(requireFakeAnalysisConfiguration(enabled)).isTrue()
     }

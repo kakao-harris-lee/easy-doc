@@ -73,6 +73,7 @@ class ActionGuideJobContractTest {
             .isEqualTo("/conversions/$conversionId/action-guide-jobs/${job.jobId}")
         assertThat(response.getHeader("X-Credit-Balance")).isEqualTo("0.8")
         assertThat(json(response)["status"].asString()).isEqualTo("queued")
+        assertThat(json(response)["operation"].asString()).isEqualTo("guide")
         assertThat(json(response).propertyNames())
             .containsExactlyInAnyOrder(
                 "job_id",
@@ -86,6 +87,7 @@ class ActionGuideJobContractTest {
                 "candidate_id",
                 "candidate_state",
                 "content",
+                "operation",
             )
     }
 

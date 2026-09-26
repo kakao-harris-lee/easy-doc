@@ -33,6 +33,7 @@ export interface ActionGuidePanelProps {
   onSaveBody: () => Promise<number | null>
   onDirtyChange?: (dirty: boolean) => void
   onReviewed?: () => void
+  allowCreate?: boolean
 }
 
 const SECTIONS: readonly { kind: ActionGuideSectionKind; label: string }[] = [
@@ -103,6 +104,7 @@ export function ActionGuidePanel({
   onSaveBody,
   onDirtyChange,
   onReviewed,
+  allowCreate = true,
 }: ActionGuidePanelProps) {
   const headingId = useId()
   const [resource, setResource] = useState<ActionGuideResource | null>(null)
@@ -732,7 +734,7 @@ export function ActionGuidePanel({
         )}
       </details>
 
-      {!isLoading && jobs !== null && (
+      {!isLoading && jobs !== null && (allowCreate || activeJob !== null || unknownCreate) && (
         <div className="space-y-3 rounded-md border border-border p-4">
           <p>
             현재 저장된 본문으로 별도 안내문을 만듭니다. 본문은 바뀌지 않습니다. 원문에 안내가

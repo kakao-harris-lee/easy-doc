@@ -387,6 +387,8 @@ class EnvelopeRotationTest {
                         EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
                         EncryptedField.ACTION_GUIDE_PAYLOAD,
                         EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
+                        EncryptedField.ACTION_GUIDE_DRAFT_PAYLOAD,
+                        EncryptedField.ACTION_GUIDE_PREVIOUS_BODY,
                         EncryptedField.DOCUMENT_TABLE_STRUCTURE,
                         EncryptedField.REVIEW_HISTORY_SNAPSHOT,
                         EncryptedField.ILLUSTRATION_SUGGESTION_RESULT,
@@ -430,6 +432,8 @@ class EnvelopeRotationTest {
                 EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
                 EncryptedField.ACTION_GUIDE_PAYLOAD,
                 EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
+                EncryptedField.ACTION_GUIDE_DRAFT_PAYLOAD,
+                EncryptedField.ACTION_GUIDE_PREVIOUS_BODY,
                 -> error("행동 안내문 회전은 JdbcActionGuideContentRepositoryTest에서 검증한다")
 
                 EncryptedField.DOCUMENT_TABLE_STRUCTURE -> error("표 구조 회전은 TableStructureKeyRotationTest에서 검증한다")

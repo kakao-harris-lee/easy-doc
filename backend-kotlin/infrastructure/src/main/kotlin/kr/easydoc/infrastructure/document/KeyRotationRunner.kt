@@ -27,6 +27,7 @@ class KeyRotationRunner(
     private val tableStructure: TableStructureKeyRotation,
     private val reviewHistory: ReviewHistoryKeyRotation,
     private val illustrationSuggestions: IllustrationSuggestionResultKeyRotation,
+    private val guideDrafts: kr.easydoc.infrastructure.actionguide.GuideDraftApplyKeyRotation? = null,
 ) : ApplicationRunner,
     ExitCodeGenerator {
     private val log = LoggerFactory.getLogger(KeyRotationRunner::class.java)
@@ -39,6 +40,7 @@ class KeyRotationRunner(
         exitCode =
             try {
                 batch.run()
+                log.info("키 회전 [action_guide_drafts/body_snapshots]: rotated={}", guideDrafts?.run() ?: 0)
                 val (candidates, guides) = actionGuideContent.run()
                 log.info("키 회전 [action_guide_candidates]: rotated={}", candidates)
                 log.info("키 회전 [action_guides]: rotated={}", guides)

@@ -288,6 +288,8 @@ export interface SegmentMap {
 export interface ReviewCapabilities {
   review_support: boolean
   action_guide: boolean
+  action_guide_workflow?: boolean
+  action_guide_workflow_read?: boolean
   table_relations: boolean
   review_history: boolean
   explanations: boolean
@@ -616,6 +618,7 @@ export type ActionGuideJobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
 export type ActionGuideFailureCode = 'generation_failed' | 'result_invalid' | 'outcome_unknown'
 
 export interface ActionGuideJob {
+  operation?: 'guide' | 'analysis'
   job_id: string
   request_id: string
   status: ActionGuideJobStatus
@@ -1358,7 +1361,13 @@ export interface ActionGuideAnalysis {
   analysis_revision: number
   based_on_content_revision: number
   state: 'current' | 'stale'
-  provenance: 'fake'
+  provenance: 'fake' | 'provider'
+  analyzer_version?: string
+  review_revision?: number
+  reviewed?: boolean
+  saved_body?: string
+  body_units?: Array<{ id: number; text: string }>
+  signals?: GuideReviewSignal[]
   reading_level: ReadingLevel
   suitability: 'guide' | 'non_guide' | 'mixed' | 'uncertain'
   action_presence: 'found' | 'none' | 'uncertain'
@@ -1374,7 +1383,7 @@ export interface ActionGuideAnalysis {
   unresolved_signals: string[]
   extraction_review_complete: boolean
   allowed_modes: GuideOutputMode[]
-  generation_enabled: false
+  generation_enabled: boolean
   created_at: string
 }
 export interface CreateActionGuideAnalysisRequest {
@@ -1383,4 +1392,91 @@ export interface CreateActionGuideAnalysisRequest {
 }
 export interface LatestActionGuideAnalysis {
   analysis: ActionGuideAnalysis | null
+}
+
+export interface GuideReviewSignal {
+  id: string
+  kind: 'source_body' | 'extraction' | 'missing_information' | 'fact_difference' | 'reading_level'
+  source_unit_ids: number[]
+  action_id: string | null
+  detail: string
+  resolved: boolean
+  resolvable: boolean
+  resolution_note: string | null
+  body_unit_indexes: number[]
+  body_quote: string | null
+}
+export interface GuideAnalysisRevisionRequest {
+  expected_content_revision: number
+  expected_analysis_revision: number
+  expected_review_revision: number
+}
+export interface ResolveGuideSignalRequest extends GuideAnalysisRevisionRequest {
+  note: string
+  body_unit_indexes: number[]
+  body_quote: string | null
+}
+export interface CorrectGuideAnalysisRequest extends GuideAnalysisRevisionRequest {
+  suitability: ActionGuideAnalysis['suitability']
+  action_presence: ActionGuideAnalysis['action_presence']
+  reason: string
+  evidence: ActionGuideSourceAnchor[]
+  actions: ExtractedGuideAction[]
+  coverage: ActionGuideAnalysis['coverage']
+}
+export interface GuideDraftBlock {
+  id: string
+  action_id: string
+  text: string
+  cautions: string[]
+  evidence: ActionGuideSourceAnchor[]
+}
+export interface GuideDraft {
+  draft_id: string
+  analysis_id: string
+  analysis_revision: number
+  analysis_review_revision: number
+  based_on_content_revision: number
+  draft_revision: number
+  mode: GuideOutputMode
+  body: string
+  blocks: GuideDraftBlock[]
+  reviewed: boolean
+  state: 'current' | 'stale'
+  created_at: string
+}
+export interface CreateGuideDraftRequest extends GuideAnalysisRevisionRequest {
+  request_id: string
+  analysis_id: string
+  mode: GuideOutputMode
+}
+export interface ReviewGuideDraftRequest extends GuideAnalysisRevisionRequest {
+  expected_draft_revision: number
+  confirmed_block_ids: string[]
+}
+export interface ApplyGuideDraftRequest extends GuideAnalysisRevisionRequest {
+  request_id: string
+  expected_draft_revision: number
+}
+export interface ApplyGuideDraftResponse {
+  content_revision: number
+  previous_snapshot_id: string
+  replayed: boolean
+}
+export interface ActionGuideWorkflow {
+  intake_enabled: boolean
+  generation_enabled: boolean
+  required_credits: number
+  available_credits: number
+  generation_credits: 0
+  analysis: ActionGuideAnalysis | null
+  active_job: ActionGuideJob | null
+  latest_job: ActionGuideJob | null
+  drafts: GuideDraft[]
+}
+export interface GuidePreviousBody {
+  snapshot_id: string
+  draft_id: string
+  previous_content_revision: number
+  applied_content_revision: number
 }

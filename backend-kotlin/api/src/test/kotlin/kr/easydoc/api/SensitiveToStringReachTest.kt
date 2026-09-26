@@ -233,8 +233,11 @@ class SensitiveToStringReachTest {
          * `IllustrationSuggestionGenerationInput`·`StartResult.Started` 는 일반 class 라 세지 않는다.
          * 386 -> 399: ER-28 analysis adds five core values, two application views and six HTTP payloads.
          * Source/body/reason-bearing values override toString; the general input class is not counted here.
+         * 399 -> 414: workflow adds six HTTP requests, two review values, two draft values,
+         * four apply/recovery values and the ValidAnalysis worker result. Probing rules are unchanged.
+         * 414 -> 415: explicit review signal HTTP payload replaces an untyped map.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 399
+        const val EXPECTED_SOURCE_DECLARATIONS = 415
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

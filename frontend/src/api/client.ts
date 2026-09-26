@@ -788,3 +788,101 @@ export function getActionGuideAnalysis(
 ): Promise<import('./types').ActionGuideAnalysis> {
   return requestJson(`/conversions/${conversionId}/action-guide-analyses/${analysisId}`, { signal })
 }
+
+export function getActionGuideWorkflow(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<import('./types').ActionGuideWorkflow> {
+  return requestJson(`/conversions/${conversionId}/action-guide-workflow`, { signal })
+}
+export function createActionGuideAnalysisJob(
+  conversionId: string,
+  body: import('./types').CreateActionGuideAnalysisRequest,
+): Promise<import('./types').ActionGuideJob> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analysis-jobs`, {
+    method: 'POST',
+    body,
+  })
+}
+export function resolveGuideAnalysisSignal(
+  conversionId: string,
+  analysisId: string,
+  signalId: string,
+  body: import('./types').ResolveGuideSignalRequest,
+): Promise<import('./types').ActionGuideAnalysis> {
+  return requestJson(
+    `/conversions/${conversionId}/action-guide-analyses/${analysisId}/signals/${signalId}`,
+    { method: 'PUT', body },
+  )
+}
+export function correctGuideAnalysis(
+  conversionId: string,
+  analysisId: string,
+  body: import('./types').CorrectGuideAnalysisRequest,
+): Promise<import('./types').ActionGuideAnalysis> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analyses/${analysisId}`, {
+    method: 'PUT',
+    body,
+  })
+}
+export function reviewGuideAnalysis(
+  conversionId: string,
+  analysisId: string,
+  body: import('./types').GuideAnalysisRevisionRequest,
+): Promise<import('./types').ActionGuideAnalysis> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analyses/${analysisId}/review`, {
+    method: 'POST',
+    body,
+  })
+}
+export function createGuideDraft(
+  conversionId: string,
+  body: import('./types').CreateGuideDraftRequest,
+): Promise<import('./types').GuideDraft> {
+  return requestJson(`/conversions/${conversionId}/action-guide-drafts`, { method: 'POST', body })
+}
+export function reviewGuideDraft(
+  conversionId: string,
+  draftId: string,
+  body: import('./types').ReviewGuideDraftRequest,
+): Promise<import('./types').GuideDraft> {
+  return requestJson(`/conversions/${conversionId}/action-guide-drafts/${draftId}/review`, {
+    method: 'POST',
+    body,
+  })
+}
+export function applyGuideDraft(
+  conversionId: string,
+  draftId: string,
+  body: import('./types').ApplyGuideDraftRequest,
+): Promise<import('./types').ApplyGuideDraftResponse> {
+  return requestJson(`/conversions/${conversionId}/action-guide-drafts/${draftId}/apply`, {
+    method: 'POST',
+    body,
+  })
+}
+
+export async function downloadGuideDraft(
+  conversionId: string,
+  draftId: string,
+): Promise<DownloadedFile> {
+  const response = await send(
+    `/conversions/${conversionId}/action-guide-drafts/${draftId}/export`,
+    {},
+  )
+  return {
+    blob: await response.blob(),
+    filename: parseFilename(response.headers.get('Content-Disposition')),
+  }
+}
+export function listGuidePreviousBodies(
+  conversionId: string,
+): Promise<import('./types').GuidePreviousBody[]> {
+  return requestJson(`/conversions/${conversionId}/action-guide-previous-bodies`)
+}
+export function getGuidePreviousBody(
+  conversionId: string,
+  snapshotId: string,
+): Promise<{ body: string }> {
+  return requestJson(`/conversions/${conversionId}/action-guide-previous-bodies/${snapshotId}`)
+}

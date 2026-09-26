@@ -33,6 +33,12 @@ data class GuideAnalysisSnapshot(
     val readingLevel: String,
     val result: GuideAnalysisResult,
     val createdAt: Instant,
+    val provenance: String = "fake",
+    val analyzerVersion: String = "foundation-v1",
+    val reviewRevision: Long = 0,
+    val reviewed: Boolean = false,
+    val signals: List<GuideReviewSignal> = emptyList(),
+    val originJobId: UUID? = null,
 ) {
     override fun toString(): String = "GuideAnalysisSnapshot(id=$analysisId)"
 }
@@ -42,7 +48,15 @@ data class GuideAnalysisView(
     val state: String,
 ) {
     val allowedModes: List<GuideOutputMode>
-        get() = if (state == "current") GuideAnalysisPolicy.allowedModes(snapshot.result) else emptyList()
+        get() {
+            if (state != "current") return emptyList()
+            val modes = GuideAnalysisPolicy.allowedModes(snapshot.result)
+            return if (snapshot.signals.any { !it.resolved && it.kind in setOf("source_body", "fact_difference") }) {
+                modes.filter { it == GuideOutputMode.ADDITIONAL_GUIDE }
+            } else {
+                modes
+            }
+        }
 }
 
 interface GuideAnalysisRepository {
@@ -80,6 +94,14 @@ interface GuideAnalysisRepository {
         conversionId: UUID,
         snapshot: GuideAnalysisSnapshot,
     )
+
+    fun replace(
+        ownerId: UUID,
+        conversionId: UUID,
+        expectedAnalysisRevision: Long,
+        expectedReviewRevision: Long,
+        snapshot: GuideAnalysisSnapshot,
+    ): Boolean = false
 
     fun bindRequest(
         ownerId: UUID,
@@ -148,25 +170,21 @@ class ActionGuideAnalysisService(
         ownerId: UUID,
         conversionId: UUID,
         analysisId: UUID,
-    ): GuideAnalysisView {
-        requireEnabled()
-        return transaction.inTransaction {
+    ): GuideAnalysisView =
+        transaction.inTransaction {
             val input = ownedInput(ownerId, conversionId)
             val snapshot = repository.find(ownerId, conversionId, analysisId) ?: notFound()
             view(snapshot, input.contentRevision)
         }
-    }
 
     fun latest(
         ownerId: UUID,
         conversionId: UUID,
-    ): GuideAnalysisView? {
-        requireEnabled()
-        return transaction.inTransaction {
+    ): GuideAnalysisView? =
+        transaction.inTransaction {
             val input = ownedInput(ownerId, conversionId)
             repository.latest(ownerId, conversionId)?.let { view(it, input.contentRevision) }
         }
-    }
 
     private fun ownedInput(
         ownerId: UUID,

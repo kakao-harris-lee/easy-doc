@@ -27,6 +27,7 @@ data class ActionGuideJobView(
     val failureCode: ActionGuideJobFailureCode?,
     val createdAt: Instant,
     val updatedAt: Instant,
+    val operation: ActionGuideOperation = ActionGuideOperation.GUIDE,
 )
 
 data class ActionGuideJobCollectionView(
@@ -49,6 +50,7 @@ class ActionGuideJobService(
     private val credits: ActionGuideCreditPort,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
+    private val analysisEnabled: Boolean = false,
 ) {
     @Suppress("LongMethod", "ThrowsCount") // 멱등 확인부터 삽입·예약까지 한 트랜잭션의 순서를 보인다.
     fun create(
@@ -57,8 +59,41 @@ class ActionGuideJobService(
         requestId: UUID,
         expectedContentRevision: Long,
         expectedGuideRevision: Long?,
+    ): ActionGuideJobCreationView =
+        createForOperation(
+            ownerId,
+            conversionId,
+            requestId,
+            expectedContentRevision,
+            expectedGuideRevision,
+            ActionGuideOperation.GUIDE,
+        )
+
+    fun createAnalysis(
+        ownerId: UUID,
+        conversionId: UUID,
+        requestId: UUID,
+        expectedContentRevision: Long,
+    ): ActionGuideJobCreationView =
+        createForOperation(
+            ownerId,
+            conversionId,
+            requestId,
+            expectedContentRevision,
+            null,
+            ActionGuideOperation.ANALYSIS,
+        )
+
+    @Suppress("LongMethod", "ThrowsCount", "LongParameterList")
+    private fun createForOperation(
+        ownerId: UUID,
+        conversionId: UUID,
+        requestId: UUID,
+        expectedContentRevision: Long,
+        expectedGuideRevision: Long?,
+        operation: ActionGuideOperation,
     ): ActionGuideJobCreationView {
-        requireEnabled()
+        requireEnabled(operation)
         requireRevision(expectedContentRevision, expectedGuideRevision)
         return transaction.inTransaction {
             val context =
@@ -66,7 +101,7 @@ class ActionGuideJobService(
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
 
             jobs.findByRequestId(ownerId, conversionId, requestId)?.let { existing ->
-                if (!existing.matches(expectedContentRevision, expectedGuideRevision)) {
+                if (!existing.matches(expectedContentRevision, expectedGuideRevision, operation)) {
                     throw ConflictException(REQUEST_ID_CONFLICT_MESSAGE)
                 }
                 return@inTransaction ActionGuideJobCreationView(
@@ -79,7 +114,7 @@ class ActionGuideJobService(
             if (context.contentRevision != expectedContentRevision) {
                 throw ConflictException(CONTENT_REVISION_CONFLICT_MESSAGE)
             }
-            if (context.guideRevision != expectedGuideRevision) {
+            if (operation == ActionGuideOperation.GUIDE && context.guideRevision != expectedGuideRevision) {
                 throw ConflictException(GUIDE_REVISION_CONFLICT_MESSAGE)
             }
 
@@ -102,6 +137,7 @@ class ActionGuideJobService(
                     providerStartedAt = null,
                     createdAt = now,
                     updatedAt = now,
+                    operation = operation,
                 )
             // **작업 INSERT 가 이용량 예약보다 먼저다.** 정산(`ProcessActionGuideJob.settle`)은 작업
             // 행을 먼저 잠그고 그다음 이용량 계정을 잡는다. 접수가 계정을 먼저 잡으면 두 순서가
@@ -152,38 +188,37 @@ class ActionGuideJobService(
     fun list(
         ownerId: UUID,
         conversionId: UUID,
-    ): ActionGuideJobCollectionView {
-        requireEnabled()
-        return transaction.inTransaction {
+        operation: ActionGuideOperation = ActionGuideOperation.GUIDE,
+    ): ActionGuideJobCollectionView =
+        transaction.inTransaction {
             val context =
                 jobs.lockOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
-            val active = jobs.findActiveOwned(ownerId, conversionId)
+            val active = jobs.findActiveOwnedForOperation(ownerId, conversionId, operation)
             ActionGuideJobCollectionView(
                 activeJob = active?.toView(),
-                latestJob = (active ?: jobs.findLatestOwned(ownerId, conversionId))?.toView(),
+                latestJob = (active ?: jobs.findLatestOwnedForOperation(ownerId, conversionId, operation))?.toView(),
                 requiredCredits = Credits.requiredFor(context.charCount).amount,
                 availableCredits = credits.available(ownerId, context.workspaceId),
             )
         }
-    }
 
     fun get(
         ownerId: UUID,
         conversionId: UUID,
         jobId: UUID,
-    ): ActionGuideJobView {
-        requireEnabled()
-        return transaction.inTransaction {
+    ): ActionGuideJobView =
+        transaction.inTransaction {
             jobs.lockOwnedContext(ownerId, conversionId)
                 ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             jobs.findOwned(ownerId, conversionId, jobId)?.toView()
                 ?: throw NotFoundException(ACTION_GUIDE_JOB_NOT_FOUND_MESSAGE)
         }
-    }
 
-    private fun requireEnabled() {
-        if (!enabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+    private fun requireEnabled(operation: ActionGuideOperation) {
+        if (!enabled || (operation == ActionGuideOperation.ANALYSIS && !analysisEnabled)) {
+            throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+        }
     }
 
     private fun requireRevision(
@@ -200,7 +235,10 @@ class ActionGuideJobService(
 private fun StoredActionGuideJob.matches(
     contentRevision: Long,
     guideRevision: Long?,
-): Boolean = basedOnContentRevision == contentRevision && expectedGuideRevision == guideRevision
+    requestedOperation: ActionGuideOperation,
+): Boolean =
+    basedOnContentRevision == contentRevision && expectedGuideRevision == guideRevision &&
+        operation == requestedOperation
 
 internal fun StoredActionGuideJob.toView(): ActionGuideJobView =
     ActionGuideJobView(
@@ -212,6 +250,7 @@ internal fun StoredActionGuideJob.toView(): ActionGuideJobView =
         failureCode,
         createdAt,
         updatedAt,
+        operation,
     )
 
 const val ACTION_GUIDE_JOB_NOT_FOUND_MESSAGE: String = "행동 안내문 생성 작업을 찾을 수 없습니다"

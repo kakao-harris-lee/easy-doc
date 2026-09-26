@@ -135,22 +135,8 @@ class ActionGuideR2EvaluationTest {
                         null
                     }
                 report.record(document.id, run, result, elapsed, parserFailure)
-                when (result) {
-                    is ActionGuideRunResult.Valid -> {
-                        val json = ActionGuideCandidateParser.encode(result.candidate)
-                        transcript.save(document.id, json, run)
-                    }
-
-                    is ActionGuideRunResult.Invalid -> {
-                        // 원문 응답은 로그에 내지 않고, 명시한 opt-in transcript 경로에만 보존한다.
-                        capturingProvider.lastCompletion?.let { completion ->
-                            transcript.save(document.id, completion.text, run)
-                        }
-                    }
-
-                    is ActionGuideRunResult.ProviderFailed -> {
-                        Unit
-                    }
+                transcriptText(result, capturingProvider.lastCompletion)?.let { text ->
+                    transcript.save(document.id, text, run)
                 }
             }
         }
@@ -163,6 +149,21 @@ class ActionGuideR2EvaluationTest {
             .withFailMessage { report.render() }
             .isEmpty()
     }
+
+    private fun transcriptText(
+        result: ActionGuideRunResult,
+        completion: LlmCompletion?,
+    ): String? =
+        when (result) {
+            is ActionGuideRunResult.Valid -> ActionGuideCandidateParser.encode(result.candidate)
+
+            // Preserve invalid raw output only in the explicitly opted-in transcript directory.
+            is ActionGuideRunResult.Invalid -> completion?.text
+
+            is ActionGuideRunResult.ProviderFailed -> null
+
+            is ActionGuideRunResult.ValidAnalysis -> error("v1 품질 레인은 행동 분석 결과를 평가하지 않습니다")
+        }
 
     private fun plannedReservation(
         plan: ActionGuideR2LanePlan.Ready,

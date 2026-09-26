@@ -2,6 +2,8 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -9,6 +11,7 @@ import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.actionguide.ActionGuideAnalysisService
 import kr.easydoc.application.actionguide.GuideAnalysisView
+import kr.easydoc.application.actionguide.GuideReviewSignal
 import kr.easydoc.core.actionguide.ExtractedGuideAction
 import kr.easydoc.core.actionguide.GuideInformation
 import org.springframework.context.annotation.Profile
@@ -84,59 +87,103 @@ data class ActionGuideAnalysisRequest
 
 data class ActionGuideAnalysisLatestResponse(val analysis: ActionGuideAnalysisResponse?)
 
-data class GuideInformationPayload(
-    val status: String,
-    val text: String?,
-    val evidence: List<ActionGuideAnchorPayload>,
-) {
-    override fun toString(): String = "GuideInformationPayload(status=$status)"
+data class GuideInformationPayload
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("status", required = true) val status: String,
+        @param:JsonProperty("text", required = true) @param:JsonSetter(nulls = Nulls.SET) val text: String?,
+        @param:JsonProperty("evidence", required = true) val evidence: List<ActionGuideAnchorPayload>,
+    ) {
+        override fun toString(): String = "GuideInformationPayload(status=$status)"
 
-    companion object {
-        fun of(info: GuideInformation): GuideInformationPayload =
-            GuideInformationPayload(
-                info.status.name.lowercase(),
-                info.text,
-                info.evidence.map { ActionGuideAnchorPayload(it.sourceUnitIndexes, it.quote) },
-            )
+        companion object {
+            fun of(info: GuideInformation): GuideInformationPayload =
+                GuideInformationPayload(
+                    info.status.name.lowercase(),
+                    info.text,
+                    info.evidence.map { ActionGuideAnchorPayload(it.sourceUnitIndexes, it.quote) },
+                )
+        }
     }
-}
 
-data class ExtractedGuideActionPayload(
+data class ExtractedGuideActionPayload
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("id", required = true) val id: String,
+        @param:JsonProperty("instruction", required = true) val instruction: GuideInformationPayload,
+        @param:JsonProperty("actor", required = true) val actor: GuideInformationPayload,
+        @param:JsonProperty("beneficiaries", required = true) val beneficiaries: GuideInformationPayload,
+        @param:JsonProperty("conditions", required = true) val conditions: List<GuideInformationPayload>,
+        @param:JsonProperty("deadline", required = true) val deadline: GuideInformationPayload,
+        @param:JsonProperty("preparation", required = true) val preparation: GuideInformationPayload,
+        @param:JsonProperty("contact", required = true) val contact: GuideInformationPayload,
+        @param:JsonProperty(
+            "after_action_ids",
+            required = true,
+        ) @get:JsonProperty("after_action_ids") val afterActionIds: List<String>,
+        @param:JsonProperty("order_evidence", required = true)
+        @get:JsonProperty("order_evidence")
+        val orderEvidence: List<ActionGuideAnchorPayload>,
+    ) {
+        override fun toString(): String = "ExtractedGuideActionPayload()"
+
+        companion object {
+            fun of(action: ExtractedGuideAction): ExtractedGuideActionPayload =
+                ExtractedGuideActionPayload(
+                    action.id,
+                    GuideInformationPayload.of(action.instruction),
+                    GuideInformationPayload.of(action.actor),
+                    GuideInformationPayload.of(action.beneficiaries),
+                    action.conditions.map(GuideInformationPayload::of),
+                    GuideInformationPayload.of(action.deadline),
+                    GuideInformationPayload.of(action.preparation),
+                    GuideInformationPayload.of(action.contact),
+                    action.afterActionIds,
+                    action.orderEvidence.map { ActionGuideAnchorPayload(it.sourceUnitIndexes, it.quote) },
+                )
+        }
+    }
+
+data class GuideUnitAssessmentPayload
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("source_unit_id", required = true)
+        @get:JsonProperty("source_unit_id")
+        val sourceUnitId: Int,
+        @param:JsonProperty("status", required = true) val status: String,
+        @param:JsonProperty("action_ids", required = true) @get:JsonProperty("action_ids") val actionIds: List<String>,
+    )
+
+data class GuideReviewSignalPayload(
     val id: String,
-    val instruction: GuideInformationPayload,
-    val actor: GuideInformationPayload,
-    val beneficiaries: GuideInformationPayload,
-    val conditions: List<GuideInformationPayload>,
-    val deadline: GuideInformationPayload,
-    val preparation: GuideInformationPayload,
-    val contact: GuideInformationPayload,
-    @get:JsonProperty("after_action_ids") val afterActionIds: List<String>,
-    @get:JsonProperty("order_evidence") val orderEvidence: List<ActionGuideAnchorPayload>,
+    val kind: String,
+    @get:JsonProperty("source_unit_ids") val sourceUnitIds: List<Int>,
+    @get:JsonProperty("action_id") val actionId: String?,
+    val detail: String,
+    val resolved: Boolean,
+    val resolvable: Boolean,
+    @get:JsonProperty("resolution_note") val resolutionNote: String?,
+    @get:JsonProperty("body_unit_indexes") val bodyUnitIndexes: List<Int>,
+    @get:JsonProperty("body_quote") val bodyQuote: String?,
 ) {
-    override fun toString(): String = "ExtractedGuideActionPayload()"
+    override fun toString(): String = "GuideReviewSignalPayload()"
 
     companion object {
-        fun of(action: ExtractedGuideAction): ExtractedGuideActionPayload =
-            ExtractedGuideActionPayload(
-                action.id,
-                GuideInformationPayload.of(action.instruction),
-                GuideInformationPayload.of(action.actor),
-                GuideInformationPayload.of(action.beneficiaries),
-                action.conditions.map(GuideInformationPayload::of),
-                GuideInformationPayload.of(action.deadline),
-                GuideInformationPayload.of(action.preparation),
-                GuideInformationPayload.of(action.contact),
-                action.afterActionIds,
-                action.orderEvidence.map { ActionGuideAnchorPayload(it.sourceUnitIndexes, it.quote) },
+        fun of(signal: GuideReviewSignal): GuideReviewSignalPayload =
+            GuideReviewSignalPayload(
+                signal.id,
+                signal.kind,
+                signal.sourceUnitIds,
+                signal.actionId,
+                signal.detail,
+                signal.resolved,
+                signal.resolvable,
+                signal.resolutionNote,
+                signal.bodyUnitIndexes,
+                signal.bodyQuote,
             )
     }
 }
-
-data class GuideUnitAssessmentPayload(
-    @get:JsonProperty("source_unit_id") val sourceUnitId: Int,
-    val status: String,
-    @get:JsonProperty("action_ids") val actionIds: List<String>,
-)
 
 data class ActionGuideAnalysisResponse(
     @get:JsonProperty("schema_version") val schemaVersion: Int,
@@ -158,6 +205,12 @@ data class ActionGuideAnalysisResponse(
     @get:JsonProperty("allowed_modes") val allowedModes: List<String>,
     @get:JsonProperty("generation_enabled") val generationEnabled: Boolean,
     @get:JsonProperty("created_at") val createdAt: String,
+    @get:JsonProperty("analyzer_version") val analyzerVersion: String,
+    @get:JsonProperty("review_revision") val reviewRevision: Long,
+    val reviewed: Boolean,
+    @get:JsonProperty("saved_body") val savedBody: String,
+    @get:JsonProperty("body_units") val bodyUnits: List<kr.easydoc.core.actionguide.GuideSourceUnit>,
+    val signals: List<GuideReviewSignalPayload>,
 ) {
     override fun toString(): String = "ActionGuideAnalysisResponse(id=$analysisId)"
 
@@ -173,7 +226,7 @@ data class ActionGuideAnalysisResponse(
                 snapshot.analysisRevision,
                 snapshot.basedOnContentRevision,
                 view.state,
-                "fake",
+                snapshot.provenance,
                 snapshot.readingLevel,
                 result.suitability.name.lowercase(),
                 result.actionPresence.name.lowercase(),
@@ -188,11 +241,23 @@ data class ActionGuideAnalysisResponse(
                         it.actionIds,
                     )
                 },
-                result.unresolvedSignals,
+                snapshot.signals.filter { !it.resolved }.map { it.id } + result.unresolvedSignals,
                 result.extractionReviewComplete,
                 view.allowedModes.map { it.name.lowercase() },
-                false,
+                view.allowedModes.isNotEmpty(),
                 snapshot.createdAt.toString(),
+                snapshot.analyzerVersion,
+                snapshot.reviewRevision,
+                snapshot.reviewed,
+                snapshot.savedBody,
+                kr.easydoc.core.segment.splitUnits(snapshot.savedBody).mapIndexed {
+                    index,
+                    text,
+                    ->
+                    kr.easydoc.core.actionguide
+                        .GuideSourceUnit(index, text)
+                },
+                snapshot.signals.map(GuideReviewSignalPayload::of),
             )
         }
     }

@@ -82,6 +82,20 @@ class KeyRotationConfiguration {
         )
 
     @Bean
+    fun guideDraftApplyKeyRotation(
+        jdbcClient: JdbcClient,
+        cipher: ContentCipher,
+        transactionManager: PlatformTransactionManager,
+        properties: KeyRotationProperties,
+    ): kr.easydoc.infrastructure.actionguide.GuideDraftApplyKeyRotation =
+        kr.easydoc.infrastructure.actionguide.GuideDraftApplyKeyRotation(
+            jdbcClient,
+            cipher,
+            TransactionTemplate(transactionManager),
+            properties.batchSize,
+        )
+
+    @Bean
     fun keyRotationObserver(): KeyRotationObserver = LoggingKeyRotationObserver()
 
     @Bean

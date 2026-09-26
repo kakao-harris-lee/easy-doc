@@ -8,6 +8,9 @@ import kr.easydoc.api.support.InMemoryWorkspaceRepository
 import kr.easydoc.application.actionguide.ActionGuideAnalysisService
 import kr.easydoc.application.actionguide.GuideAnalysisSnapshot
 import kr.easydoc.application.actionguide.GuideAnalysisView
+import kr.easydoc.application.actionguide.GuideDraftApplyCommand
+import kr.easydoc.application.actionguide.GuideDraftApplyService
+import kr.easydoc.application.actionguide.GuideDraftApplyView
 import kr.easydoc.core.actionguide.GuideActionPresence
 import kr.easydoc.core.actionguide.GuideAnalysisResult
 import kr.easydoc.core.actionguide.GuideCoverageStatus
@@ -42,6 +45,8 @@ class ActionGuideAnalysisContractTest {
     @Autowired private lateinit var workspaces: InMemoryWorkspaceRepository
 
     @Autowired private lateinit var service: ActionGuideAnalysisService
+
+    @Autowired private lateinit var apply: GuideDraftApplyService
 
     @Test
     fun `fake analysis is explicit and generation is disabled with private response headers`() {
@@ -109,6 +114,66 @@ class ActionGuideAnalysisContractTest {
                     }.andReturn()
                     .response
             assertThat(response.status).isEqualTo(422)
+        }
+    }
+
+    @Test
+    fun `full apply contract carries every revision and replay receipt`() {
+        val owner = owner()
+        val conversion = UUID.randomUUID()
+        val draft = UUID.randomUUID()
+        val request = UUID.randomUUID()
+        val previous = UUID.randomUUID()
+        `when`(apply.apply(owner, conversion, GuideDraftApplyCommand(draft, request, 7, 2, 3, 9)))
+            .thenReturn(GuideDraftApplyView(8, previous, true))
+        val response =
+            mvc
+                .post("/conversions/$conversion/action-guide-drafts/$draft/apply") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"request_id":"$request","expected_content_revision":7,
+                "expected_analysis_revision":2,"expected_review_revision":9,"expected_draft_revision":3}"""
+                }.andReturn()
+                .response
+        assertThat(response.status).isEqualTo(200)
+        val json = mapper.readTree(response.contentAsByteArray)
+        assertThat(json["content_revision"].asLong()).isEqualTo(8)
+        assertThat(json["previous_snapshot_id"].asString()).isEqualTo(previous.toString())
+        assertThat(json["replayed"].asBoolean()).isTrue()
+        assertThat(response.getHeader("Cache-Control")).contains("no-store")
+    }
+
+    @Test
+    fun `workflow routes require authentication before parsing identifiers`() {
+        listOf(
+            "action-guide-workflow",
+            "action-guide-previous-bodies",
+            "action-guide-previous-bodies/not-a-uuid",
+            "action-guide-drafts/not-a-uuid/export",
+        ).forEach { path ->
+            assertThat(
+                mvc
+                    .get("/conversions/not-a-uuid/$path")
+                    .andReturn()
+                    .response.status,
+            ).isEqualTo(401)
+        }
+        listOf(
+            "action-guide-analysis-jobs",
+            "action-guide-analyses/not-a-uuid/review",
+            "action-guide-drafts",
+            "action-guide-drafts/not-a-uuid/review",
+            "action-guide-drafts/not-a-uuid/apply",
+        ).forEach { path ->
+            assertThat(
+                mvc
+                    .post("/conversions/not-a-uuid/$path") {
+                        contentType = MediaType.APPLICATION_JSON
+                        content =
+                            "{}"
+                    }.andReturn()
+                    .response.status,
+            ).isEqualTo(401)
         }
     }
 

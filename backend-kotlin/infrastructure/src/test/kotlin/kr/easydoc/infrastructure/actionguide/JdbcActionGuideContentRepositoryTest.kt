@@ -299,6 +299,47 @@ class JdbcActionGuideContentRepositoryTest {
         assertThat(analyses.findRequest(fixture.ownerId, fixture.conversionId, request)).isEqualTo(snapshot)
         assertThat(analyses.find(UUID.randomUUID(), fixture.conversionId, snapshot.analysisId)).isNull()
         assertThat(analyses.find(fixture.ownerId, UUID.randomUUID(), snapshot.analysisId)).isNull()
+        val updated =
+            snapshot.copy(
+                analysisRevision = 2,
+                reviewRevision = 1,
+                signals =
+                    listOf(
+                        kr.easydoc.application.actionguide
+                            .GuideReviewSignal("s1", "extraction", listOf(0), null, "확인"),
+                    ),
+            )
+        assertThat(analyses.replace(fixture.ownerId, fixture.conversionId, 1, 0, updated)).isTrue()
+        assertThat(analyses.replace(fixture.ownerId, fixture.conversionId, 1, 0, snapshot)).isFalse()
+        assertThat(analyses.findRequest(fixture.ownerId, fixture.conversionId, request)).isEqualTo(updated)
+        val drafts = JdbcGuideDraftRepository(jdbc, cipher)
+        val draftRequest = UUID.randomUUID()
+        val draft =
+            kr.easydoc.application.actionguide.GuideDraft(
+                UUID.randomUUID(),
+                snapshot.analysisId,
+                2,
+                1,
+                1,
+                1,
+                kr.easydoc.core.actionguide.GuideOutputMode.ADDITIONAL_GUIDE,
+                "private supplementary body",
+                emptyList(),
+                false,
+                Instant.now(),
+            )
+        drafts.insertOwned(fixture.ownerId, fixture.conversionId, draftRequest, draft)
+        assertThat(drafts.findRequest(fixture.ownerId, fixture.conversionId, draftRequest)).isEqualTo(draft)
+        assertThat(drafts.findOwned(UUID.randomUUID(), fixture.conversionId, draft.draftId)).isNull()
+        assertThat(
+            drafts.replaceOwned(
+                fixture.ownerId,
+                fixture.conversionId,
+                1,
+                draft.copy(draftRevision = 2, reviewed = true),
+            ),
+        ).isTrue()
+        assertThat(drafts.replaceOwned(fixture.ownerId, fixture.conversionId, 1, draft)).isFalse()
         val ciphertext =
             jdbc
                 .sql("SELECT payload_encrypted FROM action_guide_analyses WHERE id=:id")
@@ -326,7 +367,7 @@ class JdbcActionGuideContentRepositoryTest {
         assertThat(
             JdbcGuideAnalysisRepository(jdbc, rotatedCipher)
                 .find(fixture.ownerId, fixture.conversionId, snapshot.analysisId),
-        ).isEqualTo(snapshot)
+        ).isEqualTo(updated)
         jdbc
             .sql("UPDATE documents SET retention_expires_at=now()-interval '1 second' WHERE id=:id")
             .param("id", fixture.documentId)
@@ -336,6 +377,7 @@ class JdbcActionGuideContentRepositoryTest {
             analyses.insert(fixture.ownerId, fixture.conversionId, snapshot.copy(analysisId = UUID.randomUUID()))
         }.isInstanceOf(kr.easydoc.core.exceptions.StorageException::class.java)
         jdbc.sql("DELETE FROM documents WHERE id=:id").param("id", fixture.documentId).update()
+        assertThat(count("action_guide_drafts")).isZero()
         assertThat(count("action_guide_analyses")).isZero()
         assertThat(count("action_guide_analysis_requests")).isZero()
     }

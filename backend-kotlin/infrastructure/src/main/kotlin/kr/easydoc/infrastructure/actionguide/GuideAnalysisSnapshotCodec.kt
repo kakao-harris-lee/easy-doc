@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.actionguide
 
 import kr.easydoc.application.actionguide.GuideAnalysisSnapshot
+import kr.easydoc.application.actionguide.GuideReviewSignal
 import kr.easydoc.core.actionguide.ActionGuideSourceAnchor
 import kr.easydoc.core.actionguide.ExtractedGuideAction
 import kr.easydoc.core.actionguide.GuideActionPresence
@@ -49,10 +50,33 @@ internal object GuideAnalysisSnapshotCodec {
                 result["extractionReviewComplete"].asBoolean(),
             ),
             Instant.parse(root["createdAt"].asString()),
+            root.path("provenance").asString("fake"),
+            root.path("analyzerVersion").asString("foundation-v1"),
+            root.path("reviewRevision").asLong(0),
+            root.path("reviewed").asBoolean(false),
+            root.path("signals").toList().map { node ->
+                GuideReviewSignal(
+                    node["id"].asString(),
+                    node["kind"].asString(),
+                    node["sourceUnitIds"].toList().map { it.asInt() },
+                    node["actionId"].takeUnless { it.isNull }?.asString(),
+                    node["detail"].asString(),
+                    node["resolved"].asBoolean(),
+                    node["resolvable"].asBoolean(),
+                    node["resolutionNote"].takeUnless { it.isNull }?.asString(),
+                    node["bodyUnitIndexes"].toList().map { it.asInt() },
+                    node["bodyQuote"].takeUnless { it.isNull }?.asString(),
+                )
+            },
+            root
+                .path("originJobId")
+                .takeUnless { it.isNull || it.isMissingNode }
+                ?.asString()
+                ?.let(UUID::fromString),
         )
     }
 
-    private fun action(node: JsonNode): ExtractedGuideAction =
+    internal fun action(node: JsonNode): ExtractedGuideAction =
         ExtractedGuideAction(
             node["id"].asString(),
             info(node["instruction"]),
@@ -75,7 +99,7 @@ internal object GuideAnalysisSnapshotCodec {
 
     private fun strings(node: JsonNode): List<String> = node.toList().map { it.asString() }
 
-    private fun anchors(node: JsonNode): List<ActionGuideSourceAnchor> =
+    internal fun anchors(node: JsonNode): List<ActionGuideSourceAnchor> =
         node.toList().map {
             ActionGuideSourceAnchor(
                 it["sourceUnitIndexes"].toList().map { index ->
