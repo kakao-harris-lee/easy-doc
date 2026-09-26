@@ -1332,3 +1332,55 @@ export interface AdminFeedbackListResponse {
   size: number
   total: number
 }
+
+/** ER-28 local/test fake analysis only. Eligibility does not enable generation. */
+export type GuideOutputMode = 'additional_guide' | 'full_document'
+export interface GuideInformation {
+  status: 'present' | 'not_in_source' | 'not_applicable' | 'needs_review'
+  text: string | null
+  evidence: ActionGuideSourceAnchor[]
+}
+export interface ExtractedGuideAction {
+  id: string
+  instruction: GuideInformation
+  actor: GuideInformation
+  beneficiaries: GuideInformation
+  conditions: GuideInformation[]
+  deadline: GuideInformation
+  preparation: GuideInformation
+  contact: GuideInformation
+  after_action_ids: string[]
+  order_evidence: ActionGuideSourceAnchor[]
+}
+export interface ActionGuideAnalysis {
+  schema_version: 2
+  analysis_id: string
+  analysis_revision: number
+  based_on_content_revision: number
+  state: 'current' | 'stale'
+  provenance: 'fake'
+  reading_level: ReadingLevel
+  suitability: 'guide' | 'non_guide' | 'mixed' | 'uncertain'
+  action_presence: 'found' | 'none' | 'uncertain'
+  reason: string
+  evidence: ActionGuideSourceAnchor[]
+  source_units: Array<{ id: number; text: string }>
+  actions: ExtractedGuideAction[]
+  coverage: Array<{
+    source_unit_id: number
+    status: 'action' | 'context' | 'needs_review'
+    action_ids: string[]
+  }>
+  unresolved_signals: string[]
+  extraction_review_complete: boolean
+  allowed_modes: GuideOutputMode[]
+  generation_enabled: false
+  created_at: string
+}
+export interface CreateActionGuideAnalysisRequest {
+  request_id: string
+  expected_content_revision: number
+}
+export interface LatestActionGuideAnalysis {
+  analysis: ActionGuideAnalysis | null
+}

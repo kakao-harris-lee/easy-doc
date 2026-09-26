@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -274,7 +274,9 @@ describe('행동 안내 화면', () => {
     vi.mocked(listActionGuideJobs).mockResolvedValue({ ...jobs, latest_job: candidate })
     vi.mocked(saveActionGuide).mockResolvedValue({ ...resource, status: 'draft', guide })
     show()
-    expect(await screen.findByRole('heading', { name: '새 안내문 후보' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '행동 안내 보조자료 미리보기' }),
+    ).toBeInTheDocument()
     expect(saveActionGuide).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '초안 사용' }))
     expect(saveActionGuide).toHaveBeenCalledWith('conversion-1', {
@@ -289,6 +291,126 @@ describe('행동 안내 화면', () => {
       screen.getByRole('checkbox', { name: '원문과 비교하여 이 안내문의 내용을 확인했습니다.' }),
     )
     expect(screen.getByRole('button', { name: '담당자 확인 저장' })).toBeEnabled()
+  })
+
+  it('행동 하나의 주의사항과 모든 원문 근거를 적용 전에 보여주고 적용 후에도 보존한다', async () => {
+    const user = userEvent.setup()
+    const action = {
+      text: '상영을 원하면 문의하세요.',
+      cautions: ['희망 상영일 최소 1주 전에 문의하세요.', '공휴일에는 문의를 받지 않습니다.'],
+      source_anchors: [
+        { source_unit_indexes: [0], quote: '원문 첫 줄' },
+        { source_unit_indexes: [1], quote: '원문 둘째 줄' },
+      ],
+    }
+    const candidateContent: ActionGuideContent = {
+      ...content,
+      sections: content.sections.map((section) =>
+        section.kind === 'steps' ? { ...section, status: 'available', items: [action] } : section,
+      ),
+    }
+    vi.mocked(getActionGuide).mockResolvedValue({ ...resource, latest_job_id: 'job-1' })
+    vi.mocked(getActionGuideJob).mockResolvedValue({ ...candidate, content: candidateContent })
+    vi.mocked(saveActionGuide).mockResolvedValue({
+      ...resource,
+      status: 'draft',
+      guide: { ...guide, content: candidateContent },
+    })
+    show()
+
+    const preview = await screen.findByRole('region', { name: '행동 안내 보조자료 미리보기' })
+    expect(within(preview).getByText(/문서 전체의 내용을 담고 있지는 않습니다/)).toBeVisible()
+    const steps = within(preview).getByRole('region', { name: '신청 순서' })
+    expect(within(steps).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(steps).getByText(action.text)).toBeVisible()
+    for (const caution of action.cautions) {
+      expect(within(steps).getByText(caution)).toBeVisible()
+    }
+    await user.click(within(steps).getByText('원문 근거 보기 (2개)'))
+    expect(within(steps).getByText('원문 1행: 원문 첫 줄')).toBeVisible()
+    expect(within(steps).getByText('원문 2행: 원문 둘째 줄')).toBeVisible()
+    expect(saveActionGuide).not.toHaveBeenCalled()
+
+    await user.click(within(preview).getByRole('button', { name: '초안 사용' }))
+    expect(saveActionGuide).toHaveBeenCalledWith(
+      'conversion-1',
+      expect.objectContaining({ content: candidateContent, mark_reviewed: false }),
+    )
+    expect(await screen.findByRole('textbox', { name: '신청 순서 1번 내용' })).toHaveValue(
+      action.text,
+    )
+    expect(screen.getByRole('textbox', { name: '신청 순서 1번 주의할 점' })).toHaveValue(
+      action.cautions.join('\n'),
+    )
+    expect(screen.getByText('원문 1행: 원문 첫 줄')).toBeVisible()
+    expect(screen.getByText('원문 2행: 원문 둘째 줄')).toBeVisible()
+  })
+
+  it('내용이 있는 확인 필요와 근거 없는 항목을 구분하고 여러 항목을 합치지 않는다', async () => {
+    vi.mocked(getActionGuide).mockResolvedValue({ ...resource, latest_job_id: 'job-1' })
+    vi.mocked(getActionGuideJob).mockResolvedValue({
+      ...candidate,
+      content: {
+        ...content,
+        sections: content.sections.map((section) =>
+          section.kind === 'steps'
+            ? {
+                ...section,
+                status: 'needs_review',
+                items: [
+                  { text: '문의하세요.', cautions: [], source_anchors: [] },
+                  { text: '담당자에게 확인하세요.', cautions: [], source_anchors: [] },
+                ],
+              }
+            : section,
+        ),
+      },
+    })
+    show()
+
+    const preview = await screen.findByRole('region', { name: '행동 안내 보조자료 미리보기' })
+    const steps = within(preview).getByRole('region', { name: '신청 순서' })
+    expect(within(steps).getByText('확인 필요', { exact: true })).toBeVisible()
+    const items = within(steps).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    for (const [index, item] of items.entries()) {
+      expect(
+        within(item).getByText(index === 0 ? '문의하세요.' : '담당자에게 확인하세요.'),
+      ).toBeVisible()
+      expect(within(item).getByText('원문 근거 확인 필요')).toBeVisible()
+    }
+    expect(steps.querySelector('ol')).toBeNull()
+    expect(
+      within(steps).queryByText('문의하세요. / 담당자에게 확인하세요.'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(within(preview).getByRole('region', { name: '문의할 곳' })).getByText(
+        '원문에 안내 없음',
+      ),
+    ).toBeVisible()
+  })
+
+  it.each<Partial<ActionGuidePanelProps>>([
+    { bodyDirty: true },
+    { bodyBusy: true },
+    { bodyConflict: true },
+    { contentRevision: 2 },
+  ])('본문 변경 또는 충돌 중인 후보는 적용할 수 없다: %j', async (props) => {
+    vi.mocked(getActionGuide).mockResolvedValue({ ...resource, latest_job_id: 'job-1' })
+    show(props)
+    expect(await screen.findByRole('button', { name: '초안 사용' })).toBeDisabled()
+    expect(saveActionGuide).not.toHaveBeenCalled()
+  })
+
+  it('이전 본문 후보는 미리보기와 적용 대신 다시 만들기 안내를 보여준다', async () => {
+    vi.mocked(getActionGuide).mockResolvedValue({ ...resource, latest_job_id: 'job-1' })
+    vi.mocked(getActionGuideJob).mockResolvedValue({ ...candidate, candidate_state: 'stale' })
+    show()
+    expect(await screen.findByText(/이 후보는 이전 본문을 기준으로 만들어져/)).toBeVisible()
+    expect(
+      screen.queryByRole('region', { name: '행동 안내 보조자료 미리보기' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '초안 사용' })).not.toBeInTheDocument()
   })
 
   it('미확인 항목과 근거 없는 내용은 확인 저장을 막고 초안 저장은 허용한다', async () => {

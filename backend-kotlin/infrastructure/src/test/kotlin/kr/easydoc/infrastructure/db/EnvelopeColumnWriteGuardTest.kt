@@ -535,7 +535,8 @@ class EnvelopeColumnWriteGuardTest {
          * 38 → 39 는 R7 ER-17 결과 payload 의 키 회전 UPDATE
          * (`IllustrationSuggestionResultKeyRotation.rotateOne`) 하나다 — payload 와 봉투 두 값을
          * 같은 문장에서 쓴다.
+         * 39 -> 40: ER-28 analysis key rotation writes payload and both envelope columns together.
          */
-        const val EXPECTED_STATEMENTS = 39
+        const val EXPECTED_STATEMENTS = 40
     }
 }

@@ -20,6 +20,8 @@ class ActionGuideContentKeyRotation(
 
     fun run(): Pair<Int, Int> = rotateFamily(CANDIDATES) to rotateFamily(GUIDES)
 
+    fun runAnalyses(): Int = rotateFamily(ANALYSES)
+
     private fun rotateFamily(family: RotationFamily): Int {
         var cursor = UUID(0L, 0L)
         var rotated = 0
@@ -77,6 +79,20 @@ class ActionGuideContentKeyRotation(
     )
 
     private companion object {
+        val ANALYSES =
+            RotationFamily(
+                EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
+                "SELECT id FROM action_guide_analyses WHERE key_version < :target AND id > :cursor " +
+                    "ORDER BY id LIMIT :limit",
+                "SELECT payload_encrypted, encryption_scheme, key_version FROM action_guide_analyses " +
+                    "WHERE id = :id FOR NO KEY UPDATE",
+                """
+                UPDATE action_guide_analyses SET payload_encrypted = :payload,
+                    encryption_scheme = :scheme, key_version = :keyVersion
+                WHERE id = :id AND key_version = :expectedVersion
+                """.trimIndent(),
+            )
+
         // 표 이름을 정적 SQL에 둬 소유권/봉투 열 가드가 회전 경로도 인구조사하게 한다.
         val CANDIDATES =
             RotationFamily(

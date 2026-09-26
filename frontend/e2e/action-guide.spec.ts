@@ -115,6 +115,10 @@ test.describe('ER-07 행동 안내', () => {
     await expect(page.getByRole('button', { name: '초안 사용' })).toBeVisible({
       timeout: 90_000,
     })
+    const preview = page.getByRole('region', { name: '행동 안내 보조자료 미리보기' })
+    await expect(preview).toBeVisible()
+    await expect(preview.getByText(/문서 전체의 내용을 담고 있지는 않습니다/)).toBeVisible()
+    await expect(preview.getByText('원문에 안내 없음', { exact: true })).toHaveCount(6)
     const recoveredCalls = (await log.apiCalls()).slice(callsBeforeReload).map(signature)
     expect(recoveredCalls).toContain(
       `${ROUTES.actionGuideRead.method} ${guidePath} ${ROUTES.actionGuideRead.ok}`,
@@ -151,6 +155,8 @@ test.describe('ER-07 행동 안내', () => {
       .getByRole('button', { name: '항목 추가' })
       .click()
     await page.getByRole('textbox', { name: '신청할 수 있는 사람 1번 내용' }).fill(SOURCE_TEXT)
+    const caution = '납부하려는 경우에만 해당합니다.'
+    await page.getByRole('textbox', { name: '신청할 수 있는 사람 1번 주의할 점' }).fill(caution)
     await page
       .getByRole('combobox', { name: '신청할 수 있는 사람 1번 원문 근거' })
       .selectOption('0')
@@ -207,6 +213,7 @@ test.describe('ER-07 행동 안내', () => {
     expect(path).not.toBeNull()
     const txt = await readFile(path as string, 'utf8')
     expect(txt).toContain(SOURCE_TEXT)
+    expect(txt).toContain(caution)
     expect(txt).toContain('원문에 안내가 없습니다')
 
     // 다른 화면이 먼저 저장한 상태를 실제 API에 만든다. 첫 화면에서 편집한 내용은

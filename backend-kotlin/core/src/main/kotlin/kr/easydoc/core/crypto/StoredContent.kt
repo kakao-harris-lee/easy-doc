@@ -134,6 +134,7 @@ enum class EncryptedField(val wireName: String) {
 
     /** R2 담당자 안내문. 후보와 다른 저장 레코드·AAD를 사용한다. */
     ACTION_GUIDE_PAYLOAD("action_guides.payload_encrypted"),
+    ACTION_GUIDE_ANALYSIS_PAYLOAD("action_guide_analyses.payload_encrypted"),
 
     /** R4 표 구조 좌표. 문서의 파생 정보지만 source unit을 가리키므로 본문과 같은 보호를 받는다. */
     DOCUMENT_TABLE_STRUCTURE("document_table_structures.payload_encrypted"),

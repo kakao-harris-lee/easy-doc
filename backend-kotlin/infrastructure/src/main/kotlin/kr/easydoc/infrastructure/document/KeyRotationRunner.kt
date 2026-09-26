@@ -42,6 +42,7 @@ class KeyRotationRunner(
                 val (candidates, guides) = actionGuideContent.run()
                 log.info("키 회전 [action_guide_candidates]: rotated={}", candidates)
                 log.info("키 회전 [action_guides]: rotated={}", guides)
+                log.info("키 회전 [action_guide_analyses]: rotated={}", actionGuideContent.runAnalyses())
                 log.info("키 회전 [document_table_structures]: rotated={}", tableStructure.run())
                 log.info("키 회전 [review_snapshots]: rotated={}", reviewHistory.run())
                 log.info(

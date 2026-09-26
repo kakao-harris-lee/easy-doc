@@ -762,3 +762,29 @@ export function reconvertUnit(
     { method: 'POST', body },
   )
 }
+
+/** This endpoint is a separately gated fake foundation; it never starts generation. */
+export function createActionGuideAnalysis(
+  conversionId: string,
+  body: import('./types').CreateActionGuideAnalysisRequest,
+): Promise<import('./types').ActionGuideAnalysis> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analyses`, {
+    method: 'POST',
+    body,
+  })
+}
+
+export function getLatestActionGuideAnalysis(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<import('./types').LatestActionGuideAnalysis> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analyses`, { signal })
+}
+
+export function getActionGuideAnalysis(
+  conversionId: string,
+  analysisId: string,
+  signal?: AbortSignal,
+): Promise<import('./types').ActionGuideAnalysis> {
+  return requestJson(`/conversions/${conversionId}/action-guide-analyses/${analysisId}`, { signal })
+}

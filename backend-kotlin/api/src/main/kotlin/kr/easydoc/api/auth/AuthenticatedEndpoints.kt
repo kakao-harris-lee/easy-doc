@@ -42,6 +42,8 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/review-history/export",
             "/conversions/{conversion_id}/action-guide-jobs",
             "/conversions/{conversion_id}/action-guide-jobs/{job_id}",
+            "/conversions/{conversion_id}/action-guide-analyses",
+            "/conversions/{conversion_id}/action-guide-analyses/{analysis_id}",
             "/conversions/{conversion_id}/action-guide",
             "/conversions/{conversion_id}/action-guide/export",
             // 추가 설명 조회(R6, ER-14)도 같은 사유로 **따로** 넣는다 — 인터셉터 패턴이

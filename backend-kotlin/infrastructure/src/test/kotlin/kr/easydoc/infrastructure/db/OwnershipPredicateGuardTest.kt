@@ -401,6 +401,10 @@ class OwnershipPredicateGuardTest {
             listOf(
                 // 회전 배치는 운영자 내부 경로다. 후보/안내문 각각 커서·행 잠금·재봉인을
                 // 수행하며 소유자가 없으므로 아래 미방어 목록에도 정확히 같은 여섯 문장이 있다.
+                // ER-28 analysis payload rotation is an operator-only encrypted envelope operation.
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_analyses]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_analyses]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_analyses]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_candidates]",
@@ -421,6 +425,11 @@ class OwnershipPredicateGuardTest {
                 "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [action_guides, conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideLlmCallLedger.kt | SELECT [documents]",
+                // ER-28 user paths all enforce owner and retention in SQL.
+                "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | SELECT [conversions, documents]",
+                "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | INSERT [action_guide_analyses, conversions, documents]",
+                "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | INSERT [action_guide_analyses, conversions, documents]",
+                "$ACTION_GUIDE/JdbcGuideAnalysisRepository.kt | SELECT [action_guide_analyses, conversions, documents]",
                 // 어드민 최소(A1, 2026-09-07) — 관리자 워크스페이스 상세의 「최근 변환」과
                 // 오류 화면(`GET /admin/errors`) 셋 다 아래 미방어 목록에도 있다 — 관리자는
                 // 의도적으로 워크스페이스를 가로지른다(사유는 그쪽에 적었다). `admin`
@@ -646,6 +655,10 @@ class OwnershipPredicateGuardTest {
             listOf(
                 // rotate-keys 운영 경로: 작업이 문서 owner를 인자로 받지 않고, 저장된
                 // 봉투를 같은 행 ID/AAD로 재암호화한다. 사용자 조회 경로와 섞이지 않는다.
+                // ER-28 analysis payload rotation is an operator-only encrypted envelope operation.
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_analyses]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_analyses]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_analyses]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
                 "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_candidates]",
@@ -832,6 +845,7 @@ class OwnershipPredicateGuardTest {
         // 67 → 70: R7 ER-17 결과(`IllustrationSuggestionResultKeyRotation`)의 후보 커서
         // SELECT·잠금 SELECT·재봉인 UPDATE 셋이다. 같은 기능의 사용자 경로(입력 적재·접수
         // 잠금·호출 원장·결과 저장/조회)는 소유 매개변수를 SQL 자체에 둬 이 상한을 먹지 않았다.
-        const val MAX_UNGUARDED_STATEMENTS = 70
+        // 70 -> 73: analysis snapshot cursor, row lock and re-encryption in rotate-keys only.
+        const val MAX_UNGUARDED_STATEMENTS = 73
     }
 }
