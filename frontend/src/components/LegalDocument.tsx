@@ -11,9 +11,8 @@ import remarkGfm from 'remark-gfm'
  * 넘기고, 여기서는 렌더만 한다.
  *
  * 표가 있는 문서라 GFM(표·취소선 등)이 필요하다 — 직접 마크다운 파서를 만들지 않고
- * `react-markdown` + `remark-gfm`을 쓴다. 두 문서 모두 첫머리에 「이 문서는 초안이며
- * 아직 게시하지 않았다」 문구를 담고 있고, 그 문구도 원본 텍스트의 일부이므로 이
- * 컴포넌트가 그대로 화면에 그린다 — 별도로 걷어내거나 감추지 않는다.
+ * `react-markdown` + `remark-gfm`을 쓴다. 이 컴포넌트는 게시된 문안을 원본 그대로
+ * 그린다 — 첫머리의 버전·시행일 표기를 포함해 어떤 부분도 걷어내거나 감추지 않는다.
  */
 export function LegalDocument({ content }: { content: string }) {
   return (
