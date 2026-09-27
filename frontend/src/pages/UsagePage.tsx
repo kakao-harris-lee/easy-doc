@@ -157,7 +157,7 @@ export function UsagePage() {
       <PageHeader
         context={currentName ?? '사용량'}
         title="플랜과 사용량"
-        description="월 플랜을 선택하고 현재 이용 기간의 사용량과 남은 이용량을 확인한다."
+        description="월 플랜을 선택하고 현재 이용 기간의 사용량과 남은 이용량을 확인합니다."
         titleId="usage-heading"
       />
       <div className="grid gap-4 md:grid-cols-2">
