@@ -211,7 +211,7 @@ test.describe('인증 흐름', () => {
     // 홈은 로그인 전에도 열리는 공개 랜딩이다. 따라서 홈에서 세션이 만료되면 로그인
     // 화면으로 강제 이동하지 않고, 인증 전 랜딩으로 전환해 다시 시작할 통로를 보여준다.
     await expect(
-      page.getByRole('heading', { name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로' }),
+      page.getByRole('heading', { name: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로' }),
     ).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
     expect(await storedToken(page)).toBeNull()

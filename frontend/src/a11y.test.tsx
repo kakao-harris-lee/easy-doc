@@ -187,7 +187,7 @@ const SCREENS: readonly {
     open: () => renderAt('/', 'anonymous'),
     settle: () =>
       screen.findByRole('heading', {
-        name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로',
+        name: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로',
         level: 1,
       }),
   },

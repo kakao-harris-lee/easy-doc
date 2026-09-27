@@ -19,7 +19,7 @@ describe('랜딩 화면', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로',
+        name: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로',
         level: 1,
       }),
     ).toBeInTheDocument()
@@ -43,17 +43,17 @@ describe('랜딩 화면', () => {
     renderLanding()
 
     expect(
-      screen.getByRole('heading', { name: '주민에게 나가는 안내문을 쉬운 글 초안으로' }),
+      screen.getByRole('heading', { name: '다양한 안내·설명문을 쉬운 글 초안으로' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서에 맞습니다' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서는 넣지 마세요' })).toBeInTheDocument()
 
     expect(screen.getByText('복지 서비스 신청 안내')).toBeInTheDocument()
-    expect(screen.getByText('주민 공지문')).toBeInTheDocument()
+    expect(screen.getByText('공지문')).toBeInTheDocument()
     expect(screen.getByText('지원금·제도 안내')).toBeInTheDocument()
     expect(screen.getByText('개인정보가 든 민원 서류')).toBeInTheDocument()
-    expect(screen.getByText('원문 없이 새로 쓸 글')).toBeInTheDocument()
-    expect(screen.getByText('주민 대상이 아닌 내부 문서')).toBeInTheDocument()
+    expect(screen.queryByText('원문 없이 새로 쓸 글')).not.toBeInTheDocument()
+    expect(screen.getByText('외부에 공개하지 않는 내부 문서')).toBeInTheDocument()
 
     expect(
       screen.getByText('원문에 있는 내용만 쉬운 글로 바꾸는 것이 목표입니다.'),
