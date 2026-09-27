@@ -28,12 +28,12 @@ const FIT_GROUPS: readonly FitGroup[] = [
   {
     title: '이런 문서에 맞습니다',
     tone: 'primary',
-    items: ['복지 서비스 신청 안내', '주민 공지문', '지원금·제도 안내'],
+    items: ['복지 서비스 신청 안내', '공지문', '지원금·제도 안내'],
   },
   {
     title: '이런 문서는 넣지 마세요',
     tone: 'neutral',
-    items: ['개인정보가 든 민원 서류', '주민 대상이 아닌 내부 문서'],
+    items: ['개인정보가 든 민원 서류', '외부에 공개하지 않는 내부 문서'],
   },
 ]
 
@@ -54,10 +54,10 @@ export function LandingPage() {
             공공기관 담당자용 · 쉬운 글 초안 도구
           </p>
           <h1
-            aria-label="주민 안내문을 누구나 읽을 수 있는 쉬운 글로"
+            aria-label="다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로"
             className="mt-5 max-w-xl text-[36px] font-extrabold leading-[1.18] tracking-[-0.035em] text-foreground md:text-5xl md:leading-[1.16]"
           >
-            주민 안내문을
+            다양한 안내·설명문을
             <br />
             <span className="text-primary">누구나 읽을 수 있는 쉬운 글</span>로
           </h1>
@@ -111,7 +111,7 @@ export function LandingPage() {
           id="landing-fit-heading"
           className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
         >
-          안내문을 쉬운 글 초안으로
+          다양한 안내·설명문을 쉬운 글 초안으로
         </h2>
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           {FIT_GROUPS.map((group) => (
