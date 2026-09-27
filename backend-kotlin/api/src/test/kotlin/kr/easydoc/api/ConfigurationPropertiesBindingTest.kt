@@ -254,6 +254,9 @@ class ConfigurationPropertiesBindingTest {
         // 테스트의 property override 가 가려 주지 않도록 application.yml 자체를 직접 읽는다
         // (IllustrationSuggestionApiConfigTest 와 같은 이유). 바인딩만 재면 yml 이 Kotlin 기본값을
         // 다른 사업자로 덮어써도 이 시험은 통과한다 — 그 덮어쓰기가 정확히 위험한 쪽이다.
+        // 여기서 고정하는 것은 api 모듈의 application.yml 한 벌이다. worker 는 이 시험의 사정권 밖이고,
+        // api·worker 두 yml 의 기본값이 서로 같은지는 GoldenLlmLaneTest 가 소스 루트에서 두 파일을
+        // 함께 읽어 고정한다.
         assertThat(declaredInApiYml(LLM_PROVIDER_KEY))
             .describedAs("환경변수 없는 배포가 사용자 문서를 어느 사업자로 보내는지 정하는 한 줄이다")
             .containsExactly("\${$LLM_PROVIDER_ENV:$OPENAI_PROVIDER_NAME}")
