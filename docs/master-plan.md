@@ -119,7 +119,7 @@
 
 | 항목 | 내용 |
 |---|---|
-| 확정 벤더 · 모델 ID | 상용 벤더 확정은 별도 판단. **로컬 검증 구성(2026-09-12): openai / gpt-6-astra / medium**. 코드의 provider 기본값은 anthropic이며 로컬 `.env`가 덮어쓴다. 현재 품질·원가 근거는 [프롬프트·사전 재검증 보고서](reports/2026-09-12-prompt-rag-revalidation.md)에 기록한다. |
+| 확정 벤더 · 모델 ID | 상용 벤더 확정은 별도 판단. **로컬 검증 구성(2026-09-12): openai / gpt-6-astra / medium**. 코드의 provider 기본값은 **openai**다(2026-09-27 변경 — 게시된 개인정보처리방침 §5가 OpenAI를 공개하므로 변수를 빠뜨린 배포가 다른 사업자로 보내지 않게 한다. 사업자를 바꾸려면 방침 §5를 먼저 개정한다). 로컬 `.env`가 덮어쓴다. 현재 품질·원가 근거는 [프롬프트·사전 재검증 보고서](reports/2026-09-12-prompt-rag-revalidation.md)에 기록한다. |
 | 확정일 | (미정) |
 | 근거 리포트 | `docs/benchmarks/2026-08-08-1642-llm-benchmark.md` (1차 비교) + `docs/benchmarks/2026-08-08-2136-llm-benchmark.md` (설정 수정 후 재벤치마크 + effort 실험·결정) + `docs/quality/` 리포트들 |
 | no-training 약관 확인일 | (미확인 — 확정 전 필수) |

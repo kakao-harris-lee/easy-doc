@@ -85,7 +85,7 @@ services:
       start_period: 20s
 
   # 변환 워커. lease 를 획득해 마스킹 → LLM → 결과 저장까지 실행한다.
-  # `.env` 의 EASYDOC_LLM_PROVIDER·API 키로 실제 변환한다(기본 anthropic).
+  # `.env` 의 EASYDOC_LLM_PROVIDER·API 키로 실제 변환한다(기본 openai).
   # 유료 호출 없이 E2E 만 돌릴 때는 compose.e2e.yml 이 fake 로 덮어쓴다.
   backend-worker:
     <<: *backend-app

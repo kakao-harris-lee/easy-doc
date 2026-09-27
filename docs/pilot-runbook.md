@@ -162,7 +162,7 @@ DB 변경은 이미 적용된 읽기 수준 V35 다음의 **V36**이다.
 원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도
 남는다. `postgres-backup`은 API와 DB가 healthy가 된 직후 첫 dump를 만들고, 기본 6시간마다
 PostgreSQL custom-format dump와 SHA-256 파일을 `backups/postgres/`에 원자적으로 교체·추가한다.
-timestamp 파일은 기본 30일 보존하며 `latest.dump`가 항상 최신 성공본을 가리킨다.
+timestamp 파일은 기본 7일 보존하며 `latest.dump`가 항상 최신 성공본을 가리킨다.
 
 ```bash
 ls -l backups/postgres/

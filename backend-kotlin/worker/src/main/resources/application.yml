@@ -71,7 +71,7 @@ easydoc:
         value: ${EASYDOC_ENCRYPTION_KEY_V1:}
         kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
   llm:
-    provider: ${EASYDOC_LLM_PROVIDER:anthropic}
+    provider: ${EASYDOC_LLM_PROVIDER:openai}
     model: ${EASYDOC_LLM_MODEL:}
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}

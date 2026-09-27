@@ -5,7 +5,8 @@ umask 077
 
 backup_dir=/backups
 interval_seconds=${POSTGRES_BACKUP_INTERVAL_SECONDS:-21600}
-retention_days=${POSTGRES_BACKUP_RETENTION_DAYS:-30}
+# 개인정보처리방침 §3.2가 7일 보관을 공개한다 — 늘리면 방침을 먼저 개정한다
+retention_days=${POSTGRES_BACKUP_RETENTION_DAYS:-7}
 temporary_dump=
 temporary_checksum=
 

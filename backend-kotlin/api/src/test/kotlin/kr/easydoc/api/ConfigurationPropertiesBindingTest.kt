@@ -19,6 +19,7 @@ import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
+import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import kr.easydoc.infrastructure.mail.MailProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
@@ -30,8 +31,10 @@ import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.context.properties.source.ConfigurationPropertySource
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource
+import org.springframework.boot.env.YamlPropertySourceLoader
 import org.springframework.core.convert.ConversionService
 import org.springframework.core.convert.support.DefaultConversionService
+import org.springframework.core.io.ClassPathResource
 import java.math.BigDecimal
 import java.time.Duration
 
@@ -240,6 +243,29 @@ class ConfigurationPropertiesBindingTest {
         assertThat(sonnetPricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
         assertThat(sonnetPricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("10.00"))
         assertThat(llm.maxOutputTokens).isEqualTo(5000)
+    }
+
+    @Test
+    @DisplayName(
+        "EASYDOC_LLM_PROVIDER 를 설정하지 않은 배포는 openai 로 간다 — 게시된 개인정보처리방침 §5 가 " +
+            "OpenAI 를 수탁자로 공개한다. 기본값을 다른 사업자로 바꾸려면 방침 §5 를 먼저 개정한다",
+    )
+    fun `provider 기본값은 openai 다`() {
+        // 테스트의 property override 가 가려 주지 않도록 application.yml 자체를 직접 읽는다
+        // (IllustrationSuggestionApiConfigTest 와 같은 이유). 바인딩만 재면 yml 이 Kotlin 기본값을
+        // 다른 사업자로 덮어써도 이 시험은 통과한다 — 그 덮어쓰기가 정확히 위험한 쪽이다.
+        assertThat(declaredInApiYml(LLM_PROVIDER_KEY))
+            .describedAs("환경변수 없는 배포가 사용자 문서를 어느 사업자로 보내는지 정하는 한 줄이다")
+            .containsExactly("\${$LLM_PROVIDER_ENV:$OPENAI_PROVIDER_NAME}")
+
+        // yml 기본값과 Kotlin 기본값이 갈라지면 두 경로가 서로 다른 사업자를 고른다.
+        val llm =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf("easydoc.llm.effort" to "medium"),
+            )
+        assertThat(llm.provider).isEqualTo(OPENAI_PROVIDER_NAME)
     }
 
     @Test
@@ -524,6 +550,12 @@ class ConfigurationPropertiesBindingTest {
         assertThat(app.publicBaseUrl).isEqualTo("https://easydoc.kr")
     }
 
+    /** 프로필 문서까지 포함해 api `application.yml` 이 선언한 값을 그대로 읽는다. */
+    private fun declaredInApiYml(key: String): List<String> =
+        YamlPropertySourceLoader()
+            .load(API_CONFIG_RESOURCE, ClassPathResource(API_CONFIG_RESOURCE))
+            .mapNotNull { it.getProperty(key)?.toString() }
+
     private fun <T : Any> bind(
         prefix: String,
         type: Class<T>,
@@ -542,5 +574,9 @@ class ConfigurationPropertiesBindingTest {
     private companion object {
         /** 기본값(빈 값)과 다르기만 하면 된다. 실제 키가 아니다. */
         const val SECRET_VALUE = "binding-test-only-value-0123456789"
+
+        const val API_CONFIG_RESOURCE = "application.yml"
+        const val LLM_PROVIDER_KEY = "easydoc.llm.provider"
+        const val LLM_PROVIDER_ENV = "EASYDOC_LLM_PROVIDER"
     }
 }
