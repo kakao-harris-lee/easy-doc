@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-import { DRAFT_NOTICE } from '../content/identity'
+import { AUTH_INTRO_TITLE, DRAFT_NOTICE } from '../content/identity'
 import { GUIDE_PATH } from '../routes/paths'
 
 interface Step {
@@ -39,7 +39,10 @@ const STEPS: readonly Step[] = [
 interface AuthIntroProps {
   /** 설명 영역 제목의 id. 화면마다 다른 값을 줘 중복되지 않게 한다. */
   headingId: string
-  /** 서비스 정의 정본 문장(두 문장, DESIGN.md §6.0). 모바일에서는 이 문장과 초안 고지만 남는다. */
+  /**
+   * 서비스 정의 정본 문장(두 문장, DESIGN.md §6.0). 제목이 아니라 제목 아래 본문으로 쓴다.
+   * 모바일에서는 이 문장과 초안 고지만 남는다.
+   */
   summary: string
   /** 화면별로 왼쪽 설명 영역에 덧붙일 안내. */
   children?: ReactNode
@@ -48,7 +51,9 @@ interface AuthIntroProps {
 /**
  * 로그인·가입 화면 왼쪽의 설명 영역(DESIGN.md §6.1).
  *
- * 장식용 대시보드 목업 대신 실제 흐름을 적는다. 모바일에서는 공통 제품 단계 목록을
+ * 제목은 랜딩처럼 짧은 구로 두고 서비스 정의 두 문장은 그 아래 본문으로 둔다 — 제목 자리에 정의를
+ * 넣으면 낭독기가 두 문장짜리 제목을 알린다. 장식용 대시보드 목업 대신 실제 흐름을 적는다.
+ * 모바일에서는 제목·정의 문장·초안 고지를 남기고 공통 제품 단계 목록을
  * 감춘다 — 폼이 먼저 보여야 하는 화면에서 설명이 스크롤을 잡아먹지 않게 한다. 다만
  * 초안 고지 한 줄은 모바일에도 남긴다 — 한 문장이라 스크롤 비용이 거의 없고, 결과가
  * 초안이라는 사실은 화면 크기와 무관하게 가입 전에 읽혀야 한다. 화면별 추가 안내는
@@ -64,8 +69,11 @@ export function AuthIntro({ headingId, summary, children }: AuthIntroProps) {
         id={headingId}
         className="text-xl font-bold leading-7 text-foreground lg:text-[28px] lg:font-extrabold lg:leading-9 lg:tracking-tight"
       >
-        {summary}
+        {AUTH_INTRO_TITLE}
       </h2>
+      <p className="mt-3 text-[15px] leading-6 text-muted-foreground lg:text-base lg:leading-7">
+        {summary}
+      </p>
       <ol className="mt-8 hidden flex-col gap-5 md:flex">
         {STEPS.map((step, index) => (
           <li className="flex items-start gap-4" key={step.title}>
