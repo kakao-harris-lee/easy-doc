@@ -97,7 +97,10 @@ const SUGGESTION_SCAN_LIMIT = 20
 
 /** §6.2 오른쪽 안내 카드의 2단계. */
 const GUIDE_STEPS = [
-  { title: '쉬운 글 초안 생성', detail: '짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.' },
+  {
+    title: '쉬운 글 초안 생성',
+    detail: '원문에 있는 내용만 짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.',
+  },
   { title: '담당자 직접 검수', detail: '원문과 나란히 놓고 고쳐 저장합니다.' },
 ] as const
 
@@ -647,7 +650,7 @@ export function UploadPage() {
         context={headerContext}
         title="문서 변환하기"
         titleId="upload-heading"
-        description="어려운 행정·복지 안내문을 쉬운 우리말 초안으로 바꿉니다."
+        description="행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글 초안으로 바꿉니다. 마무리는 담당자가 합니다."
       />
 
       {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내(§9 — 상태를

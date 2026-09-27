@@ -811,6 +811,15 @@ describe('업로드 화면', () => {
     ).toBeInTheDocument()
   })
 
+  it('머리말이 서비스 정의 한 문장을 그대로 보여 준다', () => {
+    renderPage()
+
+    expect(screen.getByText(/마무리는 담당자가 합니다/)).toBeInTheDocument()
+    expect(
+      screen.getByText('원문에 있는 내용만 짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.'),
+    ).toBeInTheDocument()
+  })
+
   it('제안은 한 건만, 대표 행동보다 아래에 보여준다', async () => {
     // 네 조건이 모두 있는 목록이다. 규칙의 우선순위는 nextAction.test.ts가 고정하고,
     // 여기서는 "화면에 하나만 나온다"만 본다.

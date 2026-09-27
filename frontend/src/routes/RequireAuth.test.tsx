@@ -85,7 +85,7 @@ describe('인증 가드', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: '어려운 안내문을 읽히는 문서로 바꾸세요',
+        name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로',
       }),
     ).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '문서 변환하기' })).not.toBeInTheDocument()
@@ -146,7 +146,7 @@ describe('인증 가드', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: '어려운 안내문을 읽히는 문서로 바꾸세요',
+        name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로',
       }),
     ).toBeInTheDocument()
     expect(window.localStorage.getItem('easydoc.access_token')).toBeNull()

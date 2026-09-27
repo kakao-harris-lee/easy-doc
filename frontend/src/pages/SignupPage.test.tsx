@@ -30,6 +30,10 @@ vi.mock('../api/announcements', () => ({
   listActiveAnnouncements: vi.fn(),
 }))
 
+// 로그인·가입 화면이 같은 정체성 정본 문장을 쓴다(docs/plans/2026-09-27-service-identity-guide.md §3).
+const IDENTITY_SUMMARY =
+  '행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글 초안으로 바꿉니다. 마무리는 담당자가 합니다.'
+
 function renderAt(path: string) {
   return render(
     <AuthProvider>
@@ -60,6 +64,12 @@ afterEach(() => {
 })
 
 describe('가입 화면', () => {
+  it('설명 영역 제목으로 서비스 정의 한 문장을 보여준다', () => {
+    renderAt('/signup')
+
+    expect(screen.getByRole('heading', { name: IDENTITY_SUMMARY })).toBeInTheDocument()
+  })
+
   it('가입부터 휴대폰 인증과 체험 5크레딧 발급까지의 순서를 보여준다', () => {
     renderAt('/signup')
 

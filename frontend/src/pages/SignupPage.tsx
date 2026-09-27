@@ -67,7 +67,7 @@ export function SignupPage() {
       </section>
       <AuthIntro
         headingId="signup-intro-heading"
-        summary="어려운 공공 안내문을 쉬운 우리말 초안으로 바꾸고, 담당자가 검수해 문서로 내려받습니다."
+        summary="행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글 초안으로 바꿉니다. 마무리는 담당자가 합니다."
       />
     </div>
   )

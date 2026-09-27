@@ -26,7 +26,7 @@ test.describe('비밀번호 재설정', () => {
     // 홈에서 로그아웃하면 공개 랜딩으로 돌아간다. 머리말의 로그인 통로를 거쳐
     // 비밀번호 재설정 링크가 있는 자격증명 화면으로 이동한다.
     await expect(
-      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+      page.getByRole('heading', { name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로' }),
     ).toBeVisible()
     await page.getByRole('banner').getByRole('link', { name: '로그인', exact: true }).click()
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()

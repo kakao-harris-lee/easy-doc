@@ -17,7 +17,7 @@ export function Logo() {
           {SERVICE_NAME}
         </strong>
         <small className="mt-1 text-xs font-semibold tracking-tight text-foreground/75">
-          쉬운 우리말 변환
+          쉬운 글 초안 도구
         </small>
       </span>
     </span>
