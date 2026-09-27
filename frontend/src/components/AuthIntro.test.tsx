@@ -2,11 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
-import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
+import { AUTH_INTRO_TITLE, DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
 import { AuthIntro } from './AuthIntro'
-
-/** 설명 영역 제목의 고정 문구(AuthIntro.tsx와 같은 값). 짧은 구라 낭독기가 한 번에 읽는다. */
-const INTRO_TITLE = '주민 안내문을 쉬운 글 초안으로'
 
 function renderAuthIntro() {
   return render(
@@ -20,10 +17,10 @@ describe('AuthIntro', () => {
   it('제목은 짧은 구로 두고 서비스 정의는 그 아래 본문으로 보여준다', () => {
     renderAuthIntro()
 
-    expect(screen.getByRole('heading', { name: INTRO_TITLE })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: AUTH_INTRO_TITLE })).toBeInTheDocument()
   })
 
-  it('서비스 정의를 제목이 아니라 문단으로 읽힌다', () => {
+  it('서비스 정의는 제목이 아니라 문단으로 읽힌다', () => {
     renderAuthIntro()
 
     // 정의는 두 문장이라 제목으로 두면 낭독기가 문단 하나를 제목으로 알린다.

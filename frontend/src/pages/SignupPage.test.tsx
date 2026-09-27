@@ -11,7 +11,7 @@ import { AppLayout } from '../components/AppLayout'
 import { AppRoutes } from '../routes/AppRoutes'
 import { workspaceContext } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
-import { SERVICE_DEFINITION } from '../content/identity'
+import { AUTH_INTRO_TITLE, SERVICE_DEFINITION } from '../content/identity'
 import { WorkspaceContext } from '../workspace/context'
 
 vi.mock('../api/auth', () => ({
@@ -64,9 +64,7 @@ describe('가입 화면', () => {
   it('설명 영역 제목은 짧은 구이고 서비스 정의는 본문으로 따라온다', () => {
     renderAt('/signup')
 
-    expect(
-      screen.getByRole('heading', { name: '주민 안내문을 쉬운 글 초안으로' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: AUTH_INTRO_TITLE })).toBeInTheDocument()
     expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
   })
 
