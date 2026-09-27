@@ -6,6 +6,7 @@ import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
 import { SocialLoginButton } from '../components/SocialLoginButton'
 import { TrialCreditSteps } from '../components/TrialCreditSteps'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
 /**
@@ -65,10 +66,7 @@ export function SignupPage() {
           </p>
         </div>
       </section>
-      <AuthIntro
-        headingId="signup-intro-heading"
-        summary="어려운 공공 안내문을 쉬운 우리말 초안으로 바꾸고, 담당자가 검수해 문서로 내려받습니다."
-      />
+      <AuthIntro headingId="signup-intro-heading" summary={SERVICE_DEFINITION} />
     </div>
   )
 }

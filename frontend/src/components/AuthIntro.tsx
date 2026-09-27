@@ -1,9 +1,10 @@
-import { FileUp, PencilLine, Download } from 'lucide-react'
+import { FileUp, PencilLine, Download, ShieldAlert } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
-import { HOME_PATH } from '../routes/paths'
+import { DRAFT_NOTICE } from '../content/identity'
+import { GUIDE_PATH } from '../routes/paths'
 
 interface Step {
   icon: LucideIcon
@@ -25,8 +26,8 @@ const STEPS: readonly Step[] = [
   },
   {
     icon: PencilLine,
-    title: 'AI 초안 검수',
-    detail: '쉬운 글 초안을 원문과 나란히 놓고 직접 고칩니다.',
+    title: '초안 확인·수정',
+    detail: '쉬운 글 초안을 원문과 나란히 놓고 담당자가 직접 고칩니다.',
   },
   {
     icon: Download,
@@ -38,7 +39,7 @@ const STEPS: readonly Step[] = [
 interface AuthIntroProps {
   /** 설명 영역 제목의 id. 화면마다 다른 값을 줘 중복되지 않게 한다. */
   headingId: string
-  /** 제품이 하는 일 한 문장. 모바일에서는 이 문장만 남는다. */
+  /** 서비스 정의 정본 문장(두 문장, DESIGN.md §6.0). 모바일에서는 이 문장과 초안 고지만 남는다. */
   summary: string
   /** 화면별로 왼쪽 설명 영역에 덧붙일 안내. */
   children?: ReactNode
@@ -48,8 +49,10 @@ interface AuthIntroProps {
  * 로그인·가입 화면 왼쪽의 설명 영역(DESIGN.md §6.1).
  *
  * 장식용 대시보드 목업 대신 실제 흐름을 적는다. 모바일에서는 공통 제품 단계 목록을
- * 감춘다 — 폼이 먼저 보여야 하는 화면에서 설명이 스크롤을 잡아먹지 않게 한다. 화면별
- * 추가 안내는 폼 다음에 필요한 내용만 이어 붙인다.
+ * 감춘다 — 폼이 먼저 보여야 하는 화면에서 설명이 스크롤을 잡아먹지 않게 한다. 다만
+ * 초안 고지 한 줄은 모바일에도 남긴다 — 한 문장이라 스크롤 비용이 거의 없고, 결과가
+ * 초안이라는 사실은 화면 크기와 무관하게 가입 전에 읽혀야 한다. 화면별 추가 안내는
+ * 폼 다음에 필요한 내용만 이어 붙인다.
  *
  * 두 인증 화면이 같은 문구를 두 벌 갖지 않도록 컴포넌트로 뺐다. 흐름 설명이 어긋나면
  * 제품이 서로 다른 약속을 하는 셈이 된다.
@@ -82,9 +85,15 @@ export function AuthIntro({ headingId, summary, children }: AuthIntroProps) {
         ))}
       </ol>
       {children}
-      <p className="mt-6 hidden text-sm leading-[22px] text-muted-foreground md:block">
-        변환 결과는 언제나 AI 초안입니다. 사실관계와 신청 방법은 담당자가 확인한 뒤 사용해 주세요.{' '}
-        <Link to={HOME_PATH}>서비스 이용 방식 보기</Link>
+      <p
+        role="note"
+        className="mt-6 flex items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2.5 text-sm font-semibold leading-[22px] text-warning"
+      >
+        <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        {DRAFT_NOTICE}
+      </p>
+      <p className="mt-3 text-sm text-muted-foreground">
+        <Link to={GUIDE_PATH}>이용 가이드 보기</Link>
       </p>
     </aside>
   )

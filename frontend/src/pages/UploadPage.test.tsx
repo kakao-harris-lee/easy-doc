@@ -22,6 +22,7 @@ import {
   workspaceCredits,
   workspaceItem,
 } from '../test/factories'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
 import {
@@ -808,6 +809,15 @@ describe('업로드 화면', () => {
     ).toBeInTheDocument()
     expect(
       within(guide).getByText(`한 번에 ${MAX_CHARS.toLocaleString('ko-KR')}자까지`),
+    ).toBeInTheDocument()
+  })
+
+  it('머리말이 서비스 정의 한 문장을 그대로 보여 준다', () => {
+    renderPage()
+
+    expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
+    expect(
+      screen.getByText('원문에 있는 내용만 짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.'),
     ).toBeInTheDocument()
   })
 

@@ -11,6 +11,7 @@ import { AppLayout } from '../components/AppLayout'
 import { AppRoutes } from '../routes/AppRoutes'
 import { workspaceContext } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { WorkspaceContext } from '../workspace/context'
 
 vi.mock('../api/auth', () => ({
@@ -60,6 +61,12 @@ afterEach(() => {
 })
 
 describe('가입 화면', () => {
+  it('설명 영역 제목으로 서비스 정의 한 문장을 보여준다', () => {
+    renderAt('/signup')
+
+    expect(screen.getByRole('heading', { name: SERVICE_DEFINITION })).toBeInTheDocument()
+  })
+
   it('가입부터 휴대폰 인증과 체험 5크레딧 발급까지의 순서를 보여준다', () => {
     renderAt('/signup')
 

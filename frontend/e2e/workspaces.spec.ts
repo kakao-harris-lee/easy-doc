@@ -55,7 +55,7 @@ test.describe('작업 공간', () => {
     // 홈에서 로그아웃하면 인증 전 공개 랜딩으로 전환한다.
     await signOut(page)
     await expect(
-      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+      page.getByRole('heading', { name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로' }),
     ).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
 
@@ -252,7 +252,7 @@ test.describe('작업 공간', () => {
     // 화면도 422 문구가 아니라 인증 전 공개 랜딩이다. 홈은 공개 경로이므로 로그인으로
     // 강제 이동하지 않지만, 만료된 세션으로 작업 공간 화면을 계속 보여주지는 않는다.
     await expect(
-      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+      page.getByRole('heading', { name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로' }),
     ).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/')
   })

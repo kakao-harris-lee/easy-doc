@@ -11,6 +11,6 @@ describe('Logo', () => {
     expect(container.querySelector('img')).toHaveAttribute('width', '44')
     expect(container.querySelector('img')).toHaveAttribute('height', '44')
     expect(screen.getByText('EASY-DOC AI')).toBeInTheDocument()
-    expect(screen.getByText('쉬운 우리말 변환')).toBeInTheDocument()
+    expect(screen.getByText('쉬운 글 초안 도구')).toBeInTheDocument()
   })
 })

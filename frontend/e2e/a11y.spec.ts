@@ -326,7 +326,7 @@ test.describe('접근성 — 키보드', () => {
     // 홈에서 로그아웃하면 공개 랜딩으로 돌아간다. 마우스를 쓰지 않고 머리말의 로그인
     // 링크까지 이동해 자격증명 화면으로 들어간다.
     await expect(
-      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+      page.getByRole('heading', { name: '주민 안내문을 누구나 읽을 수 있는 쉬운 글로' }),
     ).toBeVisible()
     await restartTabbing(page)
     await tabTo(page, '로그인')

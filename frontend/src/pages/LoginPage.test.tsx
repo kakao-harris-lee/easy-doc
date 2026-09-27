@@ -11,6 +11,7 @@ import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext, workspaceCredits } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { WorkspaceContext } from '../workspace/context'
 import { AppRoutes } from '../routes/AppRoutes'
 
@@ -75,6 +76,12 @@ afterEach(() => {
 })
 
 describe('로그인 화면', () => {
+  it('설명 영역 제목으로 서비스 정의 한 문장을 보여준다', () => {
+    renderAt('/login')
+
+    expect(screen.getByRole('heading', { name: SERVICE_DEFINITION })).toBeInTheDocument()
+  })
+
   it('휴대폰 인증 뒤 체험 5크레딧을 받는 전체 순서를 보여준다', () => {
     renderAt('/login')
 
