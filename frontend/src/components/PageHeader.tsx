@@ -25,7 +25,7 @@ export interface PageHeaderProps {
   context: string
   /** 사용자가 여기서 할 일. 이 화면의 `h1`이 된다. */
   title: string
-  /** 한 줄 설명. */
+  /** 한 줄 설명. 새 변환 화면의 정의 문장(DESIGN.md §6.0)만 두 문장을 허용한다. */
   description: string
   /** 제목의 id. 바깥 `section`이 `aria-labelledby`로 가리킬 때만 넘긴다. */
   titleId?: string

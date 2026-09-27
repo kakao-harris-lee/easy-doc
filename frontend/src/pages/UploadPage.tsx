@@ -32,6 +32,7 @@ import {
   type HomeNoticeState,
   type SourceTextState,
 } from '../routes/paths'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -650,7 +651,7 @@ export function UploadPage() {
         context={headerContext}
         title="문서 변환하기"
         titleId="upload-heading"
-        description="행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글 초안으로 바꿉니다. 마무리는 담당자가 합니다."
+        description={SERVICE_DEFINITION}
       />
 
       {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내(§9 — 상태를

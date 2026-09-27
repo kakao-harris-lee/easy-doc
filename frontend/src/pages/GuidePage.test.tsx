@@ -22,7 +22,9 @@ describe('이용 가이드 화면', () => {
     expect(screen.getByText('누구를 위해', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('무엇을 넣나', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('무엇이 나오나', { exact: true })).toBeInTheDocument()
-    expect(screen.getByText('원문에 없는 내용은 만들지 않습니다.')).toBeInTheDocument()
+    expect(
+      screen.getByText('원문에 있는 내용만 쉬운 글로 바꾸는 것이 목표입니다.'),
+    ).toBeInTheDocument()
   })
 
   it('실제 서비스 흐름 그림과 핵심 세 단계를 먼저 보여 준다', () => {

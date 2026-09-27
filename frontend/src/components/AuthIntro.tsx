@@ -1,8 +1,9 @@
-import { FileUp, PencilLine, Download } from 'lucide-react'
+import { FileUp, PencilLine, Download, ShieldAlert } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
+import { DRAFT_NOTICE } from '../content/identity'
 import { GUIDE_PATH } from '../routes/paths'
 
 interface Step {
@@ -38,7 +39,7 @@ const STEPS: readonly Step[] = [
 interface AuthIntroProps {
   /** 설명 영역 제목의 id. 화면마다 다른 값을 줘 중복되지 않게 한다. */
   headingId: string
-  /** 제품이 하는 일 한 문장. 모바일에서는 이 문장과 초안 고지만 남는다. */
+  /** 서비스 정의 정본 문장(두 문장, DESIGN.md §6.0). 모바일에서는 이 문장과 초안 고지만 남는다. */
   summary: string
   /** 화면별로 왼쪽 설명 영역에 덧붙일 안내. */
   children?: ReactNode
@@ -84,8 +85,14 @@ export function AuthIntro({ headingId, summary, children }: AuthIntroProps) {
         ))}
       </ol>
       {children}
-      <p className="mt-6 text-sm leading-[22px] text-muted-foreground">
-        변환 결과는 언제나 AI 초안입니다. 사실관계와 신청 방법은 담당자가 확인한 뒤 사용해 주세요.{' '}
+      <p
+        role="note"
+        className="mt-6 flex items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2.5 text-sm font-semibold leading-[22px] text-warning"
+      >
+        <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+        {DRAFT_NOTICE}
+      </p>
+      <p className="mt-3 text-sm text-muted-foreground">
         <Link to={GUIDE_PATH}>이용 가이드 보기</Link>
       </p>
     </aside>

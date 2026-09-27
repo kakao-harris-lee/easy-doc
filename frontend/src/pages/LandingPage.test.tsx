@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
+import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
 import { LandingPage } from './LandingPage'
 
 function renderLanding() {
@@ -27,7 +28,7 @@ describe('랜딩 화면', () => {
         name: '복잡한 문서가 짧고 읽기 쉬운 문장으로 바뀌는 모습',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/마무리는 담당자가 합니다/)).toBeInTheDocument()
+    expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
   })
 
   it('결과가 초안이라는 사실을 경고 블록으로 알린다', () => {
@@ -35,8 +36,7 @@ describe('랜딩 화면', () => {
 
     const notice = screen.getByRole('note')
 
-    expect(notice).toHaveTextContent('결과는 초안입니다.')
-    expect(notice).toHaveTextContent('담당자가 확인한 뒤 배포하세요.')
+    expect(notice).toHaveTextContent(DRAFT_NOTICE)
   })
 
   it('어떤 문서를 넣고 넣지 않는지 칩으로 보여 준다', () => {
@@ -53,9 +53,11 @@ describe('랜딩 화면', () => {
     expect(screen.getByText('지원금·제도 안내')).toBeInTheDocument()
     expect(screen.getByText('개인정보가 든 민원 서류')).toBeInTheDocument()
     expect(screen.getByText('원문 없이 새로 쓸 글')).toBeInTheDocument()
-    expect(screen.getByText('법령 조문 전체')).toBeInTheDocument()
+    expect(screen.getByText('주민 대상이 아닌 내부 문서')).toBeInTheDocument()
 
-    expect(screen.getByText('원문에 없는 내용은 만들지 않습니다.')).toBeInTheDocument()
+    expect(
+      screen.getByText('원문에 있는 내용만 쉬운 글로 바꾸는 것이 목표입니다.'),
+    ).toBeInTheDocument()
   })
 
   it('상세 기능 목록 대신 하나의 변환 예시만 보여 준다', () => {

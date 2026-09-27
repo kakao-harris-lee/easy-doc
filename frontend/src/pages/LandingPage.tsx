@@ -1,6 +1,8 @@
 import { ArrowRight, FileCheck2, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import { Badge } from '../components/ui/Badge'
+import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
 import { GUIDE_PATH, SIGNUP_PATH } from '../routes/paths'
 
 const PRIMARY_LINK =
@@ -11,7 +13,7 @@ const SECONDARY_LINK =
 interface FitGroup {
   title: string
   /** 칩의 색. 맞는 문서는 강조색, 넣지 않는 문서는 중립색이다 — 색만으로 구분하지 않도록 제목이 함께 있다. */
-  chipClassName: string
+  tone: 'primary' | 'neutral'
   items: readonly string[]
 }
 
@@ -25,13 +27,13 @@ interface FitGroup {
 const FIT_GROUPS: readonly FitGroup[] = [
   {
     title: '이런 문서에 맞습니다',
-    chipClassName: 'bg-accent text-accent-foreground',
+    tone: 'primary',
     items: ['복지 서비스 신청 안내', '주민 공지문', '지원금·제도 안내'],
   },
   {
     title: '이런 문서는 넣지 마세요',
-    chipClassName: 'bg-secondary text-foreground',
-    items: ['개인정보가 든 민원 서류', '원문 없이 새로 쓸 글', '법령 조문 전체'],
+    tone: 'neutral',
+    items: ['개인정보가 든 민원 서류', '원문 없이 새로 쓸 글', '주민 대상이 아닌 내부 문서'],
   },
 ]
 
@@ -60,8 +62,7 @@ export function LandingPage() {
             <span className="text-primary">누구나 읽을 수 있는 쉬운 글</span>로
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-7 text-muted-foreground md:text-lg md:leading-8">
-            행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글
-            초안으로 바꿉니다. 마무리는 담당자가 합니다.
+            {SERVICE_DEFINITION}
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <Link to={SIGNUP_PATH} className={PRIMARY_LINK}>
@@ -79,7 +80,7 @@ export function LandingPage() {
             className="mt-5 flex max-w-xl items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 text-[15px] font-semibold leading-6 text-warning"
           >
             <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-            결과는 초안입니다. 날짜·금액·대상·조건을 원문과 비교해 담당자가 확인한 뒤 배포하세요.
+            {DRAFT_NOTICE}
           </p>
         </div>
 
@@ -118,11 +119,10 @@ export function LandingPage() {
               <h3 className="text-[15px] font-semibold text-foreground">{group.title}</h3>
               <ul className="mt-3 flex flex-wrap gap-2">
                 {group.items.map((item) => (
-                  <li
-                    key={item}
-                    className={`rounded-full px-3 py-1.5 text-sm font-medium ${group.chipClassName}`}
-                  >
-                    {item}
+                  <li key={item}>
+                    <Badge tone={group.tone} withIcon={false}>
+                      {item}
+                    </Badge>
                   </li>
                 ))}
               </ul>
@@ -130,7 +130,7 @@ export function LandingPage() {
           ))}
         </div>
         <p className="mt-6 border-t border-border pt-4 text-sm text-muted-foreground">
-          원문에 없는 내용은 만들지 않습니다.
+          원문에 있는 내용만 쉬운 글로 바꾸는 것이 목표입니다.
         </p>
       </section>
 

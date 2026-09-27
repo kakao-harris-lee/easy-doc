@@ -6,6 +6,7 @@ import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
 import { SocialLoginButton } from '../components/SocialLoginButton'
 import { TrialCreditSteps } from '../components/TrialCreditSteps'
+import { SERVICE_DEFINITION } from '../content/identity'
 import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
 /**
@@ -65,10 +66,7 @@ export function SignupPage() {
           </p>
         </div>
       </section>
-      <AuthIntro
-        headingId="signup-intro-heading"
-        summary="행정·복지·법률 안내문을 발달장애인 등 정보를 이해하기 어려운 주민이 읽을 수 있는 쉬운 글 초안으로 바꿉니다. 마무리는 담당자가 합니다."
-      />
+      <AuthIntro headingId="signup-intro-heading" summary={SERVICE_DEFINITION} />
     </div>
   )
 }
