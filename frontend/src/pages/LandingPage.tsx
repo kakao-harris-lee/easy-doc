@@ -33,7 +33,7 @@ const FIT_GROUPS: readonly FitGroup[] = [
   {
     title: '이런 문서는 넣지 마세요',
     tone: 'neutral',
-    items: ['개인정보가 든 민원 서류', '원문 없이 새로 쓸 글', '주민 대상이 아닌 내부 문서'],
+    items: ['개인정보가 든 민원 서류', '주민 대상이 아닌 내부 문서'],
   },
 ]
 
@@ -111,7 +111,7 @@ export function LandingPage() {
           id="landing-fit-heading"
           className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
         >
-          주민에게 나가는 안내문을 쉬운 글 초안으로
+          안내문을 쉬운 글 초안으로
         </h2>
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           {FIT_GROUPS.map((group) => (

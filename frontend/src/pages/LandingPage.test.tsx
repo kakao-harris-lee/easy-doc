@@ -42,9 +42,7 @@ describe('랜딩 화면', () => {
   it('어떤 문서를 넣고 넣지 않는지 칩으로 보여 준다', () => {
     renderLanding()
 
-    expect(
-      screen.getByRole('heading', { name: '주민에게 나가는 안내문을 쉬운 글 초안으로' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '안내문을 쉬운 글 초안으로' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서에 맞습니다' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서는 넣지 마세요' })).toBeInTheDocument()
 
@@ -52,7 +50,7 @@ describe('랜딩 화면', () => {
     expect(screen.getByText('주민 공지문')).toBeInTheDocument()
     expect(screen.getByText('지원금·제도 안내')).toBeInTheDocument()
     expect(screen.getByText('개인정보가 든 민원 서류')).toBeInTheDocument()
-    expect(screen.getByText('원문 없이 새로 쓸 글')).toBeInTheDocument()
+    expect(screen.queryByText('원문 없이 새로 쓸 글')).not.toBeInTheDocument()
     expect(screen.getByText('주민 대상이 아닌 내부 문서')).toBeInTheDocument()
 
     expect(
