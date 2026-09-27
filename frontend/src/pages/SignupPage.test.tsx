@@ -61,10 +61,13 @@ afterEach(() => {
 })
 
 describe('가입 화면', () => {
-  it('설명 영역 제목으로 서비스 정의 한 문장을 보여준다', () => {
+  it('설명 영역 제목은 짧은 구이고 서비스 정의는 본문으로 따라온다', () => {
     renderAt('/signup')
 
-    expect(screen.getByRole('heading', { name: SERVICE_DEFINITION })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: '주민 안내문을 쉬운 글 초안으로' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
   })
 
   it('가입부터 휴대폰 인증과 체험 5크레딧 발급까지의 순서를 보여준다', () => {
