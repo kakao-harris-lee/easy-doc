@@ -8,7 +8,7 @@ describe('개인정보처리방침 화면', () => {
     render(<PrivacyPolicyPage />)
 
     expect(screen.getByRole('heading', { name: '개인정보처리방침', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText(/privacy-\d{4}-\d{2}-\d{2}(-draft)?/)).toBeInTheDocument()
+    expect(screen.getByText('privacy-2026-10-01')).toBeInTheDocument()
   })
 
   it('게시본임을 보여준다 — 시행일이 남고 초안·빈칸 표기는 사라졌다', () => {

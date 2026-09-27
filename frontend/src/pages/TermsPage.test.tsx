@@ -9,7 +9,7 @@ describe('이용약관 화면', () => {
 
     // TSX에 문구를 옮기지 않았다는 증거 — 원본이 바뀌면 이 값도 같이 바뀐다.
     expect(screen.getByRole('heading', { name: '이용약관', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText(/terms-\d{4}-\d{2}-\d{2}(-draft)?/)).toBeInTheDocument()
+    expect(screen.getByText('terms-2026-10-01')).toBeInTheDocument()
   })
 
   it('게시본임을 보여준다 — 시행일이 남고 초안·빈칸 표기는 사라졌다', () => {
