@@ -76,8 +76,12 @@ easydoc:
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     open-ai-api-key: ${OPENAI_API_KEY:}
-    # 모델의 출력 한도를 넘기면 기동 검증이 실패한다.
-    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:64000}
+    # 모델의 출력 한도를 넘기면 기동 검증이 실패한다. 기본값은 기본 provider(openai)의 기본
+    # 모델 gpt-4.1 이 낼 수 있는 32,768 이다 — 환경변수 없는 배포가 반드시 기동해야 한다
+    # (계약 2.7.0 ⑶ 이 미리 적어 둔 조건). 더 큰 값은 그만큼을 감당하는 모델을
+    # EASYDOC_LLM_MODEL 로 함께 지정한 배포만 쓴다. 운영자 설정의 상한은 그대로
+    # MAX_OUTPUT_TOKENS_CEILING(64,000)이다.
+    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:32768}
     read-timeout: ${EASYDOC_LLM_READ_TIMEOUT:120}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}

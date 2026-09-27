@@ -8,7 +8,9 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.mock.env.MockEnvironment
 import java.math.BigDecimal
+import java.nio.file.Path
 import java.time.Duration
+import kotlin.io.path.readText
 
 /** provider 조립의 소유자가 `infrastructure` 라는 결정의 회귀 테스트. */
 class LlmProviderConfigurationTest {
@@ -278,6 +280,41 @@ class LlmProviderConfigurationTest {
             }.isEmpty()
     }
 
+    @Test
+    @DisplayName(
+        "환경변수 하나 없는 배포도 조립된다 — api·worker yml 의 max-output-tokens 기본값이 " +
+            "provider 기본값(openai)의 기본 모델 한도를 넘지 않는다",
+    )
+    fun `yml 의 출력 토큰 기본값은 무설정 조립을 막지 않는다`() {
+        // 바인딩만 재는 시험은 이것을 놓친다 — `LlmProperties()` 의 Kotlin 기본값
+        // (DEFAULT_MAX_TOKENS, 16,000)은 provider 안전 fallback 이라 yml 기본값과 다르고,
+        // 기동을 깨뜨린 것은 yml 쪽이었다(provider 기본값이 anthropic → openai 로 바뀐 뒤
+        // worker 컨텍스트 로드 실패). 그래서 yml 이 선언한 값을 직접 읽어 조립해 본다.
+        val root = Path.of(System.getProperty(SOURCE_ROOT_PROPERTY) ?: error("$SOURCE_ROOT_PROPERTY 이 없다"))
+        val declared =
+            listOf("api", "worker").associateWith { module ->
+                val yml = root.resolve("$module/src/main/resources/application.yml").readText()
+                val declaration =
+                    MAX_OUTPUT_TOKENS_DEFAULT.find(yml)
+                        ?: error("$module application.yml 에서 $MAX_OUTPUT_TOKENS_ENV 기본값을 찾지 못했다")
+                declaration.groupValues[1].toInt()
+            }
+
+        assertThat(declared.values.distinct())
+            .withFailMessage {
+                "api·worker 의 출력 토큰 기본값이 다르다: $declared — 같은 문서가 모듈마다 다른 " +
+                    "상한으로 잘린다."
+            }.hasSize(1)
+
+        declared.forEach { (module, maxOutputTokens) ->
+            // 모델 미지정 + provider 기본값 — 환경변수 없는 배포가 겪는 바로 그 조합이다.
+            val provider = assemble(LlmProperties(maxOutputTokens = maxOutputTokens))
+
+            assertThat(provider.name).describedAs(module).isEqualTo(OPENAI_PROVIDER_NAME)
+            assertThat(provider.toString()).describedAs(module).contains(DEFAULT_OPENAI_MODEL)
+        }
+    }
+
     private fun assemble(
         properties: LlmProperties,
         vararg profiles: String,
@@ -285,4 +322,14 @@ class LlmProviderConfigurationTest {
         properties,
         MockEnvironment().apply { setActiveProfiles(*profiles) },
     )
+
+    private companion object {
+        /** 루트 `build.gradle.kts` 가 모든 테스트 태스크에 걸어 주는 저장소 루트. */
+        const val SOURCE_ROOT_PROPERTY: String = "easydoc.kotlin.source.root"
+
+        const val MAX_OUTPUT_TOKENS_ENV: String = "EASYDOC_LLM_MAX_OUTPUT_TOKENS"
+
+        /** yml 의 `max-output-tokens` 선언에서 환경변수 뒤 기본값 부분만 뽑는다. */
+        val MAX_OUTPUT_TOKENS_DEFAULT: Regex = Regex("""EASYDOC_LLM_MAX_OUTPUT_TOKENS:(\d+)}""")
+    }
 }
