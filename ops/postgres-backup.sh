@@ -5,7 +5,8 @@ umask 077
 
 backup_dir=/backups
 interval_seconds=${POSTGRES_BACKUP_INTERVAL_SECONDS:-21600}
-retention_days=${POSTGRES_BACKUP_RETENTION_DAYS:-30}
+# 개인정보처리방침 §3.2가 7일 보관을 공개한다 — 늘리면 방침을 먼저 개정한다
+retention_days=${POSTGRES_BACKUP_RETENTION_DAYS:-7}
 temporary_dump=
 temporary_checksum=
 
@@ -70,8 +71,9 @@ while :; do
   ln -sfn "$backup_name" "$backup_dir/latest.dump"
   ln -sfn "$backup_name.sha256" "$backup_dir/latest.dump.sha256"
 
-  find "$backup_dir" -maxdepth 1 -type f -name 'easydoc-*.dump' -mtime "+$retention_days" -delete
-  find "$backup_dir" -maxdepth 1 -type f -name 'easydoc-*.dump.sha256' -mtime "+$retention_days" -delete
+  # -mtime +N은 만 (N+1)일이 지나야 지우므로 N-1을 준다 — 방침 §3.2의 「7일 보관」과 맞춘다.
+  find "$backup_dir" -maxdepth 1 -type f -name 'easydoc-*.dump' -mtime "+$((retention_days - 1))" -delete
+  find "$backup_dir" -maxdepth 1 -type f -name 'easydoc-*.dump.sha256' -mtime "+$((retention_days - 1))" -delete
 
   echo "PostgreSQL backup completed: $backup_name"
   sleep "$interval_seconds" &

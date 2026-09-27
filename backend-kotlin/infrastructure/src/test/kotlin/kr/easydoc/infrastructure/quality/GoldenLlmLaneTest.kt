@@ -2,7 +2,7 @@ package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.infrastructure.llm.ANTHROPIC_PROVIDER_NAME
 import kr.easydoc.infrastructure.llm.AnthropicEffort
-import kr.easydoc.infrastructure.llm.DEFAULT_ANTHROPIC_MODEL
+import kr.easydoc.infrastructure.llm.DEFAULT_OPENAI_MODEL
 import kr.easydoc.infrastructure.llm.FAKE_PROVIDER_NAME
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING
@@ -37,12 +37,12 @@ class GoldenLlmLaneTest {
     }
 
     @Test
-    @DisplayName("EASYDOC_LLM_PROVIDER 미설정이면 제품 배포 기본값(anthropic)으로 잰다")
+    @DisplayName("EASYDOC_LLM_PROVIDER 미설정이면 제품 배포 기본값(openai)으로 잰다")
     fun `기본값은 제품과 같다`() {
-        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.OPENAI_KEY_ENV to KEY))
 
-        assertThat(ready(plan).provider.name).isEqualTo(ANTHROPIC_PROVIDER_NAME)
-        assertThat(ready(plan).description).contains(DEFAULT_ANTHROPIC_MODEL)
+        assertThat(ready(plan).provider.name).isEqualTo(OPENAI_PROVIDER_NAME)
+        assertThat(ready(plan).description).contains(DEFAULT_OPENAI_MODEL)
     }
 
     @Test
@@ -100,7 +100,7 @@ class GoldenLlmLaneTest {
     @Test
     @DisplayName("EASYDOC_LLM_MAX_OUTPUT_TOKENS 미설정이면 제품 기본값과 같다 — 출처가 하나다")
     fun `출력 토큰 상한 기본값은 제품과 같다`() {
-        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.OPENAI_KEY_ENV to KEY))
 
         assertThat(ready(plan).options.maxTokens).isEqualTo(LlmProperties().maxOutputTokens)
     }
@@ -111,7 +111,7 @@ class GoldenLlmLaneTest {
         val plan =
             GoldenLlmLane.plan(
                 env(
-                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.OPENAI_KEY_ENV to KEY,
                     GoldenLlmLane.MAX_OUTPUT_TOKENS_ENV to "32k",
                 ),
             )
@@ -158,7 +158,7 @@ class GoldenLlmLaneTest {
     @Test
     @DisplayName("단가를 설정하지 않으면 0달러가 아니라 null 이다")
     fun `단가 미설정은 null 이다`() {
-        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.OPENAI_KEY_ENV to KEY))
 
         assertThat(ready(plan).pricing.inputUsdPerMillionTokens).isNull()
         assertThat(ready(plan).pricing.outputUsdPerMillionTokens).isNull()
@@ -170,7 +170,7 @@ class GoldenLlmLaneTest {
         val plan =
             GoldenLlmLane.plan(
                 env(
-                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.OPENAI_KEY_ENV to KEY,
                     GoldenLlmLane.INPUT_PRICE_ENV to "abc",
                 ),
             )
@@ -221,7 +221,7 @@ class GoldenLlmLaneTest {
     @Test
     @DisplayName("EASYDOC_LLM_READ_TIMEOUT 미설정이면 기본값(120초)으로 Ready 가 나온다")
     fun `읽기 타임아웃 기본값은 예외 없이 Ready 가 된다`() {
-        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.OPENAI_KEY_ENV to KEY))
 
         ready(plan)
     }
@@ -247,7 +247,7 @@ class GoldenLlmLaneTest {
         val plan =
             GoldenLlmLane.plan(
                 env(
-                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.OPENAI_KEY_ENV to KEY,
                     GoldenLlmLane.READ_TIMEOUT_ENV to "abc",
                 ),
             )
@@ -334,7 +334,7 @@ class GoldenLlmLaneTest {
         val plan =
             GoldenLlmLane.plan(
                 env(
-                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.OPENAI_KEY_ENV to KEY,
                     GoldenLlmLane.EFFORT_ENV to "turbo",
                 ),
             )
@@ -361,7 +361,7 @@ class GoldenLlmLaneTest {
 
         const val SOURCE_ROOT_PROPERTY: String = "easydoc.kotlin.source.root"
 
-        /** `provider: ${EASYDOC_LLM_PROVIDER:anthropic}` 의 기본값 부분. */
+        /** `provider: ${EASYDOC_LLM_PROVIDER:openai}` 의 기본값 부분. */
         val PROVIDER_DEFAULT: Regex = Regex("""EASYDOC_LLM_PROVIDER:([a-z]+)}""")
     }
 }

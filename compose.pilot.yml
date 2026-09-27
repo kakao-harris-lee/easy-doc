@@ -70,7 +70,8 @@ services:
       PGUSER: ${SPRING_DATASOURCE_USERNAME:-postgres}
       PGPASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD must be set in .env}
       POSTGRES_BACKUP_INTERVAL_SECONDS: ${POSTGRES_BACKUP_INTERVAL_SECONDS:-21600}
-      POSTGRES_BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-30}
+      # 개인정보처리방침 §3.2가 7일 보관을 공개한다 — 늘리면 방침을 먼저 개정한다
+      POSTGRES_BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-7}
     volumes:
       - ./ops/postgres-backup.sh:/usr/local/bin/easydoc-postgres-backup:ro
       - ${POSTGRES_BACKUP_DIR:-./backups/postgres}:/backups

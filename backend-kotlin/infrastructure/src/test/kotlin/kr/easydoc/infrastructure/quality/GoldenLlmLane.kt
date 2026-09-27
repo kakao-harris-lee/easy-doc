@@ -66,12 +66,13 @@ internal object GoldenLlmLane {
     /**
      * [PROVIDER_ENV] 미설정 시 기본값.
      *
-     * `LlmProperties.provider` 의 코드 기본값(openai)이 아니라 **배포 기본값**을 따른다 —
-     * api·worker `application.yml` 이 `${EASYDOC_LLM_PROVIDER:anthropic}` 로 덮어쓰므로,
-     * 제품이 실제로 도는 벤더는 anthropic 이다. 둘이 어긋나면 [GoldenLlmLaneTest] 의
-     * 기본값 대조가 깨진다.
+     * 코드 기본값이 아니라 **배포 기본값**을 따른다 — 레인은 제품이 실제로 도는 벤더를 재야
+     * 한다. api·worker `application.yml` 이 `${EASYDOC_LLM_PROVIDER:openai}` 로 선언하므로
+     * 그 벤더는 openai 다(2026-09-27: 게시된 개인정보처리방침 §5 가 OpenAI 를 수탁자로
+     * 공개해 배포 기본값을 anthropic 에서 openai 로 맞췄다). 지금은 `LlmProperties.provider`
+     * 의 코드 기본값과도 같다. 둘이 어긋나면 [GoldenLlmLaneTest] 의 기본값 대조가 깨진다.
      */
-    const val DEFAULT_PROVIDER: String = ANTHROPIC_PROVIDER_NAME
+    const val DEFAULT_PROVIDER: String = OPENAI_PROVIDER_NAME
 
     /**
      * [env] 가 준 환경으로 이 레인을 돌릴 수 있는지 판정한다.
