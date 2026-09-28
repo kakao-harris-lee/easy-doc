@@ -1,5 +1,5 @@
 import { getSubscription } from '../../api/subscriptions'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -94,7 +94,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     )
   })
 
-  it('행을 누르면 상세와 크레딧 부여 폼을 연다', async () => {
+  it('관리를 누르면 상세와 크레딧 부여 폼을 연다', async () => {
     const user = userEvent.setup()
     vi.mocked(listAdminWorkspaces).mockResolvedValue(
       adminWorkspaceListResponse({
@@ -104,10 +104,57 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     vi.mocked(readAdminWorkspace).mockResolvedValue(adminWorkspaceDetail())
 
     render(<AdminWorkspacesTab />)
-    await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
+    await user.click(await screen.findByRole('button', { name: /관리/ }))
 
     expect(await screen.findByRole('form', { name: '크레딧 부여 및 조정' })).toBeInTheDocument()
     expect(vi.mocked(readAdminWorkspace)).toHaveBeenCalledWith('w1', expect.anything())
+  })
+
+  it('한 계정의 작업 공간이 여럿이면 한 행에 묶고 드롭다운으로 고른다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listAdminWorkspaces).mockResolvedValue(
+      adminWorkspaceListResponse({
+        items: [
+          adminWorkspaceSummary({ workspace_id: 'w1', name: '복지정책팀' }),
+          adminWorkspaceSummary({ workspace_id: 'w2', name: '민원안내팀' }),
+        ],
+      }),
+    )
+    vi.mocked(readAdminWorkspace).mockResolvedValue(
+      adminWorkspaceDetail({
+        summary: adminWorkspaceSummary({ workspace_id: 'w2', name: '민원안내팀' }),
+      }),
+    )
+
+    render(<AdminWorkspacesTab />)
+
+    const select = await screen.findByRole('combobox', {
+      name: 'owner@example.test의 작업 공간 선택',
+    })
+    // 계정이 하나뿐이므로 본문 행도 하나다 — 머리글 행까지 합쳐 두 줄.
+    expect(screen.getAllByRole('row')).toHaveLength(2)
+    expect(within(select).getByRole('option', { name: '복지정책팀' })).toBeInTheDocument()
+    expect(within(select).getByRole('option', { name: '민원안내팀' })).toBeInTheDocument()
+
+    await user.selectOptions(select, 'w2')
+    await user.click(screen.getByRole('button', { name: 'owner@example.test의 민원안내팀 관리' }))
+
+    await waitFor(() =>
+      expect(vi.mocked(readAdminWorkspace)).toHaveBeenCalledWith('w2', expect.anything()),
+    )
+  })
+
+  it('작업 공간이 하나뿐인 계정은 드롭다운 없이 이름만 보여준다', async () => {
+    vi.mocked(listAdminWorkspaces).mockResolvedValue(
+      adminWorkspaceListResponse({
+        items: [adminWorkspaceSummary({ workspace_id: 'w1', name: '복지정책팀' })],
+      }),
+    )
+
+    render(<AdminWorkspacesTab />)
+
+    expect(await screen.findByText('복지정책팀')).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
   })
 
   it('크레딧을 부여하면 성공 문구를 보여주고 상세를 다시 읽는다', async () => {
@@ -132,7 +179,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     })
 
     render(<AdminWorkspacesTab />)
-    await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
+    await user.click(await screen.findByRole('button', { name: /관리/ }))
     await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '0.1')
@@ -173,7 +220,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     })
 
     render(<AdminWorkspacesTab />)
-    await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
+    await user.click(await screen.findByRole('button', { name: /관리/ }))
     await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '-3')
@@ -199,7 +246,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     vi.mocked(readAdminWorkspace).mockResolvedValue(adminWorkspaceDetail())
 
     render(<AdminWorkspacesTab />)
-    await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
+    await user.click(await screen.findByRole('button', { name: /관리/ }))
     await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '0.01')
@@ -224,7 +271,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     )
 
     render(<AdminWorkspacesTab />)
-    await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
+    await user.click(await screen.findByRole('button', { name: /관리/ }))
     await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '10')
