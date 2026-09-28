@@ -23,12 +23,9 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * `usage-report` profile 의 실 배선(U3) — 계획
- * `docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U3의 프로필 층 회귀 고정판. 집계
- * SQL 자체(사용자·워크스페이스별 분리·삭제된 워크스페이스 행·비용 미상)는
- * `JdbcUsageReportRepositoryTest`(infrastructure)가 재고, 이 테스트는 **그 로직이 실제로
- * `WorkerApplication`으로 뜨는가** — CLI 인자(`--from --to --out`)를 읽어 BOM 붙은 UTF-8 CSV
- * 파일을 쓰고 종료 코드를 내는가를 본다(`RotateKeysProfileTest`와 같은 자리).
+ * `usage-report` 프로필이 [WorkerApplication]에서 CLI 인자(`--from`, `--to`, `--out`)를 읽어
+ * BOM이 있는 UTF-8 CSV 파일을 쓰고 종료 코드를 내는지 확인한다. 집계 SQL 자체는
+ * `JdbcUsageReportRepositoryTest`가 담당한다.
  *
  * 원장은 `Flyway.configure()...migrate()`로 스키마를 먼저 올린 뒤 raw SQL로 직접 심는다 —
  * 시딩이 `ApplicationRunner`(컨텍스트 초기화 중 실행)보다 먼저 끝나야 하므로, JUnit5의 정적

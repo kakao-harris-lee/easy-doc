@@ -15,12 +15,8 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 
 /**
- * `rotate-keys` profile 의 실 배선 — backlog §1.1 「키 회전에 운영 진입점이 없음」의
- * 프로필 층 회귀 고정판. 회전 로직 자체(가족 넷 순회·재실행 no-op)는
- * `infrastructure` 의 `KeyRotationBatchTest` 가 잰다 — 이 테스트는 **그 로직이 실제로
- * `WorkerApplication` 으로 뜨는가**를 본다: `migrate` 와 달리 `ContentCipher` 가 조립되고,
- * `KeyRotationRunner` 가 `ExitCodeGenerator` 로 배선돼 있으며, 회전할 것이 없으면
- * 종료 코드가 0 이다.
+ * `rotate-keys` 프로필이 [WorkerApplication]에서 실제로 기동되는지 확인한다. 암호화 키와
+ * [KeyRotationRunner]가 조립되고, 회전할 것이 없을 때 종료 코드가 0인지 확인한다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,

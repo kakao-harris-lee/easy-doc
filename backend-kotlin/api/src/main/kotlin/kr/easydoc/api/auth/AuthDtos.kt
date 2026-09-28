@@ -34,36 +34,25 @@ data class UserResponse(
     @get:JsonProperty("email_verified") val emailVerified: Boolean,
     @get:JsonProperty("phone_verified") val phoneVerified: Boolean,
     /**
-     * 비밀번호가 있는지(2.17.0 신설, backlog §1.4 다음 조각) — `users.password_hash IS
-     * NOT NULL`. 화면이 "연결 해제"가 마지막 로그인 수단을 없애는 조작인지 미리 판정해
-     * 버튼을 비활성화할 재료다(정본은 `x-social-login.explicit_linking`).
+     * `users.password_hash IS NOT NULL`인지 나타낸다. 화면이 연결 해제가 마지막 로그인 수단을
+     * 없애는지 미리 판정할 수 있는 값이다(정본은 `x-social-login.explicit_linking`).
      */
     @get:JsonProperty("has_password") val hasPassword: Boolean,
     @get:JsonProperty("identities") val identities: List<UserIdentityResponse>,
     /**
-     * 관리자인지(2.25.0 신설, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
-     * §2 결정 1) — `users.is_admin`. 화면이 계정 메뉴에 「관리」 링크를 보여줄지 판단하는
-     * 표시값일 뿐이다 — 실제 관리자 API 접근은 매 요청 DB를 다시 읽는 `AdminGuard`가
-     * 판정한다(이 값이 참이어도 이메일이 미검증이면 관리자 API는 403이다).
+     * `users.is_admin` 표시값이다. 실제 관리자 API 접근은 매 요청 DB를 다시 읽는 `AdminGuard`가
+     * 판정하며, 이메일이 미검증이면 이 값이 참이어도 403이다.
      */
     @get:JsonProperty("is_admin") val isAdmin: Boolean,
 ) {
-    /**
-     * **이메일을 찍지 않는다.** 형제 요청 DTO 둘(`SignupRequest`·`LoginRequest`)이 같은
-     * 이유로 이미 가리고 있는데 응답 DTO 만 빠져 있었다(게이트 23 privacy-gate 3a).
-     * `/auth/me` 는 요청마다 이 객체를 만든다.
-     */
+    /** `/auth/me` 응답에는 이메일을 로그나 오류 메시지에 남기지 않는다. */
     override fun toString(): String =
         "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, phoneVerified=$phoneVerified, " +
             "hasPassword=$hasPassword, " +
             "isAdmin=$isAdmin)"
 
     companion object {
-        /**
-         * [identities] 는 기본값 빈 목록이다 — `signup`(2.10.0에도 항상 비밀번호 계정,
-         * 아직 아무 신원도 잇지 않은 상태)이 그 자리에서 부를 때 매번 빈 목록을 만들어
-         * 넘기지 않아도 되게 한다. `/auth/me`(연결된 신원이 있을 수 있다)만 실제 값을 준다.
-         */
+        /** [identities] 를 생략하는 호출은 아직 연결된 신원이 없는 계정으로 처리한다. */
         fun of(
             user: User,
             identities: List<SocialLoginProviderId> = emptyList(),
@@ -84,11 +73,7 @@ data class UserResponse(
 data class UserIdentityResponse(
     @get:JsonProperty("provider") val provider: String,
 ) {
-    /**
-     * 길이만 남긴다. `provider` 자체는 공개 enum 값(`google`)이라 개인정보는 아니지만,
-     * 필드 하나짜리 래퍼 DTO 는 `SensitiveToStringReachTest` 가 "감싼 쪽이 가린다"
-     * 전제로 기계적으로 재는 대상이다 — `WorkspaceNameRequest`·`ModelDraft` 와 같은 이유.
-     */
+    /** 공개 enum인 [provider]도 래퍼 DTO에서는 길이만 남긴다. */
     override fun toString(): String = "UserIdentityResponse(${provider.length}자)"
 
     companion object {
@@ -160,8 +145,7 @@ data class PasswordResetConfirmRequest
     }
 
 /**
- * `POST /auth/me/deletion` 요청. 계약 `DeleteAccountRequest`, 2.27.0 신설(계획
- * `docs/plans/2026-09-09-account-deletion.md`).
+ * `POST /auth/me/deletion` 요청. 계약 `DeleteAccountRequest`.
  *
  * [password]는 비밀번호가 있는 계정(`readMe.has_password: true`)에만 필수다 — 소셜 전용
  * 계정은 `null`로 보내도 된다. [confirmation]은 두 경우 모두 필수이며 정확히

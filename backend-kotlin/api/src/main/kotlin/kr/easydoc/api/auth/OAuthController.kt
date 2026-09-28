@@ -13,14 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-/**
- * `/auth/oauth/{provider}/start` · `/auth/oauth/{provider}/callback` — 소셜 로그인
- * (backlog §1.4 P0-1) · `/auth/oauth/{provider}/link/start` ·
- * `/auth/oauth/{provider}/link/callback` — 명시적 계정 연결(2.10.0, backlog §1.4).
- * `AuthController` 와 별도 클래스인 이유는 그 클래스 KDoc 이 아니라 여기 있다:
- * 이메일/비밀번호 인증과 겹치는 것은 "액세스 토큰을 발급한다"뿐이고 나머지(제공자
- * 왕복 시작·콜백·연결)는 이 컨트롤러만의 책임이다.
- */
+/** `/auth/oauth` 소셜 로그인과 명시적 계정 연결 엔드포인트. */
 @RestController
 @RequestMapping("/auth/oauth")
 class OAuthController(private val socialLogin: SocialLoginService) {
@@ -50,11 +43,7 @@ class OAuthController(private val socialLogin: SocialLoginService) {
         )
     }
 
-    /**
-     * 인증된 사용자의 계정에 소셜 신원을 이으려고 제공자 인가 URL을 만든다 — 명시적
-     * 계정 연결(2.10.0, backlog §1.4). [start] 와 응답 모양이 같다(`OAuthStartResponse`)
-     * — 갈리는 것은 발급되는 `state` 가 [user] 의 id 를 함께 싣는다는 점뿐이다.
-     */
+    /** 인증된 사용자의 계정에 연결할 소셜 인가 URL을 만든다. */
     @PostMapping("/{provider}/link/start", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun linkStart(
         user: AuthenticatedUser,
@@ -79,10 +68,7 @@ class OAuthController(private val socialLogin: SocialLoginService) {
         return private(HttpStatus.NO_CONTENT).build()
     }
 
-    /**
-     * [user] 계정에서 [provider] 신원 연결을 끊는다 — 연결 해제(2.17.0, backlog §1.4 다음
-     * 조각). 연결이 없으면 404, 마지막 로그인 수단이면 409(`SocialLoginService.unlink` KDoc).
-     */
+    /** [user] 계정에서 [provider] 신원 연결을 끊는다. 연결이 없으면 404, 마지막 로그인 수단이면 409다. */
     @DeleteMapping("/{provider}/link")
     fun unlink(
         user: AuthenticatedUser,
@@ -92,9 +78,7 @@ class OAuthController(private val socialLogin: SocialLoginService) {
         return private(HttpStatus.NO_CONTENT).build()
     }
 
-    /** `AuthController.private` 와 같은 하한선 헤더. 두 컨트롤러가 같은 상수를 각자 갖는다 —
-     * 전역 필터([kr.easydoc.api.config.PrivateResponseHeadersConfig])가 이미 싣지만, 계약
-     * 테스트가 컨트롤러 응답 자체에서 재기도 하므로 `AuthController` 와 같은 방식을 따른다. */
+    /** 전역 필터와 별개로 컨트롤러 응답에도 보안 헤더를 싣는다. */
     private fun private(status: HttpStatus): ResponseEntity.BodyBuilder =
         ResponseEntity
             .status(status)

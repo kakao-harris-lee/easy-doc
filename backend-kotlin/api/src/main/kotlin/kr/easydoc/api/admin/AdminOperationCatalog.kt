@@ -1,8 +1,7 @@
 package kr.easydoc.api.admin
 
 /**
- * (HTTP 메서드, 경로 패턴) → 계약 `operationId` — 접속기록(계획
- * `docs/plans/2026-09-11-access-log-retention.md` §3.1)의 `operation` 열이 계약의
+ * (HTTP 메서드, 경로 패턴) → 계약 `operationId`. 접속기록의 `operation` 열이 계약의
  * `operationId`와 같아야 하므로([AdminAccessInterceptor]가 이 표로 채운다), [AdminEndpoints]가
  * 든 경로마다 이 표에 항목이 하나씩 있어야 한다 — 없으면 [operationIdFor]가 던진다.
  *

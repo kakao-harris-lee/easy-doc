@@ -26,10 +26,8 @@ import javax.xml.XMLConstants
  * ([OoxmlSkips]), 같은 머리글·바닥글 파트 해석([DocxSectionParts]), 같은 자식 역순 스택.
  * 두 순회가 같은 차례를 낸다는 것은 `PackagedOriginalReflectorTest` 가 fixture 로 잰다.
  *
- * **`TooManyFunctions` 를 억제한다.** `insertAfter` 를 [applyInsertion] 공유 헬퍼로 옮겨도
- * (2026-09-06 리뷰 F5) 이 형식 전용 파싱·조립 함수(`opened`·`unitsOf`·`apply`·`append`·
- * `newParagraph`·`copiedProperties`·`preserveSpace`·`bytesOf`)가 여전히 문턱을 넘는다 —
- * `HwpxOriginalReflector` 와 같은 판단이다.
+ * **`TooManyFunctions` 를 억제한다.** 공유 헬퍼로 옮긴 뒤에도 형식 전용 파싱·조립 함수가
+ * 많아 `HwpxOriginalReflector` 와 같은 억제가 필요하다.
  */
 @Suppress("TooManyFunctions")
 internal class DocxOriginalReflector {
@@ -38,9 +36,8 @@ internal class DocxOriginalReflector {
     /**
      * 반영하면 무엇이 달라지는지 미리 센다. 파일은 만들지 않는다.
      *
-     * [map]·[mapAttempted] 는 [PackagedOriginalReflector] 가 이미 빈 줄 투영을 지나 넘긴 값이다
-     * — 기본값을 두지 않는다(2026-09-06 리뷰 F6): 이 값을 빠뜨리면 지도를 다루지 않는 호출과
-     * 지도를 잊은 호출이 코드에서 같은 모양이 된다.
+     * [map]·[mapAttempted] 는 [PackagedOriginalReflector] 가 이미 빈 줄 투영을 지나 넘긴 값이다.
+     * 기본값을 두지 않아 지도를 다루지 않는 호출과 지도를 잊은 호출을 구분한다.
      */
     fun outline(
         data: ByteArray,
@@ -140,7 +137,7 @@ internal class DocxOriginalReflector {
 
     /**
      * `segment_map` 의 1:N 나눔 — [ReflectionPlan.Insertion.afterUnit] 문단 **바로 뒤**에 같은
-     * 속성의 새 문단을 끼워 넣는다(계획 §10.2 3항 1:N, S6-2). 실제 위치 계산·앵커 없음 처리는
+     * 속성의 새 문단을 끼워 넣는다. 실제 위치 계산·앵커 없음 처리는
      * [applyInsertion] 하나를 [HwpxOriginalReflector] 와 공유한다 — 이 함수는 [newParagraph]
      * (문단 조립 방식)만 건네준다.
      */

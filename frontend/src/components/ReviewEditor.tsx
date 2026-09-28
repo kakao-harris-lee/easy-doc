@@ -71,10 +71,8 @@ interface ReviewEditorProps {
   /**
    * 왼쪽에 보여줄 원본과 그 상태.
    *
-   * 종전에는 `string | null` 이었고 값이 있는 경우는 **붙여넣기 직후 한 번**뿐이었다 —
-   * 파일 업로드·기록 재진입·새로고침에서는 늘 `null` 이라 비교할 대상이 없었다. 지금은
-   * 서버(`GET /documents/{id}/source`)가 원문을 돌려주므로 화면은 그것을 가져오고,
-   * 여기에는 **로딩·원문·실패**가 구분된 채로 들어온다(§9).
+   * 서버(`GET /documents/{id}/source`)가 원문을 돌려주므로 화면은 **로딩·원문·실패**를
+   * 구분해 표시한다.
    */
   source: DocumentSource
 }
@@ -83,7 +81,7 @@ interface ReviewEditorProps {
  * 저장·내려받기 결과 안내.
  *
  * 성공과 실패의 낭독 방식이 달라 종류를 함께 둔다. `announce`는 한 걸음 더 나눈 것으로,
- * 저장 성공처럼 위의 저장 상태 라벨이 이미 알린 사실은 눈으로만 보여준다(§11 — 같은
+ * 저장 성공처럼 위의 저장 상태 라벨이 이미 알린 사실은 눈으로만 보여준다(같은
  * 문장을 두 번 낭독하지 않는다).
  */
 interface Feedback {
@@ -95,13 +93,14 @@ interface Feedback {
 /**
  * 지금 진행 중인 작업. 어느 버튼이 도는지까지 알아야 그 버튼의 문구만 바꿀 수 있다.
  *
- * 내려받기가 둘로 나뉜 이유는 §6.5의 「저장하고 내려받기」다. 시작할 때 어느 쪽인지 정해
+ * 내려받기가 둘로 나뉜 이유는 저장과 내려받기를 한 동작으로 묶기 위해서다. 시작할 때
+ * 어느 쪽인지 정해
  * 두면 진행 문구가 **도는 도중에 바뀌지 않는다** — `dirty`로 그때그때 고르면 저장이 끝나는
  * 순간 "저장하고 내려받는 중…"이 "내려받는 중…"으로 갈아치워진다.
  */
 type Pending = 'save' | 'download' | 'saveAndDownload' | 'refresh' | null
 
-/** 검수 패널. DOM 순서이자 탭 순서이며, §11이 요구하는 「원문 다음 결과」다. */
+/** 검수 패널. DOM 순서이자 탭 순서이며, 원문 다음에 결과가 온다. */
 const PANELS = [
   { key: 'source', label: '원문' },
   { key: 'result', label: '쉬운 글' },
@@ -112,15 +111,13 @@ type PanelKey = (typeof PANELS)[number]['key']
 /**
  * 이 변환을 내려받을 수 있는 형식(들).
  *
- * **대개는 목록이 아니라 서버가 정한 값 하나다**(DESIGN.md §6.5 「들어온 형식 그대로
- * 나간다」). 종전에는 `['docx','hwpx','txt']` 상수라 원본과 무관하게 버튼 셋을 그렸고,
- * 서버가 형식을 강제하기 시작한 뒤로 그중 둘은 **반드시 409로 실패한다.**
+ * **대개는 목록이 아니라 서버가 정한 값 하나다.** 서버가 허용한 형식만 버튼으로 그린다.
  *
  * `export_format`이 null이면 두 갈래로 갈린다(`export_format_choices`):
  * - 배열이 비어 있지 않으면 **그 배열 전부**를 버튼으로 그린다 — 미래 계약이 원본별
  *   선택지를 다시 제공해도 응답을 그대로 따른다.
  * - 배열이 비어 있으면 빈 목록이다 — 내려받을 수단이 없는 변환에서는 내려받기 행동을
- *   제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지 않는다"). 버튼이
+ *   제시하지 않는다. 버튼이
  *   없는 이유는 `PdfExportNotice`가 그 자리 위에서 말한다.
  */
 function downloadFormats(conversion: ConversionResponse): readonly ExportFormat[] {
@@ -129,7 +126,7 @@ function downloadFormats(conversion: ConversionResponse): readonly ExportFormat[
     : conversion.export_format_choices
 }
 
-/** 원문과 결과를 나란히 담을 수 있는 최소 너비(DESIGN.md §6.4·§10). */
+/** 원문과 결과를 나란히 담을 수 있는 최소 너비. */
 const SPLIT_VIEW_QUERY = '(min-width: 1024px)'
 
 function splitViewMedia(): MediaQueryList | null {
@@ -201,9 +198,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   /** 다른 화면의 저장과 충돌해 현재 revision으로는 더 쓸 수 없는 상태. */
   const [contentConflict, setContentConflict] = useState(false)
   /**
-   * ER-16 — 저장된 그림 배치 개수와 stale 여부. `IllustrationPlacementPanel`이 조회·저장
+   * 저장된 그림 배치 개수와 stale 여부. `IllustrationPlacementPanel`이 조회·저장
    * 직후 알려 준다. 배치가 있고(count > 0) stale이 아닐 때만 내려받기 버튼 근처에
-   * "파일에는 들어가지 않는다"는 안내를 보여준다(AC-R7-b).
+   * "파일에는 들어가지 않는다"는 안내를 보여준다.
    */
   const [illustrationPlacementCount, setIllustrationPlacementCount] = useState(0)
   const [illustrationPlacementsStale, setIllustrationPlacementsStale] = useState(false)
@@ -228,15 +225,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    *
    * 조회 응답에서 한 번 받고 마는 값이 **아니다.** 이 판정은 검수본의 문단 수와 원본
    * 구조 단위의 짝에서 나오므로, 담당자가 검수하며 문단을 나누거나 합쳐 저장하면 서버의
-   * 답이 바뀐다. 저장 응답이 그 새 판정을 싣고 오고(`GET`과 같은 스키마다) 화면은 그것을
+   * 답이 바뀐다. 저장 응답이 그 새 판정을 싣고 오고 화면은 그것을
    * 그대로 옮긴다 — 여기서 값을 붙들고 있으면 패널이 「유지 가능」이라고 말한 뒤 실제로는
-   * 그렇지 않은 파일이 내려간다(§6.5 «상태는 낙관적으로 추측하지 않는다»).
+   * 그렇지 않은 파일이 내려간다.
    *
    * 판정을 화면에서 다시 세지 않는 것이 요점이다 — 규칙은 서버 한 곳에만 있다.
    */
   const [preservation, setPreservation] = useState(conversion.format_preservation)
   /**
-   * 문단 단위 대응표(계약 2.12.0, §6.4 S3). 서버가 매 조회·저장마다 다시 유도해 주는
+   * 문단 단위 대응표. 서버가 매 조회·저장마다 다시 유도해 주는
    * 값이지만, 문단을 나누거나 합치는 조작은 다음 저장까지 서버가 모르므로 여기서
    * 국소적으로 갱신한다(계약 `segment_map` 설명 — 서버가 강제하지 않는 클라이언트
    * 재계산). 저장이 끝나면 서버가 다시 잰 값으로 덮어써 낡은 추정을 남기지 않는다.
@@ -268,16 +265,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
   /**
-   * 문단 재변환(계획 §4 결정 3, §6 S5). 지금 응답을 기다리는 원본 단위 색인 — 한 번에
+   * 문단 재변환. 지금 응답을 기다리는 원본 단위 색인 — 한 번에
    * 하나만 진행한다(단순한 전역 단일 진행 상태가 이중 제출·경합하는 후보 카드를 미리
    * 막는다). `null`이면 재변환이 도는 것이 없다.
    */
   const [reconvertPendingIndex, setReconvertPendingIndex] = useState<number | null>(null)
   /**
-   * 재시도(Part C-2/C-3)로 지금 도는 재변환이 걸린 **쉬운 글** 단위 색인.
+   * 재시도로 지금 도는 재변환이 걸린 **쉬운 글** 단위 색인.
    *
    * `reconvertPendingIndex`(원본 단위 색인)만으로는 여러 쉬운 글 단위가 같은
-   * 원본 색인에 대응할 때(예: 「이 위치에 넣기」로 늘어난 단위들, MEDIUM 리뷰)
+   * 원본 색인에 대응할 때(예: 「이 위치에 넣기」로 늘어난 단위들)
    * 어느 행이 실제로 기다리는지 가르지 못한다. 원본 패널의 「다시 변환」에서
    * 걸었을 때는 특정 쉬운 글 단위를 고른 것이 아니므로 `null`이다.
    */
@@ -337,7 +334,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const [panelPickedByUser, setPanelPickedByUser] = useState(false)
   /**
-   * 언제나 최신 `draft`를 가리키는 ref(§MEDIUM 리뷰).
+   * 언제나 최신 `draft`를 가리키는 ref.
    *
    * `persistDraft`는 저장 요청을 보낸 시점의 `draft`(클로저 값)를 쥔 채로 응답을
    * 기다린다 — 그 사이 사용자가 이어서 고치면 `draft` state는 바뀌지만 그 클로저는
@@ -353,7 +350,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   /**
    * 언제나 최신 `unitMap`을 가리키는 ref — `draftRef`와 같은 이유다. 재변환 응답이
    * 도착한 시점의 대응(confidence)을 판정하려면 요청을 보낸 시점의 클로저가 아니라
-   * "지금" 값이 필요하다(계획 §4 결정 3 "응답 도착 시점"의 신선도 기준).
+   * "지금" 값이 필요하다.
    */
   const unitMapRef = useRef(unitMap)
   useEffect(() => {
@@ -361,7 +358,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }, [unitMap])
 
   /**
-   * 마지막으로 초점을 벗어난 결과 단위와 그 캐럿(계획 §6 S5). 재변환 「이 위치에
+   * 마지막으로 초점을 벗어난 결과 단위와 그 캐럿. 재변환 「이 위치에
    * 넣기」가 이 값을 참고한다 — 다시 변환 버튼(원본 패널)을 누르는 순간 지금까지
    * 편집하던 결과 textarea가 초점을 잃으며 이 값을 남긴다. 아직 결과 단위에 한 번도
    * 초점이 간 적이 없으면 `null`이다.
@@ -371,7 +368,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 429 카운트다운과 같은 패턴이다. */
   const reconvertCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   /**
-   * 재변환 후보 카드를 연 「다시 변환」 버튼(MEDIUM 리뷰 3).
+   * 재변환 후보 카드를 연 「다시 변환」 버튼.
    *
    * 카드가 뜨는 순간 초점은 카드로 옮겨 간다(`ReconvertCandidateCard`). 카드를 닫으면
    * 그 초점을 다시 이 버튼으로 돌려준다 — 그렇지 않으면 초점이 사라진 카드와 함께
@@ -410,7 +407,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     }, 1000)
   }
 
-  /** 결과 단위가 초점을 벗어날 때(계획 §6 S5) 마지막 활성 단위·캐럿을 기록한다. */
+  /** 결과 단위가 초점을 벗어날 때 마지막 활성 단위·캐럿을 기록한다. */
   function handleResultUnitBlur(index: number, caret: number): void {
     lastActiveResultUnitRef.current = { index, caret }
   }
@@ -419,11 +416,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 서버가 준 사유를 그대로 보여준다. `ApiError`가 아니면 일반 문구로 대신한다.
    *
    * 문단이 여럿인 화면에서는 「어느 문단을 다시 변환하려다 실패했는지」가 문구에 없으면
-   * 사용자가 지금 이 안내가 방금 누른 그 버튼에 대한 것인지 다시 확인해야 한다(LOW
-   * 리뷰 4) — 그래서 대상을 가리키는 접두어를 항상 앞에 붙인다.
+   * 사용자가 지금 이 안내가 방금 누른 그 버튼에 대한 것인지 다시 확인해야 하므로,
+   * 대상을 가리키는 접두어를 항상 앞에 붙인다.
    *
    * 원본 패널의 「다시 변환」은 원본 단위 서수(`N번째 문단:`)로 가리키지만, 결과
-   * 패널의 「재시도」는 사람이 이미 특정 쉬운 글 단위를 골라 누른 것이라(LOW 리뷰)
+   * 패널의 「재시도」는 사람이 이미 특정 쉬운 글 단위를 골라 누른 것이라
    * 그 단위를 가리키는 `쉬운 글 단위 N:`을 쓴다 — 호출한 쪽이 `prefix`로 결정한다.
    */
   function reconvertErrorMessage(caught: unknown, prefix: string): ReconvertMessage {
@@ -460,13 +457,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }
 
   /**
-   * 원본 단위 하나를 다시 변환한다(계획 §4 결정 3, §6 S5).
+   * 원본 단위 하나를 다시 변환한다.
    *
    * **응답은 후보일 뿐이다 — 여기서 `draft`·`unitMap`을 바꾸지 않는다.** 채택(바꾸기·
    * 이 위치에 넣기)은 사람이 카드에서 직접 눌러야 한다(`handleCandidateReplace`·
    * `handleCandidateInsert`).
    *
-   * `options.fromEasyUnitIndex`는 결과 패널의 「재시도」 버튼(Part C-2/C-3)이
+   * `options.fromEasyUnitIndex`는 결과 패널의 「재시도」 버튼이
    * 준다 — 원본 패널의 「다시 변환」과 달리, 이 경로는 **사람이 이미 어느 쉬운 글
    * 단위를 바꿀지 골랐다**(그 행의 버튼을 눌렀다). 그래서 서버가 돌려준
    * `easy_unit_indexes`로 대상을 다시 추론하지 않고 이 값을 그대로 쓴다.
@@ -479,7 +476,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     if (reconvertPendingIndex !== null) {
       return
     }
-    // 이 재변환을 건 「다시 변환」·「재시도」 버튼(MEDIUM 리뷰 3) — 후보 카드를 닫으면
+    // 이 재변환을 건 「다시 변환」·「재시도」 버튼 — 후보 카드를 닫으면
     // 여기로 초점을 돌려준다. 버튼 클릭은 그 버튼에 초점을 옮긴 다음 일어나므로 이
     // 시점의 `document.activeElement`가 바로 그 버튼이다(원본 패널 버튼이든 결과
     // 패널의 재시도 버튼이든 같다).
@@ -487,7 +484,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     setReconvertPendingIndex(sourceIndex)
     // 재시도가 아니면(원본 패널의 「다시 변환」) 특정 쉬운 글 단위를 고른 것이
-    // 아니므로 `null`이다(MEDIUM 리뷰) — 그 경로는 여전히 원본 색인 하나로만
+    // 아니므로 `null`이다 — 그 경로는 여전히 원본 색인 하나로만
     // 진행 중 행을 가린다.
     setReconvertPendingEasyIndex(options?.fromEasyUnitIndex ?? null)
     setReconvertMessage(null)
@@ -507,8 +504,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       })
       setRemainingCallBudget(response.remaining_call_budget)
 
-      // 응답 도착 시점의 에디터 본문 지문이 여전히 같은지 다시 잰다(계획 §4 결정 3
-      // ⑴) — 기다리는 동안 사용자가 편집했으면 다르다.
+      // 응답 도착 시점의 에디터 본문 지문이 여전히 같은지 다시 잰다 — 기다리는 동안
+      // 사용자가 편집했으면 다르다.
       const currentFingerprint = await computeEasyTextFingerprint(draftRef.current)
       const fingerprintUnchanged = currentFingerprint === response.easy_text_fingerprint
       const singleEasyIndex: number | null =
@@ -555,7 +552,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       }
     } catch (caught) {
       // 재시도(결과 패널)는 그 쉬운 글 단위를 가리키고, 원본 패널의 「다시 변환」은
-      // 지금까지처럼 원본 서수를 가리킨다(LOW 리뷰).
+      // 원본 서수를 가리킨다.
       const prefix =
         options?.fromEasyUnitIndex !== undefined
           ? `쉬운 글 단위 ${options.fromEasyUnitIndex + 1}: `
@@ -660,7 +657,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   /**
    * 재변환 버튼(모든 행 공통) 비활성 사유. 저장·내려받기 중이거나, 예산을 다 썼거나,
    * 이미 다른 재변환이 도는 중이면 새 요청을 걸지 않는다 — 마지막 조건은 이 화면이
-   * 한 번에 하나만 진행하기로 한 선택(§4 위 주석)을 버튼 상태에도 그대로 반영한다.
+   * 한 번에 하나만 진행한다는 규칙을 버튼 상태에도 그대로 반영한다.
    * 요청이 도는 행 자신은 이 값과 무관하게 `pendingIndex`로 항상 잠긴다.
    *
    * **예산 소진은 `=== 0`만으로 판정하지 않는다.** 매 요청이 예산에서
@@ -782,7 +779,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }, [conversion.id, contentRevision, focusedReviewEnabled, focusedReviewRetry])
 
   /**
-   * 이미 쉬운 글 규칙을 통과한 원본 단위 색인(계획 §11). 원문은 읽기 전용이라 이 목록을
+   * 이미 쉬운 글 규칙을 통과한 원본 단위 색인. 원문은 읽기 전용이라 이 목록을
    * 클라이언트가 다시 계산하지 않는다 — 서버가 조회마다 유도해 준 값을 그대로 쓴다.
    */
   const compliantSourceUnits = useMemo(
@@ -795,7 +792,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    *
    * 원문이 아직 없으면(불러오는 중이거나 못 불러왔으면) 탭을 만들지 않는다. 고를 수
    * 있는 것이 하나뿐인 탭 줄은 조작할 이유가 없는 장치이고, 「불러오는 중」이나 「불러오지
-   * 못함」을 탭 뒤에 숨기면 그 사실 자체가 사용자에게 닿지 않는다(§9 — 로딩·실패·원문은
+   * 못함」을 탭 뒤에 숨기면 그 사실 자체가 사용자에게 닿지 않는다 — 로딩·실패·원문은
    * 서로 다른 상태다). 그래서 그 경로에서는 설명 카드와 편집기를 위아래로 그대로 쌓는다.
    */
   const showTabs = !splitView && source.state.status === 'ready'
@@ -817,7 +814,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    *    화면을 넓혀 결과를 고치다가 다시 좁히는 경로가 그 예다.
    * 2. 초점이 어디에도 없고 사용자가 탭을 고른 적이 있으면 **그 선택을 그대로 둔다.**
    *    창 크기 조절 한 번에 남의 선택을 되돌리지 않는다.
-   * 3. 둘 다 아니면 고쳐 둔 내용(`dirty`)이 있는 쪽을 편들고, 그것도 없으면 §11의 읽기
+   * 3. 둘 다 아니면 고쳐 둔 내용(`dirty`)이 있는 쪽을 편들고, 그것도 없으면 읽기
    *    순서대로 원문이 먼저다.
    *
    * **효과가 아니라 렌더 중에** 정하는 것이 요점이다. 효과는 DOM이 이미 갱신된 뒤에
@@ -870,8 +867,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    *
    * 이 버튼들은 진행 중에 `disabled` 가 된다. 브라우저는 초점을 가진 요소가 잠기는
    * 순간 초점을 `<body>` 로 떨어뜨리므로, 키보드 사용자는 저장을 누른 대가로 지금까지
-   * 온 탭 경로를 통째로 잃고 문서 맨 앞에서 다시 밟아야 한다(§14 «키보드만으로 검수
-   * 저장과 내려받기까지 이동할 수 있다»).
+   * 온 탭 경로를 통째로 잃는다.
    *
    * `finally` 가 아니라 effect 에서 돌리는 이유: `finally` 시점에는 아직 리렌더 전이라
    * 버튼이 잠긴 상태이고, 잠긴 버튼은 초점을 받지 못한다. `pending` 이 풀린 뒤 DOM 이
@@ -903,11 +899,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 저장 응답의 버전은 로컬 편집이 이어졌더라도 다음 CAS 요청에 반드시 사용한다.
     setContentRevision(saved.content_revision)
     setHistoryRefreshToken((value) => value + 1)
-    // 기다리는 동안 사용자가 이어서 고쳤다면(§MEDIUM 리뷰) 이 응답은 그때 보낸
+    // 기다리는 동안 사용자가 이어서 고쳤다면 이 응답은 그때 보낸
     // `sentDraft`에 대한 것일 뿐, 지금 화면의 최신 draft에 대한 것이 아니다. 그대로
     // 덮어쓰면 방금 고친 내용이 사라지고, `unitMap`도 그 낡은 텍스트의 구조로 다시
-    // 짜여 지금 draft의 단위 수와 어긋난다(CRITICAL 리뷰가 지적한 것과 같은 종류의
-    // 불변식 붕괴). 이 응답이 낡았으면 아무 것도 덮어쓰지 않고 물러난다 — 저장 안 됨
+    // 짜여 지금 draft의 단위 수와 어긋난다. 이 응답이 낡았으면 아무 것도 덮어쓰지 않고
+    // 물러난다 — 저장 안 됨
     // 상태는 `savedText`가 그대로 남아 자연히 유지된다.
     if (draftRef.current !== sentDraft) {
       return null
@@ -924,7 +920,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     setPreservation(saved.format_preservation)
     // 대응표도 같은 이유로 서버 응답이 이길 때마다 갱신한다 — 분할·병합으로 만든
     // 로컬 추정은 서버가 다시 잰 값이 오는 순간 버려진다. 방금 저장한 글이 새
-    // 되돌리기 기준선이 된다(Part C-1) — 되돌리기는 마지막 저장 이후의 변경만
+    // 되돌리기 기준선이 된다 — 되돌리기는 마지막 저장 이후의 변경만
     // 되돌리는 것이지, 그 이전 어느 시점으로도 돌아가지 않는다.
     setUnitMap(withBaselines(saved.segment_map?.units ?? [], stored))
     setContentConflict(false)
@@ -1081,8 +1077,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         return null
       }
       // 저장됐다는 사실은 위 상태 라벨이 `저장됨 · 시각`으로 알린다. 여기 문구는 방금
-      // 누른 버튼 옆에 결과를 남기는 보조 수단이라 낭독하지 않는다(§9 성공 토스트는
-      // 보조 수단, §11 중복 낭독 금지).
+      // 누른 버튼 옆에 결과를 남기는 보조 수단이라 낭독하지 않는다.
       setFeedback({ kind: 'success', message: '검수 내용을 저장했습니다.', announce: false })
       return revision
     } catch (caught) {
@@ -1104,12 +1099,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   }
 
   /**
-   * 저장하지 않은 수정이 있으면 **먼저 저장하고** 내려받는다(§6.5 「한 번의 명확한 행동」).
+   * 저장하지 않은 수정이 있으면 **먼저 저장하고** 내려받는다.
    *
    * 내려받는 파일에는 서버에 저장된 글만 담긴다. 그래서 "저장한 내용만 담깁니다" 같은
    * 안내로 사용자에게 순서를 떠넘기지 않고 화면이 두 걸음을 한 번에 밟는다.
    *
-   * 실패했을 때 **어느 걸음에서 멈췄는지**를 문구가 말한다(§9 — 일어난 일, 보존된 데이터,
+   * 실패했을 때 **어느 걸음에서 멈췄는지**를 문구가 말한다 — 일어난 일, 보존된 데이터,
    * 다시 할 수 있는 일). 저장부터 실패한 경우와 저장은 됐는데 내려받기가 실패한 경우는
    * 사용자가 다음에 할 일이 다르다: 앞은 다시 저장부터, 뒤는 내려받기만 다시다.
    */
@@ -1240,7 +1235,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         tone: 'warning' as const,
         label: '저장 안 됨',
         // 내려받기가 있는 화면에서는 순서를 사용자에게 떠넘기지 않는다 — 그 버튼이
-        // 저장까지 한 번에 한다(§6.5). 내려받을 수단이 없는 원본(PDF)에서는 그 약속을
+        // 저장까지 한 번에 한다. 내려받을 수단이 없는 원본(PDF)에서는 그 약속을
         // 하지 않는다.
         detail:
           downloadFormats(conversion).length > 0
@@ -1275,13 +1270,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
   const illustrationsEnabled = conversion.review_capabilities?.illustrations === true
-  // R7 ER-17 — 기존 `illustrations` 토글과 독립이다(명세 §6). 이용량 단가가 없으면
+  // 기존 `illustrations` 토글과 독립이다. 이용량 단가가 없으면
   // 서버가 false 로 보고하므로 화면은 이 값만 보고 패널을 그린다.
   const illustrationSuggestionsEnabled =
     conversion.review_capabilities?.illustration_suggestions === true
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
-      {/* §6.4 상단 줄: 왼쪽은 HITL 고지, 오른쪽은 저장 상태다.
+      {/* 상단 줄: 왼쪽은 HITL 고지, 오른쪽은 저장 상태다.
           HITL 고지는 이 화면에서 가장 먼저 읽혀야 하는 문장이라 DOM에서도 앞에 둔다. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p
@@ -1293,8 +1288,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         </p>
 
         {/* 이 화면에서 "저장했는가"를 말하는 곳은 여기 하나다. 저장 여부는 토스트로
-            흘려보내지 않고 화면에 남긴다(§9). 색만으로 구분하지 않도록 배지에 문구와
-            아이콘을 함께 둔다(§8.1). */}
+            흘려보내지 않고 화면에 남긴다. 색만으로 구분하지 않도록 배지에 문구와
+            아이콘을 함께 둔다. */}
         <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
           <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
             <Badge tone={status.tone}>{status.label}</Badge>
@@ -1306,10 +1301,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           {/* 의견을 보냈다는 사실은 저장 상태와 **다른 사실**이라 배지를 따로 둔다 —
               「저장 전」과 「의견 보냄」이 동시에 참일 수 있고, 하나로 뭉치면 어느 쪽이
               끝난 일인지 화면에서 사라진다. 색만으로 구분하지 않도록 배지에 시각까지
-              문구로 적는다(§8.1·§9).
+              문구로 적는다.
 
               위 `role="status"` 바깥에 두는 것이 중요하다. 여기에 넣으면 제출 성공을
-              폼의 안내와 이 배지가 잇달아 두 번 낭독한다(§11 중복 낭독 금지) —
+              폼의 안내와 이 배지가 잇달아 두 번 낭독한다 —
               「의견을 보냈습니다」는 폼이 이미 말했고, 이 배지는 그 뒤에도 화면에
               남아 있는 기록이 그 몫이다. */}
           {hasFeedback && (
@@ -1318,7 +1313,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 의견 보냄 · {new Date(feedbackSubmittedAt).toLocaleString('ko-KR')}
               </Badge>
               {/* 의견의 내용은 서버가 돌려주지 않는다. 다시 볼 수 있는 척하지 않고
-                  없다고 적는다(§15 — 없는 기능을 있는 것처럼 보이게 하지 않는다). */}
+                  없다고 적는다. */}
               <span className="text-sm text-muted-foreground sm:text-right">
                 검수 내용 저장과 따로 기록되며, 적은 내용은 이 화면에 다시 표시되지 않습니다.
               </span>
@@ -1333,7 +1328,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             변환 완료
           </Badge>
           {/*
-            이 화면의 h1이다(§11 «제목 순서»). 검수 화면은 `PageHeader`를 쓰지 않는다 —
+            이 화면의 h1이다. 검수 화면은 `PageHeader`를 쓰지 않는다 —
             그 컴포넌트는 맥락 라벨과 오른쪽 대표 행동을 전제하는데 여기서는 위의 HITL
             고지와 저장 상태가 그 자리를 쓴다. 그래도 **본문의 첫 제목은 h1이어야 한다**:
             h2로 시작하면 낭독기 목차에 뿌리가 없어 "지금 어느 화면인가"를 제목으로
@@ -1356,7 +1351,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       </header>
 
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
-            묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
+            묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다. */}
       <div className="flex flex-col">
         {supportsParagraphComparison && !focusedReviewEnabled && (
           <div className="mb-3 flex justify-end">
@@ -1413,7 +1408,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </div>
         )}
 
-        {/* §11: 읽기 순서는 넓은 화면에서도 탭에서도 원문 다음 결과다. */}
+        {/* 읽기 순서는 넓은 화면에서도 탭에서도 원문 다음 결과다. */}
         <div className="grid gap-4 lg:grid-cols-2">
           {/* 초점 추적은 패널 상자에 건다 — 초점 사건은 거품처럼 올라오므로 상자 하나가
               그 안의 입력칸과 버튼을 모두 대신한다(위 `focusedPanel`). */}
@@ -1424,7 +1419,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('source')}
           >
-            {/* 로딩·실패·원문을 가르는 것은 이 패널이다(§9). 빈 textarea를 만들면 "아직
+            {/* 로딩·실패·원문을 가르는 것은 이 패널이다. 빈 textarea를 만들면 "아직
                 안 왔음"과 "못 가져왔음"이 같은 모양이 되므로 상태마다 다르게 말한다. */}
             <SourceTextPanel
               source={source}
@@ -1468,7 +1463,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             )}
           </div>
 
-          {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다(§6.4). */}
+          {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다. */}
           <div
             ref={resultPanelRef}
             className="rounded-[12px] border-2 border-primary/40 bg-card p-5"
@@ -1621,7 +1616,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               </div>
             )}
 
-            {/* 재변환 호출 예산(계획 §4 결정 3, §6 S5) — 한 번도 재변환을 부르지
+            {/* 재변환 호출 예산 — 한 번도 재변환을 부르지
                 않았으면 아직 모르는 값이라 그리지 않는다(부르지도 않은 예산을 숫자로
                 지어내지 않는다). */}
             {useSegmentedEditor && remainingCallBudget !== null && (
@@ -1701,7 +1696,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           <TableRelationsPanel sourceText={source.state.text} tables={source.state.tables} />
         )}
 
-        {/* 선택 기반 사전 팝업(P0-5 조각 5, 계획 §3.5) — 결과 패널 안 textarea에서
+        {/* 선택 기반 사전 팝업 — 결과 패널 안 textarea에서
             글자를 선택하면(더블클릭 포함) 250ms 뒤 후보를 띄운다. 위치 자체는 포털이라
             이 자리에 둘 필요는 없지만, 결과 편집 영역과 논리적으로 묶어 둔다. */}
         <TermLookupPopover
@@ -1722,7 +1717,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           applyDisabled
         />
 
-        {/* §6.5 — 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
+        {/* 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
             DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 TXT에 원본
             레이아웃·스타일이 반영되지 않는다는 사실을 대신 말한다. */}
         <FormatPreservationPanel
@@ -1730,7 +1725,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           preservation={preservation}
         />
         <PdfExportNotice conversion={conversion} />
-        {/* ER-16 AC-R7-b — 그림을 배치해 뒀다면 내려받기 바로 위에서 "파일에는 안 담긴다"는
+        {/* 그림을 배치해 뒀다면 내려받기 바로 위에서 "파일에는 안 담긴다"는
             사실을 명시한다. stale이면 미리보기 자체가 그림을 숨기므로 함께 감춘다. */}
         {illustrationsEnabled && illustrationPlacementCount > 0 && !illustrationPlacementsStale && (
           <p className="mt-4 text-sm text-muted-foreground">
@@ -1776,9 +1771,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </div>
         )}
 
-        {/* 긴 본문을 스크롤하는 동안에도 저장에 닿아야 한다(§6.4). 화면 하단 고정(fixed)이
+        {/* 긴 본문을 스크롤하는 동안에도 저장에 닿아야 한다. 화면 하단 고정(fixed)이
             아니라 이 편집 묶음 안에서만 붙는 sticky다 — 묶음을 지나가면 함께 흘러가므로
-            본문 마지막 요소(피드백·대응표)를 가리지 않는다(§10). 아래 여백은 홈
+            본문 마지막 요소(피드백·대응표)를 가리지 않는다. 아래 여백은 홈
             인디케이터가 있는 기기에서 버튼이 잘리지 않게 안전 영역만큼 더 준다. */}
         <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center gap-2 border-t border-border bg-background/95 pt-3 backdrop-blur-sm [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
           <Button
@@ -1814,7 +1809,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 loading={thisDownloading}
               >
                 {!thisDownloading && <Download className="size-[18px]" aria-hidden="true" />}
-                {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다(§6.5).
+                {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다.
                     형식 이름을 버튼에 넣어 무엇이 나오는지 누르기 전에 알린다 — 누른 뒤
                     형식을 고르게 하는 모달은 두지 않는다. */}
                 {pending === 'saveAndDownload' && thisDownloading

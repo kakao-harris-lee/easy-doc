@@ -59,7 +59,7 @@ class AuthController(
         )
     }
 
-    /** 토큰이 가리키는 사용자. `identities` 는 연결된 소셜 신원 목록이다(2.10.0, backlog §1.4). */
+    /** 토큰이 가리키는 사용자. `identities` 는 연결된 소셜 신원 목록이다. */
     @GetMapping("/me")
     fun me(user: AuthenticatedUser): ResponseEntity<UserResponse> =
         private(HttpStatus.OK).body(
@@ -147,8 +147,7 @@ class AuthController(
     }
 
     /**
-     * 계정을 즉시 파기한다 — 유예·복구 기간이 없다(계획
-     * `docs/plans/2026-09-09-account-deletion.md` §2 결정 3). 재확인 두 겹(비밀번호·확인
+     * 계정을 즉시 파기한다 — 유예·복구 기간이 없다. 재확인 두 겹(비밀번호·확인
      * 문구)이 틀리면 422, 관리자 계정이면 409다. 성공하면 이 토큰을 포함한 모든 인증
      * 수단이 같은 트랜잭션에서 사라지므로 이후 요청은 자연히 401이다 — 별도 로그아웃
      * 처리가 필요 없다.

@@ -1,6 +1,6 @@
 /**
- * ER-16 — 검수 화면에서 검수된 그림을 본문 줄에 배치하고 웹 미리보기로 확인한다.
- * illustrations.spec.ts(R7 그림 목록)와 같은 이유로 같은 E2E 스택에서만 돈다
+ * 검수 화면에서 검수된 그림을 본문 줄에 배치하고 웹 미리보기로 확인한다.
+ * `illustrations.spec.ts`와 같은 이유로 같은 E2E 스택에서만 돈다
  * (`EASYDOC_ILLUSTRATIONS_ENABLED`). 업로드부터 검수 화면 도달까지는 그 스펙의 흐름을
  * 그대로 재사용한다 — 카탈로그처럼 이 기능도 본문과 무관하게 고정 검수 데이터를 쓴다.
  *
@@ -85,7 +85,7 @@ test.describe('ER-16 그림 배치', () => {
     expect(saveResponse.status()).toBe(ROUTES.illustrationPlacementsWrite.ok)
 
     await expect(panel.getByRole('img', { name: FIRST_LINE_ALT_TEXT })).toBeVisible()
-    // ER-16 AC-R7-b — 그림은 파일 출력에 담기지 않는다는 사실을 내려받기 옆에서 명시한다.
+    // 그림은 파일 출력에 담기지 않는다는 사실을 내려받기 옆에서 명시한다.
     await expect(
       page.getByText('배치한 그림은 파일에 들어가지 않습니다', { exact: false }),
     ).toBeVisible()

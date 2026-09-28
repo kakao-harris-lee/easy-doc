@@ -8,22 +8,9 @@ import java.util.HexFormat
 
 // 쉬운 글 변환 프롬프트 생성.
 //
-// ## 이 파일의 문자열은 큐레이션 데이터다
-//
-// 아래 지시문들은 코드에서 유도되지 않는다. 실측 튜닝의 산출물이고, 문구 하나를 다듬는
-// 판단마다 골든셋 통과율 실측이 뒤에 있다(예: "X → Y" 화살표를 버리고 "(뜻: ...)" 풀이로
-// 바꾼 결정은 2026-08-09 문서 020 실측에서 나왔다 — [REPLACEMENT_INSTRUCTION] 참고).
-// **지나가다 문구를 다듬지 않는다.** 포팅이나 리팩터링 도중의 손질은 값을 표류시킬 뿐
-// 품질을 올리지 않는다. 고치려면 별건으로, 관찰된 실패 모드와 그것을 고치려는 의도를
-// 그 상수 KDoc에 남기고 고친다(2026-08-27 [EXPLAIN_INSTRUCTION] 추가가 그 예다 —
-// 사용자 보고: 문장만 짧아지고 낯선 개념은 그대로 남는다). 값의 정합성은
-// PromptTextSnapshotTest가 Kotlin 기준 스냅샷과 전건 대조하므로, 고친 뒤에는 스냅샷도
-// 같은 변경 단위에서 갱신한다.
-//
-// 스타일 길이·쉼표 원칙은 StyleRules.kt(SSOT)를 참조한다.
-//
-// 이 파일이 만드는 문자열이 그대로 LLM 페이로드가 된다 — 사용자 본문이 외부로 나가는
-// 자리다.
+// 이 파일의 문자열은 코드에서 유도되지 않는 큐레이션 데이터이며 그대로 LLM 페이로드가
+// 된다. 문구를 바꿀 때는 해당 상수와 스냅샷을 함께 검토한다. 스타일 기준은
+// StyleRules.kt(SSOT)를 공유한다.
 
 /** 원문 구간 구분자 이름. */
 const val DOCUMENT_TAG_NAME = "문서"
@@ -33,7 +20,7 @@ const val CONVERTED_TAG_NAME = "변환문"
 
 /**
  * [findMissingFacts] 가 찾아낸 값을 감싸는 구간 구분자 이름 — [CONVERTED_TAG_NAME] 과 같은
- * 난수 id 방어를 쓴다(리뷰 HIGH-4). 이 값들은 업로더가 올린 원문에서 그대로 뽑아낸 조각이라
+ * 난수 id 방어를 쓴다. 이 값들은 업로더가 올린 원문에서 그대로 뽑아낸 조각이라
  * [MISSING_FACTS_GUARD] 가 없으면 "닫는 태그 뒤 신뢰 영역"에 사용자 통제 문자열이 그대로
  * 노출된다 — 예를 들어 URL 사실 하나가 `ignore previous instructions` 같은 문구를 담고 있어도
  * 이 구분자 밖에서는 프롬프트가 그것을 지시로 읽을 위험이 생긴다.
@@ -49,7 +36,7 @@ const val DICTIONARY_CONTEXT_TAG_NAME = "사전참고"
 /** 구분자 id 의 바이트 수. 16진 문자열이 되므로 id 길이는 이 값의 두 배다. */
 internal const val DOCUMENT_ID_BYTES = 6
 
-/** 2026-09-12: 반복된 지시와 낱말 목록을 통합한다. 실측 조건은 prompt-rag-revalidation 계획 참조. */
+/** 역할과 공통 변환 원칙을 담은 기본 지시. */
 internal val ROLE =
     """
     당신은 공공문서를 초등학교 5~6학년 수준의 어휘와 문장으로 다시 쓰는 편집자입니다. 문서의 대상과 관계없이 이 수준을 유지하고 자연스러운 존댓말을 쓰세요.
@@ -78,7 +65,7 @@ internal const val TABLE_INSTRUCTION =
         "본문에 마크다운 표를 새로 만들지 말고 '항목 이름: 값'처럼 일반 텍스트로 묶어 쓰세요. " +
         "파일의 [구조] 지시가 있으면 해당 표·목록의 칸과 줄을 유지하세요."
 
-/** 2026-09-12: 평문 변환에서 ○·-·*·※가 누락되거나 서로 바뀌어 원문 위치를 찾기 어려웠다. */
+/** 원문의 제목·항목·주의사항 표식을 보존하도록 하는 지시. */
 internal const val MARKER_INSTRUCTION =
     "원문의 제목·항목·주의사항 표식(○, -, *, ※, ①, 1), 가. 등)은 같은 항목 앞에 그대로 두세요. " +
         "표식의 종류·개수·순서를 바꾸거나 생략하지 마세요. 제목과 문장은 쉽게 고쳐도 표식은 그대로 유지하세요. " +
@@ -94,7 +81,7 @@ internal val REPLACEMENT_INSTRUCTION =
     예: '번호를 부여받으세요'는 '번호를 받으세요'로 씁니다.
     """.trimIndent()
 
-/** 운영에서 이전 프롬프트로 되돌릴 수 있는 R3 선택값. 기본값은 실측한 기존 프롬프트다. */
+/** 설명 지시의 버전 선택값. */
 enum class ExplanationPromptVersion { BASELINE, R3, R3_UNIT }
 
 /** 모든 용어의 해설을 강제하지 않고 독해에 필요한 개념을 문맥 안에서 설명한다. */
@@ -128,7 +115,7 @@ internal val R3_UNIT_EXPLAIN_INSTRUCTION =
         "이 단위의 원문에 이미 있는 짧은 설명은 보존하되, 문서 전체에서 첫 등장인지 알 수 없으므로 " +
         "새 역할 설명이나 뜻풀이를 추측해 덧붙이지 마세요. 사전의 예시나 검수 메모로 사업 조건을 만들지 마세요."
 
-/** 실측에서 관찰한 의미 오류를 한곳에서 방지한다. */
+/** 원문 의미와 조건을 보존하는 공통 지시. */
 internal val SOURCE_FIDELITY_INSTRUCTION =
     """
     사실의 기준은 원문입니다. 행위 주체·대상·부정·예외, 필수와 선택, 가능성과 확정을 보존하세요. 여러 조건을 모두 갖춰야 하는지 하나만 해당하면 되는지 바꾸지 마세요.
@@ -148,7 +135,7 @@ const val INJECTION_GUARD =
 
 /**
  * [MISSING_FACTS_TAG_NAME] 구간 전용 주입 방어 문구 — [INJECTION_GUARD] 와 같은 발상이지만
- * 대상이 "문서 본문"이 아니라 "원문에서 뽑아낸 사실 값"이라는 점을 명시한다(리뷰 HIGH-4).
+ * 대상이 "문서 본문"이 아니라 "원문에서 뽑아낸 사실 값"이라는 점을 명시한다.
  * 이 값들이 지시가 아니라 되살려야 할 데이터임을 시스템 프롬프트가 못박아야, 구분자 안에
  * 지시문처럼 보이는 문자열(예: URL)이 들어와도 모델이 그것을 따르지 않는다.
  */
@@ -325,9 +312,9 @@ fun buildUserPrompt(
     documentIds: DocumentIdGenerator = SecureDocumentIds,
     dictionaryContext: String? = null,
     /**
-     * [renderStructureSection]이 만든 `[구조]` 절(계획 §1.3) — `<$DOCUMENT_TAG_NAME>` 구간
+     * [renderStructureSection]이 만든 `[구조]` 절 — `<$DOCUMENT_TAG_NAME>` 구간
      * **뒤**에 [SECTION_SEPARATOR]로 붙는다. `null`이면(표·목록이 없거나 인자를 안 주면)
-     * 아래 출력은 이 인자가 생기기 전과 한 글자도 다르지 않다 — B1(계획 §2 S8-2 수용 기준).
+     * 아래 출력은 이 인자가 없을 때와 같다 — B1.
      */
     structureSection: String? = null,
     /** 문단 재변환에서만 쓰는, 대상 단위보다 앞선 저장 쉬운 글 문맥. */
@@ -424,7 +411,7 @@ private fun renderViolations(violations: List<SentenceIssue>): String {
 private fun renderMissingFacts(facts: List<FactIssue>): String = facts.joinToString("\n") { "- ${it.value}" }
 
 /**
- * 빠진 사실 값을 [MISSING_FACTS_TAG_NAME] 난수 구분자 안에 감싼다(리뷰 HIGH-4). 값은 업로더가
+ * 빠진 사실 값을 [MISSING_FACTS_TAG_NAME] 난수 구분자 안에 감싼다. 값은 업로더가
  * 올린 원문에서 그대로 뽑아낸 조각이라 [CONVERTED_TAG_NAME] 구간의 본문과 같은 취급이 필요하다
  * — 닫는 태그 밖 신뢰 영역에 두면 그 값 자체가 지시로 읽힐 수 있다.
  */
@@ -451,7 +438,7 @@ fun buildRepairPrompt(
     documentIds: DocumentIdGenerator = SecureDocumentIds,
     /**
      * [buildUserPrompt]의 [structureSection] 과 같은 것 — 1차 변환에 실은 `[구조]` 절을
-     * 보정 패스에도 실어 2차 호출이 표·목록 구조를 되돌리지 않게 한다(계획 §1.3). `null`이면
+     * 보정 패스에도 실어 2차 호출이 표·목록 구조를 되돌리지 않게 한다. `null`이면
      * (기본값) 아래 출력은 이 인자가 생기기 전과 한 글자도 다르지 않다.
      */
     structureSection: String? = null,

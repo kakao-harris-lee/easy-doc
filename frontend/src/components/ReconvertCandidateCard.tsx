@@ -8,8 +8,8 @@ export interface ReconvertCandidateCardProps {
   sourceUnitIndex: number
   candidateText: string
   /**
-   * `replace`는 `high` 대응 + 단일 쉬운 글 단위 + 지문 불변일 때만이다(계획 §4 결정 3)
-   * — 이때만 「바꾸기」를 보여준다. 그 밖의 모든 경우(`insert`)는 「이 위치에 넣기」만
+   * `replace`는 `high` 대응 + 단일 쉬운 글 단위 + 지문 불변일 때만이다 — 이때만
+   * 「바꾸기」를 보여준다. 그 밖의 모든 경우(`insert`)는 「이 위치에 넣기」만
    * 보여준다 — 자동 교체를 어떤 경우에도 하지 않기 위해서다.
    */
   mode: 'replace' | 'insert'
@@ -21,7 +21,7 @@ export interface ReconvertCandidateCardProps {
 }
 
 /**
- * 재변환 후보 카드(계획 §4 결정 3, §6 S5).
+ * 재변환 후보 카드.
  *
  * **서버 응답은 후보 텍스트뿐이고 어떤 경우에도 자동으로 결과를 갈아 끼우지 않는다.**
  * 이 카드가 그 사실을 담당자에게 보여주는 유일한 자리다 — `replace`는 이미 확인된
@@ -39,7 +39,7 @@ export function ReconvertCandidateCard({
 }: ReconvertCandidateCardProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // 카드가 뜨는 순간 초점을 카드로 옮긴다(MEDIUM 리뷰 3). 재변환 버튼을 누른 뒤에도
+  // 카드가 뜨는 순간 초점을 카드로 옮긴다. 재변환 버튼을 누른 뒤에도
   // 초점이 그 버튼(원본 패널)에 그대로 남아 있으면 방금 도착한 후보를 화면을 보지
   // 않는 한 알아챌 수 없다.
   useEffect(() => {
@@ -54,7 +54,7 @@ export function ReconvertCandidateCard({
       aria-label={`원본 ${sourceUnitIndex + 1}번째 문단 재변환 후보`}
       className="rounded-[10px] border border-primary/40 bg-accent p-3"
     >
-      {/* 카드가 도착했다는 사실 자체를 낭독한다(MEDIUM 리뷰 3) — 위 초점 이동만으로는
+      {/* 카드가 도착했다는 사실 자체를 낭독한다 — 위 초점 이동만으로는
           카드가 뭔지(바꾸기/삽입) 미리 알리지 못한다. `role="status"`는 `aria-live="polite"`와
           같다. */}
       <p role="status" className="m-0 mb-2 text-xs font-semibold text-primary">

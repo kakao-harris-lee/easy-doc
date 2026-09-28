@@ -1,6 +1,5 @@
 /**
- * E22·E23 — 크레딧 계정 집행 켜짐 변형(402). 계획 `docs/plans/2026-09-07-credit-accounts.md`
- * §3 C2 후속.
+ * 크레딧 계정 집행 켜짐 변형(402).
  *
  * `credits.spec.ts`(E21)는 `easydoc.credits.enforced`를 **꺼둔** 스택에서 가입 부여·예약
  * 가시성만 잰다 — 켜면 다른 모든 e2e 스펙(문서 등록이 늘 202를 기대한다)이 402로
@@ -66,7 +65,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     }
 
     // 1) 100자는 0.1을 예약하여 0.9를 남긴다.
-    // (`X-Credit-Balance` — 크레딧 계정 계획 §2 결정 7, 스위치와 무관하게 202에도 실린다).
+    // (`X-Credit-Balance` — 스위치와 무관하게 202에도 실린다).
     const [firstResponse] = await registerDocument('E2E 크레딧 집행 확인용 안내 1')
     expect(firstResponse.status()).toBe(ROUTES.documentCreate.accepted)
     expect(firstResponse.headers()['x-credit-balance']).toBe('0.9')

@@ -19,10 +19,8 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * `invoice-handle` profile 의 실 배선 — 계획
- * `docs/plans/2026-09-07-invoice-requests.md` §3의 프로필 층 회귀 고정판.
- * `CreditGrantProfileTest`와 같은 자리다 — 인자 검증 자체는 `InvoiceHandleArgsTest`(Spring
- * 없이)가 이미 재므로 여기서는 **프로필 배선**(발급·거절·이미 처리됨·알 수 없는 id)만 잰다.
+ * `invoice-handle` 프로필의 실제 배선을 확인한다. 인자 검증은 [InvoiceHandleArgsTest]가
+ * 담당하므로 여기서는 발급, 거절, 이미 처리된 요청, 알 수 없는 id 경로를 확인한다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,

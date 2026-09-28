@@ -178,64 +178,8 @@ class SensitiveToStringReachTest {
         const val MIN_PRODUCTION_CLASSES = 60
 
         /**
-         * 소스 스캐너가 선언을 놓치지 않는지 확인하는 정확한 현재 개수.
-         * 선언을 추가하거나 제거할 때 실제 목록을 확인한 뒤 함께 갱신한다.
-         * ER-06 행동 안내 후보·저장·API·설정과 R4 표 관계·R5 검수 기록, R6 근거 있는
-         * 추가 설명(core·application·infrastructure·api), ER-15 그림 카탈로그(core의
-         * `Illustration`, application의 `IllustrationImage`, infrastructure의
-         * `IllustrationsProperties`, api의 `IllustrationCatalogResponse`·
-         * `IllustrationResponse` — `IllustrationAssetId`는 `data`/`value class`가 아닌
-         * 일반 class라 세지 않는다) 타입을 추가한 뒤의 선언 수다.
-         *
-         * 336 → 342 는 ER-16 그림 배치가 더한 data class 여섯이다 — core의
-         * `IllustrationPlacement`, application의 `StoredIllustrationPlacements`·
-         * `IllustrationPlacementsView`, api의 `IllustrationPlacementsRequest`·
-         * `IllustrationPlacementPayload`·`IllustrationPlacementsResponse`.
-         * `IllustrationPlacements`(core)는 정규화·불변식 검증이 있는 일반 class라 세지
-         * 않는다(`IllustrationCatalog`와 같은 판단).
-         *
-         * 342 는 그대로지만 **두 번 움직였다**(행동 안내 시작 경로, 2026-09-23).
-         *
-         * −1: `ProcessActionGuideJob.StartResult.Started` 를 `data class` 에서 일반 class 로
-         * 되돌렸다. 값 비교도 복사도 쓰지 않는 내부 제어 흐름 자리라 `data` 가 필요 없고, 이
-         * 타입이 든 `ActionGuideProviderCall` 은 주 생성자가 없어 이 탐지기가 표본을 만들지
-         * 못한다(`GeneratedToStringProbes.dataClassProbe` 는 민감 여부와 무관하게 **모든**
-         * 파라미터 자리를 채워 본다). **누출이 아니라 표본 생성이 이유다** — 컴파일러가 만든
-         * `toString()` 이 찍는 것은 람다의 식별자(`...$prepare$1@1b2c3d`)일 뿐 평문이 아니다.
-         *
-         * +1: 같은 `StartResult` 에 `PreparationFailed`(`data object`)를 더했다 — 입력을
-         * 만들지 못한 실패를 provider 시작 없이 끝내는 갈래다.
-         *
-         * 342 → 343 은 `ActionGuideJobAcquire.DeadLettered` 하나다(2026-09-23). 리스 재획득
-         * 상한을 넘긴 미시작 작업을 worker에 다시 넘기지 않고 실패로 정산하는 획득 결과이며,
-         * 기존 `Held`·`RecoverUnknown` 과 같은 `ActionGuideJobLease` 하나만 담는다.
-         *
-         * 343 → 351 은 R7 ER-17-1 그림 제안 core가 더한 여덟이다(2026-09-24, DB·Spring 없는
-         * 조각이라 전부 `core`의 `illustration.suggestion` 패키지에 있다) — 모델 넷
-         * (`IllustrationSuggestion`·`IllustrationSuggestionSet`·`IllustrationSuggestionSourceAnchor`·
-         * `IllustrationSuggestionBodyRange`), 검증 전 LLM 출력을 담는 `IllustrationSuggestionDraft`,
-         * 결과 갈래 셋(`IllustrationSuggestionAnalysis` 의 `Valid`·`AllDropped`·`InvalidStructure`,
-         * 마지막은 `data object`). 본문·인용을 든 타입은 전부 `toString()` 을 재정의해 개수만
-         * 낸다(명세 §4) — `altTextDraft` 가 `text` 토큰에 걸려 이 게이트의 표본 대상이다.
-         * `IllustrationSuggestionPurpose` 는 enum, `IllustrationSuggestionIdGenerator` 는
-         * `fun interface` 라 세지 않는다.
-         *
-         * 집중 검토 모델 두 개와 그림 제안 모델 서른셋을 함께 포함한다.
-         * 351 → 384 는 R7 ER-17-2 서버 조각이 더한 서른셋이다(2026-09-24). application 의
-         * 포트·뷰 스물다섯(`IllustrationSuggestionJobContext`·`StoredIllustrationSuggestionJob`·
-         * `StoredIllustrationSuggestionResult`·`IllustrationSuggestionJobLease`·
-         * `IllustrationSuggestionJobWorkerPolicy` 와 `IllustrationSuggestionJobInsert`·
-         * `IllustrationSuggestionJobAcquire`·`IllustrationSuggestionCreditReservation`·
-         * `IllustrationSuggestionRunResult` 의 갈래들, 서비스 뷰 넷, `ProcessIllustrationSuggestionJob
-         * .StartResult` 의 `data object` 셋), infrastructure 의 `IllustrationSuggestionProperties`,
-         * api 의 요청·응답 일곱이다. 본문 조각을 든 타입(`IllustrationSuggestionPayload`·
-         * `IllustrationSuggestionAnchorPayload`)은 `toString()` 을 재정의해 개수만 낸다.
-         * `IllustrationSuggestionGenerationInput`·`StartResult.Started` 는 일반 class 라 세지 않는다.
-         * 386 -> 399: ER-28 analysis adds five core values, two application views and six HTTP payloads.
-         * Source/body/reason-bearing values override toString; the general input class is not counted here.
-         * 399 -> 414: workflow adds six HTTP requests, two review values, two draft values,
-         * four apply/recovery values and the ValidAnalysis worker result. Probing rules are unchanged.
-         * 414 -> 415: explicit review signal HTTP payload replaces an untyped map.
+         * 소스 스캐너가 선언을 놓치지 않는지 확인하는 현재 개수다. 타입을 추가하거나 제거할 때
+         * 실제 선언 목록을 확인한 뒤 갱신한다.
          */
         const val EXPECTED_SOURCE_DECLARATIONS = 415
 

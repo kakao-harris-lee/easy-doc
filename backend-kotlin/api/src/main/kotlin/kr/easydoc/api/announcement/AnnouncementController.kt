@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * `GET /announcements/active` — 인증 사용자 전용(관리자가 아니어도 된다), 활성 공지
- * 최신순 최대 5건. `AppLayout`이 상단 배너로 보여준다(어드민 최소 계획 §2 결정 5).
+ * 최신순 최대 5건. `AppLayout`이 상단 배너로 보여준다.
  */
 @RestController
 @RequestMapping("/announcements")

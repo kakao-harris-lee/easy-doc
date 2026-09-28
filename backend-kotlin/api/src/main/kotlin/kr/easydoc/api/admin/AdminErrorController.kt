@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * `GET /admin/errors` — 기간 내 `failed` 변환을 `failure_code`별 건수 + 최근 50건으로.
- * 어드민 최소 계획 §2 결정 4. **본문·프롬프트는 어디에도 없다.** `from`·`to` 생략 시
+ * **본문·프롬프트는 어디에도 없다.** `from`·`to` 생략 시
  * 이번 달 1일~오늘([kr.easydoc.application.usage.UsageQueryService]와 같은 기본값).
  */
 @RestController

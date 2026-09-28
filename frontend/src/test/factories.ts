@@ -39,7 +39,7 @@ export function userResponse(overrides: Partial<UserResponse> = {}): UserRespons
     phone_verified: true,
     has_password: true,
     identities: [],
-    // 기본값은 일반 사용자다(2.25.0 신설) — 관리자 화면 테스트만 명시로 참을 덮어쓴다.
+    // 기본값은 일반 사용자다 — 관리자 화면 테스트만 명시로 참을 덮어쓴다.
     is_admin: false,
     ...overrides,
   }
@@ -87,9 +87,7 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     input_tokens: 10,
     output_tokens: 20,
     failure_code: null,
-    // 기본값은 null이다 — 대부분의 기존 테스트는 대응표를 다루지 않으므로 옛 단일
-    // 에디터 경로(§6 S3 "segment_map: null 렌더")를 그대로 탄다. 대응표가 필요한
-    // 테스트만 `segmentMap()`으로 명시해 덮어쓴다.
+    // 기본값은 null이다 — 대응표가 필요한 테스트만 `segmentMap()`으로 명시해 덮어쓴다.
     segment_map: null,
     content_revision: 1,
     review_capabilities: undefined,
@@ -158,7 +156,7 @@ export function workspaceContext(
   }
 }
 
-/** 목적별 사용량 한 줄(U2). */
+/** 목적별 사용량 한 줄. */
 export function purposeUsageItem(overrides: Partial<PurposeUsageItem> = {}): PurposeUsageItem {
   return {
     purpose: 'convert',
@@ -171,7 +169,7 @@ export function purposeUsageItem(overrides: Partial<PurposeUsageItem> = {}): Pur
   }
 }
 
-/** GET /workspaces/{id}/usage 응답(U2, 계약 2.20.0). 기본값은 비용을 아는 경우다. */
+/** GET /workspaces/{id}/usage 응답. 기본값은 비용을 아는 경우다. */
 export function workspaceUsage(
   overrides: Partial<WorkspaceUsageResponse> = {},
 ): WorkspaceUsageResponse {
@@ -190,7 +188,7 @@ export function workspaceUsage(
   }
 }
 
-/** `WorkspaceCreditsResponse.transactions` 항목(C1/C2). 기본값은 문서 등록 예약 1건. */
+/** `WorkspaceCreditsResponse.transactions` 항목. 기본값은 문서 등록 예약 1건. */
 export function creditTransaction(overrides: Partial<CreditTransaction> = {}): CreditTransaction {
   return {
     id: 't1',
@@ -205,8 +203,7 @@ export function creditTransaction(overrides: Partial<CreditTransaction> = {}): C
 }
 
 /**
- * GET /workspaces/{id}/credits 응답(C1/C2, 계약 2.22.0, `allowance`·`cycle_ends_at`는
- * 2.30.0, `cycle_started_at`은 2.35.0). 기본값은 집행이 켜진, 주기 없는 계정이다.
+ * GET /workspaces/{id}/credits 응답. 기본값은 집행이 켜진, 주기 없는 계정이다.
  */
 export function workspaceCredits(
   overrides: Partial<WorkspaceCreditsResponse> = {},
@@ -226,7 +223,7 @@ export function workspaceCredits(
   }
 }
 
-/** GET/POST /workspaces/{id}/invoice-requests 응답 항목(계약 2.24.0). 기본값은 요청됨 상태다. */
+/** GET/POST /workspaces/{id}/invoice-requests 응답 항목. 기본값은 요청됨 상태다. */
 export function invoiceRequest(
   overrides: Partial<InvoiceRequestResponse> = {},
 ): InvoiceRequestResponse {
@@ -283,7 +280,7 @@ export function documentSource(
  * 원문 패널에 꽂을 상태.
  *
  * 화면 테스트가 훅 대신 이 값을 직접 넘긴다 — 패널이 보는 것은 상태이지 그 상태를 만든
- * 요청이 아니다. 세 갈래를 따로 두는 이유는 §9다: 로딩·원문·실패는 서로 다른 화면이고,
+ * 요청이 아니다. 세 갈래를 따로 두는 이유는 로딩·원문·실패가 서로 다른 화면이기 때문이며,
  * 테스트에서도 그 셋을 헷갈리지 않게 이름으로 갈라 둔다.
  */
 export function sourceReady(
@@ -303,8 +300,6 @@ export function sourceFailed(
 ): DocumentSource {
   return { state: { status: 'failed', failure }, retry }
 }
-
-// --- 어드민 최소 (계약 2.25.0) ---
 
 /** `GET /admin/workspaces` 목록 항목. */
 export function adminWorkspaceSummary(
@@ -386,7 +381,7 @@ export function adminErrorItem(overrides: Partial<AdminErrorItem> = {}): AdminEr
   }
 }
 
-/** `GET /admin/errors`의 `llm_calls`(V18) provider 실패 건수 항목(계약 2.26.0). */
+/** `GET /admin/errors`의 `llm_calls` provider 실패 건수 항목. */
 export function adminProviderFailureCount(
   overrides: Partial<AdminProviderFailureCount> = {},
 ): AdminProviderFailureCount {
@@ -408,9 +403,6 @@ export function adminErrorsResponse(
     ...overrides,
   }
 }
-
-// `GET /admin/usage`(JSON 사용량 리포트)는 A2 화면 범위 밖이라 그 팩토리도 두지
-// 않는다 — `api/admin.ts`의 같은 결정 참고.
 
 /** `GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}` 응답 한 건. */
 export function announcementResponse(

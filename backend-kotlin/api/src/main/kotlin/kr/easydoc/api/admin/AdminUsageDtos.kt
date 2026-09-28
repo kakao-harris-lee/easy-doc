@@ -7,8 +7,8 @@ import kr.easydoc.core.privacy.CONTENT_MASK
 import java.math.BigDecimal
 
 /**
- * `GET /admin/usage` 응답 — `usage-report`(U3, CSV) 프로필과 같은 행을 JSON으로 낸다
- * (어드민 최소 계획 §2 결정 4). CSV는 여전히 그 프로필이 맡는다.
+ * `GET /admin/usage` 응답 — `usage-report`(U3, CSV) 프로필과 같은 행을 JSON으로 낸다.
+ * CSV는 여전히 그 프로필이 맡는다.
  */
 data class AdminUsageResponse(
     @get:JsonProperty("rows") val rows: List<AdminUsageRowResponse>,
@@ -27,8 +27,7 @@ data class AdminUsageResponse(
 
 data class AdminUsageRowResponse(
     /**
-     * 탈퇴한 계정이면 `null`이다(회원 탈퇴 계획 `docs/plans/2026-09-09-account-deletion.md`,
-     * V19 `llm_calls.user_id SET NULL`, 계약 2.28.0) — `workspace_id`와 같은 이유로
+     * 탈퇴한 계정이면 `null`이다(`llm_calls.user_id SET NULL`) — `workspace_id`와 같은 이유로
      * `anyOf: [uuid, null]`이다.
      */
     @get:JsonProperty("user_id") val userId: String?,

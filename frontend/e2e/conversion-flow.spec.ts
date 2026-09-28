@@ -26,7 +26,7 @@ const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사�
 /** 검수 저장 후 내려받기에 실릴 수정본. */
 const REVIEWED_TEXT = 'E2E 검수본입니다. 가까운 지사에 방문하세요.'
 
-/** 파일럿 게이트 ① 피드백 값. 자유 의견에는 문서 본문을 옮기지 않는다(폼 안내와 같은 규칙). */
+/** 피드백 값. 자유 의견에는 문서 본문을 옮기지 않는다(폼 안내와 같은 규칙). */
 const FEEDBACK_MINUTES = '25'
 const FEEDBACK_COMMENT = 'E2E 확인용 의견입니다.'
 
@@ -125,14 +125,14 @@ test.describe('변환 수직 흐름', () => {
     // 폴링이 관측한 상태는 `pending → processing → done` 순서를 거슬러 가지 않아야 한다.
     // 「pending 을 반드시 봤다」는 단언은 두지 않는다 — fake worker 가 첫 폴링보다 먼저 끝나면
     // 관측 배열이 `['done']` 하나뿐이어도 정상이고, 그 경우가 CI 에서 실제로 두 번 났다
-    // (2026-09-05·06). 검증 대상은 순서와 실패 부재이지 중간 상태의 목격이 아니다.
+    // 검증 대상은 순서와 실패 부재이지 중간 상태의 목격이 아니다.
     const statusOrder = ['pending', 'processing', 'done']
     const ranks = observedStatuses.map((status) => statusOrder.indexOf(status))
     expect(observedStatuses.at(-1)).toBe('done')
     expect(ranks.every((rank) => rank >= 0)).toBe(true) // 'failed' 포함 알 수 없는 상태 없음
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
 
-    // R1 검수 지원은 결과 화면을 연 것만으로 실행하지 않는다. 사용자가 패널을 펼친
+    // 검수 지원은 결과 화면을 연 것만으로 실행하지 않는다. 사용자가 패널을 펼친
     // 첫 순간 현재 content_revision으로 분석하고, 고정한 다섯 관계를 모두 보여 준다.
     const reviewSupportPath = `${conversionPath}/review-support`
     const [analysisResponse] = await Promise.all([
@@ -196,7 +196,7 @@ test.describe('변환 수직 흐름', () => {
       page.getByText('본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.'),
     ).not.toBeVisible()
 
-    // R5는 기존 변환·검수 흐름 위에 얹힌다. 기능 플래그를 켠 E2E 실행에서만
+    // 검수 기록은 기존 변환·검수 흐름 위에 얹힌다. 기능 플래그를 켠 E2E 실행에서만
     // 수정 기록을 펼쳐 서버 cursor 목록, 본문 revision 불일치, TXT 내려받기를 함께 잰다.
     if (process.env.EASYDOC_REVIEW_HISTORY_ENABLED === 'true') {
       const historyPath = `${conversionPath}/review-history`
@@ -232,7 +232,7 @@ test.describe('변환 수직 흐름', () => {
       await page.getByRole('button', { name: '수정 기록 접기', exact: true }).click()
     }
 
-    // 검수를 마친 자리에서 파일럿 판정용 피드백을 남긴다 — 백엔드는 done 이 아닌 변환에
+    // 검수를 마친 자리에서 피드백을 남긴다 — 백엔드는 done 이 아닌 변환에
     // 대해 409 로 막으므로, 이 단계는 검수 저장 뒤에 와야 한다.
     await page.getByRole('button', { name: '의견 보내기 (선택)', exact: true }).click()
     await page.getByLabel('조금 고쳐서 쓰겠다').check()

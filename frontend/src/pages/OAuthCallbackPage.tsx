@@ -117,7 +117,7 @@ export function OAuthCallbackPage() {
       redirectUri: parsed.redirectUri,
     })
       .then((me) => {
-        // 미검증 이메일 제공자(네이버)는 미인증 채로 가입할 수 있다(2026-09-05 결정) —
+        // 미검증 이메일 제공자는 미인증 채로 가입할 수 있다 —
         // 이메일·비밀번호 가입(`SignupPage`)과 같은 이유로 곧장 홈이 아니라 인증
         // 화면으로 보낸다.
         navigate(me.email_verified === false ? EMAIL_VERIFICATION_PATH : HOME_PATH, {
@@ -128,7 +128,7 @@ export function OAuthCallbackPage() {
         if (caught instanceof ApiError && caught.status === 409) {
           setView({
             kind: 'linked-elsewhere',
-            // 비밀번호를 전제하지 않는다(2.17.0 연결 해제 후속 조치) — 기존 계정이
+            // 비밀번호를 전제하지 않는다 — 기존 계정이
             // 소셜 로그인으로만 가입했을 수도 있다. "이메일로 로그인하면"은 그 계정에
             // 비밀번호가 있다고 단정하는 문구였다.
             message: `이미 이 이메일로 가입된 계정이 있습니다. 그 계정에 로그인한 뒤 계정 설정에서 ${providerName} 계정을 연결하세요.`,

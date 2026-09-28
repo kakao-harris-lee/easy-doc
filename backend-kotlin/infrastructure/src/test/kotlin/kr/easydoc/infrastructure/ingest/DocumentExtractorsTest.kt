@@ -187,10 +187,8 @@ class DocumentExtractorsTest {
             "(OLE2 4분기, Codex 재리뷰 지적)",
     )
     fun `POI 비검사 예외도 미상으로 떨어진다`() {
-        // BAT 섹터 수 필드를 파일 실제 크기로는 불가능한 값으로 바꾼 헤더 — POI 5.4.1 은 이
-        // 패치에 `IllegalArgumentException`(체크 예외가 아니다)을 던진다(픽스처 KDoc 참고,
-        // 사전 프로브로 확인). classify 가 IOException 만 잡던 예전 코드라면 이 예외가 그대로
-        // 새어 500 이 됐다.
+        // BAT 섹터 수를 불가능한 값으로 바꿔 POI가 unchecked 예외를 내게 한다. 추출기는 이를
+        // `UNKNOWN_OLE2`로 변환해야 한다.
         val corrupted = Ole2ContainerFixtures.corruptedBatSectorCount()
 
         assertThatThrownBy { extractors.extract("안내문.hwpx", corrupted) }
@@ -211,11 +209,11 @@ class DocumentExtractorsTest {
             "않고 RuntimeException 을 좁혀 잡는 이유를 표로 남긴다 (Codex stop-time 재리뷰 지적)",
     )
     fun `손상된 헤더 여덟 가지가 전부 DocumentExtractionException 으로 떨어진다`() {
-        // 각 행의 주석은 POI 5.4.1 이 그 패치에 실제로 던진 예외를 사전 프로브로 확인한 값이다.
+        // 각 행은 해당 헤더 변형에 대한 POI의 실제 처리 결과를 나타낸다.
         // 셋(미니 섹터 시프트·미니 스트림 컷오프·첫 DIFAT 섹터)은 POI 가 값을 그대로 받아들여
         // 예외가 나지 않는다 — 원본 WordDocument 스트림은 그대로 읽혀 LEGACY_DOC 로 떨어진다.
-        // "무엇도 새지 않는다"는 이 표의 목적은 만족하지만 UNKNOWN_OLE2 로 단정하면 거짓이라
-        // 실측한 문구를 그대로 적는다(정책을 넓히지 않는다).
+        // 예외가 나지 않는 변형은 `LEGACY_DOC`로 남기므로 결과를 임의로 `UNKNOWN_OLE2`로
+        // 넓히지 않는다.
         val cases =
             listOf(
                 // IOException("Unsupported blocksize  (2^31). Expected 2^9 or 2^12.")

@@ -1,4 +1,4 @@
-/** R4 — 명시적 헤더가 있는 DOCX를 변환해 확인된 표 관계만 원문 좌표로 표시한다. */
+/** 명시적 헤더가 있는 DOCX를 변환해 확인된 표 관계만 원문 좌표로 표시한다. */
 
 import { expect, test } from '@playwright/test'
 import { resolve } from 'node:path'

@@ -3,16 +3,12 @@ import type { SegmentConfidence, SegmentMapUnit } from '../api/types'
 /**
  * 결과 단위 목록·대응표(`unitMap`)를 함께 다루는 자리.
  *
- * `unitMap.length === units.length`는 `SegmentedResultEditor`가 지키는 구조적
- * 불변식이다(원 컴포넌트의 CRITICAL 리뷰). 이 불변식을 지켜야 하는 자리가 그
- * 컴포넌트 하나만이 아니게 됐다 — `ReviewEditor`의 재변환 채택(「바꾸기」·「이 위치에
- * 넣기」)도 `\n`이 섞인 후보 텍스트로 단위 수를 늘릴 수 있어(P0-4 S5 리뷰 HIGH 1) 같은
- * 규칙이 필요하다. 그래서 이 로직을 여기 한 곳에 모은다 — 두 곳에서 각자 다시 짜면
- * 불변식이 어긋나는 자리가 둘로 늘어난다.
+ * `unitMap.length === units.length`를 지키는 조작이 여러 컴포넌트에 걸쳐 있어, 단위
+ * 분할·병합·재변환 채택 로직을 이곳에 모은다.
  */
 
 /**
- * 대응표 항목에 「되돌리기」 기준선을 얹은 것(Part C-1).
+ * 대응표 항목에 「되돌리기」 기준선을 얹은 것.
  *
  * `baseline`은 이 단위의 텍스트가 화면을 열었을 때(또는 마지막으로 저장했을 때)
  * 무엇이었는지를 담는다 — 「되돌리기」 버튼이 그 값으로 되감는다. 분할·병합·재변환
@@ -89,7 +85,7 @@ export function alignUnitMap(map: ReviewUnit[], unitCount: number): ReviewUnit[]
 }
 
 /**
- * 서버가 준 대응표에 되돌리기 기준선을 붙인다(Part C-1).
+ * 서버가 준 대응표에 되돌리기 기준선을 붙인다.
  *
  * `text`(화면을 연 시점 또는 마지막으로 저장한 시점의 쉬운 글 전체)를 줄 단위로 쪼갠
  * 값이 각 단위의 `baseline`이 된다 — 그 뒤 사용자가 무엇을 치든 이 값과 비교해
@@ -158,8 +154,7 @@ export function spliceUnitText(
 }
 
 /**
- * 새 단위(들)를 `anchorIndex` 바로 뒤에 붙인다(재변환 「이 위치에 넣기」가 캐럿을 모를
- * 때, 계획 §6 S5).
+ * 새 단위(들)를 `anchorIndex` 바로 뒤에 붙인다.
  *
  * 텍스트에 `\n`이 있으면 여러 단위로 나뉘고, 전부 `sourceUnitIndex`에 `high`로
  * 대응시킨다 — `spliceUnitText`와 달리 이 새 단위들은 **어디서 왔는지 안다**(이

@@ -94,11 +94,8 @@ private fun codePointsToString(
 /**
  * 추출기와 **같은 순서로** 텍스트 덩어리를 모으는 순회.
  *
- * 추출기(`ingest/DocxExtractor.elementBlocks`·`ingest/HwpxExtractor.SectionBlocks`)를 그대로
- * 쓰지 못하는 이유는 둘이 필요로 하는 것이 다르기 때문이다: 추출기는 **문자열을 흘려보내며**
- * 길이 예산을 검사하고 빈 블록까지 순서대로 내야 하지만(오라클 대조), 반영은 나중에 고쳐 쓸
- * **노드를 쥐고 있어야** 한다. 대신 순서가 갈리지 않는다는 것은 문서로 두지 않고 테스트가
- * 지킨다 — `PackagedOriginalReflectorTest` 가 fixture 마다 「추출이 본 차례에 그대로 썼는가」를 잰다.
+ * 추출기는 문자열을 흘려보내지만 반영기는 나중에 고쳐 쓸 **노드를 쥐고 있어야** 하므로
+ * 별도 순회를 사용한다. 순서가 갈리지 않는지는 `PackagedOriginalReflectorTest` 가 확인한다.
  */
 internal class TextUnitWalk(
     /** 덩어리를 끊는 요소의 로컬 이름 — 두 형식 모두 `p` 다. */

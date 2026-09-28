@@ -9,15 +9,7 @@ import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.infrastructure.ingest.ZipBudget
 
-/**
- * 형식별 원본 반영. **판정과 내보내기가 같은 자리 맞춤을 지난다** — 두 팔이 [linesOf] 와
- * [planOf] 를 함께 쓰고, 그 사이에 규칙이 하나도 갈라지지 않는다.
- *
- * **`map` 을 이 조각(S6-2)이 소비한다** — 계획 §10.3 S6-1 은 core·application 까지만 닫았고
- * (받되 무시), 여기서부터 [projectedMapOf] 로 빈 줄을 투영해 `docx`·`hwpx` 반영기에 넘긴다.
- * 두 팔이 넘겨받는 것은 이미 투영을 지난 값이라 [ReflectionPlan.planOf] 의 전제 검사는
- * `sourceUnitCount` 하나만 남는다(계획 §10.2 3항).
- */
+/** 형식별 원본 반영. 판정과 내보내기가 같은 자리 맞춤과 줄 투영 규칙을 공유한다. */
 class PackagedOriginalReflector : OriginalStructureReflector {
     private val docx = DocxOriginalReflector()
     private val hwpx = HwpxOriginalReflector()
@@ -45,14 +37,7 @@ class PackagedOriginalReflector : OriginalStructureReflector {
 
             SourceFormat.HWPX -> guardedBudget(original) { hwpx.reflect(it, title, lines, projected, mapAttempted) }
 
-            // 같은 형식으로 내보낼 수단이 없다(PDF) 또는 원본이 없다(붙여넣기).
-            // 부르는 쪽이 이 갈래를 먼저 걸러야 한다 — 여기서 다른 형식으로 접지 않는다.
-            //
-            // **TXT 도 여기 든다 — 평문에는 반영할 원본 구조가 애초에 없다.** docx·hwpx 의
-            // 반영은 "원본 파일의 문단 슬롯에 검수본을 끼워 넣는다"는 뜻인데, 평문 파일에는
-            // 유지할 서식도 슬롯도 없어 그 개념 자체가 성립하지 않는다. `DocumentService` 가
-            // TXT 업로드의 원본 바이트를 저장하지 않으므로(붙여넣기와 같은 이유) 이 갈래는
-            // 실제로는 호출되지 않는다 — `when` 이 `SourceFormat` 전부를 요구해서 남긴 방어선이다.
+            // 원본 구조를 반영할 수 없는 형식은 별도 변환 없이 건너뛴다.
             SourceFormat.PDF, SourceFormat.TEXT, SourceFormat.TXT -> null
         }
     }
@@ -69,10 +54,7 @@ class PackagedOriginalReflector : OriginalStructureReflector {
             SourceFormat.PDF, SourceFormat.TEXT, SourceFormat.TXT -> null
         }
 
-    /**
-     * [map] 을 [lines] 색인에 맞춰 투영한다([projectToContentLines]) — [map] 이 `null` 이면
-     * 투영할 것이 없어 `null` 그대로다(오늘의 차례 짝짓기, `mapAttempted = false` 로 이어진다).
-     */
+    /** [map] 을 [lines] 색인에 맞춰 투영한다. */
     private fun projectedMapOf(
         body: String,
         lines: List<String>,

@@ -15,8 +15,8 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * `GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}` — 어드민 최소
- * 계획 §2 결정 5. 사용자용 `GET /announcements/active`는
+ * `GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}`. 사용자용
+ * `GET /announcements/active`는
  * [kr.easydoc.api.announcement.AnnouncementController]가 맡는다(관리자 전용이 아니다).
  */
 @RestController
@@ -40,7 +40,7 @@ class AdminAnnouncementController(private val service: AnnouncementService) {
     /**
      * `body`·`active` 둘 다 없으면(명시적 `null`도 생략과 같다 — 계약 참고) 아무것도 바꾸지
      * 않는다 — `AnnouncementService.update`가 조기 반환하므로 여기서도 감사 로그를
-     * 남기지 않는다(독립 리뷰 지적, 실제로 바뀐 변경만 로그에 남긴다).
+     * 남기지 않는다. 실제로 바뀐 변경만 로그에 남긴다.
      */
     @PatchMapping("/{id}", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun update(

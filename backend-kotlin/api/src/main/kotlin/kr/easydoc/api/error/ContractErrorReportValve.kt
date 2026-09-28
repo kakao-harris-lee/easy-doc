@@ -55,9 +55,7 @@ class ContractErrorReportValve : ErrorReportValve() {
                 response.finishResponse()
             }
         } catch (exception: IOException) {
-            // 오류 응답을 쓰다 실패했다. 여기서 더 할 수 있는 일이 없고, 다시 던지면
-            // 컨테이너가 같은 실패를 반복한다. 예외 메시지에 무엇이 담길지 알 수 없으므로
-            // 타입 이름만 남긴다(프로젝트 CLAUDE.md 보안 규칙).
+            // 오류 응답을 쓰다 실패하면 다시 던지지 않고 예외 타입만 기록한다.
             LoggerFactory
                 .getLogger(ContractErrorReportValve::class.java)
                 .debug("계약 오류 본문을 쓰지 못했다: {}", exception::class.java.simpleName)

@@ -23,9 +23,8 @@ import java.util.UUID
 
 /**
  * `GET /admin/workspaces`·`GET /admin/workspaces/{workspace_id}`·
- * `POST /admin/workspaces/{workspace_id}/credits` — 어드민 최소 계획
- * `docs/plans/2026-09-07-admin-minimum.md` §2 결정 4 A1. `x-admin-only: true`(계약
- * 2.25.0) — [kr.easydoc.api.admin.AdminAccessInterceptor]가 걸린다.
+ * `POST /admin/workspaces/{workspace_id}/credits` — `x-admin-only: true`(계약)이며
+ * [kr.easydoc.api.admin.AdminAccessInterceptor]가 검사한다.
  */
 @RestController
 @RequestMapping("/admin/workspaces")
@@ -65,7 +64,7 @@ class AdminWorkspaceController(
 
     /**
      * 크레딧 수동 조정 — `credit-grant` CLI(C2)와 같은 경로를 재사용하고
-     * `actor_user_id`(V17)에 요청한 관리자 id를 남긴다(어드민 최소 계획 §2 결정 3).
+     * `actor_user_id`에 요청한 관리자 id를 남긴다.
      */
     @PostMapping("/{workspace_id}/credits", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun adjustCredits(

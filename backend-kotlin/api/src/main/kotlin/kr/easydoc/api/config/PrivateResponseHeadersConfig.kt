@@ -37,7 +37,7 @@ class PrivateResponseHeadersConfig {
         /** 체인 맨 앞. `CorsConfig` 는 이보다 뒤([CORS_FILTER_ORDER])에 둔다. */
         const val PRIVATE_HEADER_FILTER_ORDER: Int = Ordered.HIGHEST_PRECEDENCE
 
-        /** CORS 필터 순서. 헤더 필터 바로 뒤이고, Phase 3 에서 붙을 인증 필터보다는 앞이다. */
+        /** CORS 필터 순서. 헤더 필터 바로 뒤에 둔다. */
         const val CORS_FILTER_ORDER: Int = Ordered.HIGHEST_PRECEDENCE + 10
 
         /** ERROR·ASYNC 디스패치까지 건다. */

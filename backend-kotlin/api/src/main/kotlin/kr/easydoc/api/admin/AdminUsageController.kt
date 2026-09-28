@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * `GET /admin/usage` — `usage-report`(U3) 프로필의 행을 JSON으로(워크스페이스별). CSV는
- * 계속 그 프로필이 맡는다(어드민 최소 계획 §2 결정 4).
+ * 계속 그 프로필이 맡는다.
  */
 @RestController
 @RequestMapping("/admin/usage")

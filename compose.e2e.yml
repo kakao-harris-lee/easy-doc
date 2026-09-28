@@ -1,40 +1,11 @@
-# Playwright E2E 전용 override — 유료 LLM 없이 worker 변환을 끝낸다.
+# Playwright E2E 전용 override. LLM·메일은 fake를 사용해 외부 호출을 막는다.
+# e2e profile은 인증 코드를 읽는 진단 엔드포인트를 노출하므로 운영에서 켜지 않는다.
 #
-# `EASYDOC_LLM_PROVIDER=fake`·`EASYDOC_MAIL_PROVIDER=fake` 는 **api·worker 에만** 넣는다.
-# 로컬 `.env`가 SMTP를 선택해도 E2E 인증 메일과 완료 알림은 외부로 발송하지 않는다.
+# 선택 기능은 이 스택에서만 켠다. 행동 안내·그림 제안 worker는 fake profile을 쓴다.
+# 그림 제안 단가 0은 이용량 거래 없이 분석을 허용한다. 미설정 시에는 503이다.
 #
-# `backend-api` 의 `command` 는 `compose.yml` 의 `--spring.profiles.active=api,local` 에
-# `e2e` 를 얹어 덮어쓴다 — `E2eMailInboxController`(`/__e2e/mail/latest`)와
-# `E2eSmsOutboxController`(`/__e2e/sms/latest`)가 이 profile 에서만 조립되고, Playwright
-# 스위트가 그 진단 엔드포인트로 가입 직후 보낸 이메일 인증 코드와 휴대폰 인증 요청 뒤
-# 보낸 SMS 코드를 각각 읽는다(`easydoc.sms.provider` 를 따로 지정하지 않으므로 기본값
-# `fake` 그대로다). `api`/`local`/prod 배포는 이 profile 을 켜지 않으므로 그 엔드포인트가
-# 없다(`E2eMailInboxControllerProfileTest`·`E2eSmsOutboxControllerProfileTest`).
-#
-# `EASYDOC_DICTIONARY_LOOKUP_ENABLED=true` 는 `backend-api`에만 얹는다(P0-5 조각 6) —
-# `DictionaryLookupProperties.enabled` 기본값이 꺼짐이라 그대로 두면 `POST
-# /dictionary/lookup`이 422로 막혀 `dictionary-lookup.spec.ts`가 통과할 수 없다. 값 자체는
-# `application.yml` 기본값을 바꾸지 않고 이 override 로만 켠다.
-#
-# `EASYDOC_CREDITS_SIGNUP_GRANT=1000`은 `credits.spec.ts`(E21)가 가입 직후 잔액을
-# 확인·소비할 수 있게 한다. 운영 기본값은 집행 켜짐이므로, 이 폭넓은 회귀 스택만
-# `EASYDOC_CREDITS_ENFORCED=false`를 명시한다. 켜면 잔액이 없던 기존 스펙(문서 등록이 늘
-# 202를 기대한다)이 전부 402로 깨진다. 집행 경계는 compose.e2e-enforced.yml의 E22·E23이
-# 별도로 검증한다.
-#
-# `EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER`는 `EASYDOC_CREDITS_SIGNUP_GRANT > 0`일 때
-# 필수다(가입 크레딧 후속 §7 결정 3, 기동 자기점검) — `.env`가 실제 배포용 값을 비워
-# 두므로(`.env.example`) 이 스택 전용 값을 여기서 채운다. e2e 전용이라 회전 걱정이 없다.
-# R2 행동 안내는 이 E2E 스택에서만 켠다. worker의 action-guide-fake profile은
-# 외부 provider 호출 없이 고정 후보를 만들어 사용자 화면의 전체 흐름을 검증한다.
-#
-# `EASYDOC_EXPLANATIONS_ENABLED=true`는 R6 용어 설명 패널을 이 E2E 스택에서만 켠다
-# (`explanations.spec.ts`). 운영 기본값은 꺼짐이다.
-# `EASYDOC_ILLUSTRATIONS_ENABLED=true`는 R7 그림 카탈로그를 이 E2E 스택에서만 켠다 —
-# 실제 리소스 카탈로그를 그대로 쓰므로 별도 fake가 없다. 운영 기본값은 꺼짐이다.
-# R7 ER-17 문맥 기반 그림 제안도 이 스택에서만 켠다. worker의 illustration-suggestion-fake
-# profile이 외부 provider 호출 없이 결정적인 제안을 만들며, 이용량 단가를 0으로 둬 이용량
-# 거래 행 없이 전체 흐름을 검증한다(단가 미설정은 503이라 0과 다르다). 운영 기본값은 꺼짐이다.
+# 기본 스펙은 크레딧 집행 꺼짐을 전제로 한다. 집행 경계는 compose.e2e-enforced.yml로 검증한다.
+# 가입 부여가 양수이면 pepper가 필수이므로 이 스택 전용 값을 지정한다.
 
 services:
   backend-api:
@@ -49,7 +20,6 @@ services:
       EASYDOC_LLM_PROVIDER: fake
       EASYDOC_MAIL_PROVIDER: fake
       EASYDOC_DICTIONARY_LOOKUP_ENABLED: "true"
-      # R1 검수 지원은 운영 기본값이 꺼져 있다. 브라우저 수직 흐름에서만 명시적으로 켠다.
       EASYDOC_REVIEW_SUPPORT_ENABLED: "true"
       EASYDOC_ACTION_GUIDE_ENABLED: "true"
       EASYDOC_ACTION_GUIDE_ANALYSIS_ENABLED: "true"

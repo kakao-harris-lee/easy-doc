@@ -47,24 +47,13 @@ import { WorkspaceMenu } from './WorkspaceMenu'
 import { CONTAINER } from './layoutStyles'
 import { Button } from './ui/Button'
 
-/**
- * 본문 컨테이너 규격 (DESIGN.md §5.2, §10).
- *
- * 최대 너비 1200px, 좌우 여백은 모바일 16 / 태블릿 24 / 데스크톱 32px다. 중단점은
- * §10의 구간(768~1279 / 1280 이상)과 같은 뜻으로 `md`·`xl`을 쓴다 — Tailwind 기본
- * `sm`(640)은 §10의 어느 경계와도 맞지 않아 태블릿 여백이 한 구간 일찍 커진다.
- *
- * 검수 화면만 1360px까지 넓힐 수 있다는 예외(§5.2)가 아직 남아 있어 한 곳에 모아 둔다 —
- * 그때 넓히는 것은 이 상수와 그것을 쓰는 `main` 한 곳이다.
- */
+/** 본문 컨테이너 규격. 최대 너비 1200px, 좌우 여백은 16/24/32px이다. */
 export { CONTAINER } from './layoutStyles'
 
 /**
  * 주요 메뉴 링크의 모양.
  *
- * 활성 표시에 옅은 배경과 굵은 글씨를 함께 쓴다(§5.1). 예전에는 양쪽 다
- * `font-semibold`라 굵기 대비가 실제로는 없었고 색만 달랐다 — 색만으로 상태를 알리면
- * 색각 이상 사용자에게는 표시가 사라진다.
+ * 활성 표시에 옅은 배경과 굵은 글씨를 함께 쓴다. 색만으로 상태를 알리지 않는다.
  *
  * 높이는 44px 이상으로 둔다(§10 터치 대상 최소치).
  */
@@ -80,7 +69,7 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 /**
  * 계정 메뉴 — 로그인 이메일과 로그아웃.
  *
- * 이메일을 머리말에 상시 노출하지 않고 이 메뉴 안으로 넣는다(§5.1). 이메일은 자기
+ * 이메일을 머리말에 상시 노출하지 않고 이 메뉴 안으로 넣는다. 이메일은 자기
  * 계정을 확인할 때만 필요한 값인데, 늘 펼쳐 두면 매 화면에서 읽히는 시각적 소음이 된다.
  *
  * Fluent UI `Menu` 대신 직접 만든다. 저장소의 Fluent 사용처는 테마 제공자 하나뿐이고
@@ -89,18 +78,15 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * 하나뿐이라(disclosure), 메뉴 역할이 요구하는 화살표 이동 규약까지 빌릴 이유가 없다.
  *
  * 대신 초점 규약은 직접 지킨다: 펼치면 첫 행동으로 초점을 옮기고, Esc로 접으면 트리거로
- * 되돌리며, 초점이 밖으로 나가거나 바깥을 누르면 접는다(§11).
+ * 되돌리며, 초점이 밖으로 나가거나 바깥을 누르면 접는다.
  *
  * disclosure를 골랐으므로 속성도 disclosure만 쓴다 — `aria-expanded` + `aria-controls`가
  * 전부이고 `aria-haspopup`은 쓰지 않는다. `aria-haspopup="true"`는 `"menu"`와 동의어라
  * 낭독기에 "메뉴가 열린다"고 알리는데, 여기서 열리는 패널에는 `role="menu"`도
- * `menuitem`도 없다 — 약속한 역할이 실재하지 않으면 그 예고가 곧 거짓말이 된다.
- * 패널에 `role="menu"`를 붙이는 반대 방향은 더 나쁘다: 계정 이메일 `<p>`가 `menuitem`이
- * 아니라 곧바로 규격 위반이고, 화살표·Home/End 이동 규약까지 딸려 온다.
+ * `menuitem`도 없다 — 약속한 역할이 실재하지 않으면 그 예고가 거짓말이 된다.
  */
 /**
- * 계정 메뉴·모바일 메뉴가 함께 쓰는 "비밀번호 만들기" 자리(2.19.0 신설, backlog §1.4
- * 다음 조각).
+ * 계정 메뉴·모바일 메뉴가 함께 쓰는 "비밀번호 만들기" 자리.
  *
  * `SetPasswordForm`은 이메일이 인증된 계정만 부를 수 있다(`POST /auth/password`가
  * 403으로 거절한다, `PasswordService.set` KDoc — 네이버처럼 미검증 이메일로도 계정을
@@ -241,9 +227,7 @@ function AccountMenu({
             <LogOut className="size-4" aria-hidden="true" />
             로그아웃
           </Button>
-          {/* 계정 설정(회원 탈퇴) 진입점 — 계획 `docs/plans/2026-09-09-account-deletion.md`.
-              다른 이동 링크와 같은 이유로 저장하지 않은 수정을 먼저 확인하고, 확인을
-              통과하면 메뉴를 닫는다. */}
+          {/* 저장하지 않은 수정이 있으면 확인한 뒤 메뉴를 닫는다. */}
           <Link
             to={ACCOUNT_SETTINGS_PATH}
             className="mt-2 flex min-h-11 w-full items-center gap-2 rounded-md px-3 font-medium text-foreground hover:bg-secondary"
@@ -259,13 +243,7 @@ function AccountMenu({
             <Settings className="size-4" aria-hidden="true" />
             계정 설정
           </Link>
-          {/* 관리자 화면 진입점 — `is_admin`이 참일 때만 보인다(어드민 최소 계획 §2
-              결정 6). 실제 접근은 서버(`AdminGuard`)가 매 요청 다시 판정한다. 로그아웃
-              뒤에 둔다 — 그래야 메뉴가 열릴 때 초점이 가는 "첫 행동"(firstItemRef)이
-              여전히 로그아웃이고, 이 링크 유무로 그 규약이 흔들리지 않는다. 다른
-              이동 링크(로고·주요 메뉴)와 같은 이유로 저장하지 않은 수정을 먼저
-              확인하고, 확인을 통과하면 메뉴를 닫는다(그대로 두면 이 컴포넌트는
-              `AppLayout`과 함께 살아남아 라우트가 바뀐 뒤에도 열린 채로 남는다). */}
+          {/* 관리 링크는 표시값으로만 노출하고, 실제 접근은 서버가 다시 판정한다. */}
           {isAdmin && (
             <Link
               to={ADMIN_PATH}

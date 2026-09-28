@@ -21,14 +21,14 @@ interface Stage {
   hint: string
 }
 
-/** DESIGN.md §6.3이 요구하는 세 단계. 순서가 곧 사용자가 이해하는 작업 순서다. */
+/** 사용자가 이해할 작업 순서에 맞춘 세 단계. */
 const STAGES: readonly Stage[] = [
   { label: '문서 접수', hint: '문서를 받아 변환 차례에 넣습니다.' },
   { label: '쉬운 글 변환', hint: '쉬운 문장으로 다시 씁니다.' },
   { label: '검수 준비', hint: '고칠 수 있는 검수 화면을 엽니다.' },
 ]
 
-/** 상태 이름. 색만으로 상태를 알리지 않기 위해 문구를 항상 함께 낸다(§8.1). */
+/** 색만으로 상태를 알리지 않도록 문구를 항상 함께 낸다. */
 const STATE_TEXT: Record<StageState, string> = {
   done: '완료',
   current: '진행 중',
@@ -38,8 +38,6 @@ const STATE_TEXT: Record<StageState, string> = {
 
 /**
  * 서버 상태 → 세 단계의 표시 상태.
- *
- * ## 왜 진행률처럼 채우지 않는가 (되돌리지 마라)
  *
  * 서버가 주는 상태는 `pending`·`processing`·`done`·`failed` 넷뿐이다(계약
  * `ConversionStatus`). 그 안의 어느 지점인지는 응답에 싣지 않는다. 그래서 진행률
@@ -54,8 +52,7 @@ const STATE_TEXT: Record<StageState, string> = {
  * `검수 준비`는 이 화면에서 절대 `done`이 되지 않는다 — `done` 상태가 되는 순간
  * 페이지가 검수 에디터로 바뀌기 때문이다.
  *
- * 진행률 막대나 퍼센트를 다시 넣고 싶다면, 먼저 서버가 내부 단계를 응답에 실어야 한다
- * (계약 변경). 계약이 그대로인 채로 화면만 채우는 변경은 되돌려야 할 변경이다.
+ * 진행률 막대나 퍼센트를 넣으려면 서버가 내부 단계를 응답에 실어야 한다.
  */
 function stageStates(status: StageStatus): StageState[] {
   if (status === 'processing') {
@@ -64,11 +61,11 @@ function stageStates(status: StageStatus): StageState[] {
   if (status === 'pending') {
     return ['done', 'next', 'waiting']
   }
-  // 첫 응답 전 — 접수됐는지조차 아직 확인하지 못했다.
+  // 첫 응답 전에는 접수 여부도 확인하지 못했다.
   return ['current', 'next', 'waiting']
 }
 
-/** 상태별 표식. 반복 모션은 화면 전체에서 하나만 쓰므로(§12) 여기서는 돌리지 않는다. */
+/** 상태별 표식. 반복 모션은 화면 전체에서 하나만 사용한다. */
 const MARKER_CLASS: Record<StageState, string> = {
   done: 'border-success bg-success text-success-foreground',
   current: 'border-primary bg-accent text-primary',
@@ -91,10 +88,10 @@ const STATE_TEXT_CLASS: Record<StageState, string> = {
 }
 
 /**
- * 변환 단계 표시(§6.3).
+ * 변환 단계 표시.
  *
  * 목록 자체는 live region이 아니다 — 상태 변화는 이 화면의 단 하나뿐인 `role="status"`
- * 문장이 알린다. 목록까지 live로 두면 같은 사실을 두 번 낭독한다(§11).
+ * 문장이 알린다. 목록까지 live로 두면 같은 사실을 두 번 낭독한다.
  */
 export function ConversionStages({ status }: { status: StageStatus }) {
   const states = stageStates(status)

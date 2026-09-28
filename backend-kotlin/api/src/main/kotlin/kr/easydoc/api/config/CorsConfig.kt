@@ -64,11 +64,9 @@ class CorsConfig {
         /**
          * 안전 목록 밖의 응답 헤더는 명시하지 않으면 브라우저 JS 가 읽지 못한다. 계약
          * `x-cors.expose_headers`와 같은 목록이다(`ContractHeaderDeclarationTest.INLINE_HEADERS`가
-         * 같은 일곱 개를 인구조사한다) — **2.22.0 정정**: `Retry-After`·
-         * `X-Remaining-Call-Budget`·`X-Credit-Balance`·`X-Credits-Required` 넷이
-         * 이전까지 이 목록에 없어 교차 출처(Compose: 8080 → 8100)에서 `client.ts`의
-         * 해당 헤더 파싱이 늘 `null`이었다(계약 changelog 2.22.0 ⑹). **2.31.0**은
-         * `X-Personal-Data-Kinds`(개인정보 경고용 검출)를 같은 이유로 더한다.
+         * 같은 일곱 개를 인구조사한다). `Retry-After`·`X-Remaining-Call-Budget`·
+         * `X-Credit-Balance`·`X-Credits-Required`·`X-Personal-Data-Kinds`도 브라우저에서
+         * 읽어야 하므로 명시한다.
          */
         val EXPOSED_RESPONSE_HEADERS: List<String> =
             listOf(

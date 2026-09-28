@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets
 /**
  * `Ole2Diagnosis` 가 실제로 파싱하는 것과 같은 모양의 **진짜 OLE2 복합 문서**를 POIFS 로
  * 만든다 — OLE2 매직 바이트 뒤에 스트림 이름을 이어붙인 손 조립 블롭은 디렉터리 구조가 없어
- * POIFS 파싱에 실패하고 `UNKNOWN_OLE2` 로 떨어진다(계획 §5 D-12, Codex 리뷰).
+ * POIFS 파싱에 실패하고 `UNKNOWN_OLE2` 로 떨어진다.
  *
  * `infrastructure`·`api` 양쪽 테스트가 이 빌더를 함께 쓴다. 공개 시그니처에 POI 타입을
  * 노출하지 않는다 — `api` 는 `testFixtures(project(":infrastructure"))` 로만 이 산출물을
@@ -50,8 +50,7 @@ object Ole2ContainerFixtures {
      * 유효한 최소 OLE2 컨테이너의 헤더를 손상시켜 POIFS 가 **비검사(unchecked) 예외**를
      * 던지게 만든다 — OLE2 헤더의 BAT(FAT) 섹터 수 필드(오프셋 0x2C, 리틀엔디안 4바이트)를
      * 파일 실제 크기로는 있을 수 없는 값으로 바꾼다. `Ole2Diagnosis.readFacts` 가 `IOException`
-     * 뿐 아니라 이런 예외도 잡아 `UNKNOWN_OLE2` 로 떨어뜨리는지 재는 픽스처다(Codex 재리뷰
-     * 지적).
+     * 뿐 아니라 이런 예외도 잡아 `UNKNOWN_OLE2` 로 떨어뜨리는지 재는 픽스처다.
      *
      * POI 5.4.1 이 이 패치에 실제로 던지는 예외는 사전 프로브로 확인했다:
      * `IllegalArgumentException("Unable read a >2gb file via an InputStream")` — BAT 섹터
@@ -66,8 +65,7 @@ object Ole2ContainerFixtures {
      * POI 5.4.1 이 사전 프로브로 실제 던진 예외: `IndexOutOfBoundsException("Block 2147483647
      * not found")` — `IllegalArgumentException`·`IllegalStateException` 어느 쪽도 아니다.
      * `Ole2Diagnosis.readFacts` 가 이 두 타입만 나열해 잡았다면 이 패치는 여전히 새어 500 이
-     * 됐을 것이다(Codex stop-time 재리뷰 지적 — 그래서 [readFacts] 는 이제 이 둘을 나열하지
-     * 않고 `RuntimeException` 을 좁혀 잡는다).
+     * 됐을 것이다. [readFacts] 는 이 둘을 포함한 `RuntimeException` 을 좁혀 잡는다.
      */
     fun corruptedFirstDirectorySector(streamName: String = "WordDocument"): ByteArray =
         ole2With(streamName).also { writeIntLe(it, FIRST_DIRECTORY_SECTOR_OFFSET, ABSURD_SECTOR_LOCATION) }

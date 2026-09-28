@@ -8,25 +8,24 @@ object AuthenticatedEndpoints {
     val PROTECTED_PATH_PATTERNS: List<String> =
         listOf(
             "/auth/me",
-            // 이메일 인증 2종(backlog §1.4 P0-1/P0-3) — 대상 이메일은 토큰의 사용자로 고정된다.
+            // 이메일 인증 2종(P0-1/P0-3) — 대상 이메일은 토큰의 사용자로 고정된다.
             "/auth/email-verification/request",
             "/auth/email-verification/confirm",
-            // 국내 010 휴대폰 인증 2종(2.37.0) — 로그인 계정에만 인증 상태를 붙인다.
+            // 국내 010 휴대폰 인증 2종 — 로그인 계정에만 인증 상태를 붙인다.
             "/auth/phone-verification/request",
             "/auth/phone-verification/confirm",
-            // 비밀번호 설정(backlog §1.4 후속, 계약 2.19.0) — 대상 계정은 토큰의 사용자로
+            // 비밀번호 설정 — 대상 계정은 토큰의 사용자로
             // 고정된다. 재설정(`/auth/password-reset/{request,confirm}`)은 인증 전 호출이라
             // 여기 없다 — 계약 `security: []`.
             "/auth/password",
-            // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) — 대상
-            // 계정은 토큰의 사용자로 고정된다.
+            // 회원 탈퇴 — 대상 계정은 토큰의 사용자로 고정된다.
             "/auth/me/deletion",
-            // 명시적 계정 연결 2종(2.10.0, backlog §1.4) — 대상 계정은 토큰의 사용자로 고정된다.
+            // 명시적 계정 연결 2종 — 대상 계정은 토큰의 사용자로 고정된다.
             // `/auth/oauth/{provider}/start`·`/callback`(공개, security: [])과 경로가
             // 갈리므로 인터셉터 패턴이 로그인 흐름을 잠그지 않는다.
             "/auth/oauth/{provider}/link/start",
             "/auth/oauth/{provider}/link/callback",
-            // 연결 해제(2.17.0, backlog §1.4 다음 조각) — 경로가 위 둘과 세그먼트 수가 달라
+            // 연결 해제 — 경로가 위 둘과 세그먼트 수가 달라
             // 인터셉터 패턴이 겹치지 않는다. 대상 계정은 여기서도 토큰의 사용자로 고정된다.
             "/auth/oauth/{provider}/link",
             // `GET`·`PUT /conversions/{conversion_id}` 와 `GET .../export` 는 경로가 다르다.
@@ -73,30 +72,30 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/illustration-suggestion-jobs",
             "/conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}",
             "/conversions/{conversion_id}/illustration-suggestions",
-            // 재변환(P0-4 S4, 2.14.0)도 같은 사유로 **따로** 넣는다.
+            // 재변환(P0-4 S4)도 같은 사유로 **따로** 넣는다.
             "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",
-            // `DELETE /documents/{document_id}` 를 만든 커밋이 더했다(위 규약).
+            // 삭제 경로도 상위 경로가 덮지 않으므로 따로 넣는다.
             "/documents/{document_id}",
             // 원문 조회도 같은 사유로 **따로** 넣는다 — 위 항목이 하위 경로를 덮지 않는다.
             "/documents/{document_id}/source",
             "/workspaces",
             "/workspaces/{workspace_id}",
-            // 사용량 집계(2.20.0, U2)도 같은 사유로 **따로** 넣는다 — 위 항목이 하위
+            // 사용량 집계(U2)도 같은 사유로 **따로** 넣는다 — 위 항목이 하위
             // 경로를 덮지 않는다.
             "/workspaces/{workspace_id}/usage",
-            // 크레딧 계정 조회(2.22.0, C1)도 같은 사유로 **따로** 넣는다.
+            // 크레딧 계정 조회(C1)도 같은 사유로 **따로** 넣는다.
             "/workspaces/{workspace_id}/credits",
             "/workspaces/{workspace_id}/subscription",
             "/workspaces/{workspace_id}/subscription/checkout",
             "/workspaces/{workspace_id}/subscription/billing",
             "/workspaces/{workspace_id}/subscription/billing/complete",
             "/workspaces/{workspace_id}/payments/{id}/receipt",
-            // 세금계산서 요청 기록(2.24.0)도 같은 사유로 **따로** 넣는다.
+            // 세금계산서 요청 기록도 같은 사유로 **따로** 넣는다.
             "/workspaces/{workspace_id}/invoice-requests",
-            // 사전 조회(2.11.0, P0-5) — 소유 자원이 없지만 여전히 인증은 필요하다(계약 security).
+            // 사전 조회(P0-5) — 소유 자원이 없지만 여전히 인증은 필요하다(계약 security).
             "/dictionary/lookup",
-            // 활성 공지(어드민 최소, 2.25.0) — 인증 사용자 전용, 소유 자원은 없다(전역 공지).
+            // 활성 공지 — 인증 사용자 전용, 소유 자원은 없다(전역 공지).
             "/announcements/active",
         ) + AdminEndpoints.ADMIN_ONLY_PATH_PATTERNS
 }

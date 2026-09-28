@@ -16,8 +16,7 @@ import java.util.UUID
 // 계약·실경로 검증: `ConversionFeedbackContractTest`, `ConversionFeedbackReachTest`.
 
 /**
- * `PUT /conversions/{conversion_id}/feedback` — 파일럿 게이트 ①(master-plan §9)의 **유일한
- * 수기 입력**을 받는다.
+ * `PUT /conversions/{conversion_id}/feedback` — 파일럿 게이트 ①의 **유일한 수기 입력**을 받는다.
  *
  * **`ConversionController` 에 얹지 않는다.** 저 컨트롤러는 변환 결과 자원을 다루고 이쪽은
  * 판정 근거를 다룬다 — 자원의 수명부터 다르다(피드백 표는 문서 파기와 분리돼 있다.

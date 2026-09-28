@@ -18,12 +18,9 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * `credit-grant` profile 의 실 배선(C2) — 계획
- * `docs/plans/2026-09-07-credit-accounts.md` §3 C2의 프로필 층 회귀 고정판.
- * `UsageReportProfileTest`와 같은 자리다 — CLI 인자(`--workspace --credits --reason --note`)를
- * 읽어 실제로 `workspace_credit_accounts`·`credit_transactions`를 반영하는지 본다. 인자
- * 검증 자체(형식·범위)는 `CreditGrantArgsTest`(Spring 없이)가 이미 재므로 여기서는
- * **프로필 배선**(성공 1건·거절 2갈래)만 잰다.
+ * `credit-grant` 프로필이 CLI 인자를 읽어 `workspace_credit_accounts`·`credit_transactions`를
+ * 실제로 갱신하는지 확인한다. 인자 형식 검증은 [CreditGrantArgsTest]가 담당하므로 여기서는
+ * 성공과 거절 경로의 프로필 배선만 확인한다.
  *
  * `@SpringBootTest`는 `WorkerApplication.main()`을 부르지 않으므로 `SpringApplication.exit`가
  * 실행되지 않는다 — `ApplicationRunner`(둘 다 컨텍스트 초기화 중 실행)가 이미 돈 뒤에도

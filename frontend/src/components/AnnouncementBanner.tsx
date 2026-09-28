@@ -7,8 +7,7 @@ import { useAuth } from '../auth/context'
 import { Button } from './ui/Button'
 
 /**
- * 닫은 공지 id를 모아 두는 `localStorage` 키. 값은 JSON 문자열 배열이다(어드민 최소
- * 계획 §2 결정 5 — 닫기는 브라우저 로컬 저장, 계약에 없다).
+ * 닫은 공지 id를 모아 두는 `localStorage` 키. 값은 JSON 문자열 배열이다.
  */
 const DISMISSED_STORAGE_KEY = 'easydoc.dismissed_announcement_ids'
 
@@ -38,12 +37,11 @@ function writeDismissedIds(ids: Set<string>): void {
 }
 
 /**
- * 활성 공지 배너 (어드민 최소, 계약 2.25.0).
+ * 활성 공지 배너.
  *
  * 인증 사용자의 세션마다 한 번만 `GET /announcements/active`를 부른다 — `AppLayout`이
  * 화면 전환마다 다시 그려지는 자리이므로, 여기서 다시 걸면 화면을 옮길 때마다 조회가
  * 나간다. 닫은 공지는 id별로 `localStorage`에 남겨 새로고침해도 다시 뜨지 않는다
- * (계획 §2 결정 5).
  *
  * 조회 실패는 조용히 넘어간다 — 이 배너는 보조 정보이지 화면의 핵심 흐름이 아니다.
  */

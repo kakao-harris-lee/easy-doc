@@ -4,7 +4,7 @@ import jakarta.servlet.http.HttpServletRequest
 import org.springframework.web.servlet.HandlerMapping
 
 /**
- * 접속기록(계획 `docs/plans/2026-09-11-access-log-retention.md` §3.1) `subject_scope` —
+ * 접속기록의 `subject_scope` —
  * 「단건이면 그 식별자, 목록이면 조회 조건」을 응답 본문을 보지 않고 요청만으로 구한다.
  * [AdminAccessInterceptor][kr.easydoc.api.admin.AdminAccessInterceptor]는 관리자 확인
  * **전**(핸들러 진입 전)에 돌므로, 컨트롤러가 실제로 찾은 건수 같은 응답 값은 여기서

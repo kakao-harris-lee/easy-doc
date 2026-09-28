@@ -1,12 +1,4 @@
-/**
- * 공개 API 계약과 1:1로 맞춘 wire type.
- *
- * 필드 이름은 백엔드가 내려주는 snake_case를 그대로 쓴다 — 경계에서 이름을 바꾸면
- * 어떤 필드가 서버에서 온 것인지 추적이 끊기고, 스키마가 바뀌었을 때 타입 검사가
- * 잡아주지 못하는 구간이 생긴다.
- *
- * 기준: contracts/easy-doc-v1.yaml
- */
+/** 공개 API 계약(`contracts/easy-doc-v1.yaml`)과 1:1로 맞춘 wire type. */
 
 /** 변환 상태. 백엔드 conversions.status CHECK 제약과 같은 값 집합이다. */
 export type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
@@ -296,7 +288,7 @@ export interface ReviewCapabilities {
   illustrations: boolean
   /** 결과 문단에 실제 검토 신호만 합쳐 표시하는 새 UX가 켜졌는지. */
   focused_review: boolean
-  /** R7 ER-17. 토글이 켜져 있고 이용량 단가가 설정돼 있을 때만 true다. */
+  /** 토글이 켜져 있고 이용량 단가가 설정돼 있을 때만 true다. */
   illustration_suggestions: boolean
 }
 
@@ -351,7 +343,7 @@ export interface ConversionResponse {
   /** 실패 사유 코드(예외 클래스명). 본문·모델 응답은 담기지 않는다. */
   failure_code: string | null
   /**
-   * 원문-쉬운 글 문단 단위 대응표(계약 2.12.0, P0-4). `null`이면 ⑴ 변환이 아직
+   * 원문-쉬운 글 문단 단위 대응표. `null`이면 ⑴ 변환이 아직
    * 완료되지 않았거나 ⑵ 완료됐지만 원문·본문 중 하나를 서버가 지금 읽을 수 없다는
    * 뜻이다 — 사유 필드를 따로 두지 않는다. `status`와 `easy_text`가 이미 사유를 말한다.
    *
@@ -376,8 +368,6 @@ export interface ConversionReviewRequest {
   edited_text: string
   expected_content_revision: number
 }
-
-// --- R1 검수 지원 ---
 
 export type ReviewItemKind = 'missing_fact' | 'relation_check'
 export type ReviewItemState = 'needs_review' | 'confirmed' | 'not_applicable'
@@ -434,8 +424,6 @@ export interface UpdateReviewItemsRequest extends UpdateReviewItemRequest {
   item_ids: string[]
 }
 
-// --- R5 검수 기록 ---
-
 export type ReviewHistoryEventType =
   | 'item_confirmed'
   | 'item_reopened'
@@ -472,8 +460,6 @@ export interface ReviewHistoryResponse {
   next_cursor: string | null
 }
 
-// --- R6 용어 설명 ---
-
 /** 사전 검수 정의에서 파생한 추가 설명 한 건. */
 export interface Explanation {
   term: string
@@ -488,8 +474,6 @@ export interface ExplanationsResponse {
   current_content_revision: number
   explanations: Explanation[]
 }
-
-// --- R7 그림 카탈로그 ---
 
 /**
  * 그림이 표현하는 용도. 계약 `components/schemas/IllustrationPurpose`.
@@ -532,8 +516,6 @@ export interface IllustrationCatalogResponse {
   illustrations: Illustration[]
 }
 
-// --- ER-16 그림 배치 ---
-
 /** 본문 한 줄(`easy_unit_index`, `draft.split('\n')`의 0-based 색인)에 놓인 그림 배치 하나. */
 export interface IllustrationPlacement {
   easy_unit_index: number
@@ -556,8 +538,6 @@ export interface IllustrationPlacementsRequest {
   expected_content_revision: number
   placements: IllustrationPlacement[]
 }
-
-// --- R2 행동 안내 작업 ---
 
 export type ActionGuideSectionKind =
   'eligibility' | 'benefits' | 'documents' | 'steps' | 'exceptions' | 'contact'
@@ -649,8 +629,6 @@ export interface CreateActionGuideJobRequest {
   /** 처음 만들 때도 필드를 생략하지 않고 null로 보낸다. */
   expected_guide_revision: number | null
 }
-
-// --- R7 ER-17 문맥 기반 그림 제안 ---
 
 export type IllustrationSuggestionJobStatus =
   'queued' | 'running' | 'succeeded' | 'failed' | 'superseded'
@@ -782,13 +760,13 @@ export interface WorkspaceNameRequest {
 
 // --- 워크스페이스 사용량 집계 ---
 
-/** `llm_calls.purpose`(V12)와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
+/** `llm_calls.purpose`와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
 export type UsagePurpose =
   | 'convert'
   | 'repair'
   | 'reconvert'
   | 'action_guide'
-  /** R7 ER-17 문맥 기반 그림 제안 분석(V35). */
+  /** 문맥 기반 그림 제안 분석. */
   | 'illustration_suggestion'
 
 /**
@@ -833,17 +811,15 @@ export interface WorkspaceUsageResponse {
   by_purpose: PurposeUsageItem[]
 }
 
-// --- 크레딧 계정 ---
-
 /**
- * `credit_transactions.kind`(V15, `cycle_set`·`cycle_reset`는 V21)와 같은 값. 계약
+ * `credit_transactions.kind`와 같은 값. 계약
  * `components/schemas/CreditTransactionKind`.
  */
 export type CreditTransactionKind =
   'grant' | 'reserve' | 'consume' | 'release' | 'adjust' | 'cycle_set' | 'cycle_reset'
 
 /**
- * `credit_transactions.reason`(V15, `cycle_end`는 V21)과 같은 값. 계약
+ * `credit_transactions.reason`과 같은 값. 계약
  * `components/schemas/CreditTransactionReason`. `cycle_end`는 `kind=cycle_reset`이면서
  * 갱신 없이 주기가 닫힐 때다 — 갱신(`plan_monthly`)과 구분된다.
  */
@@ -854,7 +830,7 @@ export type CreditReason =
   | 'refund'
   | 'conversion'
   | 'action_guide'
-  /** R7 ER-17 제안 분석 1건의 예약·소비·해제(V35). */
+  /** 제안 분석 1건의 예약·소비·해제. */
   | 'illustration_suggestion'
   | 'cycle_end'
 
@@ -884,12 +860,11 @@ export interface CreditTransaction {
  * `createDocument`의 예약이 잔액과 무관하게 항상 성공한다(잔액이 음수로 기록될 수 있다).
  * `transactions`는 최근 50건을 최신순으로 담는다.
  *
- * `signup_grant_skipped`(계약 2.29.0) — 이 계정의 가입 부여가 「이미 가입 부여를 받은
+ * `signup_grant_skipped` — 이 계정의 가입 부여가 「이미 가입 부여를 받은
  * 이메일이라 건너뛰었다」로 판정됐는지. **이메일이 인증되기 전에는 서버가 항상
  * `false`로 채운다** — 화면은 이 값을 그대로 보여주면 된다(따로 가릴 필요가 없다).
  *
- * `allowance`·`cycle_ends_at`(계약 2.30.0), `cycle_started_at`(2.35.0) — 크레딧을
- * 「구독 주기에 포함된 이용량」이다.
+ * `allowance`·`cycle_ends_at`·`cycle_started_at`은 크레딧의 구독 주기 정보를 담는다.
  */
 export interface WorkspaceCreditsResponse {
   workspace_id: string
@@ -907,9 +882,7 @@ export interface WorkspaceCreditsResponse {
   cycle_ends_at: string | null
 }
 
-// --- 세금계산서 요청 기록 (계약 2.24.0) ---
-
-/** `invoice_requests.status`(V16)와 같은 값. 계약 `components/schemas/InvoiceRequestStatus`. */
+/** `invoice_requests.status`와 같은 값. 계약 `components/schemas/InvoiceRequestStatus`. */
 export type InvoiceRequestStatus = 'requested' | 'issued' | 'rejected'
 
 /**
@@ -958,8 +931,6 @@ export interface InvoiceRequestListResponse {
   items: InvoiceRequestResponse[]
 }
 
-// --- 문단 재변환 ---
-
 /**
  * `POST /conversions/{id}/units/{source_unit_index}/reconvert` 요청 본문. 경로의
  * `source_unit_index`는 경로에 있으므로 본문에 되풀이하지 않는다.
@@ -998,10 +969,8 @@ export interface ReconvertUnitResponse {
   remaining_call_budget: number
 }
 
-// --- pilot feedback ---
-
 /**
- * 배포 의향. 파일럿 게이트 ①의 기준 1을 판정하는 값이다(docs/pilot-runbook.md).
+ * 배포 의향.
  *
  * `as_is`·`with_edits`가 "이 결과물을 다듬어 실제로 배포하겠다"에 해당한다.
  */

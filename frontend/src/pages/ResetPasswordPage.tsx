@@ -22,7 +22,7 @@ const GENERIC_ERROR_MESSAGE = '요청을 처리하지 못했습니다. 다시 �
 type Step = 'request' | 'confirm'
 
 /**
- * 비밀번호 재설정 화면(`/reset-password`, 2.19.0 신설, backlog §1.4 다음 조각).
+ * 비밀번호 재설정 화면(`/reset-password`).
  *
  * 인증 없이 접근한다 — 비밀번호를 잊은 사용자는 로그인할 수 없다. 2단계로 나뉜다.
  *

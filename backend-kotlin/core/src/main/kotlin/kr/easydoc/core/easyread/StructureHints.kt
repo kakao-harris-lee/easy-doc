@@ -4,7 +4,7 @@ import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.UnitKind
 import kr.easydoc.core.segment.UnitRun
 
-// 표·목록 구조 힌트 — P0-4 S8-2(계획 §1.3, docs/plans/2026-09-06-p0-4-structure-hints.md).
+// 표·목록 구조 힌트.
 //
 // `buildUserPrompt`/`buildRepairPrompt`가 이 파일이 만드는 `[구조]` 절을 <문서>/<변환문> 구간
 // 뒤에 붙인다. run 이 하나도 없으면(전부 BODY) 이 파일은 관여하지 않는다 — B1: 오늘의
@@ -12,15 +12,15 @@ import kr.easydoc.core.segment.UnitRun
 
 /**
  * `[구조]` 절에서 원문 조각(첫·끝 칸/항목 문구)을 인용할 때 쓰는 구분자 이름 —
- * [DOCUMENT_TAG_NAME]과 같은 난수 id 방어를 쓴다(리뷰 HIGH-4와 같은 이유). 인용되는 문구는
+ * [DOCUMENT_TAG_NAME]과 같은 난수 id 방어를 쓴다. 인용되는 문구는
  * 업로더가 올린 원문 조각이라 지시문처럼 읽히면 안 된다.
  */
 const val STRUCTURE_TAG_NAME = "구조인용"
 
-/** run 수 상한(계획 §4 리스크 「프롬프트 길이」) — 넘으면 per-run 나열 대신 한 문장으로 접는다. */
+/** run 수 상한 — 넘으면 per-run 나열 대신 한 문장으로 접는다. */
 data class StructureHintOptions(val maxRuns: Int = DEFAULT_MAX_RUNS) {
     companion object {
-        /** `easydoc.prompt.structure-max-runs` 미설정 시 기본값(계획 §4 예시). */
+        /** `easydoc.prompt.structure-max-runs` 미설정 시 기본값. */
         const val DEFAULT_MAX_RUNS: Int = 40
     }
 }
@@ -40,7 +40,7 @@ private const val SCOPE_NOTE =
 /**
  * [STRUCTURE_TAG_NAME] 구간 전용 주입 방어 문구 — [INJECTION_GUARD]·[MISSING_FACTS_GUARD] 와
  * 같은 발상이지만 대상이 "문서 본문"·"빠진 사실 값"이 아니라 [구조] 절 안에서 인용한 원문
- * 조각(첫·끝 칸/항목 문구, 줄 위치를 찾기 위한 것뿐)이라는 점을 명시한다(리뷰 HIGH-2).
+ * 조각(첫·끝 칸/항목 문구, 줄 위치를 찾기 위한 것뿐)이라는 점을 명시한다.
  * 이 값들이 지시가 아니라 위치 확인용 인용임을 시스템 프롬프트가 못박아야, 인용된 문구가
  * 지시문처럼 보여도 모델이 그것을 따르지 않는다.
  *
@@ -72,9 +72,9 @@ private const val UNIT_TABLE_CELL_NOTE =
 private const val UNIT_LIST_ITEM_NOTE = "이 문단은 목록 항목입니다. 앞의 기호는 그대로 두고, 항목 안의 문장만 쉽게 바꾸세요."
 
 /**
- * `[구조]` 절 — 표·목록 run 을 프롬프트에 알린다(계획 §1.3). [structure]는 [sourceUnits]와
+ * `[구조]` 절 — 표·목록 run 을 프롬프트에 알린다. [structure]는 [sourceUnits]와
  * 크기가 같아야 한다(호출자 책임 — `ConvertDocumentUseCase`가 어긋나면 [SourceStructure.allBody]
- * 로 접어서 넘긴다, 계획 §1.2의 「불변식이 깨지면 예외가 아니라 전부 BODY」와 같은 방침).
+ * 로 접어서 넘긴다. 불변식이 깨지면 예외 대신 전부 BODY로 접는다.
  *
  * TABLE_CELL·LIST_ITEM run 이 하나도 없으면(전부 BODY) `null` — B1: 오늘의 프롬프트와 바이트
  * 단위로 같다.
@@ -121,9 +121,9 @@ private fun unitNote(kind: UnitKind): String? =
     }
 
 /**
- * 인용 문구 길이 상한(코드포인트) — 리뷰 MEDIUM 3. [renderRun] 이 인용하는 첫·끝 칸/항목
+ * 인용 문구 길이 상한(코드포인트). [renderRun] 이 인용하는 첫·끝 칸/항목
  * 문구는 줄을 찾기 위한 참고용이지 전문이 필요하지 않다. 표제 칸은 짧지만 본문 칸은 길 수
- * 있어(문단 하나가 칸 하나인 경우, 계획 §4 리스크 「셀 안 다중 문단」) 상한 없이 그대로
+ * 있어(문단 하나가 칸 하나인 경우) 상한 없이 그대로
  * 인용하면 그 칸 하나가 프롬프트를 불필요하게 늘린다.
  */
 internal const val QUOTE_SNIPPET_MAX_CODEPOINTS: Int = 40

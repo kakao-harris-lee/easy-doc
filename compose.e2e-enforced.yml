@@ -1,21 +1,6 @@
-# Playwright E22·E23(크레딧 집행 켜짐 변형, `docs/plans/2026-09-07-credit-accounts.md` §3 C2 후속)
-# 전용 override — `compose.yml` + `compose.e2e.yml` 위에 **추가로** 얹는다.
-#
-# `credits.spec.ts`(E21)를 포함한 나머지 모든 e2e 스펙은 집행 꺼짐
-# (`easydoc.credits.enforced=false`, `compose.e2e.yml`의 기본 상태)을 전제로 문서 등록이
-# 늘 202라고 단언한다. 이 override 를 같은 스택에 얹으면 그 스펙들이 전부 402로
-# 깨진다 — 그래서 **별도 스택 기동**(같은 컨테이너를 이 override 로 갱신)으로
-# `credits-enforced.spec.ts`(E22·E23)만, `playwright.enforced.config.ts`로 상대한다.
-#
-# `EASYDOC_CREDITS_SIGNUP_GRANT=1` — E22는 100자에 0.1, 900자에 0.9를 예약한 뒤
-# 다음 100자 요청의 402(가용 0 < 필요 0.1)를 확인한다.
-# `compose.e2e.yml`이 이미 얹은 EASYDOC_LLM_PROVIDER·
-# EASYDOC_DICTIONARY_LOOKUP_ENABLED 는 서비스별 environment 맵 병합으로 그대로 남는다.
-#
-# E23은 같은 스택에서 stub 테스트 결제를 켜 Start 구독의 월 50크레딧을 실제 계정에
-# 설정한다. Toss나 유료 LLM을 호출하지 않고, 10,000자 요청 5건의 예약·소비와 다음
-# 10,000자 요청의 402 경계를 잰다. E22 계정은 결제를 하지 않으므로 가입 부여 1크레딧
-# 시나리오도 그대로 유지된다.
+# compose.yml + compose.e2e.yml 위에 추가하는 크레딧 집행 검증용 override.
+# 기본 스펙은 집행 꺼짐을 전제로 하므로 playwright.enforced.config.ts로만 실행한다.
+# 가입 부여 1크레딧과 stub 결제의 Start 월 50크레딧 소진 경계를 검증한다.
 
 services:
   backend-api:

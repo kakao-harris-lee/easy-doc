@@ -19,8 +19,8 @@ import org.springframework.web.servlet.HandlerMapping
  * 요청 속성에서 읽어 [AdminGuard]에 넘긴다 — 관리자가 아니거나 이메일이 미검증이면
  * `AdminRequiredException`(→ 403 「관리자 권한이 필요합니다」)이 여기서 던져진다.
  *
- * **접속기록(계획 `docs/plans/2026-09-11-access-log-retention.md` §3.2)을 잡는 자리이기도
- * 하다.** `x-admin-only` 10개 오퍼레이션이 전부 이 경로 패턴(`AdminEndpoints`)을 지나므로,
+ * **접속기록을 잡는 자리이기도 하다.** `x-admin-only` 오퍼레이션이 전부 이 경로 패턴
+ * (`AdminEndpoints`)을 지나므로,
  * 엔드포인트마다 기록 호출을 흩지 않고 여기 한 자리에서 성공·거절을 모두 남긴다 — 새
  * 관리자 엔드포인트가 생겨도 이 인터셉터 대상에만 넣으면 기록이 빠지지 않는다. 거절
  * (403)도 남겨야 하므로 [AdminGuard.requireAdmin]을 감싸 [AdminRequiredException]을 잡고

@@ -1,11 +1,10 @@
 /**
  * E-회원탈퇴 — 가입 → 문서 1건 변환 → 회원 탈퇴 → 로그인 화면 도착 → 같은 이메일 재가입.
  *
- * 정본은 `docs/plans/2026-09-09-account-deletion.md` §4 수용 기준 10. 파기 범위(행
- * 수·CASCADE·`llm_calls` SET NULL)는 Kotlin `JdbcAccountDeletionRepositoryTest`(실
+ * 파기 범위(행 수·CASCADE·`llm_calls` SET NULL)는 Kotlin `JdbcAccountDeletionRepositoryTest`(실
  * PostgreSQL)가 이미 고정했다 — 여기서는 **실 브라우저·실 API·실 worker**를 한 줄로
  * 이어 화면이 실제로 로그인 화면에 도착하고, 파기된 이메일로 다시 가입할 수 있는지만
- * 잰다(§2 결정 8 — 재가입은 막지 않는다).
+ * 잰다 — 재가입은 막지 않는다.
  *
  * `run-local.sh`가 worker를 fake LLM으로 띄운다 — `conversion-flow.spec.ts`와 같은 전제.
  */
@@ -67,7 +66,7 @@ test.describe('회원 탈퇴', () => {
     // 세션이 정리되고 로그인 화면에 도착한다 — 별도 이동 없이 `RequireAuth`가 돌려보낸다.
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
 
-    // 같은 이메일로 다시 가입할 수 있다(§2 결정 8 — 재가입은 막지 않는다).
+    // 같은 이메일로 다시 가입할 수 있다.
     await page.goto('/signup')
     await submitCredentials(page, account, '가입하기')
     await expect(workspaceSelect(page)).toBeVisible()

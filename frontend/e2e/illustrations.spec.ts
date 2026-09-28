@@ -1,9 +1,9 @@
 /**
- * R7 — 검수 화면에 놓인 「그림 목록」 패널의 실제 브라우저·API·DB 수직 흐름.
+ * 검수 화면에 놓인 「그림 목록」 패널의 실제 브라우저·API·DB 수직 흐름.
  * compose.e2e.yml·run-local.sh가 이 기능을 그 스택에서만 켠다(`EASYDOC_ILLUSTRATIONS_ENABLED`).
  *
  * 카탈로그는 문서 본문과 무관하게 고정 검수 데이터(최대 10개)를 낸다 — 그래서 이 스펙은
- * R6(용어 설명)과 같은 업로드 흐름을 재사용해 검수 화면에 도달하기만 하면 된다. 유료
+ * 기존 업로드 흐름을 재사용해 검수 화면에 도달하기만 하면 된다. 유료
  * 호출은 없다(`EASYDOC_LLM_PROVIDER=fake`).
  */
 
@@ -64,7 +64,7 @@ test.describe('R7 그림 목록', () => {
     await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 목록' })
     await expect(panel.getByRole('heading', { name: '그림 목록' })).toBeVisible()
-    // ER-16(본문 삽입·이미지 포함 출력) 미구현을 사용자에게 명시하는 안내문.
+    // 본문 삽입·이미지 포함 출력이 지원되지 않는다는 안내문.
     await expect(
       panel.getByText(/본문에 넣기와 파일 출력은 다음 단계에서 지원합니다/),
     ).toBeVisible()

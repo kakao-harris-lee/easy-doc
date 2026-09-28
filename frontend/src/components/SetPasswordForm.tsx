@@ -17,8 +17,7 @@ interface SetPasswordFormProps {
 }
 
 /**
- * 계정 메뉴가 `SocialLinkStatus`와 나란히 쓰는 "비밀번호 만들기" 조각(2.19.0 신설,
- * backlog §1.4 다음 조각).
+ * 계정 메뉴가 `SocialLinkStatus`와 나란히 쓰는 "비밀번호 만들기" 조각.
  *
  * `me.has_password === false`(소셜 로그인으로만 가입한 계정)일 때만 부모가 이 컴포넌트를
  * 렌더링한다 — 이미 비밀번호가 있으면 만들 것이 없다. 「비밀번호 만들기」 버튼을 누르면

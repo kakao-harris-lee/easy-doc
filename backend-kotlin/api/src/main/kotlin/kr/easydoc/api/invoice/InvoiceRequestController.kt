@@ -15,8 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * `POST`·`GET /workspaces/{workspace_id}/invoice-requests` — 세금계산서 요청 기록(계획
- * `docs/plans/2026-09-07-invoice-requests.md` §2, 계약 2.24.0).
+ * `POST`·`GET /workspaces/{workspace_id}/invoice-requests` — 세금계산서 요청 기록.
  */
 @RestController
 @RequestMapping("/workspaces/{workspace_id}/invoice-requests")

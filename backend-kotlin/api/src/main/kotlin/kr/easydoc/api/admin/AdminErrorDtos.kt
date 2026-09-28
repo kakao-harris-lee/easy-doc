@@ -8,8 +8,7 @@ import kr.easydoc.application.admin.AdminProviderFailureCount
 import java.time.Instant
 
 /**
- * `GET /admin/errors` 응답 — 코드별 건수 + 최근 목록 + provider 실패 건수(V18, 계약
- * 2.26.0 신설, 백로그 「실패 호출 원장 추적」). **본문·프롬프트 없음.**
+ * `GET /admin/errors` 응답 — 코드별 건수 + 최근 목록 + provider 실패 건수. **본문·프롬프트 없음.**
  */
 data class AdminErrorsResponse(
     @get:JsonProperty("counts") val counts: List<AdminFailureCountResponse>,

@@ -35,21 +35,13 @@ subprojects {
     apply(plugin = "org.jlleitschuh.gradle.ktlint")
     apply(plugin = "io.gitlab.arturbosch.detekt")
 
-    // --- toolchain ----------------------------------------------------------
-    // 로컬에 설치된 JDK가 무엇이든 Java 21로 컴파일·실행한다. 이것이 없으면
-    // 개발자 기계마다 다른 바이트코드가 나오고 "내 컴퓨터에선 되는데"가 시작된다.
     extensions.configure<KotlinJvmProjectExtension> {
         jvmToolchain(21)
         compilerOptions {
-            // 컴파일 경고도 빌드 실패로 처리한다.
             allWarningsAsErrors.set(true)
         }
     }
 
-    // --- dependency locking -------------------------------------------------
-    // 전이 의존성이 조용히 올라가면 Fernet·JWT·문서 파서처럼 바이트 단위 호환이 걸린
-    // 지점에서 재현 불가능한 차이가 난다. 락파일은 "어제는 통과했는데 오늘 실패"의
-    // 원인 후보에서 의존성 드리프트를 제거한다.
     dependencyLocking {
         lockAllConfigurations()
     }
@@ -58,7 +50,6 @@ subprojects {
         add("detektPlugins", rootProject.libs.detekt.formatting)
     }
 
-    // --- 품질 게이트 --------------------------------------------------------
     extensions.configure<KtlintExtension> {
         version.set(
             rootProject.libs.versions.ktlintCli
@@ -93,10 +84,7 @@ subprojects {
                 excludeTags("llm")
             }
         }
-        // api 의 기본 `test` 만 표준 출력을 함께 남긴다. 소유권 404 시간 판정 요약(1차·확인·합산)은
-        // 통과한 실행에서만 찍히는데, failed·skipped 만 로깅하면 그 줄이 CI 로그에 닿지 못해
-        // 「문턱에 얼마나 붙어 있었나」를 사람이 볼 수 없다. api 테스트의 println 호출부는
-        // 11 곳뿐이라 이 완화가 로그를 덮지 않는다.
+        // 통과한 소유권 404 시간 측정값도 CI 로그에 남긴다.
         val logsStandardOut = project.name == "api" && name == "test"
         testLogging {
             if (logsStandardOut) {
@@ -113,8 +101,6 @@ subprojects {
         // 소스 전수를 훑는 탐지기(허용목록 가드 등)가 쓰는 루트. 테스트 작업 디렉터리는
         // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
         systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
-
-        // 테스트 키는 infrastructure testFixtures가 제공한다. 암호화 기동 검증은 끄지 않는다.
 
         systemProperty("easydoc.golden.documents.dir", goldenDocumentsDir.absolutePath)
         systemProperty("easydoc.golden.conversions.dir", goldenConversionsDir.absolutePath)
@@ -171,13 +157,10 @@ subprojects {
         classpath = testSourceSet.runtimeClasspath
         failOnNoDiscoveredTests = false
 
-        // 레인 요약(무엇으로 쟀는지·통과/실패·인프라 흔들림)은 stdout 으로 나온다. 기본 로깅은
-        // failed·skipped 만 찍어, **통과한 실행의 측정값이 어디에도 남지 않았다.**
+        // 통과한 실행의 측정값도 stdout에 남긴다.
         testLogging.showStandardStreams = true
 
-        // 이 태스크는 **재는 행위**다. 소스가 그대로여도 다시 재야 한다 —
-        // 다른 `EASYDOC_LLM_*`·키로 다시 돌린 실행이 UP-TO-DATE 로 건너뛰면, 돌리지 않은 값을
-        // 돌린 값으로 읽게 된다. 환경변수는 Gradle 입력 지문에 잡히지 않으므로 여기서 끈다.
+        // LLM 환경변수는 Gradle 입력에 포함되지 않으므로 매번 새로 측정한다.
         outputs.upToDateWhen { false }
     }
 }
@@ -209,10 +192,7 @@ val moduleBoundaryChecks =
                                 .map { it.path }
                                 .toSet()
                     }
-            // 해석 결과를 **입력으로 선언**한다. `dependsOn` 없이 실행 중에 물으면
-            // "`:application:jar` 가 끝나기 전에 mapped value 를 물었다" 로 거부된다(실측) —
-            // 클래스패스 해석이 상류 모듈의 jar 를 요구하기 때문이다. 파일 컬렉션을 입력으로
-            // 걸면 Gradle 이 그 산출을 먼저 만들어 준다.
+            // 입력으로 선언해야 클래스패스 해석에 필요한 상류 모듈 jar가 먼저 만들어진다.
             val compileClasspath = project.configurations.named("compileClasspath")
             inputs.files(compileClasspath)
             val compileIds =

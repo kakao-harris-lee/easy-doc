@@ -140,7 +140,7 @@ class DocumentController(
     /**
      * **202 다(201 이 아니다)** — 자원은 생겼지만 변환은 아직 시작 전이다.
      *
-     * `X-Credit-Balance`(크레딧 계정 계획 §2 결정 7, 계약 2.22.0)는 예약 **직후** 가용
+     * `X-Credit-Balance`(계약)는 예약 **직후** 가용
      * 잔액이다 — 집행 스위치(`easydoc.credits.enforced`)와 무관하게 항상 싣는다(화면이
      * 잔액을 알아야 한다).
      */

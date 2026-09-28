@@ -36,7 +36,7 @@ data class DocumentTextRequest
         @param:JsonSetter(nulls = Nulls.SET)
         val workspaceId: String?,
         /**
-         * 개인정보 경고용 검출(계획 `docs/plans/2026-09-10-personal-data-warning.md` §2.2)을
+         * 개인정보 경고용 검출을
          * 이용자가 확인했는지 — 선택, 기본 거짓.
          *
          * **`Boolean?`로 받는다.** 이 프로젝트는 `jackson-module-kotlin`을 쓰지 않아

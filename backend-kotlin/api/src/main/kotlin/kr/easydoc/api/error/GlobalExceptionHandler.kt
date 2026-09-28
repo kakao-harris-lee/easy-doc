@@ -175,7 +175,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         return validationError(ex, listOf(item), headers, request)
     }
 
-    /** 컨테이너 multipart 상한 초과 → **413 + 계약 문구** (계획 §5 D-2). */
+    /** 컨테이너 multipart 상한 초과 → **413 + 계약 문구**. */
     override fun handleMaxUploadSizeExceededException(
         ex: MaxUploadSizeExceededException,
         headers: HttpHeaders,
@@ -227,13 +227,13 @@ private fun missingItem(
     name: String,
 ): ValidationErrorItem = ValidationErrorItem(listOf(location, name), FIELD_REQUIRED_MESSAGE, "missing")
 
-/** Python `_handle_unmapped_domain_error` 의 고정 문자열. 문구를 바꾸면 화면 문구가 바뀐다. */
+/** 매핑되지 않은 도메인 오류에 사용하는 고정 문자열. */
 internal const val UNMAPPED_DOMAIN_MESSAGE: String = "요청을 처리하지 못했습니다"
 
-/** Python `_handle_unexpected_error` 의 고정 문자열. */
+/** 예상하지 못한 오류에 사용하는 고정 문자열. */
 internal const val UNEXPECTED_MESSAGE: String = "서버 오류가 발생했습니다"
 
-/** Pydantic 이 필수 값 누락에 쓰는 문구. React `readErrorMessage` 가 그대로 화면에 뿌린다. */
+/** 필수 값 누락에 사용하는 계약 문구. */
 private const val FIELD_REQUIRED_MESSAGE = "Field required"
 
 /** 계약 `components/responses/ReconversionBudgetExhausted.headers`. */
@@ -243,7 +243,7 @@ private const val RECONVERSION_REMAINING_BUDGET_HEADER = "X-Remaining-Call-Budge
 private const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
 private const val CREDITS_REQUIRED_HEADER = "X-Credits-Required"
 
-/** 계약 `POST /documents` 422 헤더 — 개인정보 경고용 검출 계획 §2.3. */
+/** 계약 `POST /documents` 422 헤더 — 개인정보 경고용 검출 결과. */
 private const val PERSONAL_DATA_KINDS_HEADER = "X-Personal-Data-Kinds"
 
 private const val INVALID_INPUT_MESSAGE = "Input is not valid"
@@ -259,7 +259,7 @@ private val UNSPECIFIED_VALIDATION_ITEM =
 
 private val SNAKE_BOUNDARY = Regex("([a-z0-9])([A-Z])")
 
-/** 본문을 읽지 못한 원인을 **세 갈래**로 가른다 (게이트 20 codex C4 · 게이트 21 codex C-2). */
+/** 본문을 읽지 못한 원인을 입력 누락, 타입 불일치, JSON 오류로 가른다. */
 private fun bodyReadItem(exception: HttpMessageNotReadableException): ValidationErrorItem {
     val mismatch =
         generateSequence(exception.cause) { it.cause }
@@ -295,7 +295,7 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
             HttpStatus.UNPROCESSABLE_ENTITY to null
         }
 
-        // 개인정보 경고용 검출(계획 §2.2) — 종류는 본문이 아니라 헤더로 낸다
+        // 개인정보 경고용 검출 — 종류는 본문이 아니라 헤더로 낸다
         // (`PersonalDataDetectedException` KDoc). **정렬된 소문자, 쉼표 구분**이다.
         is PersonalDataDetectedException -> {
             val sortedKinds =
@@ -319,8 +319,7 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
             HttpStatus.FORBIDDEN to null
         }
 
-        // 관리자 권한이 없다 — `/admin/…`·`AdminGuard` 전용, `EmailNotVerifiedException`과
-        // 같은 축의 403(어드민 최소 계획 §2 결정 2).
+        // 관리자 권한이 없다 — `/admin/…`·`AdminGuard` 전용이며 403으로 낸다.
         is AdminRequiredException -> {
             HttpStatus.FORBIDDEN to null
         }

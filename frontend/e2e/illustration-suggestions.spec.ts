@@ -1,5 +1,5 @@
 /**
- * R7 ER-17 — 실제 브라우저·API·DB·worker를 거치는 문맥 기반 그림 제안 흐름.
+ * 실제 브라우저·API·DB·worker를 거치는 문맥 기반 그림 제안 흐름.
  * `compose.e2e.yml`이 `EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED`와 worker의
  * `illustration-suggestion-fake` 프로필을 이 스택에서만 켠다. 이 스펙은 유료 LLM을
  * 호출하지 않으며, 그 스택의 단가는 0이라 「추가 차감 없음」으로 표시된다.

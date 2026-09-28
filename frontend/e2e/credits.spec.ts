@@ -1,12 +1,11 @@
 /**
- * E21 — 크레딧 계정 가시성(비집행) 수직 흐름. 계획
- * `docs/plans/2026-09-07-credit-accounts.md` §3 C2.
+ * 크레딧 계정 가시성(비집행) 수직 흐름.
  *
  * `compose.e2e.yml`이 `backend-api`에 `EASYDOC_CREDITS_SIGNUP_GRANT=1000`을 얹어
  * 가입 직후 잔액 1000을 보장한다. `easydoc.credits.enforced`는 **켜지 않는다** — 켜면
  * 다른 모든 e2e 스펙(문서 등록이 늘 202를 기대한다)이 402로 깨진다. 그래서 이 스펙은
  * **집행 꺼짐** 상태에서 가입 부여·예약이 화면·헤더에 그대로 보이는지만 잰다. 집행을
- * 켠 변형(가용 부족 → 402)은 별도 조각으로 backlog에 남아 있다.
+ * 집행을 켠 변형(가용 부족 → 402)은 별도 스위트에서 검증한다.
  */
 
 import { expect, test } from '@playwright/test'

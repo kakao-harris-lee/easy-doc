@@ -21,8 +21,8 @@ import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 /**
- * `GET /admin/invoice-requests`·`POST /admin/invoice-requests/{id}/handle` — 어드민 최소
- * 계획 §2 결정 4 A1. `x-admin-only: true`(계약 2.25.0). [InvoiceRequestService.handle]을
+ * `GET /admin/invoice-requests`·`POST /admin/invoice-requests/{id}/handle` — `x-admin-only: true`.
+ * [InvoiceRequestService.handle]을
  * `invoice-handle` CLI와 함께 재사용한다 — `handled_by`(V17)에 관리자 id를 남긴다.
  */
 @RestController

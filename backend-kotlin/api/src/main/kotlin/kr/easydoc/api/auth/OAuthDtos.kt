@@ -13,7 +13,7 @@ import jakarta.validation.constraints.Size
  * 타이핑하는 값이 아니라 SPA 가 그대로 옮기는 프로토콜 토큰이라, "완전히 빈 값"은
  * 정규화·형식 판정이 필요 없는 순수한 스키마 위반이다 — 통과했다면 제공자를 불렀을
  * 왕복(`SocialLoginProvider.exchange`)을 값이 비어 있다는 이유만으로 하지 않으려고
- * 컨트롤러 진입 전에 끊는다(계약 `minLength: 1`, 리뷰 후속 조치).
+ * 컨트롤러 진입 전에 끊는다(계약 `minLength: 1`).
  */
 data class OAuthStartRequest
     @JsonCreator

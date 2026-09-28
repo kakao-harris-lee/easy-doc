@@ -71,7 +71,7 @@ export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 export const ACCEPTED_EXTENSIONS = '.docx,.pdf,.hwpx,.txt'
 
 /**
- * 글자 수 카운터가 보조 글자색에서 주의색으로 바뀌는 지점(DESIGN.md §6.2의 "80% 이상").
+ * 글자 수 카운터가 보조 글자색에서 주의색으로 바뀌는 지점.
  *
  * 상한의 몇 %인지가 규칙이므로 3,200이라는 결과값이 아니라 비율을 상수로 둔다 —
  * MAX_CHARS가 바뀌면 경고 지점도 같이 따라가야 한다.
@@ -87,7 +87,7 @@ const BYTES_PER_UNIT = 1024
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const
 
 /**
- * 「다음 할 일」 판단에 훑어볼 문서 수(§7).
+ * 「다음 할 일」 판단에 훑어볼 문서 수.
  *
  * 규칙은 상태별 우선순위라 목록의 첫 줄만 봐서는 답이 나오지 않는다 — 최근 문서가 모두
  * 검수까지 끝난 상태라도 그 아래에 검수를 기다리는 문서가 있을 수 있다. 그렇다고 전부
@@ -96,7 +96,7 @@ const SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const
  */
 const SUGGESTION_SCAN_LIMIT = 20
 
-/** §6.2 오른쪽 안내 카드의 2단계. */
+/** 오른쪽 안내 카드의 2단계. */
 const GUIDE_STEPS = [
   {
     title: '쉬운 글 초안 생성',
@@ -157,7 +157,7 @@ interface SelectedFileCardProps {
 }
 
 /**
- * 고른 파일의 요약 카드(§6.2).
+ * 고른 파일의 요약 카드.
  *
  * 기본 파일 입력은 브라우저마다 파일명을 자르거나 크기를 아예 안 보여준다. 무엇을
  * 올리려는지가 제출 직전의 유일한 확인 지점이라 이름·형식·크기와 제거 행동을 화면이
@@ -284,7 +284,7 @@ export function UploadPage() {
   const [lastEmailVerified, setLastEmailVerified] = useState(user?.email_verified)
   // 「다음 할 일」의 근거. null은 "아직 모른다"이며(조회 전 또는 조회 실패) 빈 배열은
   // "이 작업 공간에는 문서가 없다"는 서버의 답이다. 두 상태를 한 값으로 합치지 않는다 —
-  // §6.2는 완료 상태와 검수 여부가 확인될 때만 제안하라고 했다.
+  // 완료 상태와 검수 여부가 확인될 때만 제안한다.
   const [recentDocuments, setRecentDocuments] = useState<DocumentListItem[] | null>(null)
   // 가용 크레딧(C2). null은 "아직 모른다"이며(조회 전 또는 조회 실패) — 그 경우 화면은
   // 필요 크레딧만 보여준다. 워크스페이스당 한 번만 조회하고, 등록이 성공하면 202의
@@ -319,11 +319,11 @@ export function UploadPage() {
   const baseCredits = creditsForCharCount(charCount)
   const neededCredits = creditsForReadingLevel(baseCredits, readingLevel)
   // 80% 미만에서는 보조 글자색이다. 여유가 많을 때까지 경고색을 쓰면 실제로 위험한
-  // 순간에 색이 아무 말도 하지 못한다(§6.2).
+  // 순간에 색이 아무 말도 하지 못한다.
   const nearLimit = !tooLong && charCount >= MAX_CHARS * COUNTER_WARNING_RATIO
   const titleTrimmed = title.trim()
 
-  // 헤더 맥락 라벨은 "어느 작업 공간에서 무엇을 하는가"다(§5.3). 목록을 아직 못
+  // 헤더 맥락 라벨은 "어느 작업 공간에서 무엇을 하는가"다. 목록을 아직 못
   // 받았으면 작업 공간 이름 없이 화면 이름만 남긴다.
   const workspaceName = workspaces.find((workspace) => workspace.id === workspaceId)?.name
   const headerContext = workspaceName === undefined ? '새 변환' : `${workspaceName} · 새 변환`
@@ -360,10 +360,10 @@ export function UploadPage() {
   }
 
   /**
-   * 「다음 할 일」의 근거가 될 최근 문서를 읽는다(§6.2, §7).
+   * 「다음 할 일」의 근거가 될 최근 문서를 읽는다.
    *
    * 새 API를 만들지 않는다 — 기록 화면이 쓰는 `GET /documents`를 그대로 쓴다. 조회는
-   * 현재 작업 공간으로 좁힌다(§3 개인화 우선순위 2).
+   * 현재 작업 공간으로 좁힌다.
    *
    * **작업 공간이 정해지기 전(null)에는 아예 부르지 않는다.** 여기서 「기록 화면과 같이
    * 좁히지 않고 부른다」로 되돌리지 마라 — 두 화면은 같은 판단을 공유할 수 없다. 기록
@@ -409,7 +409,7 @@ export function UploadPage() {
   }, [workspaceId])
 
   /**
-   * 가용 크레딧을 워크스페이스당 한 번 읽는다(C2, 계획 §2 결정 8).
+   * 가용 크레딧을 워크스페이스당 한 번 읽는다.
    *
    * 실패하면 조용히 넘어간다 — `availableCredits`가 null로 남아 화면은 필요 크레딧만
    * 보여준다. 이 조회는 안내이지 이 화면의 핵심 흐름이 아니므로, 실패를 오류로 알리면
@@ -500,7 +500,7 @@ export function UploadPage() {
     setPersonalDataWarning(null)
     try {
       const created = await create()
-      // 202가 X-Credit-Balance를 실어 오면 재조회 없이 그 값으로 갱신한다(계획 §2 결정 7).
+      // 202가 X-Credit-Balance를 실어 오면 재조회 없이 그 값으로 갱신한다.
       // 이 갱신은 대부분 즉시 `navigate`로 덮이므로 눈에 보이는 효과는 거의 없다 —
       // 그래도 남겨 두는 이유는 **제출이 화면을 떠나지 않는 경로에 대비한 보험**이다
       // (예: `navigate` 실패, 라우팅 없이 재사용하는 호출자). 그런 경로에서도 가용 표시가
@@ -569,7 +569,7 @@ export function UploadPage() {
     }
     // 제목 길이는 여기서 막지 않는다. 계약(`contracts/easy-doc-v1.yaml` x-title-policy.rule,
     // x-input-limits.max_title_length)이 정한 처분은 **자르기이지 거절이 아니다** — 사용자가
-    // 라벨 하나 때문에 문서 접수를 거절당하지 않게 한 결정이다. 입력 칸의 maxLength가 넘치는
+    // 라벨 하나 때문에 문서 접수를 거절당하지 않는다. 입력 칸의 maxLength가 넘치는
     // 입력을 먼저 막고, 그래도 넘어간 제목은 서버가 잘라 저장한다.
     if (mode === 'text') {
       if (text.trim() === '') {
@@ -654,7 +654,7 @@ export function UploadPage() {
         description={SERVICE_DEFINITION}
       />
 
-      {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내(§9 — 상태를
+      {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내. 상태를
       토스트로 흘려보내지 않고 화면에 남긴다). */}
       {homeNotice !== null &&
         (homeNoticeTone === 'warning' ? (
@@ -675,7 +675,7 @@ export function UploadPage() {
           </p>
         ))}
 
-      {/* 이메일 미인증 안내 — 막지 않는다(§비차단 배너). 입력은 그대로 할 수 있고,
+      {/* 이메일 미인증 안내 — 막지 않는다. 입력은 그대로 할 수 있고,
       실제로 막는 판단은 서버(403)가 한다. 이 자리는 폼보다 앞이라 제출 전에 먼저
       읽힌다. */}
       {emailVerificationRequired && (
@@ -685,7 +685,7 @@ export function UploadPage() {
         >
           <MailWarning className="size-5 shrink-0" aria-hidden="true" />
           이메일 인증 후 문서를 변환할 수 있습니다.{' '}
-          {/* §10 터치 대상 44px — 배너가 `flex` 컨테이너라 이 링크는 블록화된 flex item이다.
+          {/* 터치 대상 44px — 배너가 `flex` 컨테이너라 이 링크는 블록화된 flex item이다.
           `h-11`(44px)로 이 앱의 다른 조작 대상(예: EmailVerificationPage의 입력·버튼)과
           같은 하한을 준다. */}
           <Link
@@ -697,7 +697,7 @@ export function UploadPage() {
         </p>
       )}
 
-      {/* 1280px 이상에서만 3:2로 나눈다(§10). 그 아래에서는 한 열로 접히고, 안내 카드는
+      {/* 1280px 이상에서만 3:2로 나눈다. 그 아래에서는 한 열로 접히고, 안내 카드는
       DOM 순서 그대로 폼 **뒤에** 놓여 입력과 대표 버튼 사이에 끼지 않는다. */}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)]">
         <form
@@ -760,7 +760,7 @@ export function UploadPage() {
               </p>
             </div>
 
-            {/* 탭처럼 보이되 라디오다(§6.2) — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
+            {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
             <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <legend className="col-span-full mb-1 text-[15px] font-semibold">
                 변환할 내용을 어떻게 넣을까요?
@@ -955,7 +955,7 @@ export function UploadPage() {
             className="rounded-2xl border border-border bg-card p-5 sm:p-6"
             aria-labelledby={guideId}
           >
-            {/* 대표 행동은 폼의 제출 버튼 하나뿐이다(§5.3). 헤더 대신 이 카드가 AI 초안
+            {/* 대표 행동은 폼의 제출 버튼 하나뿐이다. 헤더 대신 이 카드가 AI 초안
             이라는 사실을 알린다 — 안내 카드가 그 사실이 필요한 자리다. */}
             <Badge tone="primary" withIcon={false}>
               <FileCheck2 className="size-4" aria-hidden="true" />

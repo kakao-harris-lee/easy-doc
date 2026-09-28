@@ -1,10 +1,10 @@
 /**
- * E19 — 사전 팝업(`TermLookupPopover`) 조회·적용 수직 흐름(P0-5 조각 6).
+ * 사전 팝업(`TermLookupPopover`) 조회·적용 수직 흐름.
  *
  * E13(`conversion-flow.spec.ts`)이 문서 등록 → worker 변환 → 검수 화면 도달까지의 흐름을
  * 이미 재는 것을 그대로 되풀이해 도달한 뒤, 여기서는 그 검수 화면에 뜬 「쉬운 말 후보」
  * 팝업만 잰다: ① 원문(읽기 전용) 패널에서 선택하면 조회만 되고 「바꾸기」는 없어야
- * 한다(계획 §3.5) ② 결과 패널에서 선택하면 조회 + 「바꾸기」로 실제 치환까지 된다.
+ * 한다. ② 결과 패널에서 선택하면 조회 + 「바꾸기」로 실제 치환까지 된다.
  *
  * `POST /dictionary/lookup`은 `easydoc.dictionary.lookup.enabled=true`일 때만 열린다
  * (`DictionaryLookupProperties`, 기본 꺼짐) — `compose.e2e.yml`이 `backend-api`에
@@ -78,7 +78,7 @@ test.describe('사전 팝업 조회 흐름', () => {
       timeout: 90_000,
     })
 
-    // --- ① 원문(읽기 전용) 패널: 조회는 되지만 적용 버튼은 없다(계획 §3.5) -------------
+    // --- ① 원문(읽기 전용) 패널: 조회는 되지만 적용 버튼은 없다 -------------------------
     // fake LLM 응답에 segment_map이 있으면 문단별 편집기, 없으면 단일 편집기가 열린다.
     // 사전 조회 계약은 어느 표시 방식에서도 같으므로 실제로 그려진 원본 입력을 받는다.
     const sourceTextarea = page.getByLabel(/^(원본 1번째 문단|원본 \(읽기 전용\))$/)

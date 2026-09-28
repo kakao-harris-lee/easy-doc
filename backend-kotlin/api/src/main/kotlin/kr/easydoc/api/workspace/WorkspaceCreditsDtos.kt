@@ -67,7 +67,7 @@ data class CreditTransactionResponse(
             )
 
         /**
-         * 계약 `CreditTransaction.credits` 부호 규약(계획 §2 결정 2: "grant/release는 +,
+         * 계약 `CreditTransaction.credits` 부호 규약("grant/release는 +,
          * reserve/consume/adjust는 방향대로") 그대로 계산한다 — [CreditTransactionView] KDoc.
          * [CreditTransactionKind.CYCLE_SET]·[CreditTransactionKind.CYCLE_RESET]는 잔액을
          * 직접 바꾸는 종류라 [CreditTransactionKind.ADJUST]와 같은 자리 — `balanceDelta`
