@@ -1,3 +1,4 @@
+import { ThemeProvider } from './theme/ThemeProvider'
 /**
  * 화면을 관통하는 접근성 검증 (DESIGN.md §11·§14).
  *
@@ -136,9 +137,11 @@ function renderAt(
     <AuthContext.Provider value={authValue(status, user)}>
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={[entry]}>
-          <AppLayout>
-            <AppRoutes />
-          </AppLayout>
+          <ThemeProvider>
+            <AppLayout>
+              <AppRoutes />
+            </AppLayout>
+          </ThemeProvider>
         </MemoryRouter>
       </WorkspaceContext.Provider>
     </AuthContext.Provider>,

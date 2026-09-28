@@ -2,8 +2,8 @@
   "name": "EASY-DOC AI",
   "short_name": "EASY-DOC",
   "lang": "ko",
-  "theme_color": "#0f6b63",
-  "background_color": "#ffffff",
+  "theme_color": "#1764b5",
+  "background_color": "#f7f9fc",
   "icons": [
     {
       "src": "/icons/icon-192.png",

@@ -476,7 +476,7 @@ export function AdminWorkspacesTab() {
       )}
 
       {!loading && error === null && (
-        <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+        <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
           <table className="usage-table">
             <caption>
               이 쪽에 실린 워크스페이스를 계정별로 묶었습니다. 작업 공간이 여러 개인 계정은 골라서

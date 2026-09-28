@@ -319,7 +319,7 @@ export function HistoryPage() {
           </p>
         )}
 
-        <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+        <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
           {items.length === 0 && !loading && error === null ? (
             // 빈 상태도 지금 작업 공간의 이야기로 말하고, 다음 할 일 하나를 함께 준다(§6.6).
             <div className="flex flex-col items-center gap-4 py-14 text-center">

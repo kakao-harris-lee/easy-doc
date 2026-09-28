@@ -1,3 +1,4 @@
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -57,9 +58,11 @@ function renderAt(path: string) {
           고정된 값을 꽂는다(요청은 WorkspaceProvider 테스트가 본다). */}
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={[path]}>
-          <AppLayout>
-            <AppRoutes />
-          </AppLayout>
+          <ThemeProvider>
+            <AppLayout>
+              <AppRoutes />
+            </AppLayout>
+          </ThemeProvider>
         </MemoryRouter>
       </WorkspaceContext.Provider>
     </AuthProvider>,

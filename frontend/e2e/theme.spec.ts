@@ -1,0 +1,573 @@
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
+
+import { API_BASE_URL, TOKEN_KEY } from './support/app'
+
+const THEME_STORAGE_KEY = 'easy-doc-theme'
+const WORKSPACE_ID = 'theme-workspace'
+const DOCUMENT_ID = 'theme-document'
+const CONVERSION_ID = 'theme-conversion'
+
+type Theme = 'light' | 'dark' | 'system'
+
+const USER = {
+  id: 'theme-user',
+  email: 'theme-e2e@example.test',
+  email_verified: true,
+  phone_verified: true,
+  identities: [],
+  has_password: true,
+  is_admin: true,
+}
+
+const WORKSPACE = {
+  id: WORKSPACE_ID,
+  name: '테마 확인용 작업 공간',
+  created_at: '2026-09-28T00:00:00Z',
+  document_count: 1,
+}
+
+const CREDITS = {
+  workspace_id: WORKSPACE_ID,
+  balance: 100,
+  reserved: 0,
+  available: 100,
+  enforced: true,
+  transactions: [],
+  signup_grant_skipped: false,
+  allowance: 100,
+  cycle_started_at: '2026-09-01T00:00:00Z',
+  cycle_ends_at: '2026-10-01T00:00:00Z',
+}
+
+const DOCUMENT = {
+  id: DOCUMENT_ID,
+  title: '테마 확인 문서',
+  source_format: 'text',
+  char_count: 24,
+  created_at: '2026-09-28T00:00:00Z',
+  retention_expires_at: '2026-10-28T00:00:00Z',
+  conversion_id: CONVERSION_ID,
+  status: 'done',
+  reviewed_at: null,
+  feedback_submitted_at: null,
+}
+
+const CONVERSION = {
+  id: CONVERSION_ID,
+  document_id: DOCUMENT_ID,
+  status: 'done',
+  reading_level: 'grade_5_6',
+  source_format: 'text',
+  export_format: 'txt',
+  export_format_choices: [],
+  format_preservation: { status: 'not_applicable', details: [] },
+  easy_text: '쉽게 읽을 수 있는 테스트 문장입니다.',
+  edited_text: null,
+  reviewed_at: null,
+  feedback_submitted_at: null,
+  model: null,
+  provider_name: null,
+  input_tokens: null,
+  output_tokens: null,
+  failure_code: null,
+  segment_map: null,
+  content_revision: 1,
+  review_capabilities: {
+    explanations: false,
+    illustrations: false,
+    review_history: false,
+    table_relations: false,
+    focused_review: false,
+    illustration_suggestions: false,
+    action_guide: false,
+  },
+}
+
+const SUBSCRIPTION = {
+  mock_enabled: false,
+  toss_enabled: false,
+  plans: [],
+  subscription: null,
+  payments: [],
+}
+
+const USAGE = {
+  documents: 1,
+  characters: 24,
+  credits: 0.1,
+  llm_calls: 1,
+  input_tokens: 10,
+  output_tokens: 10,
+  estimated_cost_usd: null,
+  cost_unknown_calls: 1,
+  failed_calls: 0,
+  by_purpose: [],
+}
+
+function json(route: Route, body: unknown, status = 200): Promise<void> {
+  return route.fulfill({
+    status,
+    contentType: 'application/json',
+    body: JSON.stringify(body),
+  })
+}
+
+/**
+ * Keep this suite independent of the Kotlin stack. Every request to the configured API origin
+ * is fulfilled here, including unknown paths, so a missing fixture cannot silently reach a real
+ * service, payment provider, or LLM.
+ */
+async function mockApi(page: Page): Promise<void> {
+  await page.route('**/*', async (route) => {
+    const request = route.request()
+    const url = new URL(request.url())
+    if (url.origin !== new URL(API_BASE_URL).origin) {
+      await route.continue()
+      return
+    }
+
+    const path = url.pathname
+    if (path === '/auth/me') {
+      await json(route, USER)
+      return
+    }
+    if (path === '/workspaces' && request.method() === 'GET') {
+      await json(route, { items: [WORKSPACE] })
+      return
+    }
+    if (path === '/announcements/active') {
+      await json(route, { items: [] })
+      return
+    }
+    if (path === '/documents' && request.method() === 'GET') {
+      await json(route, { items: [DOCUMENT], limit: 20, offset: 0, has_more: false })
+      return
+    }
+    if (path === `/documents/${DOCUMENT_ID}/source`) {
+      await json(route, {
+        document_id: DOCUMENT_ID,
+        source_format: 'text',
+        char_count: 24,
+        source_text: '원문을 확인하기 위한 테스트 문장입니다.',
+        tables: null,
+      })
+      return
+    }
+    if (path === `/conversions/${CONVERSION_ID}`) {
+      await json(route, CONVERSION)
+      return
+    }
+    if (path.endsWith('/credits')) {
+      await json(route, CREDITS)
+      return
+    }
+    if (path.endsWith('/usage')) {
+      await json(route, USAGE)
+      return
+    }
+    if (path.endsWith('/invoice-requests')) {
+      await json(route, { items: [] })
+      return
+    }
+    if (path.endsWith('/subscription')) {
+      await json(route, SUBSCRIPTION)
+      return
+    }
+    if (path === '/admin/workspaces') {
+      await json(route, {
+        items: [],
+        page: Number(url.searchParams.get('page') ?? 1),
+        size: Number(url.searchParams.get('size') ?? 20),
+        total: 0,
+      })
+      return
+    }
+    if (path === '/admin/invoice-requests') {
+      await json(route, { items: [], page: 1, size: 20, total: 0 })
+      return
+    }
+    if (path === '/admin/errors') {
+      await json(route, { counts: [], recent: [], provider_failures: [] })
+      return
+    }
+    if (path === '/admin/announcements') {
+      await json(route, { items: [] })
+      return
+    }
+    if (path === '/admin/feedback') {
+      await json(route, { items: [], page: 1, size: 20, total: 0 })
+      return
+    }
+
+    // Unknown API calls remain synthetic and explicit. This catches fixture drift in the test
+    // output without allowing a network fallback.
+    await json(
+      route,
+      { detail: `theme fixture has no response for ${request.method()} ${path}` },
+      404,
+    )
+  })
+}
+
+async function seedAuthenticatedTheme(page: Page, theme: Theme = 'dark'): Promise<void> {
+  await page.addInitScript(
+    ({ tokenKey, themeKey, token, selectedTheme }) => {
+      window.localStorage.setItem(tokenKey, token)
+      window.localStorage.setItem(themeKey, selectedTheme)
+    },
+    {
+      tokenKey: TOKEN_KEY,
+      themeKey: THEME_STORAGE_KEY,
+      token: 'theme-e2e-token',
+      selectedTheme: theme,
+    },
+  )
+}
+
+async function themeControl(page: Page) {
+  const candidates = [
+    page.getByRole('combobox', { name: /테마|화면|모드/i }),
+    page.getByRole('button', { name: /테마|화면|모드/i }),
+    page.locator('[data-testid="theme-selector"]'),
+  ]
+  for (const candidate of candidates) {
+    const visible = candidate.filter({ visible: true }).first()
+    if ((await visible.count()) > 0) {
+      return visible
+    }
+  }
+  throw new Error('테마 선택 컨트롤을 찾지 못했습니다. 접근 가능한 테마 이름을 확인하세요.')
+}
+
+async function selectTheme(page: Page, theme: Exclude<Theme, 'system'> | Theme): Promise<void> {
+  const control = await themeControl(page)
+  const tagName = await control.evaluate((element) => element.tagName)
+  if (tagName === 'SELECT') {
+    await control.selectOption(theme)
+    return
+  }
+
+  await control.click()
+  const optionCandidates = [
+    page.getByRole('option', {
+      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
+    }),
+    page.getByRole('menuitemradio', {
+      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
+    }),
+    page.getByRole('button', {
+      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
+    }),
+  ]
+  for (const option of optionCandidates) {
+    const visible = option.filter({ visible: true }).last()
+    if ((await visible.count()) > 0) {
+      await visible.click()
+      return
+    }
+  }
+  throw new Error(`테마 옵션을 찾지 못했습니다: ${theme}`)
+}
+
+async function currentTheme(page: Page): Promise<string | null> {
+  return page.locator('html').getAttribute('data-theme')
+}
+
+async function expectThemeSettled(
+  page: Page,
+  theme: Exclude<Theme, 'system'>,
+  primaryAction: Locator,
+): Promise<void> {
+  const colors =
+    theme === 'dark'
+      ? {
+          background: 'rgb(17, 24, 39)',
+          primary: 'rgb(117, 191, 255)',
+          primaryForeground: 'rgb(17, 24, 39)',
+        }
+      : {
+          background: 'rgb(247, 249, 252)',
+          primary: 'rgb(23, 100, 181)',
+          primaryForeground: 'rgb(255, 255, 255)',
+        }
+  await expect.poll(() => currentTheme(page)).toBe(theme)
+  await expect(page.getByLabel('화면 테마')).toHaveValue(theme)
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+    .toBe(colors.background)
+  await expect
+    .poll(() =>
+      primaryAction.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return { background: style.backgroundColor, color: style.color }
+      }),
+    )
+    .toEqual({ background: colors.primary, color: colors.primaryForeground })
+}
+
+async function expectNoHorizontalOverflow(page: Page): Promise<void> {
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }))
+  expect(
+    dimensions.scrollWidth,
+    `horizontal overflow: ${JSON.stringify(dimensions)}`,
+  ).toBeLessThanOrEqual(dimensions.clientWidth + 1)
+}
+
+test.describe('테마 디자인 브라우저 검증', () => {
+  test('저장된 다크 테마를 첫 페인트 전에 복원한다', async ({ page }) => {
+    await mockApi(page)
+    await page.route('**/theme-init.js', async (route) => {
+      const response = await route.fetch()
+      const script = await response.text()
+      await route.fulfill({
+        response,
+        body: `window.__themeScriptBeforeBody = document.body === null;\n${script}`,
+      })
+    })
+    await page.addInitScript(
+      ({ themeKey }) => {
+        window.localStorage.setItem(themeKey, 'dark')
+        const state = window as Window & {
+          __themePrepaint?: string | null
+          __themeScriptBeforeBody?: boolean | null
+        }
+        state.__themePrepaint = null
+        state.__themeScriptBeforeBody = null
+        const rememberBeforeReactPaint = (parent: Node): void => {
+          if ((parent as HTMLElement).id === 'root' && state.__themePrepaint === null) {
+            state.__themePrepaint = document.documentElement.getAttribute('data-theme')
+          }
+        }
+        const appendChild = Node.prototype.appendChild
+        Node.prototype.appendChild = function appendChildWithThemeCheck<T extends Node>(
+          child: T,
+        ): T {
+          rememberBeforeReactPaint(this)
+          return appendChild.call(this, child) as T
+        }
+        const insertBefore = Node.prototype.insertBefore
+        Node.prototype.insertBefore = function insertBeforeWithThemeCheck<T extends Node>(
+          child: T,
+          reference: Node | null,
+        ): T {
+          rememberBeforeReactPaint(this)
+          return insertBefore.call(this, child, reference) as T
+        }
+      },
+      { themeKey: THEME_STORAGE_KEY },
+    )
+
+    await page.goto('/')
+    await expect(page.locator('head > script[src="/theme-init.js"]')).toHaveCount(1)
+    await expect(page.locator('body > script[src="/theme-init.js"]')).toHaveCount(0)
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as Window & { __themeScriptBeforeBody?: boolean | null })
+              .__themeScriptBeforeBody,
+        ),
+      )
+      .toBe(true)
+    await expect.poll(() => currentTheme(page)).toBe('dark')
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as Window & { __themePrepaint?: string | null }).__themePrepaint,
+        ),
+      )
+      .toBe('dark')
+    await expect(
+      page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
+    ).resolves.toBe('dark')
+  })
+
+  test('선택한 테마를 저장하고 새로고침 뒤에도 유지한다', async ({ page }) => {
+    await mockApi(page)
+    await page.goto('/')
+    await expect(page.locator('main')).toBeVisible()
+
+    await selectTheme(page, 'dark')
+    await expect.poll(() => currentTheme(page)).toBe('dark')
+    await expect(
+      page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
+    ).resolves.toBe('dark')
+
+    await page.reload()
+    await expect.poll(() => currentTheme(page)).toBe('dark')
+  })
+
+  test('시스템 테마와 다른 탭의 변경을 화면에 반영한다', async ({ context, page }) => {
+    await mockApi(page)
+    await page.goto('/')
+    await selectTheme(page, 'system')
+    await expect(
+      page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
+    ).resolves.toBe('system')
+
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await expect.poll(() => currentTheme(page)).toBe('dark')
+    await page.emulateMedia({ colorScheme: 'light' })
+    await expect.poll(() => currentTheme(page)).toBe('light')
+
+    const secondPage = await context.newPage()
+    await mockApi(secondPage)
+    await secondPage.goto('/')
+    await selectTheme(secondPage, 'dark')
+    await expect.poll(() => currentTheme(page)).toBe('dark')
+    await expect(
+      page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
+    ).resolves.toBe('dark')
+    await secondPage.close()
+  })
+
+  test('공개 주요 페이지가 두 테마에서 320px 가로로 넘치지 않는다', async ({ page }) => {
+    await mockApi(page)
+    await page.setViewportSize({ width: 320, height: 900 })
+
+    const publicPages = [
+      { path: '/', heading: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로' },
+      { path: '/login', heading: '로그인' },
+      { path: '/guide' },
+      { path: '/terms' },
+      { path: '/privacy' },
+    ]
+
+    for (const theme of ['light', 'dark'] as const) {
+      for (const entry of publicPages) {
+        await page.goto(entry.path)
+        await selectTheme(page, theme)
+        if (entry.heading === undefined) {
+          await expect(page.locator('main h1').first()).toBeVisible()
+        } else {
+          await expect(
+            page.getByRole('heading', { name: entry.heading, exact: true }),
+          ).toBeVisible()
+        }
+        await expect.poll(() => currentTheme(page)).toBe(theme)
+        await expectNoHorizontalOverflow(page)
+      }
+    }
+  })
+
+  test('인증 주요 페이지가 두 테마에서 320px 가로로 넘치지 않는다', async ({ page }) => {
+    await mockApi(page)
+    await seedAuthenticatedTheme(page, 'dark')
+    await page.setViewportSize({ width: 320, height: 900 })
+
+    const pages = [
+      { path: '/', heading: '문서 변환하기' },
+      { path: '/history', heading: '변환한 문서를 확인합니다' },
+      { path: '/usage', heading: '플랜과 사용량' },
+      { path: '/account', heading: '계정 설정' },
+      { path: '/admin', heading: '고객과 사용자 의견을 확인합니다' },
+      { path: `/conversions/${CONVERSION_ID}`, heading: '쉬운 글 확인' },
+    ]
+
+    for (const theme of ['light', 'dark'] as const) {
+      for (const entry of pages) {
+        await page.goto(entry.path)
+        await selectTheme(page, theme)
+        await expect(page.getByRole('heading', { name: entry.heading, exact: true })).toBeVisible()
+        await expect.poll(() => currentTheme(page)).toBe(theme)
+        await expectNoHorizontalOverflow(page)
+      }
+    }
+  })
+
+  test('업로드 입력은 테마를 바꿔도 유지되고 문서 등록 요청을 보내지 않는다', async ({ page }) => {
+    await mockApi(page)
+    await seedAuthenticatedTheme(page, 'light')
+    const documentPosts: string[] = []
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (
+        url.origin === new URL(API_BASE_URL).origin &&
+        url.pathname === '/documents' &&
+        request.method() === 'POST'
+      ) {
+        documentPosts.push(request.url())
+      }
+    })
+
+    await page.setViewportSize({ width: 320, height: 900 })
+    await page.goto('/')
+    const source = page.getByLabel('바꿀 글')
+    const text = '테마를 바꿔도 작성 중인 문장은 그대로 남아야 합니다.'
+    await source.fill(text)
+    await selectTheme(page, 'dark')
+    await expect(source).toHaveValue(text)
+    expect(documentPosts).toEqual([])
+  })
+
+  test('모바일 메뉴와 작업 공간 대화상자가 화면 안에 남는다', async ({ page }) => {
+    await mockApi(page)
+    await seedAuthenticatedTheme(page, 'dark')
+    await page.setViewportSize({ width: 320, height: 900 })
+    await page.goto('/')
+    await expect(page.getByRole('heading', { name: '문서 변환하기', exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: '메뉴 열기', exact: true }).click()
+    await expect(
+      page.getByRole('navigation', { name: '주요 메뉴 (모바일)', exact: true }),
+    ).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+
+    const workspace = page.getByRole('button', { name: /^작업 공간:/ }).filter({ visible: true })
+    await workspace.click()
+    await page.getByRole('button', { name: '새로 만들기', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    const dialogBounds = await dialog.boundingBox()
+    expect(dialogBounds).not.toBeNull()
+    expect(dialogBounds?.width ?? 0).toBeLessThanOrEqual(320)
+    await expectNoHorizontalOverflow(page)
+  })
+
+  test('라이트·다크 대표 화면을 데스크톱과 320px 스크린샷으로 남긴다', async ({
+    page,
+  }, testInfo) => {
+    await mockApi(page)
+
+    for (const theme of ['light', 'dark'] as const) {
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.goto('/')
+      await selectTheme(page, theme)
+      await expectThemeSettled(page, theme, page.getByRole('link', { name: /가입하고 시작하기/ }))
+      await page.screenshot({
+        path: testInfo.outputPath(`landing-${theme}-desktop.png`),
+        fullPage: true,
+      })
+    }
+
+    // Use a separate page with a token bootstrap so the public landing captures above cannot
+    // accidentally turn into the authenticated upload screen on a later iteration.
+    const authenticatedPage = await page.context().newPage()
+    await mockApi(authenticatedPage)
+    await authenticatedPage.addInitScript(
+      ({ tokenKey }) => window.localStorage.setItem(tokenKey, 'theme-e2e-token'),
+      { tokenKey: TOKEN_KEY },
+    )
+    for (const theme of ['light', 'dark'] as const) {
+      await authenticatedPage.setViewportSize({ width: 320, height: 900 })
+      await authenticatedPage.goto('/')
+      await selectTheme(authenticatedPage, theme)
+      await expect(
+        authenticatedPage.getByRole('heading', { name: '문서 변환하기', exact: true }),
+      ).toBeVisible()
+      await expectThemeSettled(
+        authenticatedPage,
+        theme,
+        authenticatedPage.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }),
+      )
+      await authenticatedPage.screenshot({
+        path: testInfo.outputPath(`upload-${theme}-320.png`),
+        fullPage: true,
+      })
+    }
+    await authenticatedPage.close()
+  })
+})

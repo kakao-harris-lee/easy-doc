@@ -42,6 +42,7 @@ import { PhoneVerificationBanner } from './PhoneVerificationBanner'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo, SERVICE_NAME } from './Logo'
+import { ThemeSelector } from './ThemeSelector'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { CONTAINER } from './layoutStyles'
 import { Button } from './ui/Button'
@@ -346,7 +347,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         본문으로 건너뛰기
       </a>
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
-        <div className={cn(CONTAINER, 'flex min-h-16 items-center gap-3 py-2')}>
+        <div className={cn(CONTAINER, 'flex min-h-16 flex-wrap items-center gap-3 py-2')}>
           <NavLink
             // 로고 자체가 44px 이고, 머리말의 실제 누름 대상도 그보다 작지 않게 한다(§10).
             // 머리말은 min-h-16 이라 세로 배치는 그대로다.
@@ -359,7 +360,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <Logo />
           </NavLink>
           {status === 'anonymous' && (
-            <nav aria-label="시작 메뉴" className="ml-auto flex items-center gap-1">
+            <nav
+              aria-label="시작 메뉴"
+              className="ml-auto flex items-center gap-1 max-[639px]:basis-full max-[639px]:justify-end"
+            >
               <NavLink
                 to={GUIDE_PATH}
                 className={(state) => cn(navLinkClass(state), 'hidden sm:flex')}
@@ -428,6 +432,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </>
           )}
+          <ThemeSelector className="max-[639px]:basis-full max-[639px]:justify-end" />
         </div>
         {/*
           모바일의 작업 공간 — 햄버거 안이 아니라 앱 바 바로 아래 전체 너비 행이다.

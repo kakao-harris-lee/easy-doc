@@ -1,3 +1,4 @@
+import { ThemeProvider } from '../theme/ThemeProvider'
 /**
  * 저장하지 않은 검수 수정을 지키는지 화면 단위로 본다.
  *
@@ -47,9 +48,11 @@ function renderEditor() {
           고정된 값을 꽂는다(요청은 WorkspaceProvider 테스트가 본다). */}
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={['/conversions/c1']}>
-          <AppLayout>
-            <AppRoutes />
-          </AppLayout>
+          <ThemeProvider>
+            <AppLayout>
+              <AppRoutes />
+            </AppLayout>
+          </ThemeProvider>
         </MemoryRouter>
       </WorkspaceContext.Provider>
     </AuthProvider>,

@@ -14,6 +14,7 @@ import { userResponse, workspaceContext } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
 import { WorkspaceContext } from '../workspace/context'
 import { AppLayout } from './AppLayout'
+import { ThemeProvider } from '../theme/ThemeProvider'
 
 const EMAIL = 'gongmuwon@example.test'
 
@@ -69,15 +70,17 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
  */
 function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
   return render(
-    <AuthContext.Provider value={authValue(auth)}>
-      <WorkspaceContext.Provider value={workspaceContext({ workspaces: [], currentId: null })}>
-        <MemoryRouter initialEntries={[initialPath]}>
-          <AppLayout>
-            <LocationProbe />
-          </AppLayout>
-        </MemoryRouter>
-      </WorkspaceContext.Provider>
-    </AuthContext.Provider>,
+    <ThemeProvider>
+      <AuthContext.Provider value={authValue(auth)}>
+        <WorkspaceContext.Provider value={workspaceContext({ workspaces: [], currentId: null })}>
+          <MemoryRouter initialEntries={[initialPath]}>
+            <AppLayout>
+              <LocationProbe />
+            </AppLayout>
+          </MemoryRouter>
+        </WorkspaceContext.Provider>
+      </AuthContext.Provider>
+    </ThemeProvider>,
   )
 }
 
@@ -678,15 +681,17 @@ describe('머리말 구성', () => {
 
   it('작업 공간이 계정 메뉴보다 앞에 온다', () => {
     render(
-      <AuthContext.Provider value={authValue()}>
-        <WorkspaceContext.Provider value={workspaceContext()}>
-          <MemoryRouter>
-            <AppLayout>
-              <LocationProbe />
-            </AppLayout>
-          </MemoryRouter>
-        </WorkspaceContext.Provider>
-      </AuthContext.Provider>,
+      <ThemeProvider>
+        <AuthContext.Provider value={authValue()}>
+          <WorkspaceContext.Provider value={workspaceContext()}>
+            <MemoryRouter>
+              <AppLayout>
+                <LocationProbe />
+              </AppLayout>
+            </MemoryRouter>
+          </WorkspaceContext.Provider>
+        </AuthContext.Provider>
+      </ThemeProvider>,
     )
 
     // 데스크톱 줄의 작업 공간 메뉴가 계정 메뉴 트리거보다 DOM 에서 먼저 나온다(§5.1).
@@ -699,15 +704,17 @@ describe('머리말 구성', () => {
   it('모바일 작업 공간 메뉴는 오른쪽에 놓고 펼침 패널도 오른쪽을 기준으로 연다', async () => {
     const user = userEvent.setup()
     const { container } = render(
-      <AuthContext.Provider value={authValue()}>
-        <WorkspaceContext.Provider value={workspaceContext()}>
-          <MemoryRouter>
-            <AppLayout>
-              <LocationProbe />
-            </AppLayout>
-          </MemoryRouter>
-        </WorkspaceContext.Provider>
-      </AuthContext.Provider>,
+      <ThemeProvider>
+        <AuthContext.Provider value={authValue()}>
+          <WorkspaceContext.Provider value={workspaceContext()}>
+            <MemoryRouter>
+              <AppLayout>
+                <LocationProbe />
+              </AppLayout>
+            </MemoryRouter>
+          </WorkspaceContext.Provider>
+        </AuthContext.Provider>
+      </ThemeProvider>,
     )
 
     const workspaceMenus = container.querySelectorAll<HTMLElement>('.workspace-menu')

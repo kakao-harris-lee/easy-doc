@@ -208,7 +208,7 @@ export function AdminInvoicesTab() {
 
       {!loading && error === null && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+          <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
             <table className="usage-table">
               <caption>세금계산서 요청 목록입니다.</caption>
               <thead>

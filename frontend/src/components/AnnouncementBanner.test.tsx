@@ -1,3 +1,4 @@
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom'
@@ -143,12 +144,14 @@ describe('공지 배너 (어드민 최소, 계약 2.25.0)', () => {
       <AuthContext.Provider value={authContextValue({ status: 'authenticated' })}>
         <WorkspaceContext.Provider value={workspaceContext({ workspaces: [], currentId: null })}>
           <MemoryRouter initialEntries={['/a']}>
-            <AppLayout>
-              <Routes>
-                <Route path="/a" element={<Link to="/b">다음 화면</Link>} />
-                <Route path="/b" element={<Link to="/a">이전 화면</Link>} />
-              </Routes>
-            </AppLayout>
+            <ThemeProvider>
+              <AppLayout>
+                <Routes>
+                  <Route path="/a" element={<Link to="/b">다음 화면</Link>} />
+                  <Route path="/b" element={<Link to="/a">이전 화면</Link>} />
+                </Routes>
+              </AppLayout>
+            </ThemeProvider>
           </MemoryRouter>
         </WorkspaceContext.Provider>
       </AuthContext.Provider>,

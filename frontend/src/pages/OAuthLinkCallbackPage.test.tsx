@@ -1,3 +1,4 @@
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,9 +46,11 @@ function renderAt(path: string) {
     <AuthProvider>
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={[path]}>
-          <AppLayout>
-            <AppRoutes />
-          </AppLayout>
+          <ThemeProvider>
+            <AppLayout>
+              <AppRoutes />
+            </AppLayout>
+          </ThemeProvider>
         </MemoryRouter>
       </WorkspaceContext.Provider>
     </AuthProvider>,

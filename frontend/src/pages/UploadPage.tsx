@@ -832,8 +832,7 @@ export function UploadPage() {
                     더 쉽게 · 초등 3~4학년 수준
                   </span>
                   <span className="mt-1 pl-6 text-sm text-muted-foreground">
-                    설명이 더 길어질 수 있어요. 기본보다 최소 1.2배의 크레딧이 필요하고, 0.1크레딧
-                    단위로 올림해 더 커질 수 있어요.
+                    좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)
                   </span>
                 </label>
               )}

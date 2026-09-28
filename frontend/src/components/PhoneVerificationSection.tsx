@@ -81,7 +81,7 @@ export function PhoneVerificationSection() {
 
   return (
     <section
-      className="rounded-[12px] border border-border bg-card p-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]"
+      className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
       aria-labelledby="phone-verification-heading"
     >
       <h2 id="phone-verification-heading" className="text-[15px] font-semibold text-foreground">

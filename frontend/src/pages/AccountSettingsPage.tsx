@@ -153,7 +153,7 @@ export function AccountSettingsPage() {
         description="로그인 계정, 휴대폰 인증과 회원 탈퇴를 관리합니다."
       />
 
-      <section className="rounded-[12px] border border-border bg-card p-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+      <section className="rounded-[16px] border border-border bg-card p-5 shadow-sm">
         <h2 className="text-[15px] font-semibold text-foreground">로그인 계정</h2>
         <p className="mt-2 text-sm text-foreground">{user.email}</p>
       </section>
@@ -161,7 +161,7 @@ export function AccountSettingsPage() {
       <PhoneVerificationSection />
 
       <section
-        className="rounded-[12px] border border-danger bg-card p-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]"
+        className="rounded-[16px] border border-danger bg-card p-5 shadow-sm"
         aria-labelledby="account-deletion-heading"
       >
         <h2 id="account-deletion-heading" className="text-[15px] font-semibold text-foreground">

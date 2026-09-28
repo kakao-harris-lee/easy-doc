@@ -29,9 +29,9 @@ export function IllustrationTestFlow({
       role="img"
       aria-label={altText.trim() || '테스트 그림'}
       viewBox={`0 0 480 ${suggestion.scenes.length * 100 + 44}`}
-      className="w-full max-w-lg rounded-lg border border-border bg-white"
+      className="w-full max-w-lg rounded-lg border border-border bg-card"
     >
-      <text x="24" y="26" fontSize="14" fill="#475569">
+      <text x="24" y="26" fontSize="14" fill="var(--muted-foreground)">
         무료 테스트 그림 · 실제 AI 생성 아님
       </text>
       {suggestion.scenes.map((scene, index) => (

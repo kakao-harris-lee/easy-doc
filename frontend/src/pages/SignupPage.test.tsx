@@ -1,3 +1,4 @@
+import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
@@ -36,9 +37,11 @@ function renderAt(path: string) {
     <AuthProvider>
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={[path]}>
-          <AppLayout>
-            <AppRoutes />
-          </AppLayout>
+          <ThemeProvider>
+            <AppLayout>
+              <AppRoutes />
+            </AppLayout>
+          </ThemeProvider>
         </MemoryRouter>
       </WorkspaceContext.Provider>
     </AuthProvider>,

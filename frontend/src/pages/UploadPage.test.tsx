@@ -176,7 +176,9 @@ describe('업로드 화면', () => {
         await user.click(screen.getByRole('radio', { name: /더 쉽게 · 초등 3~4학년 수준/ }))
 
         expect(screen.getByText('필요 크레딧 0.3')).toBeInTheDocument()
-        expect(screen.getByText(/설명이 더 길어질 수 있어요/)).toBeInTheDocument()
+        expect(
+          screen.getByText('좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)'),
+        ).toBeInTheDocument()
         await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
         expect(createDocumentFromText).toHaveBeenCalledWith(
           text,
