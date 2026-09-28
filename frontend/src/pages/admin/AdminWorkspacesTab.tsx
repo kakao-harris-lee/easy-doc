@@ -31,6 +31,35 @@ function formatCount(value: number): string {
   return value.toLocaleString('ko-KR')
 }
 
+/** 한 계정(소유자 이메일)이 이 쪽에서 가진 작업 공간들. */
+interface OwnerGroup {
+  ownerEmail: string
+  workspaces: [AdminWorkspaceSummary, ...AdminWorkspaceSummary[]]
+}
+
+/**
+ * 목록을 소유자 이메일로 묶는다 — 계정이 처음 나온 순서를 지킨다.
+ *
+ * 묶음은 「지금 불러온 쪽」 안에서만 성립한다. 서버가 워크스페이스를 생성일 내림차순으로
+ * 늘어놓고 쪽을 나누므로, 한 계정의 작업 공간은 이웃하지 않은 여러 쪽에 흩어져 나올 수
+ * 있다 — 한 계정 것을 한자리에서 보려면 그 계정의 이메일로 검색한다(한 쪽에 20개).
+ */
+function groupByOwner(items: AdminWorkspaceSummary[]): OwnerGroup[] {
+  const groups: OwnerGroup[] = []
+  const byOwner = new Map<string, OwnerGroup>()
+  for (const item of items) {
+    const found = byOwner.get(item.owner_email)
+    if (found === undefined) {
+      const group: OwnerGroup = { ownerEmail: item.owner_email, workspaces: [item] }
+      byOwner.set(item.owner_email, group)
+      groups.push(group)
+    } else {
+      found.workspaces.push(item)
+    }
+  }
+  return groups
+}
+
 /** 크레딧 부여·조정 폼이 관리하는 입력값. */
 interface AdjustFormState {
   credits: string
@@ -156,7 +185,7 @@ function WorkspaceDetailPanel({
       aria-labelledby={headingId}
     >
       <h3 id={headingId} className="text-[15px] font-semibold text-foreground">
-        {detail.summary.name} 상세
+        {detail.summary.owner_email} · {detail.summary.name} 상세
       </h3>
 
       <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin />
@@ -188,7 +217,8 @@ function WorkspaceDetailPanel({
       >
         <h4 className="text-sm font-semibold text-foreground">크레딧 부여</h4>
         <p className="text-sm text-muted-foreground">
-          양수는 선택한 사용자의 워크스페이스에 부여하고, 음수는 회수합니다.
+          양수는 이 작업 공간에 부여하고, 음수는 회수합니다. 같은 계정의 다른 작업 공간에는 영향이
+          없습니다.
         </p>
 
         {formError !== null && (
@@ -362,6 +392,9 @@ export function AdminWorkspacesTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 계정별로 「지금 고른 작업 공간」. 목록이 바뀌어 저장해 둔 id가 사라지면 아래에서
+  // 그 계정의 첫 작업 공간으로 되돌려 쓴다 — 따로 초기화하지 않아도 된다.
+  const [selectedByOwner, setSelectedByOwner] = useState<Record<string, string>>({})
   const [reloadToken, setReloadToken] = useState(0)
 
   const searchId = useId()
@@ -403,11 +436,14 @@ export function AdminWorkspacesTab() {
   }
 
   const hasMore = page * PAGE_SIZE < total
+  const groups = groupByOwner(items)
 
   return (
     <div className="flex flex-col gap-4">
       <p className="rounded-[10px] border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
-        가입한 사용자의 이메일을 검색한 뒤 워크스페이스를 선택하면 크레딧을 부여할 수 있습니다.
+        크레딧·구독·세금계산서는 계정이 아니라 작업 공간(워크스페이스) 단위입니다. 한 계정이 작업
+        공간을 여러 개 가지면 잔액도 각각 따로입니다. 사용자의 이메일을 검색한 뒤 작업 공간을 고르고
+        「관리」를 누르면 크레딧을 부여할 수 있습니다.
       </p>
       <form
         className="flex flex-wrap items-end gap-3"
@@ -442,47 +478,95 @@ export function AdminWorkspacesTab() {
       {!loading && error === null && (
         <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
           <table className="usage-table">
-            <caption>워크스페이스 목록입니다. 행을 누르면 상세가 열립니다.</caption>
+            <caption>
+              이 쪽에 실린 워크스페이스를 계정별로 묶었습니다. 작업 공간이 여러 개인 계정은 골라서
+              관리를 누르세요.
+            </caption>
             <thead>
               <tr>
-                <th scope="col">이름</th>
                 <th scope="col">소유자 이메일</th>
+                <th scope="col">작업 공간</th>
                 <th scope="col">생성일</th>
                 <th scope="col">가용/잔액/예약</th>
                 <th scope="col">이번 달 문서/크레딧/비용</th>
+                <th scope="col">관리</th>
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 ? (
+              {groups.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="text-muted-foreground">
+                  <td colSpan={6} className="text-muted-foreground">
                     검색 결과가 없습니다.
                   </td>
                 </tr>
               ) : (
-                items.map((item) => (
-                  <tr key={item.workspace_id}>
-                    <th scope="row">
-                      <button
-                        type="button"
-                        className="font-semibold text-primary underline-offset-4 hover:underline"
-                        onClick={() => setSelectedId(item.workspace_id)}
-                      >
-                        {item.name}
-                      </button>
-                    </th>
-                    <td>{item.owner_email}</td>
-                    <td>{new Date(item.created_at).toLocaleDateString('ko-KR')}</td>
-                    <td className="tabular-nums">
-                      {formatCredits(item.credit_available)}/{formatCredits(item.credit_balance)}/
-                      {formatCredits(item.credit_reserved)}
-                    </td>
-                    <td className="tabular-nums">
-                      {formatCount(item.month_documents)}/{formatCredits(item.month_credits)}/
-                      {formatCostUsd(item.month_cost_usd)}
-                    </td>
-                  </tr>
-                ))
+                groups.map((group) => {
+                  const selected =
+                    group.workspaces.find(
+                      (workspace) => workspace.workspace_id === selectedByOwner[group.ownerEmail],
+                    ) ?? group.workspaces[0]
+                  return (
+                    <tr key={group.ownerEmail}>
+                      <th scope="row">{group.ownerEmail}</th>
+                      <td>
+                        {group.workspaces.length === 1 ? (
+                          selected.name
+                        ) : (
+                          <select
+                            aria-label={`${group.ownerEmail}의 작업 공간 선택`}
+                            className="min-h-11 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
+                            value={selected.workspace_id}
+                            onChange={(event) => {
+                              const nextId = event.target.value
+                              setSelectedByOwner((current) => ({
+                                ...current,
+                                [group.ownerEmail]: nextId,
+                              }))
+                              // 이 계정의 상세가 열려 있다면 상세·크레딧 폼도 새로 고른
+                              // 작업 공간으로 옮긴다 — 열려 있지 않으면 건드리지 않는다.
+                              if (
+                                group.workspaces.some(
+                                  (workspace) => workspace.workspace_id === selectedId,
+                                )
+                              ) {
+                                setSelectedId(nextId)
+                              }
+                            }}
+                          >
+                            {group.workspaces.map((workspace) => (
+                              <option key={workspace.workspace_id} value={workspace.workspace_id}>
+                                {workspace.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td>{new Date(selected.created_at).toLocaleDateString('ko-KR')}</td>
+                      <td className="tabular-nums">
+                        {formatCredits(selected.credit_available)}/
+                        {formatCredits(selected.credit_balance)}/
+                        {formatCredits(selected.credit_reserved)}
+                      </td>
+                      <td className="tabular-nums">
+                        {formatCount(selected.month_documents)}/
+                        {formatCredits(selected.month_credits)}/
+                        {formatCostUsd(selected.month_cost_usd)}
+                      </td>
+                      <td>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="min-h-11"
+                          aria-label={`${group.ownerEmail}의 ${selected.name} 관리`}
+                          onClick={() => setSelectedId(selected.workspace_id)}
+                        >
+                          관리
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
