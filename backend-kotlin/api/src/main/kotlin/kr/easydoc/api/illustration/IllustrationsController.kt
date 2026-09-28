@@ -2,6 +2,7 @@ package kr.easydoc.api.illustration
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.api.MIGRATE_PROFILE
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.illustration.ILLUSTRATION_NOT_FOUND_MESSAGE
 import kr.easydoc.application.illustration.IllustrationsService
 import kr.easydoc.core.exceptions.NotFoundException
@@ -23,8 +24,7 @@ class IllustrationsController(private val service: IllustrationsService) {
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(IllustrationCatalogResponse.of(service.list()))
 
     /**
@@ -60,8 +60,7 @@ class IllustrationsController(private val service: IllustrationsService) {
         return ResponseEntity
             .ok()
             .contentType(IMAGE_SVG_XML)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+            .privateResponse()
             .header(CONTENT_SECURITY_POLICY, CSP_VALUE)
             .header(HttpHeaders.CONTENT_DISPOSITION, INLINE)
             .body(image.svg)
@@ -71,10 +70,7 @@ class IllustrationsController(private val service: IllustrationsService) {
         const val ILLUSTRATIONS_PATH = "/illustrations"
         const val ASSET_ID = "asset_id"
         const val ILLUSTRATION_IMAGE_PATH = "$ILLUSTRATIONS_PATH/{$ASSET_ID}/image"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
         const val CONTENT_SECURITY_POLICY = "Content-Security-Policy"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
         const val CSP_VALUE = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
         const val INLINE = "inline"
         val IMAGE_SVG_XML: MediaType = MediaType("image", "svg+xml", Charsets.UTF_8)

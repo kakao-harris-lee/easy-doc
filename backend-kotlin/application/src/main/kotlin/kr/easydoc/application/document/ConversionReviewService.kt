@@ -14,6 +14,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.privacy.ReviewedBody
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import kr.easydoc.core.text.normalizeLineEndings
 import kr.easydoc.core.text.stripControlChars
 import java.util.UUID
@@ -23,7 +24,7 @@ import java.util.UUID
  * 입력이 [ReviewedBody] 인 것이 「사람이 제출한 값만」을 타입으로 만든다.
  */
 class ConversionReviewService(
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReviewRepository,
     private val cipher: ContentCipher,
     private val query: ConversionQueryService,
     private val transaction: TransactionRunner,
@@ -161,4 +162,3 @@ class ConversionReviewService(
 }
 
 const val CONTENT_REVISION_CONFLICT_MESSAGE: String = "본문이 바뀌었습니다. 다시 불러와 주세요"
-const val MAX_SAFE_REVISION: Long = 9_007_199_254_740_991L

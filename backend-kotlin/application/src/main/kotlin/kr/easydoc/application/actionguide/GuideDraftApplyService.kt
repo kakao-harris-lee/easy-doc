@@ -4,8 +4,7 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
-import kr.easydoc.application.document.ConversionRepository
-import kr.easydoc.application.document.MAX_SAFE_REVISION
+import kr.easydoc.application.document.ConversionReviewReadRepository
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
@@ -15,13 +14,14 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import kr.easydoc.core.text.normalizeLineEndings
 import kr.easydoc.core.text.stripControlChars
 import java.util.UUID
 
 /** Applying a full draft always creates an unreviewed revision and an independently encrypted previous body. */
 class GuideDraftApplyService(
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReviewReadRepository,
     private val repository: GuideDraftApplyRepository,
     private val drafts: GuideDraftApplySource,
     private val cipher: ContentCipher,

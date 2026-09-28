@@ -1,6 +1,7 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 
 /**
@@ -82,13 +83,13 @@ class PurgeFeedbackComments(
      */
     private fun drainPurges(): FeedbackCommentPurgeResult {
         var purged = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "피드백 의견 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(dryRun = false)
-            purged += batch.purgedComments
-        } while (batch.purgedComments >= policy.batchSize)
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "피드백 의견 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(dryRun = false) },
+            shouldContinue = { batch, batchSize -> batch.purgedComments >= batchSize },
+            consume = { batch -> purged += batch.purgedComments },
+        )
         return FeedbackCommentPurgeResult(dryRun = false, enabled = true, purgedComments = purged)
     }
 
@@ -99,10 +100,6 @@ class PurgeFeedbackComments(
 
     private fun inactiveResult(): FeedbackCommentPurgeResult =
         FeedbackCommentPurgeResult(dryRun = policy.dryRun, enabled = false, purgedComments = 0)
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 건수만 남긴다. 의견 내용·식별자는 자리에 없다. */

@@ -1,6 +1,7 @@
 package kr.easydoc.application.accesslog
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Instant
@@ -115,22 +116,18 @@ class PurgePersonalDataAccessLogs(
         val legalMinimumCutoff = now.minus(PersonalDataAccessLogPurgePolicy.MINIMUM_RETENTION)
         val accessedBefore = minOf(configuredCutoff, legalMinimumCutoff).toInstant()
         var deleted = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "접속기록 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(accessedBefore)
-            deleted += batch.deleted
-        } while (batch.deleted >= policy.batchSize)
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "접속기록 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(accessedBefore) },
+            shouldContinue = { batch, batchSize -> batch.deleted >= batchSize },
+            consume = { batch -> deleted += batch.deleted },
+        )
         return PersonalDataAccessLogPurgeResult(enabled = true, deleted = deleted)
     }
 
     private fun inactiveResult(): PersonalDataAccessLogPurgeResult =
         PersonalDataAccessLogPurgeResult(enabled = false, deleted = 0)
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 파기 건수만 남긴다. `client_ip`·`actor_user_id`·`subject_scope`는 자리에 없다. */

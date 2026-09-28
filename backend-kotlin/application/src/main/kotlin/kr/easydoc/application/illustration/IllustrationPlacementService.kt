@@ -6,9 +6,8 @@ import kr.easydoc.application.document.CONTENT_REVISION_CONFLICT_MESSAGE
 import kr.easydoc.application.document.CONTENT_REVISION_INVALID_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_DONE_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_FOUND_MESSAGE
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewReadRepository
 import kr.easydoc.application.document.LockedConversion
-import kr.easydoc.application.document.MAX_SAFE_REVISION
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
@@ -18,6 +17,7 @@ import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.illustration.IllustrationPlacement
 import kr.easydoc.core.illustration.IllustrationPlacements
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
 
@@ -48,7 +48,7 @@ data class IllustrationPlacementsView(
 @Suppress("LongParameterList")
 class IllustrationPlacementService(
     private val enabled: Boolean,
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReviewReadRepository,
     private val catalog: IllustrationCatalogSource,
     private val placements: IllustrationPlacementRepository,
     private val cipher: ContentCipher,

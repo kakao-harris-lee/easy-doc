@@ -12,7 +12,7 @@ import kr.easydoc.application.actionguide.GuideDraftService
 import kr.easydoc.application.actionguide.GuideReviewSignals
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewReadRepository
 import kr.easydoc.core.actionguide.ActionGuideSourceAnchor
 import kr.easydoc.core.actionguide.ExtractedGuideAction
 import kr.easydoc.core.actionguide.GuideActionPresence
@@ -42,6 +42,15 @@ import java.util.UUID
 @Configuration(proxyBeanMethods = false)
 @Profile("!$MIGRATE_PROFILE")
 class GuideWorkflowConfiguration {
+    @Bean
+    fun guideWorkflowQuery(
+        analyses: kr.easydoc.application.actionguide.ActionGuideAnalysisService,
+        jobs: kr.easydoc.application.actionguide.ActionGuideJobService,
+        drafts: GuideDraftService,
+    ): kr.easydoc.application.actionguide.GuideWorkflowQuery =
+        kr.easydoc.application.actionguide
+            .DefaultGuideWorkflowQuery(analyses, jobs, drafts)
+
     @Bean
     fun guideAnalysisIntakeService(
         properties: ActionGuideProperties,
@@ -87,7 +96,7 @@ class GuideWorkflowConfiguration {
 
     @Bean
     fun guideDraftApplyService(
-        conversions: ConversionRepository,
+        conversions: ConversionReviewReadRepository,
         jdbc: JdbcClient,
         drafts: GuideDraftService,
         cipher: ContentCipher,

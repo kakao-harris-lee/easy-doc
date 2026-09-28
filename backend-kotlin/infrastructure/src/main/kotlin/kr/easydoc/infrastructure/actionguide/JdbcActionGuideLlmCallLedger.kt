@@ -3,14 +3,28 @@ package kr.easydoc.infrastructure.actionguide
 import kr.easydoc.application.actionguide.ActionGuideLlmCallLedger
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.llm.LlmCallRecord
+import kr.easydoc.infrastructure.llm.JdbcFeatureLlmCallLedgerJob
+import kr.easydoc.infrastructure.llm.JdbcFeatureLlmCallLedgerSql
+import kr.easydoc.infrastructure.llm.JdbcFeatureLlmCallLedgerWriter
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 
 /** provider 시작 전 in_progress를 쓰고 동일 행을 terminal outcome으로 바꾼다. */
 class JdbcActionGuideLlmCallLedger(private val jdbc: JdbcClient) : ActionGuideLlmCallLedger {
+    private val writer =
+        JdbcFeatureLlmCallLedgerWriter(
+            jdbc = jdbc,
+            sql =
+                JdbcFeatureLlmCallLedgerSql(
+                    start = START_SQL,
+                    complete = COMPLETE_SQL,
+                    markOutcomeUnknown = MARK_OUTCOME_UNKNOWN_SQL,
+                ),
+            completionFailureMessage = "행동 안내문 LLM 호출 원장을 완료할 수 없습니다",
+            unknownFailureMessage = "행동 안내문 LLM 호출 원장을 불명확 상태로 바꿀 수 없습니다",
+        )
+
     override fun start(
         job: StoredActionGuideJob,
         executionId: UUID,
@@ -23,72 +37,27 @@ class JdbcActionGuideLlmCallLedger(private val jdbc: JdbcClient) : ActionGuideLl
                 .param("ownerId", job.ownerId)
                 .query { rs, _ -> rs.getInt(1) }
                 .single()
-        jdbc
-            .sql(START_SQL)
-            .param("id", executionId)
-            .param("jobId", job.jobId)
-            .param("conversionId", job.conversionId)
-            .param("documentId", job.documentId)
-            .param("workspaceId", job.workspaceId)
-            .param("userId", job.ownerId)
-            .param("charCount", charCount)
-            .param("calledAt", utc(startedAt))
-            .update()
+        writer.start(job.toLedgerJob(), executionId, startedAt, charCount)
     }
 
     override fun complete(
         job: StoredActionGuideJob,
         executionId: UUID,
         record: LlmCallRecord,
-    ) {
-        val updated =
-            jdbc
-                .sql(COMPLETE_SQL)
-                .param("id", executionId)
-                .param("jobId", job.jobId)
-                .param("provider", record.provider)
-                .param("model", record.model)
-                .param("inputTokens", record.inputTokens)
-                .param("outputTokens", record.outputTokens)
-                .param("latencyMs", record.latencyMs)
-                .param("estimatedCost", record.estimatedCostUsd)
-                .param("inputPrice", record.pricingInputUsdPerMtok)
-                .param("outputPrice", record.pricingOutputUsdPerMtok)
-                .param("charCount", record.charCount)
-                .param("calledAt", utc(record.calledAt))
-                .param("outcome", record.outcome.wireName)
-                .param("failureClass", record.failureClass?.take(FAILURE_CLASS_MAX_LENGTH))
-                .update()
-        check(updated == 1) { "행동 안내문 LLM 호출 원장을 완료할 수 없습니다" }
-    }
+    ) = writer.complete(job.jobId, executionId, record)
 
     override fun markOutcomeUnknown(
         job: StoredActionGuideJob,
         executionId: UUID,
         recoveredAt: Instant,
     ) {
-        val updated =
-            jdbc
-                .sql(
-                    """
-                    UPDATE llm_calls
-                    SET outcome = 'outcome_unknown', failure_class = NULL
-                    WHERE id = :id AND action_guide_job_id = :jobId AND outcome = 'in_progress'
-                    """.trimIndent(),
-                ).param("id", executionId)
-                .param("jobId", job.jobId)
-                .update()
-        check(updated == 1) { "행동 안내문 LLM 호출 원장을 불명확 상태로 바꿀 수 없습니다" }
+        writer.markOutcomeUnknown(job.jobId, executionId)
         @Suppress("UNUSED_VARIABLE")
         val ignoredRecoveryTime = recoveredAt
     }
 
-    private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
-
     private companion object {
-        const val FAILURE_CLASS_MAX_LENGTH: Int = 64
-
-        val START_SQL =
+        val START_SQL: String =
             """
             INSERT INTO llm_calls
                 (id, conversion_id, document_id, workspace_id, user_id, purpose,
@@ -102,7 +71,7 @@ class JdbcActionGuideLlmCallLedger(private val jdbc: JdbcClient) : ActionGuideLl
                  :charCount, :charCount, :calledAt, 'in_progress', NULL, :jobId)
             """.trimIndent()
 
-        val COMPLETE_SQL =
+        val COMPLETE_SQL: String =
             """
             UPDATE llm_calls
             SET provider = :provider, model = :model,
@@ -114,5 +83,21 @@ class JdbcActionGuideLlmCallLedger(private val jdbc: JdbcClient) : ActionGuideLl
                 outcome = :outcome, failure_class = :failureClass
             WHERE id = :id AND action_guide_job_id = :jobId AND outcome = 'in_progress'
             """.trimIndent()
+
+        val MARK_OUTCOME_UNKNOWN_SQL: String =
+            """
+            UPDATE llm_calls
+            SET outcome = 'outcome_unknown', failure_class = NULL
+            WHERE id = :id AND action_guide_job_id = :jobId AND outcome = 'in_progress'
+            """.trimIndent()
     }
 }
+
+private fun StoredActionGuideJob.toLedgerJob(): JdbcFeatureLlmCallLedgerJob =
+    JdbcFeatureLlmCallLedgerJob(
+        jobId = jobId,
+        conversionId = conversionId,
+        documentId = documentId,
+        workspaceId = workspaceId,
+        ownerId = ownerId,
+    )

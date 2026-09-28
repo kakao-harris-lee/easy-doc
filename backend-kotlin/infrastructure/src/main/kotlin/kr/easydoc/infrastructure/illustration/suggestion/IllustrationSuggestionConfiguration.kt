@@ -16,6 +16,7 @@ import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.LlmProviderConfiguration
+import kr.easydoc.infrastructure.queue.WorkerLeaseSupport
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -25,7 +26,6 @@ import org.springframework.context.annotation.Profile
 import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.math.BigDecimal
-import java.net.InetAddress
 import java.time.Duration
 
 /**
@@ -107,6 +107,18 @@ class IllustrationSuggestionConfiguration {
     fun illustrationSuggestionLlmCallLedger(jdbcClient: JdbcClient): IllustrationSuggestionLlmCallLedger =
         JdbcIllustrationSuggestionLlmCallLedger(jdbcClient)
 
+    @Suppress("LongParameterList")
+    @Bean("illustrationSuggestionWorkerFactory")
+    internal fun illustrationSuggestionWorkerFactory(
+        jobs: IllustrationSuggestionJobRepository,
+        credits: IllustrationSuggestionCreditPort,
+        ledger: IllustrationSuggestionLlmCallLedger,
+        results: IllustrationSuggestionResultRepository,
+        cipher: ContentCipher,
+        transactionRunner: TransactionRunner,
+    ): IllustrationSuggestionWorkerFactory =
+        IllustrationSuggestionWorkerFactory(jobs, credits, ledger, results, cipher, transactionRunner)
+
     @Bean
     fun illustrationSuggestionJobService(
         properties: IllustrationSuggestionProperties,
@@ -157,28 +169,12 @@ class IllustrationSuggestionDrainWorkerConfiguration {
     fun disabledIllustrationSuggestionJobRunner(): IllustrationSuggestionJobRunner =
         IllustrationSuggestionJobRunner { error("intake OFF drain 경로에서 runner를 호출하면 안 됩니다") }
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processIllustrationSuggestionJob(
-        jobs: IllustrationSuggestionJobRepository,
-        credits: IllustrationSuggestionCreditPort,
-        ledger: IllustrationSuggestionLlmCallLedger,
-        results: IllustrationSuggestionResultRepository,
-        cipher: ContentCipher,
+    @Bean("processIllustrationSuggestionJob")
+    internal fun processIllustrationSuggestionJob(
+        factory: IllustrationSuggestionWorkerFactory,
         runner: IllustrationSuggestionJobRunner,
-        transactionRunner: TransactionRunner,
         policy: IllustrationSuggestionJobWorkerPolicy,
-    ): ProcessIllustrationSuggestionJob =
-        ProcessIllustrationSuggestionJob(
-            jobs,
-            credits,
-            ledger,
-            results,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-        )
+    ): ProcessIllustrationSuggestionJob = factory.create(runner, policy)
 }
 
 /** 검증 전용. 이 프로필 없이는 fake runner 와 poller 처리 빈이 만들어지지 않는다. */
@@ -201,28 +197,12 @@ class FakeIllustrationSuggestionWorkerConfiguration {
     ): IllustrationSuggestionJobRunner =
         FakeIllustrationSuggestionJobRunner(JdbcIllustrationSuggestionInputSource(jdbcClient, cipher))
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processIllustrationSuggestionJob(
-        jobs: IllustrationSuggestionJobRepository,
-        credits: IllustrationSuggestionCreditPort,
-        ledger: IllustrationSuggestionLlmCallLedger,
-        results: IllustrationSuggestionResultRepository,
-        cipher: ContentCipher,
+    @Bean("processIllustrationSuggestionJob")
+    internal fun processIllustrationSuggestionJob(
+        factory: IllustrationSuggestionWorkerFactory,
         runner: IllustrationSuggestionJobRunner,
-        transactionRunner: TransactionRunner,
         policy: IllustrationSuggestionJobWorkerPolicy,
-    ): ProcessIllustrationSuggestionJob =
-        ProcessIllustrationSuggestionJob(
-            jobs,
-            credits,
-            ledger,
-            results,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-        )
+    ): ProcessIllustrationSuggestionJob = factory.create(runner, policy)
 }
 
 /** 실제 호출은 intake 와 worker 플래그를 함께 켠 worker 프로필에서만 가능하다. */
@@ -266,28 +246,12 @@ class ProviderIllustrationSuggestionWorkerConfiguration {
         )
     }
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processIllustrationSuggestionJob(
-        jobs: IllustrationSuggestionJobRepository,
-        credits: IllustrationSuggestionCreditPort,
-        ledger: IllustrationSuggestionLlmCallLedger,
-        results: IllustrationSuggestionResultRepository,
-        cipher: ContentCipher,
+    @Bean("processIllustrationSuggestionJob")
+    internal fun processIllustrationSuggestionJob(
+        factory: IllustrationSuggestionWorkerFactory,
         runner: IllustrationSuggestionJobRunner,
-        transactionRunner: TransactionRunner,
         policy: IllustrationSuggestionJobWorkerPolicy,
-    ): ProcessIllustrationSuggestionJob =
-        ProcessIllustrationSuggestionJob(
-            jobs,
-            credits,
-            ledger,
-            results,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-        )
+    ): ProcessIllustrationSuggestionJob = factory.create(runner, policy)
 }
 
 /** e2e·검증에서만 켜는 fake provider 프로필 이름. */
@@ -298,17 +262,15 @@ const val PROVIDER_RATE_REQUIRED_MESSAGE: String =
     "실제 provider 모드에서는 easydoc.illustration-suggestions.credits-per-100-chars 가 0보다 커야 합니다"
 
 private fun workerPolicy(properties: IllustrationSuggestionProperties): IllustrationSuggestionJobWorkerPolicy =
-    IllustrationSuggestionJobWorkerPolicy(
-        owner = properties.owner.ifBlank(::hostOwner).take(OWNER_MAX_LENGTH),
-        leaseDuration = Duration.ofSeconds(properties.leaseDurationSeconds),
-        maxLeaseAttempts = properties.maxLeaseAttempts,
-    )
-
-private fun hostOwner(): String =
-    runCatching { InetAddress.getLocalHost().hostName }
-        .getOrElse { DEFAULT_OWNER }
-        .ifBlank { DEFAULT_OWNER }
+    WorkerLeaseSupport
+        .resolve(
+            configuredOwner = properties.owner,
+            defaultOwner = DEFAULT_OWNER,
+            leaseDurationSeconds = properties.leaseDurationSeconds,
+            maxLeaseAttempts = properties.maxLeaseAttempts,
+        ).let { lease ->
+            IllustrationSuggestionJobWorkerPolicy(lease.owner, lease.leaseDuration, lease.maxLeaseAttempts)
+        }
 
 private const val DEFAULT_OWNER: String = "illustration-suggestion-worker"
-private const val OWNER_MAX_LENGTH: Int = 64
 private const val SUGGESTION_PROVIDER_TIMEOUT_SECONDS: Long = 90

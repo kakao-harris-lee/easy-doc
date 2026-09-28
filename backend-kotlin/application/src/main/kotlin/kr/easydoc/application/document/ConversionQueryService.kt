@@ -21,7 +21,7 @@ import java.util.UUID
 /** 변환 조회 유스케이스 — **내** 변환 한 건의 상태와 결과를 읽는다. */
 @Suppress("LongParameterList")
 class ConversionQueryService(
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReadRepository,
     private val cipher: ContentCipher,
     private val original: OriginalReflection,
     /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 계획 §6 S2. */

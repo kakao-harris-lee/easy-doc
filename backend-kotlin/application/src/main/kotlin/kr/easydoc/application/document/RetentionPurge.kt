@@ -1,6 +1,7 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.util.UUID
 
@@ -78,15 +79,17 @@ class PurgeExpiredDocuments(
         val ids = mutableListOf<UUID>()
         var conversions = 0
         var skipped = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "보존 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(dryRun = false)
-            ids += batch.documentIds
-            conversions += batch.purgedConversions
-            skipped = batch.skippedLeased
-        } while (batch.purgedDocuments >= policy.batchSize)
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "보존 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(dryRun = false) },
+            shouldContinue = { batch, batchSize -> batch.purgedDocuments >= batchSize },
+            consume = { batch ->
+                ids += batch.documentIds
+                conversions += batch.purgedConversions
+                skipped = batch.skippedLeased
+            },
+        )
         return RetentionPurgeResult(
             dryRun = false,
             enabled = true,
@@ -111,10 +114,6 @@ class PurgeExpiredDocuments(
             skippedLeased = 0,
             documentIds = emptyList(),
         )
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 식별자와 건수만 남긴다. 본문·제목·예외 메시지는 자리에 없다. */

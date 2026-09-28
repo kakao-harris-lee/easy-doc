@@ -3,6 +3,7 @@ package kr.easydoc.api.document
 import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionQueryService
@@ -47,8 +48,7 @@ class ConversionController(
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(ConversionResponse.of(view))
     }
 
@@ -73,8 +73,7 @@ class ConversionController(
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(ConversionResponse.of(view))
     }
 
@@ -97,8 +96,7 @@ class ConversionController(
         return ResponseEntity
             .ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename))
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .contentType(MediaType.parseMediaType(file.mediaType))
             .body(file.content)
     }
@@ -125,8 +123,7 @@ class ConversionController(
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(ReconvertUnitResponse.of(result))
     }
 
@@ -138,13 +135,5 @@ class ConversionController(
         const val CONVERSION_ID_VARIABLE = "conversion_id"
         const val SOURCE_UNIT_INDEX_VARIABLE = "source_unit_index"
         const val FORMAT_PARAM = "format"
-
-        /**
-         * 하한선 10곳에 붙는 사적 응답 헤더. 값의 정본은 계약 `components/headers` 의 각
-         * 컴포넌트이고, 실제로 나가는 값이 그 `const` 와 같은지는 계약 케이스가 잰다.
-         */
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }

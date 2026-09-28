@@ -2,6 +2,7 @@ package kr.easydoc.core.easyread
 
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.util.UUID
 
 class ReviewSupportAnalyzerTest {
     @Test
@@ -23,14 +24,28 @@ class ReviewSupportAnalyzerTest {
     fun `의미 동치를 자동 주장하지 않고 사람 확인 다섯 항목을 항상 제공한다`() {
         val assessment = analyzeReviewSupport("A와 B를 모두 제출하세요.", "A 또는 B를 제출하세요.")
 
-        assertThat(assessment.items.filter { it.kind == ReviewItemKind.RELATION_CHECK }.map { it.ruleCode })
-            .containsExactly(
-                "target_scope",
-                "all_or_one",
-                "exception_scope",
-                "deadline_action",
-                "amount_subject",
-            )
+        assertThat(assessment.items).isNotEmpty
+        assertThat(assessment.items.map { it.itemId }).containsExactly(
+            UUID.fromString("a09e7c6b-637b-3baa-ae2a-ab95b031763d"),
+            UUID.fromString("28b546ca-4fbf-3d38-82dd-91db7f736a6e"),
+            UUID.fromString("4d699a9d-7f68-3f5c-81d0-d69ad411a00d"),
+            UUID.fromString("3408cada-9bf3-3e88-909d-2b411ca022c8"),
+            UUID.fromString("adf0d11e-91a0-303d-aa30-e9d6ba38bf10"),
+        )
+        assertThat(assessment.items.map { it.ruleCode }).containsExactly(
+            "target_scope",
+            "all_or_one",
+            "exception_scope",
+            "deadline_action",
+            "amount_subject",
+        )
+        assertThat(assessment.items.map { it.kind }).containsExactly(
+            ReviewItemKind.RELATION_CHECK,
+            ReviewItemKind.RELATION_CHECK,
+            ReviewItemKind.RELATION_CHECK,
+            ReviewItemKind.RELATION_CHECK,
+            ReviewItemKind.RELATION_CHECK,
+        )
         assertThat(assessment.items).allMatch { it.state == ReviewItemState.NEEDS_REVIEW }
     }
 

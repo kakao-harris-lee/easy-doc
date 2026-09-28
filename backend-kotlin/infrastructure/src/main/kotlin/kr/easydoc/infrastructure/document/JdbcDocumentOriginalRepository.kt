@@ -35,7 +35,7 @@ class JdbcDocumentOriginalRepository(private val jdbc: JdbcClient) : DocumentOri
                 throw storageFailure(failure)
             }
         // 조용히 0행으로 끝나면 「문서는 남았는데 원본은 없다」가 커밋된다 — 트랜잭션을 끊는다.
-        if (inserted == 0) throw StorageException(STORAGE_FAILURE_MESSAGE)
+        if (inserted == 0) throw StorageException(DOCUMENT_STORAGE_FAILURE_MESSAGE)
     }
 
     /**
@@ -135,12 +135,11 @@ class JdbcDocumentOriginalRepository(private val jdbc: JdbcClient) : DocumentOri
         // 예외 **메시지**를 로그에 넣지 않는다 — 그 안에 실패한 행 전체가 들어 있다.
         // 원본 표에서는 그것이 곧 파일 바이트다.
         DocumentStorageLog.constraintViolation("document_originals", failure)
-        return StorageException(STORAGE_FAILURE_MESSAGE)
+        return StorageException(DOCUMENT_STORAGE_FAILURE_MESSAGE)
     }
 
     private companion object {
         /** 저장소가 만든 고정 문자열. `JdbcDocumentRepository` 와 같은 값이다. */
-        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
 
         val INSERT_SQL =
             """

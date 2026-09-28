@@ -23,14 +23,15 @@ import java.util.UUID
 class TossHttpGateway(
     private val key: Secret,
     private val base: URI = URI("https://api.tosspayments.com"),
+    private val connectTimeout: Duration = TossBillingProperties.DEFAULT_CONNECT_TIMEOUT,
+    private val requestTimeout: Duration = TossBillingProperties.DEFAULT_REQUEST_TIMEOUT,
 ) : TossGateway {
     private val json = ObjectMapper()
     private val client =
         HttpClient
             .newBuilder()
-            .connectTimeout(
-                Duration.ofSeconds(10),
-            ).followRedirects(HttpClient.Redirect.NEVER)
+            .connectTimeout(connectTimeout)
+            .followRedirects(HttpClient.Redirect.NEVER)
             .build()
 
     override fun issue(
@@ -112,7 +113,7 @@ class TossHttpGateway(
         val request =
             HttpRequest
                 .newBuilder(base.resolve(path))
-                .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
+                .timeout(requestTimeout)
                 .header("Authorization", "Basic $encoded")
                 .header("Content-Type", "application/json")
         id?.let { request.header("Idempotency-Key", it.toString()) }
@@ -176,7 +177,6 @@ class TossHttpGateway(
     }
 
     private companion object {
-        const val REQUEST_TIMEOUT_SECONDS = 70L
         const val NOT_FOUND = 404
         const val SERVER_ERROR = 500
         val SUCCESS_CODES = 200..299

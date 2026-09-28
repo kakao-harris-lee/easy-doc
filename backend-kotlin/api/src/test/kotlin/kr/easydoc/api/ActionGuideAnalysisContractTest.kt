@@ -6,14 +6,22 @@ import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
 import kr.easydoc.application.actionguide.ActionGuideAnalysisService
+import kr.easydoc.application.actionguide.ActionGuideJobCollectionView
+import kr.easydoc.application.actionguide.ActionGuideJobService
+import kr.easydoc.application.actionguide.ActionGuideOperation
 import kr.easydoc.application.actionguide.GuideAnalysisSnapshot
 import kr.easydoc.application.actionguide.GuideAnalysisView
+import kr.easydoc.application.actionguide.GuideDraft
 import kr.easydoc.application.actionguide.GuideDraftApplyCommand
 import kr.easydoc.application.actionguide.GuideDraftApplyService
 import kr.easydoc.application.actionguide.GuideDraftApplyView
+import kr.easydoc.application.actionguide.GuideDraftBlock
+import kr.easydoc.application.actionguide.GuideDraftService
+import kr.easydoc.core.actionguide.ActionGuideSourceAnchor
 import kr.easydoc.core.actionguide.GuideActionPresence
 import kr.easydoc.core.actionguide.GuideAnalysisResult
 import kr.easydoc.core.actionguide.GuideCoverageStatus
+import kr.easydoc.core.actionguide.GuideOutputMode
 import kr.easydoc.core.actionguide.GuideSourceUnit
 import kr.easydoc.core.actionguide.GuideSuitability
 import kr.easydoc.core.actionguide.GuideUnitAssessment
@@ -30,6 +38,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -104,7 +113,12 @@ class ActionGuideAnalysisContractTest {
                 .response.status,
         ).isEqualTo(401)
         val owner = owner()
-        listOf("{}", """{"request_id":"${UUID.randomUUID()}","expected_content_revision":0}""").forEach { body ->
+        listOf(
+            "{}",
+            """{"request_id":"${UUID.randomUUID()}","expected_content_revision":null}""",
+            """{"request_id":"${UUID.randomUUID()}","expected_content_revision":9007199254740992}""",
+            """{"request_id":"${UUID.randomUUID()}","expected_content_revision":0}""",
+        ).forEach { body ->
             val response =
                 mvc
                     .post("/conversions/${UUID.randomUUID()}/action-guide-analyses") {
@@ -174,6 +188,119 @@ class ActionGuideAnalysisContractTest {
                     }.andReturn()
                     .response.status,
             ).isEqualTo(401)
+        }
+    }
+
+    @Autowired private lateinit var jobs: ActionGuideJobService
+
+    @Autowired private lateinit var drafts: GuideDraftService
+
+    @Test
+    fun `empty workflow retains explicit nulls numeric credits and exact keys`() {
+        val owner = owner()
+        val conversion = UUID.randomUUID()
+        `when`(jobs.list(owner, conversion, ActionGuideOperation.ANALYSIS))
+            .thenReturn(ActionGuideJobCollectionView(null, null, BigDecimal("1.5"), BigDecimal("8.25")))
+        `when`(drafts.list(owner, conversion)).thenReturn(emptyList())
+        val response =
+            mvc
+                .get("/conversions/$conversion/action-guide-workflow") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                }.andReturn()
+                .response
+        assertThat(response.status).isEqualTo(200)
+        assertThat(response.getHeader("Cache-Control")).contains("no-store")
+        assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff")
+        assertThat(mapper.readTree(response.contentAsByteArray)).isEqualTo(
+            mapper.readTree(
+                """{"intake_enabled":false,"generation_enabled":false,"required_credits":1.5,
+        "available_credits":8.25,"generation_credits":0,"analysis":null,"active_job":null,
+        "latest_job":null,"drafts":[]}""",
+            ),
+        )
+    }
+
+    @Test
+    @Suppress("LongMethod") // One fixed JSON fixture exercises each independent stale-state axis.
+    fun `workflow draft JSON and current state require matching analysis and both revisions`() {
+        val owner = owner()
+        val conversion = UUID.randomUUID()
+        val analysisId = UUID.randomUUID()
+        val draftId = UUID.randomUUID()
+        val created = Instant.parse("2026-09-26T00:00:00Z")
+        val snapshot =
+            GuideAnalysisSnapshot(
+                analysisId,
+                7,
+                2,
+                listOf(GuideSourceUnit(0, "원문")),
+                "본문",
+                "grade_3_4",
+                GuideAnalysisResult(
+                    GuideSuitability.UNCERTAIN,
+                    GuideActionPresence.UNCERTAIN,
+                    "확인",
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    emptyList(),
+                    false,
+                ),
+                created,
+                reviewRevision = 3,
+            )
+        val draft =
+            GuideDraft(
+                draftId,
+                analysisId,
+                2,
+                3,
+                7,
+                4,
+                GuideOutputMode.ADDITIONAL_GUIDE,
+                "안내",
+                listOf(
+                    GuideDraftBlock(
+                        "b1",
+                        "a1",
+                        "실행",
+                        listOf("주의"),
+                        listOf(ActionGuideSourceAnchor(listOf(0), "근거")),
+                    ),
+                ),
+                true,
+                created,
+            )
+        `when`(jobs.list(owner, conversion, ActionGuideOperation.ANALYSIS))
+            .thenReturn(ActionGuideJobCollectionView(null, null, BigDecimal.ONE, BigDecimal.TEN))
+        `when`(drafts.list(owner, conversion)).thenReturn(listOf(draft))
+        val views =
+            listOf(
+                GuideAnalysisView(snapshot, "current") to "current",
+                GuideAnalysisView(snapshot, "stale") to "stale",
+                GuideAnalysisView(snapshot.copy(analysisId = UUID.randomUUID()), "current") to "stale",
+                GuideAnalysisView(snapshot.copy(analysisRevision = 5), "current") to "stale",
+                GuideAnalysisView(snapshot.copy(reviewRevision = 5), "current") to "stale",
+                null to "stale",
+            )
+        views.forEach { (view, state) ->
+            `when`(service.latest(owner, conversion)).thenReturn(view)
+            val response =
+                mvc
+                    .get("/conversions/$conversion/action-guide-workflow") {
+                        header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    }.andReturn()
+                    .response
+            assertThat(response.status).isEqualTo(200)
+            assertThat(mapper.readTree(response.contentAsByteArray)["drafts"][0]).isEqualTo(
+                mapper.readTree(
+                    """{"draft_id":"$draftId","analysis_id":"$analysisId","analysis_revision":2,
+            "analysis_review_revision":3,"based_on_content_revision":7,"draft_revision":4,
+            "mode":"additional_guide","body":"안내","blocks":[{"id":"b1","action_id":"a1",
+            "text":"실행","cautions":["주의"],"evidence":[{"source_unit_indexes":[0],"quote":"근거"}]}],
+            "reviewed":true,"created_at":"$created","state":"$state"}""",
+                ),
+            )
         }
     }
 

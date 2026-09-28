@@ -1,6 +1,7 @@
 package kr.easydoc.api.workspace
 
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.workspace.WorkspaceService
@@ -110,13 +111,5 @@ class WorkspaceController(
         ResponseEntity
             .status(status)
             .contentType(MediaType.APPLICATION_JSON)
-            .header(CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
-
-    private companion object {
-        const val CACHE_CONTROL = "Cache-Control"
-        const val NO_STORE = "no-store"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NOSNIFF = "nosniff"
-    }
+            .privateResponse()
 }

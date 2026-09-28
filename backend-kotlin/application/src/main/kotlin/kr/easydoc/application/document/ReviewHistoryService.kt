@@ -5,6 +5,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.time.Clock
@@ -214,7 +215,7 @@ class DefaultReviewHistoryAppender(
 /** Read and export use the same retention/ownership predicates in [ReviewHistoryRepository]. */
 class ReviewHistoryService(
     private val enabled: Boolean,
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReviewRepository,
     private val repository: ReviewHistoryRepository,
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,

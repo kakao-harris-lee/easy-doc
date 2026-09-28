@@ -1,22 +1,16 @@
 package kr.easydoc.api.document
 
-import com.fasterxml.jackson.annotation.JsonCreator
-import com.fasterxml.jackson.annotation.JsonProperty
 import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
-import kr.easydoc.application.actionguide.ActionGuideAnalysisService
-import kr.easydoc.application.actionguide.ActionGuideJobService
-import kr.easydoc.application.actionguide.ActionGuideOperation
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.actionguide.GuideAnalysisIntakeService
 import kr.easydoc.application.actionguide.GuideAnalysisReviewService
-import kr.easydoc.application.actionguide.GuideAnalysisView
-import kr.easydoc.application.actionguide.GuideDraft
 import kr.easydoc.application.actionguide.GuideDraftApplyCommand
 import kr.easydoc.application.actionguide.GuideDraftApplyService
 import kr.easydoc.application.actionguide.GuideDraftService
+import kr.easydoc.application.actionguide.GuideWorkflowQuery
 import kr.easydoc.core.actionguide.GuideOutputMode
-import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Profile
@@ -36,10 +30,9 @@ import java.util.UUID
 @RestController
 @Suppress("LongParameterList", "TooManyFunctions")
 class GuideWorkflowController(
-    private val analyses: ActionGuideAnalysisService,
+    private val query: GuideWorkflowQuery,
     private val intake: GuideAnalysisIntakeService,
     private val reviews: GuideAnalysisReviewService,
-    private val jobs: ActionGuideJobService,
     private val drafts: GuideDraftService,
     private val apply: GuideDraftApplyService,
     @param:Value("\${easydoc.action-guide.enabled:false}") private val guideEnabled: Boolean,
@@ -49,23 +42,8 @@ class GuideWorkflowController(
     fun workflow(
         user: AuthenticatedUser,
         @PathVariable("conversion_id") conversion: UUID,
-    ): ResponseEntity<Map<String, Any?>> {
-        val analysis = analyses.latest(user.id, conversion)
-        val collection = jobs.list(user.id, conversion, ActionGuideOperation.ANALYSIS)
-        return ok(
-            mapOf(
-                "intake_enabled" to (guideEnabled && analysisEnabled),
-                "generation_enabled" to (guideEnabled && analysisEnabled),
-                "required_credits" to collection.requiredCredits,
-                "available_credits" to collection.availableCredits,
-                "generation_credits" to 0,
-                "analysis" to analysis?.let(ActionGuideAnalysisResponse::of),
-                "active_job" to collection.activeJob?.let { ActionGuideJobResponse.of(it) },
-                "latest_job" to collection.latestJob?.let { ActionGuideJobResponse.of(it) },
-                "drafts" to drafts.list(user.id, conversion).map { draftPayload(it, analysis) },
-            ),
-        )
-    }
+    ): ResponseEntity<GuideWorkflowResponse> =
+        ok(GuideWorkflowResponse.of(query.load(user.id, conversion), guideEnabled && analysisEnabled))
 
     @PostMapping("$BASE/action-guide-analysis-jobs")
     fun analyze(
@@ -76,7 +54,7 @@ class GuideWorkflowController(
         val created = intake.create(user.id, conversion, request.requestId, request.expectedContentRevision)
         return ResponseEntity
             .accepted()
-            .header(HttpHeaders.CACHE_CONTROL, "no-store")
+            .privateResponse()
             .header(
                 "X-Credit-Balance",
                 created.availableCredits.toPlainString(),
@@ -133,7 +111,7 @@ class GuideWorkflowController(
         user: AuthenticatedUser,
         @PathVariable("conversion_id") conversion: UUID,
         @Valid @RequestBody request: GuideDraftRequest,
-    ): ResponseEntity<Map<String, Any?>> {
+    ): ResponseEntity<GuideDraftResponse> {
         val draft =
             drafts.create(
                 user.id,
@@ -145,10 +123,8 @@ class GuideWorkflowController(
             )
         return ResponseEntity
             .status(HttpStatus.CREATED)
-            .header(
-                HttpHeaders.CACHE_CONTROL,
-                "no-store",
-            ).body(draftPayload(draft, analyses.get(user.id, conversion, draft.analysisId)))
+            .privateResponse()
+            .body(GuideDraftResponse.of(draft, query.analysis(user.id, conversion, draft.analysisId)))
     }
 
     @PostMapping("$BASE/action-guide-drafts/{draft_id}/review")
@@ -157,7 +133,7 @@ class GuideWorkflowController(
         @PathVariable("conversion_id") conversion: UUID,
         @PathVariable("draft_id") draftId: UUID,
         @Valid @RequestBody request: GuideDraftReviewRequest,
-    ): ResponseEntity<Map<String, Any?>> {
+    ): ResponseEntity<GuideDraftResponse> {
         val draft =
             drafts.review(
                 user.id,
@@ -167,7 +143,7 @@ class GuideWorkflowController(
                 request.expectedDraftRevision,
                 request.confirmedBlockIds,
             )
-        return ok(draftPayload(draft, analyses.get(user.id, conversion, draft.analysisId)))
+        return ok(GuideDraftResponse.of(draft, query.analysis(user.id, conversion, draft.analysisId)))
     }
 
     @PostMapping("$BASE/action-guide-drafts/{draft_id}/apply")
@@ -176,7 +152,7 @@ class GuideWorkflowController(
         @PathVariable("conversion_id") conversion: UUID,
         @PathVariable("draft_id") draftId: UUID,
         @Valid @RequestBody request: GuideDraftApplyRequest,
-    ): ResponseEntity<Map<String, Any?>> {
+    ): ResponseEntity<GuideDraftApplyResponse> {
         val result =
             apply.apply(
                 user.id,
@@ -190,13 +166,7 @@ class GuideWorkflowController(
                     request.expectedReviewRevision,
                 ),
             )
-        return ok(
-            mapOf(
-                "content_revision" to result.contentRevision,
-                "previous_snapshot_id" to result.previousSnapshotId,
-                "replayed" to result.replayed,
-            ),
-        )
+        return ok(GuideDraftApplyResponse.of(result))
     }
 
     @GetMapping("$BASE/action-guide-drafts/{draft_id}/export")
@@ -217,10 +187,8 @@ class GuideWorkflowController(
         return ResponseEntity
             .ok()
             .contentType(MediaType("text", "plain", Charsets.UTF_8))
-            .header(
-                HttpHeaders.CACHE_CONTROL,
-                "no-store",
-            ).header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$filename\"")
+            .privateResponse()
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$filename\"")
             .body(draft.body.toByteArray(Charsets.UTF_8))
     }
 
@@ -228,71 +196,21 @@ class GuideWorkflowController(
     fun previous(
         user: AuthenticatedUser,
         @PathVariable("conversion_id") conversion: UUID,
-    ): ResponseEntity<List<Map<String, Any>>> =
-        ok(
-            apply.listPreviousBodies(user.id, conversion).map {
-                mapOf(
-                    "snapshot_id" to it.snapshotId,
-                    "draft_id" to it.draftId,
-                    "previous_content_revision" to it.previousContentRevision,
-                    "applied_content_revision" to it.appliedContentRevision,
-                )
-            },
-        )
+    ): ResponseEntity<List<GuidePreviousBodyResponse>> =
+        ok(apply.listPreviousBodies(user.id, conversion).map(GuidePreviousBodyResponse::of))
 
     @GetMapping("$BASE/action-guide-previous-bodies/{snapshot_id}")
     fun previousBody(
         user: AuthenticatedUser,
         @PathVariable("conversion_id") conversion: UUID,
         @PathVariable("snapshot_id") snapshot: UUID,
-    ): ResponseEntity<Map<String, String>> =
-        ok(mapOf("body" to apply.previousBody(user.id, conversion, snapshot).value))
-
-    @Suppress("ComplexCondition") // A draft is current only across all three independent revision axes.
-    private fun draftPayload(
-        draft: GuideDraft,
-        analysis: GuideAnalysisView?,
-    ): Map<String, Any?> =
-        mapOf(
-            "draft_id" to draft.draftId,
-            "analysis_id" to draft.analysisId,
-            "analysis_revision" to draft.analysisRevision,
-            "analysis_review_revision" to draft.analysisReviewRevision,
-            "based_on_content_revision" to draft.basedOnContentRevision,
-            "draft_revision" to draft.draftRevision,
-            "mode" to draft.mode.name.lowercase(),
-            "body" to draft.body,
-            "blocks" to
-                draft.blocks.map {
-                    mapOf(
-                        "id" to it.id,
-                        "action_id" to it.actionId,
-                        "text" to it.text,
-                        "cautions" to it.cautions,
-                        "evidence" to
-                            it.evidence.map { anchor ->
-                                ActionGuideAnchorPayload(anchor.sourceUnitIndexes, anchor.quote)
-                            },
-                    )
-                },
-            "reviewed" to draft.reviewed,
-            "created_at" to draft.createdAt.toString(),
-            "state" to
-                if (analysis?.state == "current" && analysis.snapshot.analysisId == draft.analysisId &&
-                    analysis.snapshot.analysisRevision == draft.analysisRevision &&
-                    analysis.snapshot.reviewRevision == draft.analysisReviewRevision
-                ) {
-                    "current"
-                } else {
-                    "stale"
-                },
-        )
+    ): ResponseEntity<GuidePreviousBodyContentResponse> =
+        ok(GuidePreviousBodyContentResponse(apply.previousBody(user.id, conversion, snapshot).value))
 
     private fun <T : Any> ok(value: T): ResponseEntity<T> =
         ResponseEntity
             .ok()
-            .header(HttpHeaders.CACHE_CONTROL, "no-store")
-            .header("X-Content-Type-Options", "nosniff")
+            .privateResponse()
             .body(value)
 
     private fun mode(value: String): GuideOutputMode =

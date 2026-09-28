@@ -3,12 +3,12 @@ package kr.easydoc.api.document
 import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.document.ExplanationsService
 import kr.easydoc.application.document.ExplanationsView
 import kr.easydoc.core.dictionary.Explanation
 import kr.easydoc.core.privacy.UserContent
 import org.springframework.context.annotation.Profile
-import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -29,16 +29,12 @@ class ExplanationsController(private val service: ExplanationsService) {
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(body)
 
     private companion object {
         const val EXPLANATIONS_PATH = "/conversions/{conversion_id}/explanations"
         const val CONVERSION_ID = "conversion_id"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 

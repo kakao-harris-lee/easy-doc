@@ -332,22 +332,8 @@ class LockedConversion(
         "LockedConversion(${envelope.conversionId}, ${status.wireName}, ${envelope.scheme} v${envelope.keyVersion})"
 }
 
-/**
- * `conversions` 저장소.
- *
- * `TooManyFunctions` 를 억제한다 — 2026-09-07 리뷰 HIGH-1 이 더한 [lockPendingReservation]
- * 하나가 상한을 넘겼을 뿐, 책임이 여럿으로 갈라진 것이 아니다(문서 삭제 예약 조회도
- * 여전히 "변환 행 접근"이라는 이 인터페이스의 단일 책임 안에 있다).
- */
-@Suppress("TooManyFunctions")
-interface ConversionRepository {
-    /**
-     * 대기 상태 변환을 만든다. **커밋하지 않는다.**
-     *
-     * [creditsReserved] 는 등록 시 예약한 크레딧을 **저장**한다(크레딧 계정 계획 §2 결정 3) —
-     * worker 정산이 정산 시점에 다시 계산하지 않고 이 값을 읽는다. `0`은 이 조각 이전에
-     * 만든 문서와 같은 의미로 다뤄진다(정산 no-op).
-     */
+/** Document registration and deletion operations used by [DocumentStorage]. */
+interface ConversionLifecycleRepository {
     fun insertPending(
         id: UUID,
         documentId: UUID,
@@ -356,7 +342,6 @@ interface ConversionRepository {
         creditsReserved: BigDecimal = BigDecimal.ZERO,
     ): Conversion
 
-    /** 수준 선택을 저장하는 새 경로. 기존 포트 대역은 기본 수준으로 안전하게 호환한다. */
     @Suppress("LongParameterList")
     fun insertPending(
         id: UUID,
@@ -367,65 +352,32 @@ interface ConversionRepository {
         readingLevel: ReadingLevel,
     ): Conversion = insertPending(id, documentId, scheme, keyVersion, creditsReserved)
 
-    /**
-     * **내** 변환 한 건을 읽는다. 없거나 내 것이 아니거나 **문서의 보존 기간이 지났으면**
-     * `null` — **세 경우를 구분하지 않는다.**
-     *
-     * 만료가 여기 함께 있는 이유: 파기 배치는 하루 한 번이라 만료와 파기 사이의 창이 최대
-     * 24시간이다. 그 창에서 나가는 양은 원문 조회보다 작아도 **범주는 같다.**
-     */
+    fun lockPendingReservation(
+        ownerId: UUID,
+        documentId: UUID,
+    ): PendingCreditsReservation?
+}
+
+/** User-facing conversion result and export reads. */
+interface ConversionReadRepository {
     fun findOwnedResult(
         ownerId: UUID,
         conversionId: UUID,
     ): StoredConversion?
 
-    /**
-     * 내보내기가 읽는 **내** 변환. 조회와 같은 소유·보존 술어이고(같은 질의다), 파일명에 쓸
-     * 제목을 함께 준다. 없거나 내 것이 아니거나 **보존 기간이 지났으면** `null` —
-     * **세 경우를 구분하지 않는다.**
-     */
     fun findOwnedExport(
         ownerId: UUID,
         conversionId: UUID,
     ): StoredExport?
+}
 
-    /** 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`. */
-    fun lockEnvelope(conversionId: UUID): ConversionEnvelope?
-
-    /** 암호문 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. 갱신됐으면 `true`. */
-    fun rewriteEnvelope(
-        expected: ConversionEnvelope,
-        scheme: String,
-        keyVersion: Int,
-        ciphertexts: ConversionCiphertexts,
-    ): Boolean
-
-    /** 키 회전 배치의 후보. [DocumentRepository.idsOlderThan] 과 같은 커서 규약이다. */
-    fun idsOlderThan(
-        keyVersion: Int,
-        after: UUID,
-        limit: Int,
-    ): List<UUID>
-
-    /**
-     * 검수 저장 대상인 **내** 변환을 읽고 **잠근다**(`FOR NO KEY UPDATE`) — 회전과 직렬화한다.
-     * 없거나 내 것이 아니거나 **문서의 보존 기간이 지났으면** `null` —
-     * **세 경우를 구분하지 않는다.**
-     *
-     * 만료를 읽기 자리에서 끊는 것이 쓰기 경로의 방어다: 파기 대상 문서에 새 검수본을 쓰면
-     * **다음 배치가 방금 쓴 내용을 지운다.**
-     */
+/** Review and derived-content locking/CAS operations. */
+interface ConversionReviewRepository {
     fun lockOwnedForReview(
         ownerId: UUID,
         conversionId: UUID,
     ): LockedConversion?
 
-    /**
-     * 검수본과 검수 시각을 **한 UPDATE 로** 저장한다. [updated] 가 **쓸 행 버전 전체**인 것은
-     * 라벨과 열 내용이 어긋난 조합을 호출자가 만들 수 없게 한다. [ownerId] 는 잉여가 아니다 —
-     * 소유 술어가 **쓰기 문장 자신에도** 걸리고, **보존 기간 술어도 같은 자리에 함께 든다.**
-     * `false` 는 **잠금 전제가 깨졌다는 신호다.**
-     */
     fun saveReview(
         ownerId: UUID,
         expected: ConversionEnvelope,
@@ -433,10 +385,6 @@ interface ConversionRepository {
         updated: ConversionEnvelope,
     ): Boolean
 
-    /**
-     * 본문 버전 CAS를 포함한 저장. 이전 구현 대역은 기존 팔로 위임해 호환하고, 실물 저장소는
-     * 이 메서드를 재정의해 버전 조건과 증가를 같은 UPDATE에 둔다.
-     */
     @Suppress("LongParameterList")
     fun saveReview(
         ownerId: UUID,
@@ -446,20 +394,15 @@ interface ConversionRepository {
         expectedContentRevision: Long,
         updatedContentRevision: Long,
     ): Boolean = saveReview(ownerId, expected, requiredStatus, updated)
+}
 
-    /**
-     * 재변환 호출 예산을 **호출 전에** 예약한다(계획 §4 결정 3 「비용 상한은 요청이 아니라
-     * LLM 호출 수로 센다」). 한 번의 재변환은 보정 여부에 따라 1회 또는 2회를 쓰므로 항상
-     * [amount] = 2 를 예약하고, 실제 사용량만큼만 남기고 [settleReconversionCalls] 가 되돌린다.
-     *
-     * `reconversion_calls_used + reconversion_calls_reserved + amount <= budget` 일 때만
-     * 성공한다 — 예약은 **이미 나간 호출(used)** 과 **지금 진행 중인 다른 재변환의 예약
-     * (reserved)** 을 모두 합쳐 예산을 넘지 않는지 본다. 소유 술어가 이 UPDATE 문 자신에
-     * 걸린다(`OwnershipPredicateGuardTest`).
-     *
-     * 실패(예산 소진)면 [ReconversionReservation.Exhausted] 로 **그 시점의 잔여 예산**을 함께
-     * 준다 — 429 응답의 `remaining_call_budget` 이 이 값이다.
-     */
+/** A review use case that also needs the current conversion view. */
+interface ConversionReviewReadRepository :
+    ConversionReadRepository,
+    ConversionReviewRepository
+
+/** Reservation and settlement of unit reconversion LLM calls. */
+interface ReconversionBudgetRepository {
     fun reserveReconversionCalls(
         ownerId: UUID,
         conversionId: UUID,
@@ -467,19 +410,6 @@ interface ConversionRepository {
         budget: Int,
     ): ReconversionReservation
 
-    /**
-     * 호출 뒤 정산한다 — 예약([reservedAmount], 언제나 2)에서 실제 사용량([actualUsed], 0·1·2)
-     * 만큼만 `used` 로 옮기고 나머지를 환불한다. 보정을 부르지 않았으면 1회가 환불되고, 첫
-     * 호출이 provider 오류로 실패하면 [actualUsed] = 0 이라 전액 환불된다.
-     *
-     * **실패 방향은 보수적이다** — 이 호출 자체가 어떤 이유로든 실행되지 않으면(프로세스 죽음
-     * 등) 예약이 남아 최대 [reservedAmount] 회를 더 쓴 것으로 세고, 예산을 **덜 세는 일은
-     * 없다**(계획 §4 결정 3). [ownerId] 는 [reserveReconversionCalls] 와 같은 소유 술어를
-     * 이 문장 자신에도 건다.
-     *
-     * @return 정산 뒤의 잔여 예산(`budget - used - reserved`) — 성공 응답의
-     *   `remaining_call_budget` 이 이 값이다.
-     */
     fun settleReconversionCalls(
         ownerId: UUID,
         conversionId: UUID,
@@ -487,23 +417,40 @@ interface ConversionRepository {
         actualUsed: Int,
         budget: Int,
     ): Int
-
-    /**
-     * 즉시 파기(`DocumentService.delete`) **앞**에서 부른다 — 삭제 대상 문서의 변환이
-     * 아직 끝나지 않은 채(`pending`/`processing`) 예약을 쥐고 있으면, cascade 삭제로
-     * 변환 행이 함께 사라지는 순간 그 예약을 되돌릴 방법이 사라져 `reserved` 가 영원히
-     * 부풀어 오른다(리뷰 HIGH-1). 소유 술어가 이 문장 자신에 걸리고([ownerId]),
-     * 반환된 변환 행은 **잠근다**(`FOR NO KEY UPDATE`) — worker 가 같은 행을
-     * `loadForProcessing` 으로 동시에 집으면 둘 중 하나가 커밋될 때까지 이 조회가
-     * 대기해, 이미 소비·해제된 예약을 이중으로 해제하지 않는다.
-     *
-     * 해제할 것이 없으면(끝났거나 `credits_reserved` 가 0) `null`.
-     */
-    fun lockPendingReservation(
-        ownerId: UUID,
-        documentId: UUID,
-    ): PendingCreditsReservation?
 }
+
+/** The two conversion capabilities needed by the reconversion use case. */
+interface ReconversionReadRepository :
+    ConversionReadRepository,
+    ReconversionBudgetRepository
+
+/** Conversion envelope operations used by key rotation. */
+interface ConversionKeyRotationRepository {
+    fun lockEnvelope(conversionId: UUID): ConversionEnvelope?
+
+    fun rewriteEnvelope(
+        expected: ConversionEnvelope,
+        scheme: String,
+        keyVersion: Int,
+        ciphertexts: ConversionCiphertexts,
+    ): Boolean
+
+    fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID>
+}
+
+/**
+ * The JDBC adapter contract. Consumers depend on one of the capability ports above; this
+ * composite keeps one implementation and one lock/CAS policy at the composition root.
+ */
+interface ConversionRepository :
+    ConversionLifecycleRepository,
+    ConversionReviewReadRepository,
+    ReconversionReadRepository,
+    ConversionKeyRotationRepository
 
 /**
  * 파기 전 해제 대상 — 아직 끝나지 않았고 예약이 남은 변환 한 건.
@@ -671,7 +618,7 @@ fun interface ConversionQueue {
 class SealedStores(
     val documents: DocumentRepository,
     val originals: DocumentOriginalRepository,
-    val conversions: ConversionRepository,
+    val conversions: ConversionKeyRotationRepository,
     val feedback: ConversionFeedbackRepository,
     val reviewAssessments: ReviewAssessmentRepository? = null,
     val illustrationPlacements: IllustrationPlacementRepository? = null,
@@ -686,7 +633,7 @@ class SealedStores(
 class DocumentStorage(
     val documents: DocumentRepository,
     val originals: DocumentOriginalRepository,
-    val conversions: ConversionRepository,
+    val conversions: ConversionLifecycleRepository,
     val queue: ConversionQueue,
     /** R4 빈이면 null인 호환 포트. root가 feature wiring 때 실제 저장소를 주입한다. */
     val tableStructures: DocumentTableStructureRepository? = null,

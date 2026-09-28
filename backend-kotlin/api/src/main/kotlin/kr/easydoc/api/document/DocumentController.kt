@@ -4,6 +4,7 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentSourceService
@@ -99,8 +100,7 @@ class DocumentController(
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(DocumentListResponse.of(fetched, limit = limit, offset = offset))
     }
 
@@ -119,8 +119,7 @@ class DocumentController(
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(DocumentSourceResponse.of(view))
     }
 
@@ -177,14 +176,6 @@ class DocumentController(
         /** 계약 `paths./documents.get.parameters` 의 이름 둘. */
         const val LIMIT_PARAM = "limit"
         const val OFFSET_PARAM = "offset"
-
-        /**
-         * 하한선 10곳에 붙는 사적 응답 헤더. 값의 정본은 계약 `components/headers` 의 각
-         * 컴포넌트이고, 실제로 나가는 값이 그 `const` 와 같은지는 계약 케이스가 잰다.
-         */
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
 
         /** `Location` 값의 앞부분. 계약 `paths./conversions/{conversion_id}` 와 같은 경로다. */
         const val CONVERSION_LOCATION_PREFIX = "/conversions/"

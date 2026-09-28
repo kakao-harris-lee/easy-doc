@@ -9,9 +9,13 @@ import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionFeedbackService
+import kr.easydoc.application.document.ConversionKeyRotationRepository
+import kr.easydoc.application.document.ConversionLifecycleRepository
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReadRepository
+import kr.easydoc.application.document.ConversionReviewReadRepository
+import kr.easydoc.application.document.ConversionReviewRepository
 import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.DocumentOriginalRepository
@@ -24,6 +28,7 @@ import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.OriginalStructureReflector
+import kr.easydoc.application.document.ReconversionReadRepository
 import kr.easydoc.application.document.ReviewAssessmentRepository
 import kr.easydoc.application.document.ReviewHistoryAppender
 import kr.easydoc.application.document.ReviewSupportService
@@ -82,7 +87,7 @@ class DocumentConfiguration {
         JdbcDocumentTableStructureRepository(jdbcClient)
 
     @Bean
-    fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
+    fun conversionRepository(jdbcClient: JdbcClient): JdbcConversionRepository = JdbcConversionRepository(jdbcClient)
 
     @Bean
     fun reviewAssessmentRepository(jdbcClient: JdbcClient): ReviewAssessmentRepository =
@@ -100,7 +105,7 @@ class DocumentConfiguration {
     fun documentStorage(
         documents: DocumentRepository,
         originals: DocumentOriginalRepository,
-        conversions: ConversionRepository,
+        conversions: ConversionLifecycleRepository,
         queue: ConversionQueue,
         tableStructures: DocumentTableStructureRepository,
     ): DocumentStorage =
@@ -189,7 +194,7 @@ class DocumentConfiguration {
     @Suppress("LongParameterList")
     @Bean
     fun conversionQueryService(
-        conversions: ConversionRepository,
+        conversions: ConversionReadRepository,
         cipher: ContentCipher,
         original: OriginalReflection,
         documents: DocumentRepository,
@@ -225,7 +230,7 @@ class DocumentConfiguration {
     /** 검수 저장 유스케이스. 응답 조립은 조회 쪽을 그대로 쓴다. */
     @Bean
     fun conversionReviewService(
-        conversions: ConversionRepository,
+        conversions: ConversionReviewRepository,
         cipher: ContentCipher,
         query: ConversionQueryService,
         transactionRunner: TransactionRunner,
@@ -243,7 +248,7 @@ class DocumentConfiguration {
     @Bean
     fun reviewSupportService(
         properties: ReviewSupportProperties,
-        conversions: ConversionRepository,
+        conversions: ConversionReviewReadRepository,
         documents: DocumentRepository,
         assessments: ReviewAssessmentRepository,
         cipher: ContentCipher,
@@ -297,7 +302,7 @@ class DocumentConfiguration {
     @Suppress("LongParameterList")
     @Bean
     fun reconvertUnitService(
-        conversions: ConversionRepository,
+        conversions: ReconversionReadRepository,
         documents: DocumentRepository,
         cipher: ContentCipher,
         convert: ConvertDocumentUseCase,
@@ -348,7 +353,7 @@ class DocumentConfiguration {
     fun sealedStores(
         documents: DocumentRepository,
         originals: DocumentOriginalRepository,
-        conversions: ConversionRepository,
+        conversions: ConversionKeyRotationRepository,
         feedback: ConversionFeedbackRepository,
         reviewAssessments: ReviewAssessmentRepository,
         illustrationPlacements: IllustrationPlacementRepository,

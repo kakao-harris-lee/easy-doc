@@ -1,6 +1,7 @@
 package kr.easydoc.application.credit
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Instant
@@ -82,21 +83,17 @@ class ResetCreditCycles(
     private fun drainResets(): CreditCycleResetResult {
         val now = Instant.now(clock)
         var total = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "크레딧 주기 초기화 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(now)
-            total += batch.resetCount
-        } while (batch.resetCount >= policy.batchSize)
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "크레딧 주기 초기화 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(now) },
+            shouldContinue = { batch, batchSize -> batch.resetCount >= batchSize },
+            consume = { batch -> total += batch.resetCount },
+        )
         return CreditCycleResetResult(enabled = true, resetCount = total)
     }
 
     private fun inactiveResult(): CreditCycleResetResult = CreditCycleResetResult(enabled = false, resetCount = 0)
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 건수만 남긴다. 워크스페이스 식별자는 자리에 없다. */

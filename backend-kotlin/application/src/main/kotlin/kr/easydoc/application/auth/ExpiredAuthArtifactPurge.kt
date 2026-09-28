@@ -1,5 +1,6 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Duration
@@ -102,16 +103,18 @@ class PurgeExpiredAuthArtifacts(
         var passwordResetCodesDeleted = 0
         var oauthStatesDeleted = 0
         var phoneVerificationCodesDeleted = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "만료 인증 아티팩트 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(createdBefore)
-            emailVerificationCodesDeleted += batch.emailVerificationCodesDeleted
-            passwordResetCodesDeleted += batch.passwordResetCodesDeleted
-            oauthStatesDeleted += batch.oauthStatesDeleted
-            phoneVerificationCodesDeleted += batch.phoneVerificationCodesDeleted
-        } while (batch.anyTableReachedLimit(policy.batchSize))
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "만료 인증 아티팩트 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(createdBefore) },
+            shouldContinue = { batch, batchSize -> batch.anyTableReachedLimit(batchSize) },
+            consume = { batch ->
+                emailVerificationCodesDeleted += batch.emailVerificationCodesDeleted
+                passwordResetCodesDeleted += batch.passwordResetCodesDeleted
+                oauthStatesDeleted += batch.oauthStatesDeleted
+                phoneVerificationCodesDeleted += batch.phoneVerificationCodesDeleted
+            },
+        )
         return ExpiredAuthArtifactPurgeResult(
             enabled = true,
             emailVerificationCodesDeleted = emailVerificationCodesDeleted,
@@ -138,10 +141,6 @@ class PurgeExpiredAuthArtifacts(
             oauthStatesDeleted = 0,
             phoneVerificationCodesDeleted = 0,
         )
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 표별 건수만 남긴다. 해시·salt·state·nonce는 자리에 없다. */

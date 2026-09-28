@@ -2,7 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewRepository
 import kr.easydoc.application.document.DefaultReviewHistoryAppender
 import kr.easydoc.application.document.ReviewHistoryAppender
 import kr.easydoc.application.document.ReviewHistoryRepository
@@ -44,7 +44,7 @@ class ReviewHistoryConfiguration {
     @Bean
     fun reviewHistoryService(
         properties: ReviewHistoryProperties,
-        conversions: ConversionRepository,
+        conversions: ConversionReviewRepository,
         repository: ReviewHistoryRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,

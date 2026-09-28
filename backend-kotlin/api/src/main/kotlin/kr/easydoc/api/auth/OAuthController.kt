@@ -1,6 +1,7 @@
 package kr.easydoc.api.auth
 
 import jakarta.validation.Valid
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
@@ -83,14 +84,9 @@ class OAuthController(private val socialLogin: SocialLoginService) {
         ResponseEntity
             .status(status)
             .contentType(MediaType.APPLICATION_JSON)
-            .header(CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
 
     private companion object {
         const val BEARER_TOKEN_TYPE = "bearer"
-        const val CACHE_CONTROL = "Cache-Control"
-        const val NO_STORE = "no-store"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NOSNIFF = "nosniff"
     }
 }

@@ -44,7 +44,7 @@ data class ExplanationsView(
  */
 class ExplanationsService(
     private val enabled: Boolean,
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReadRepository,
     private val definitions: ReviewedDefinitionSource,
     private val documents: DocumentRepository,
     private val cipher: ContentCipher,

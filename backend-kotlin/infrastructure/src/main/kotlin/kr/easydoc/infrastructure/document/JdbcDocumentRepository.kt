@@ -185,7 +185,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
     private fun storageFailure(failure: DataIntegrityViolationException): StorageException {
         // 예외 **메시지**를 로그에 넣지 않는다 — 그 안에 실패한 행 전체가 들어 있다.
         DocumentStorageLog.constraintViolation("documents", failure)
-        return StorageException(STORAGE_FAILURE_MESSAGE)
+        return StorageException(DOCUMENT_STORAGE_FAILURE_MESSAGE)
     }
 
     private fun toDocument(rs: ResultSet): Document =
@@ -242,7 +242,6 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
 
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
-        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
 
         val INSERT_SQL =
             """

@@ -58,7 +58,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 .single()
         } catch (failure: DataIntegrityViolationException) {
             DocumentStorageLog.constraintViolation("conversions", failure)
-            throw StorageException(STORAGE_FAILURE_MESSAGE)
+            throw StorageException(DOCUMENT_STORAGE_FAILURE_MESSAGE)
         }
 
     /** **내** 변환 한 건을 읽는다 — 조인과 소유 술어가 **한 문장** 안에 있다. */
@@ -292,9 +292,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .orElse(null)
 
     private companion object {
-        /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
-        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
-
         /**
          * 검수 저장이 잠그는 질의. `OF c` 로 **변환 행만** 잠근다.
          *

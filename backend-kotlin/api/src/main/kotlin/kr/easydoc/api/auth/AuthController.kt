@@ -1,5 +1,6 @@
 package kr.easydoc.api.auth
 
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.account.DeleteAccountService
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
@@ -166,16 +167,10 @@ class AuthController(
         ResponseEntity
             .status(status)
             .contentType(MediaType.APPLICATION_JSON)
-            .header(CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
 
     private companion object {
         /** 계약 `TokenResponse.properties.token_type.const`. */
         const val BEARER_TOKEN_TYPE = "bearer"
-
-        const val CACHE_CONTROL = "Cache-Control"
-        const val NO_STORE = "no-store"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NOSNIFF = "nosniff"
     }
 }

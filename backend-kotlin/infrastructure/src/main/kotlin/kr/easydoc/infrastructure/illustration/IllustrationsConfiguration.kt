@@ -2,7 +2,7 @@ package kr.easydoc.infrastructure.illustration
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewReadRepository
 import kr.easydoc.application.illustration.IllustrationCatalogSource
 import kr.easydoc.application.illustration.IllustrationPlacementRepository
 import kr.easydoc.application.illustration.IllustrationPlacementService
@@ -43,7 +43,7 @@ class IllustrationsConfiguration {
     @Bean
     fun illustrationPlacementService(
         properties: IllustrationsProperties,
-        conversions: ConversionRepository,
+        conversions: ConversionReviewReadRepository,
         catalog: IllustrationCatalogSource,
         placements: IllustrationPlacementRepository,
         cipher: ContentCipher,

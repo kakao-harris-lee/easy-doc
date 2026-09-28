@@ -1,5 +1,6 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Duration
@@ -93,23 +94,21 @@ class PurgeUnverifiedAccounts(
         val createdBefore = Instant.now(clock).minus(policy.ttl)
         var deleted = 0
         var skipped = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "미검증 계정 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(createdBefore)
-            deleted += batch.deleted
-            skipped = batch.skippedWithDocuments
-        } while (batch.deleted >= policy.batchSize)
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "미검증 계정 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(createdBefore) },
+            shouldContinue = { batch, batchSize -> batch.deleted >= batchSize },
+            consume = { batch ->
+                deleted += batch.deleted
+                skipped = batch.skippedWithDocuments
+            },
+        )
         return UnverifiedAccountPurgeResult(enabled = true, deleted = deleted, skippedWithDocuments = skipped)
     }
 
     private fun inactiveResult(): UnverifiedAccountPurgeResult =
         UnverifiedAccountPurgeResult(enabled = false, deleted = 0, skippedWithDocuments = 0)
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 건수만 남긴다. 이메일·사용자 식별자는 자리에 없다. */

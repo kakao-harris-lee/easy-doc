@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.actionguide.ActionGuideCandidateView
 import kr.easydoc.application.actionguide.ActionGuideContentService
 import kr.easydoc.application.actionguide.ActionGuideJobCollectionView
@@ -16,6 +17,7 @@ import kr.easydoc.application.actionguide.ActionGuideJobCreationView
 import kr.easydoc.application.actionguide.ActionGuideJobService
 import kr.easydoc.application.actionguide.ActionGuideJobView
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -81,8 +83,7 @@ class ActionGuideJobController(
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(body)
 
     private fun accepted(
@@ -94,8 +95,7 @@ class ActionGuideJobController(
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.LOCATION, "/conversions/$conversionId/action-guide-jobs/${creation.job.jobId}")
             .header(CREDIT_BALANCE_HEADER, creation.availableCredits.toPlainString())
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(ActionGuideJobResponse.of(creation.job))
 
     private companion object {
@@ -104,9 +104,6 @@ class ActionGuideJobController(
         const val CONVERSION_ID = "conversion_id"
         const val JOB_ID = "job_id"
         const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 
@@ -116,12 +113,12 @@ data class ActionGuideJobCreateRequest
         @param:JsonProperty("request_id", required = true) val requestId: UUID,
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
         @param:JsonProperty("expected_guide_revision", required = true)
         @param:JsonSetter(nulls = Nulls.SET)
         @field:Min(0)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedGuideRevision: Long?,
     )
 

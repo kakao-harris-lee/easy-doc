@@ -15,7 +15,7 @@ import kr.easydoc.application.actionguide.GuideAnalysisRepository
 import kr.easydoc.application.actionguide.ProcessActionGuideJob
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReadRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ReviewHistoryAppender
 import kr.easydoc.core.actionguide.ActionGuideCandidate
@@ -29,6 +29,7 @@ import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.LlmProviderConfiguration
+import kr.easydoc.infrastructure.queue.WorkerLeaseSupport
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -37,7 +38,6 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.simple.JdbcClient
-import java.net.InetAddress
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -79,6 +79,17 @@ class ActionGuideConfiguration {
     fun actionGuideLlmCallLedger(jdbcClient: JdbcClient): ActionGuideLlmCallLedger =
         JdbcActionGuideLlmCallLedger(jdbcClient)
 
+    @Suppress("LongParameterList")
+    @Bean("actionGuideWorkerFactory")
+    internal fun actionGuideWorkerFactory(
+        jobs: ActionGuideJobRepository,
+        credits: ActionGuideCreditPort,
+        ledger: ActionGuideLlmCallLedger,
+        contents: ActionGuideContentRepository,
+        cipher: ContentCipher,
+        transactionRunner: TransactionRunner,
+    ): ActionGuideWorkerFactory = ActionGuideWorkerFactory(jobs, credits, ledger, contents, cipher, transactionRunner)
+
     @Bean
     fun actionGuideJobService(
         properties: ActionGuideProperties,
@@ -101,7 +112,7 @@ class ActionGuideConfiguration {
         jobs: ActionGuideJobRepository,
         contents: ActionGuideContentRepository,
         documents: DocumentRepository,
-        conversions: ConversionRepository,
+        conversions: ConversionReadRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
         reviewHistory: ReviewHistoryAppender,
@@ -135,32 +146,14 @@ class ActionGuideDrainWorkerConfiguration {
     fun disabledActionGuideJobRunner(): ActionGuideJobRunner =
         ActionGuideJobRunner { error("intake OFF drain 경로에서 runner를 호출하면 안 됩니다") }
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processActionGuideJob(
-        jobs: ActionGuideJobRepository,
-        credits: ActionGuideCreditPort,
-        ledger: ActionGuideLlmCallLedger,
-        contents: ActionGuideContentRepository,
-        cipher: ContentCipher,
+    @Bean("processActionGuideJob")
+    internal fun processActionGuideJob(
+        factory: ActionGuideWorkerFactory,
         @Qualifier("disabledActionGuideJobRunner") runner: ActionGuideJobRunner,
-        transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
         analyses: GuideAnalysisRepository? = null,
         properties: ActionGuideProperties = ActionGuideProperties(),
-    ): ProcessActionGuideJob =
-        ProcessActionGuideJob(
-            jobs,
-            credits,
-            ledger,
-            contents,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-            analyses = analyses,
-            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
-        )
+    ): ProcessActionGuideJob = factory.create(runner, policy, analyses, properties.analysisEnabled)
 }
 
 /** ER-05 검증 전용. 이 프로필 없이는 fake runner와 poller 처리 빈이 만들어지지 않는다. */
@@ -212,32 +205,14 @@ class FakeActionGuideWorkerConfiguration {
             }
         }
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processActionGuideJob(
-        jobs: ActionGuideJobRepository,
-        credits: ActionGuideCreditPort,
-        ledger: ActionGuideLlmCallLedger,
-        contents: ActionGuideContentRepository,
-        cipher: ContentCipher,
+    @Bean("processActionGuideJob")
+    internal fun processActionGuideJob(
+        factory: ActionGuideWorkerFactory,
         @Qualifier("fakeActionGuideJobRunner") runner: ActionGuideJobRunner,
-        transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
         analyses: GuideAnalysisRepository? = null,
         properties: ActionGuideProperties = ActionGuideProperties(),
-    ): ProcessActionGuideJob =
-        ProcessActionGuideJob(
-            jobs,
-            credits,
-            ledger,
-            contents,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-            analyses = analyses,
-            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
-        )
+    ): ProcessActionGuideJob = factory.create(runner, policy, analyses, properties.analysisEnabled)
 }
 
 /** 실제 호출은 intake와 worker 플래그를 함께 켠 worker 프로필에서만 가능하다. */
@@ -277,45 +252,26 @@ class ProviderActionGuideWorkerConfiguration {
         }
     }
 
-    @Suppress("LongParameterList")
-    @Bean
-    fun processActionGuideJob(
-        jobs: ActionGuideJobRepository,
-        credits: ActionGuideCreditPort,
-        ledger: ActionGuideLlmCallLedger,
-        contents: ActionGuideContentRepository,
-        cipher: ContentCipher,
+    @Bean("processActionGuideJob")
+    internal fun processActionGuideJob(
+        factory: ActionGuideWorkerFactory,
         @Qualifier("providerActionGuideJobRunner") runner: ActionGuideJobRunner,
-        transactionRunner: TransactionRunner,
         policy: ActionGuideJobWorkerPolicy,
         analyses: GuideAnalysisRepository? = null,
         properties: ActionGuideProperties = ActionGuideProperties(),
-    ): ProcessActionGuideJob =
-        ProcessActionGuideJob(
-            jobs,
-            credits,
-            ledger,
-            contents,
-            cipher,
-            runner,
-            transactionRunner,
-            policy,
-            analyses = analyses,
-            operationEnabled = { it != ActionGuideOperation.ANALYSIS || properties.analysisEnabled },
-        )
+    ): ProcessActionGuideJob = factory.create(runner, policy, analyses, properties.analysisEnabled)
 }
 
 private fun workerPolicy(properties: ActionGuideProperties): ActionGuideJobWorkerPolicy =
-    ActionGuideJobWorkerPolicy(
-        owner = properties.owner.ifBlank(::hostOwner).take(OWNER_MAX_LENGTH),
-        leaseDuration = Duration.ofSeconds(properties.leaseDurationSeconds),
-        maxLeaseAttempts = properties.maxLeaseAttempts,
-    )
+    WorkerLeaseSupport
+        .resolve(
+            configuredOwner = properties.owner,
+            defaultOwner = DEFAULT_OWNER,
+            leaseDurationSeconds = properties.leaseDurationSeconds,
+            maxLeaseAttempts = properties.maxLeaseAttempts,
+        ).let { lease ->
+            ActionGuideJobWorkerPolicy(lease.owner, lease.leaseDuration, lease.maxLeaseAttempts)
+        }
 
-private fun hostOwner(): String =
-    runCatching { InetAddress.getLocalHost().hostName }
-        .getOrElse { "action-guide-worker" }
-        .ifBlank { "action-guide-worker" }
-
-private const val OWNER_MAX_LENGTH: Int = 64
+private const val DEFAULT_OWNER: String = "action-guide-worker"
 private const val ACTION_GUIDE_PROVIDER_TIMEOUT_SECONDS: Long = 90

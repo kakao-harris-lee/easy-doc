@@ -1,6 +1,7 @@
 package kr.easydoc.application.credit
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.batch.drainBatches
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Instant
@@ -101,16 +102,18 @@ class PurgeSignupGrantRecords(
             OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC).minus(policy.ttl).toInstant()
         var signupGrantRecordsDeleted = 0
         var phoneTrialGrantRecordsDeleted = 0
-        var rounds = 0
-        do {
-            rounds++
-            check(rounds <= MAX_ROUNDS) { "가입 크레딧 원장 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
-            val batch = oneBatch(grantedBefore)
-            signupGrantRecordsDeleted += batch.signupGrantRecordsDeleted
-            phoneTrialGrantRecordsDeleted += batch.phoneTrialGrantRecordsDeleted
-        } while (
-            batch.signupGrantRecordsDeleted >= policy.batchSize ||
-            batch.phoneTrialGrantRecordsDeleted >= policy.batchSize
+        drainBatches(
+            batchSize = policy.batchSize,
+            overflowMessage = { maxRounds -> "가입 크레딧 원장 파기 배치가 ${maxRounds}회를 넘었다" },
+            nextBatch = { oneBatch(grantedBefore) },
+            shouldContinue = { batch, batchSize ->
+                batch.signupGrantRecordsDeleted >= batchSize ||
+                    batch.phoneTrialGrantRecordsDeleted >= batchSize
+            },
+            consume = { batch ->
+                signupGrantRecordsDeleted += batch.signupGrantRecordsDeleted
+                phoneTrialGrantRecordsDeleted += batch.phoneTrialGrantRecordsDeleted
+            },
         )
         return SignupGrantRecordPurgeResult(
             enabled = true,
@@ -121,10 +124,6 @@ class PurgeSignupGrantRecords(
 
     private fun inactiveResult(): SignupGrantRecordPurgeResult =
         SignupGrantRecordPurgeResult(enabled = false, signupGrantRecordsDeleted = 0, phoneTrialGrantRecordsDeleted = 0)
-
-    private companion object {
-        const val MAX_ROUNDS: Int = 10_000
-    }
 }
 
 /** 표별 건수만 남긴다. 이메일 해시·전화번호 지문은 자리에 없다. */

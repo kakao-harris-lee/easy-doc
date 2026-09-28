@@ -180,8 +180,10 @@ class SensitiveToStringReachTest {
         /**
          * 소스 스캐너가 선언을 놓치지 않는지 확인하는 현재 개수다. 타입을 추가하거나 제거할 때
          * 실제 선언 목록을 확인한 뒤 갱신한다.
+         * Workflow DTOs (6), query view (1), billing timing/config/payload (3),
+         * analysis accumulator (1), worker lease (1), JDBC ledger mapping (2).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 415
+        const val EXPECTED_SOURCE_DECLARATIONS = 429
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

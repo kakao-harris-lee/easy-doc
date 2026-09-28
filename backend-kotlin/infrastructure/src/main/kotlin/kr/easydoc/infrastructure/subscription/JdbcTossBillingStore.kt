@@ -7,11 +7,7 @@ import kr.easydoc.application.subscription.TossBillingStore
 import kr.easydoc.application.subscription.TossPayment
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
-import kr.easydoc.core.crypto.PlainBody
-import kr.easydoc.core.security.Secret
 import org.springframework.jdbc.core.simple.JdbcClient
-import tools.jackson.databind.JsonNode
-import tools.jackson.databind.ObjectMapper
 import java.sql.ResultSet
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -23,7 +19,7 @@ class JdbcTossBillingStore(
     private val jdbc: JdbcClient,
     private val cipher: ContentCipher,
 ) : TossBillingStore {
-    private val json = ObjectMapper()
+    private val codec = BillingPayloadCodec(cipher)
 
     override fun session(workspace: UUID): BillingSession? =
         jdbc
@@ -31,32 +27,23 @@ class JdbcTossBillingStore(
             .param("workspace", workspace)
             .query { rs, _ ->
                 val id = rs.getObject("id", UUID::class.java)
-                val data = payload(rs, id, EncryptedField.BILLING_SESSION)
+                val data = codec.decodeSession(encrypted(rs), id)
                 BillingSession(
                     rs.getObject("workspace_id", UUID::class.java),
                     id,
                     rs.getObject("customer", UUID::class.java),
                     rs.getString("plan_id"),
                     instant(rs, "expires_at"),
-                    secret(data, "auth"),
-                    secret(data, "billing"),
+                    data.authKey,
+                    data.billingKey,
                     rs.getString("state"),
-                    data.path("fail").asBoolean(false),
+                    data.simulateFailure,
                 )
             }.optional()
             .orElse(null)
 
     override fun saveSession(session: BillingSession) {
-        val encrypted =
-            seal(
-                session.id,
-                EncryptedField.BILLING_SESSION,
-                mapOf(
-                    "auth" to session.authKey?.reveal(),
-                    "billing" to session.billingKey?.reveal(),
-                    "fail" to session.simulateFailure,
-                ),
-            )
+        val encrypted = codec.encodeSession(session)
         jdbc
             .sql(
                 """
@@ -89,18 +76,7 @@ class JdbcTossBillingStore(
             .sql("SELECT * FROM toss_billing_orders WHERE id=:id")
             .param("id", id)
             .query { rs, _ ->
-                val payload = payload(rs, id, EncryptedField.BILLING_ORDER)
-                val payment =
-                    secret(payload, "key")?.let {
-                        TossPayment(
-                            it,
-                            UUID.fromString(payload.path("order").asString()),
-                            payload.path("status").asString(),
-                            payload.path("amount").intValue(),
-                            payload.path("remaining").intValue(),
-                            secret(payload, "receipt") ?: Secret.EMPTY,
-                        )
-                    }
+                val payment = codec.decodeOrder(encrypted(rs), id)
                 BillingOrder(
                     id,
                     rs.getObject("workspace_id", UUID::class.java),
@@ -119,20 +95,7 @@ class JdbcTossBillingStore(
             .orElse(null)
 
     override fun saveOrder(order: BillingOrder) {
-        val p = order.payment
-        val encrypted =
-            seal(
-                order.id,
-                EncryptedField.BILLING_ORDER,
-                mapOf(
-                    "key" to p?.key?.reveal(),
-                    "order" to p?.orderId?.toString(),
-                    "status" to p?.status,
-                    "amount" to p?.amount,
-                    "remaining" to p?.remainingAmount,
-                    "receipt" to p?.receipt?.reveal(),
-                ),
-            )
+        val encrypted = codec.encodeOrder(order)
         jdbc
             .sql(
                 """
@@ -299,7 +262,7 @@ class JdbcTossBillingStore(
                             )
                     }.list()
             rows.forEach { (id, old) ->
-                val updated = cipher.encrypt(cipher.decrypt(old, id, field), id, field)
+                val updated = codec.rotate(old, id, field)
                 val count =
                     jdbc
                         .sql(
@@ -320,40 +283,12 @@ class JdbcTossBillingStore(
         }
     }
 
-    private fun seal(
-        id: UUID,
-        field: EncryptedField,
-        data: Map<String, Any?>,
-    ) = cipher.encrypt(PlainBody(json.writeValueAsString(data)), id, field)
-
-    private fun payload(
-        rs: ResultSet,
-        id: UUID,
-        field: EncryptedField,
-    ): JsonNode =
-        json.readTree(
-            cipher
-                .decrypt(
-                    EncryptedContent(
-                        rs.getBytes("payload_encrypted"),
-                        rs.getString("encryption_scheme"),
-                        rs.getInt("key_version"),
-                    ),
-                    id,
-                    field,
-                ).value,
+    private fun encrypted(rs: ResultSet): EncryptedContent =
+        EncryptedContent(
+            rs.getBytes("payload_encrypted"),
+            rs.getString("encryption_scheme"),
+            rs.getInt("key_version"),
         )
-
-    private fun secret(
-        node: JsonNode,
-        key: String,
-    ): Secret? =
-        node
-            .get(key)
-            ?.takeUnless {
-                it.isNull
-            }?.asString()
-            ?.let(::Secret)
 
     private companion object {
         const val LEASE_SECONDS = 120L

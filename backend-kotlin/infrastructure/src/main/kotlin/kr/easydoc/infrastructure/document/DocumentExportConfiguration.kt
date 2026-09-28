@@ -3,7 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionExportService
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReadRepository
 import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ExportRendering
@@ -41,7 +41,7 @@ class DocumentExportConfiguration {
     @Suppress("LongParameterList")
     @Bean
     fun conversionExportService(
-        conversions: ConversionRepository,
+        conversions: ConversionReadRepository,
         cipher: ContentCipher,
         rendering: ExportRendering,
         documents: DocumentRepository,

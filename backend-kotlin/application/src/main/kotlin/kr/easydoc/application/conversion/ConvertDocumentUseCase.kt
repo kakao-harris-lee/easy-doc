@@ -323,21 +323,7 @@ private class Pass(
         lastModel = completion.model
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
-        calls +=
-            LlmCallRecord(
-                purpose = callPurpose,
-                provider = provider.name,
-                model = completion.model,
-                inputTokens = completion.inputTokens,
-                outputTokens = completion.outputTokens,
-                latencyMs = completion.latencyMs,
-                estimatedCostUsd = completion.estimatedCostUsd,
-                pricingInputUsdPerMtok = completion.pricingInputUsdPerMtok,
-                pricingOutputUsdPerMtok = completion.pricingOutputUsdPerMtok,
-                charCount = charCount,
-                calledAt = calledAt,
-                outcome = LlmCallOutcome.COMPLETED,
-            )
+        calls += ConversionCallRecords.completed(callPurpose, provider.name, completion, charCount, calledAt)
         return classify(completion)
     }
 
@@ -360,22 +346,7 @@ private class Pass(
         callPurpose: LlmCallPurpose,
         charCount: Int,
     ) {
-        calls +=
-            LlmCallRecord(
-                purpose = callPurpose,
-                provider = provider.name,
-                model = null,
-                inputTokens = 0,
-                outputTokens = 0,
-                latencyMs = null,
-                estimatedCostUsd = null,
-                pricingInputUsdPerMtok = null,
-                pricingOutputUsdPerMtok = null,
-                charCount = charCount,
-                calledAt = clock.instant(),
-                outcome = LlmCallOutcome.PROVIDER_ERROR,
-                failureClass = exc.javaClass.simpleName,
-            )
+        calls += ConversionCallRecords.failed(callPurpose, provider.name, exc, charCount, clock.instant())
     }
 
     private fun usage() =

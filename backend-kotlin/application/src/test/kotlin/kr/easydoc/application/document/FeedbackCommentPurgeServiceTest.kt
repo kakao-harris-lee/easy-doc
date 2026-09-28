@@ -57,6 +57,22 @@ class FeedbackCommentPurgeServiceTest {
     }
 
     @Test
+    @DisplayName("빈 실제 배치는 한 번 실행하고 멈춘다")
+    fun `빈 배치면 한 번만 돈다`() {
+        val world = World()
+        world.store.next = FeedbackCommentPurgeResult(dryRun = false, enabled = true, purgedComments = 0)
+
+        val result = world.purge.run()
+
+        assertThat(world.store.calls).isEqualTo(1)
+        assertThat(world.transaction.committed).isEqualTo(1)
+        assertThat(result.enabled).isTrue()
+        assertThat(result.dryRun).isFalse()
+        assertThat(result.purgedComments).isZero()
+        assertThat(world.observer.seen).containsExactly(result)
+    }
+
+    @Test
     @DisplayName("실제 파기는 짧은 배치가 나올 때까지 트랜잭션마다 반복한다")
     fun `대상량이 배치를 넘으면 끝까지 지운다`() {
         val world = World(batchSize = BATCH)

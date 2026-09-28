@@ -5,7 +5,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.CONTENT_REVISION_CONFLICT_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_DONE_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_FOUND_MESSAGE
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReadRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.NoOpReviewHistoryAppender
 import kr.easydoc.application.document.ReviewHistoryAppender
@@ -21,6 +21,7 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import kr.easydoc.core.segment.splitUnits
 import java.time.Clock
 import java.time.Instant
@@ -67,7 +68,7 @@ class ActionGuideContentService(
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
-    private val conversions: ConversionRepository? = null,
+    private val conversions: ConversionReadRepository? = null,
     private val reviewHistory: ReviewHistoryAppender = NoOpReviewHistoryAppender,
 ) {
     fun get(
@@ -123,8 +124,8 @@ class ActionGuideContentService(
         markReviewed: Boolean,
     ): ActionGuideView {
         requireEnabled()
-        if (expectedContentRevision !in 1..MAX_JS_SAFE_INTEGER ||
-            (expectedGuideRevision != null && expectedGuideRevision !in 0..MAX_JS_SAFE_INTEGER)
+        if (expectedContentRevision !in 1..MAX_SAFE_REVISION ||
+            (expectedGuideRevision != null && expectedGuideRevision !in 0..MAX_SAFE_REVISION)
         ) {
             throw InvalidInputException("행동 안내문 버전이 올바르지 않습니다")
         }
@@ -233,7 +234,7 @@ class ActionGuideContentService(
         conversionId: UUID,
         guideRevision: Long,
     ): ByteArray {
-        if (guideRevision !in 1..MAX_JS_SAFE_INTEGER) {
+        if (guideRevision !in 1..MAX_SAFE_REVISION) {
             throw InvalidInputException("행동 안내문 버전이 올바르지 않습니다")
         }
         return transaction.inTransaction {
@@ -338,9 +339,5 @@ class ActionGuideContentService(
 
     private fun requireEnabled() {
         if (!enabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
-    }
-
-    private companion object {
-        const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
     }
 }

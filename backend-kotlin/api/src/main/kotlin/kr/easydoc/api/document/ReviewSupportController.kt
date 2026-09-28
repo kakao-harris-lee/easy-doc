@@ -10,6 +10,7 @@ import jakarta.validation.constraints.Min
 import jakarta.validation.constraints.Size
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.document.ReviewAssessmentView
 import kr.easydoc.application.document.ReviewSupportService
 import kr.easydoc.application.document.ReviewSupportView
@@ -18,8 +19,8 @@ import kr.easydoc.core.easyread.ReviewItemState
 import kr.easydoc.core.easyread.SourceAnchor
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
-import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -98,8 +99,7 @@ class ReviewSupportController(private val service: ReviewSupportService) {
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, "no-store")
-            .header("X-Content-Type-Options", "nosniff")
+            .privateResponse()
             .body(ReviewSupportResponse.of(view))
 
     private companion object {
@@ -116,7 +116,7 @@ data class ReviewSupportAnalyzeRequest
     constructor(
         @param:JsonProperty("expected_content_revision")
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
     )
 
@@ -126,11 +126,11 @@ data class ReviewSupportItemUpdateRequest
         @param:JsonProperty("assessment_id") val assessmentId: UUID,
         @param:JsonProperty("expected_content_revision")
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
         @param:JsonProperty("expected_review_revision")
         @field:Min(0)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedReviewRevision: Long,
         @param:JsonProperty("state") val state: String,
         @param:JsonProperty("reason")
@@ -148,11 +148,11 @@ data class ReviewSupportItemsUpdateRequest
         @param:JsonProperty("assessment_id") val assessmentId: UUID,
         @param:JsonProperty("expected_content_revision")
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
         @param:JsonProperty("expected_review_revision")
         @field:Min(0)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedReviewRevision: Long,
         @param:JsonProperty("item_ids")
         @field:Size(min = 1, max = 100)

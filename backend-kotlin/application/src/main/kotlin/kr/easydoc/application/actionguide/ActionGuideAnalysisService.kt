@@ -1,7 +1,6 @@
 package kr.easydoc.application.actionguide
 
 import kr.easydoc.application.auth.TransactionRunner
-import kr.easydoc.application.document.MAX_SAFE_REVISION
 import kr.easydoc.core.actionguide.GuideAnalysisPolicy
 import kr.easydoc.core.actionguide.GuideAnalysisResult
 import kr.easydoc.core.actionguide.GuideOutputMode
@@ -9,6 +8,7 @@ import kr.easydoc.core.actionguide.GuideSourceUnit
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import kr.easydoc.core.segment.splitUnits
 import java.time.Instant
 import java.util.UUID

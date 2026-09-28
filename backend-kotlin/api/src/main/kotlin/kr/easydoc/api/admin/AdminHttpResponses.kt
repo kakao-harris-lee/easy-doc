@@ -1,5 +1,6 @@
 package kr.easydoc.api.admin
 
+import kr.easydoc.api.config.privateResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -13,10 +14,4 @@ internal fun adminResponse(status: HttpStatus): ResponseEntity.BodyBuilder =
     ResponseEntity
         .status(status)
         .contentType(MediaType.APPLICATION_JSON)
-        .header(CACHE_CONTROL, NO_STORE)
-        .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
-
-private const val CACHE_CONTROL = "Cache-Control"
-private const val NO_STORE = "no-store"
-private const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-private const val NOSNIFF = "nosniff"
+        .privateResponse()

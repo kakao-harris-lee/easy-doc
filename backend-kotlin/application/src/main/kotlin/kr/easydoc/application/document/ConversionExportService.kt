@@ -24,7 +24,7 @@ import java.util.UUID
  */
 @Suppress("LongParameterList")
 class ConversionExportService(
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReadRepository,
     private val cipher: ContentCipher,
     private val rendering: ExportRendering,
     /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 조회와 같은 저장소(계획 §10.2 결정 1). */

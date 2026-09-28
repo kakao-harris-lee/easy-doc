@@ -5,7 +5,6 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
-import kr.easydoc.core.exceptions.InvalidInputException
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -98,8 +97,6 @@ class SubscriptionService(
     private val users: UserRepository,
     private val toss: TossBillingService? = null,
 ) {
-    private val plans = listOf(SubscriptionPlan("start", "Start", 50, 99_000))
-
     fun read(
         ownerId: UUID,
         workspaceId: UUID,
@@ -121,7 +118,7 @@ class SubscriptionService(
             requireEnabled()
             val user = users.findById(ownerId)
             requirePaymentEligible(user, PaymentAction.CHECKOUT)
-            val plan = plans.find { it.id == planId } ?: throw InvalidInputException("알 수 없는 구독 플랜입니다")
+            val plan = SubscriptionPlanCatalog.require(planId)
             val previous = store.payment(workspaceId, orderId)
             if (previous != null) {
                 if (previous.planId != planId ||
@@ -261,7 +258,7 @@ class SubscriptionService(
     private fun overview(workspaceId: UUID) =
         SubscriptionOverview(
             enabled,
-            plans,
+            SubscriptionPlanCatalog.all(),
             store.find(workspaceId),
             store.payments(workspaceId),
             toss?.enabled == true,

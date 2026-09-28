@@ -17,6 +17,7 @@ import kr.easydoc.core.actionguide.GuideInformationStatus
 import kr.easydoc.core.actionguide.GuideSuitability
 import kr.easydoc.core.actionguide.GuideUnitAssessment
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import java.util.UUID
 
 data class GuideRevisionRequest
@@ -25,15 +26,15 @@ data class GuideRevisionRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
     ) {
         fun revision(): GuideReviewRevision =
             GuideReviewRevision(expectedContentRevision, expectedAnalysisRevision, expectedReviewRevision)
@@ -47,15 +48,15 @@ data class GuideSignalRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
         @param:JsonProperty("note", required = true) val note: String,
         @param:JsonProperty("body_unit_indexes", required = true) val bodyUnitIndexes: List<Int>,
         @param:JsonProperty("body_quote", required = true) @param:JsonSetter(nulls = Nulls.SET) val bodyQuote: String?,
@@ -72,15 +73,15 @@ data class GuideDraftRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
         @param:JsonProperty("request_id", required = true) val requestId: UUID,
         @param:JsonProperty("analysis_id", required = true) val analysisId: UUID,
         @param:JsonProperty("mode", required = true) val mode: String,
@@ -97,19 +98,19 @@ data class GuideDraftReviewRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
         @param:JsonProperty(
             "expected_draft_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedDraftRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedDraftRevision: Long,
         @param:JsonProperty("confirmed_block_ids", required = true) val confirmedBlockIds: List<String>,
     ) {
         fun revision(): GuideReviewRevision =
@@ -124,20 +125,20 @@ data class GuideDraftApplyRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
         @param:JsonProperty("request_id", required = true) val requestId: UUID,
         @param:JsonProperty(
             "expected_draft_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedDraftRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedDraftRevision: Long,
     ) {
         fun revision(): GuideReviewRevision =
             GuideReviewRevision(expectedContentRevision, expectedAnalysisRevision, expectedReviewRevision)
@@ -151,15 +152,15 @@ data class GuideCorrectionRequest
         @param:JsonProperty(
             "expected_content_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
         @param:JsonProperty(
             "expected_analysis_revision",
             required = true,
-        ) @field:Min(1) @field:Max(9_007_199_254_740_991) val expectedAnalysisRevision: Long,
+        ) @field:Min(1) @field:Max(MAX_SAFE_REVISION) val expectedAnalysisRevision: Long,
         @param:JsonProperty(
             "expected_review_revision",
             required = true,
-        ) @field:Min(0) @field:Max(9_007_199_254_740_991) val expectedReviewRevision: Long,
+        ) @field:Min(0) @field:Max(MAX_SAFE_REVISION) val expectedReviewRevision: Long,
         @param:JsonProperty("suitability", required = true) val suitability: String,
         @param:JsonProperty("action_presence", required = true) val actionPresence: String,
         @param:JsonProperty("reason", required = true) val reason: String,

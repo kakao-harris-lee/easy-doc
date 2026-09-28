@@ -3,7 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.dictionary.ReviewedDefinitionSource
-import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReadRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ExplanationsService
 import kr.easydoc.core.dictionary.ExplanationDefinitionSource
@@ -72,7 +72,7 @@ class ExplanationsConfiguration {
     @Bean
     fun explanationsService(
         properties: ExplanationsProperties,
-        conversions: ConversionRepository,
+        conversions: ConversionReadRepository,
         definitions: ReviewedDefinitionSource,
         documents: DocumentRepository,
         cipher: ContentCipher,

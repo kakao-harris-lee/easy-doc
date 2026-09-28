@@ -19,6 +19,7 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -125,7 +126,7 @@ private data class ReviewHistoryItemMutation(
 @Suppress("LongParameterList", "TooManyFunctions")
 class ReviewSupportService(
     private val enabled: Boolean,
-    private val conversions: ConversionRepository,
+    private val conversions: ConversionReviewReadRepository,
     private val documents: DocumentRepository,
     private val assessments: ReviewAssessmentRepository,
     private val cipher: ContentCipher,

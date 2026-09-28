@@ -10,6 +10,7 @@ import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
 
@@ -27,6 +28,7 @@ class TossBillingService(
     private val zone: ZoneId,
     val clientKey: Secret = Secret.EMPTY,
     private val users: kr.easydoc.application.auth.UserRepository,
+    private val timing: TossBillingTiming = TossBillingTiming(),
 ) {
     fun owns(workspace: UUID): Boolean =
         subscriptions.find(workspace)?.let { it.provider == "toss_test" }
@@ -64,7 +66,7 @@ class TossBillingService(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 planId,
-                clock.instant().plusSeconds(SESSION_TTL_SECONDS),
+                clock.instant().plus(timing.sessionTtl),
             ).also(store::saveSession)
         }
 
@@ -104,7 +106,7 @@ class TossBillingService(
             process(session.id)
             return
         }
-        if (Duration.between(session.expiresAt, clock.instant()).toDays() >= RETRY_MAX_DAYS) {
+        if (retryWindowElapsed(session.expiresAt)) {
             conflict("카드 등록 결과를 관리자에게 문의하세요")
         }
         val key = gateway.issue(auth, Secret(customer.toString()), id)
@@ -260,7 +262,7 @@ class TossBillingService(
         store.authorizationCandidates().forEach { workspace ->
             val session = store.session(workspace) ?: return@forEach
             val auth = session.authKey ?: return@forEach
-            if (Duration.between(session.expiresAt, clock.instant()).toDays() >= RETRY_MAX_DAYS) return@forEach
+            if (retryWindowElapsed(session.expiresAt)) return@forEach
             val owner = accounts.ownerOf(workspace) ?: return@forEach
             try {
                 complete(owner, workspace, session.id, session.customer, auth, session.simulateFailure)
@@ -288,7 +290,7 @@ class TossBillingService(
         } catch (_: TossDeclined) {
             failed(order)
         } catch (_: TossUncertain) {
-            transaction.inTransaction { store.release(id, clock.instant().plusSeconds(RETRY_SECONDS)) }
+            transaction.inTransaction { store.release(id, clock.instant().plus(timing.retryInterval)) }
         }
     }
 
@@ -296,7 +298,7 @@ class TossBillingService(
     private fun chargeResult(order: BillingOrder): TossPayment {
         gateway.find(order.id)?.let { return it }
         if (order.status !in listOf("pending", "processing") ||
-            Duration.between(order.createdAt, clock.instant()).toDays() >= RETRY_MAX_DAYS
+            retryWindowElapsed(order.createdAt)
         ) {
             throw TossUncertain()
         }
@@ -320,7 +322,7 @@ class TossBillingService(
         val remaining = order.previousRemaining - order.amount
         if (payment.remainingAmount == remaining) return payment
         if (payment.remainingAmount != order.previousRemaining ||
-            Duration.between(order.createdAt, clock.instant()).toDays() >= RETRY_MAX_DAYS
+            retryWindowElapsed(order.createdAt)
         ) {
             throw TossUncertain()
         }
@@ -472,19 +474,13 @@ class TossBillingService(
         if (!enabled) conflict("토스 테스트 결제가 활성화되어 있지 않습니다")
     }
 
-    private fun plan(id: String): SubscriptionPlan =
-        when (id) {
-            "start" -> SubscriptionPlan(id, "Start", START_CREDITS, START_PRICE)
-            else -> throw InvalidInputException("알 수 없는 구독 플랜입니다")
-        }
+    private fun plan(id: String): SubscriptionPlan = SubscriptionPlanCatalog.require(id)
+
+    private fun retryWindowElapsed(start: Instant): Boolean =
+        Duration.between(start, clock.instant()) >= timing.retryWindow
 
     private companion object {
-        const val SESSION_TTL_SECONDS = 600L
         const val AUTH_KEY_MAX_LENGTH = 300
-        const val RETRY_SECONDS = 30L
-        const val RETRY_MAX_DAYS = 14
-        const val START_CREDITS = 50
-        const val START_PRICE = 99_000
     }
 
     private fun conflict(message: String): Nothing = throw ConflictException(message)

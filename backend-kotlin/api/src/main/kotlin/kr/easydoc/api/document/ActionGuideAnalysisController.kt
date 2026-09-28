@@ -9,13 +9,14 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.actionguide.ActionGuideAnalysisService
 import kr.easydoc.application.actionguide.GuideAnalysisView
 import kr.easydoc.application.actionguide.GuideReviewSignal
 import kr.easydoc.core.actionguide.ExtractedGuideAction
 import kr.easydoc.core.actionguide.GuideInformation
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
-import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -67,8 +68,7 @@ class ActionGuideAnalysisController(private val service: ActionGuideAnalysisServ
     private fun <T : Any> response(body: T): ResponseEntity<T> =
         ResponseEntity
             .ok()
-            .header(HttpHeaders.CACHE_CONTROL, "no-store")
-            .header("X-Content-Type-Options", "nosniff")
+            .privateResponse()
             .body(body)
 
     private companion object {
@@ -82,7 +82,7 @@ data class ActionGuideAnalysisRequest
         @param:JsonProperty("request_id", required = true) val requestId: UUID,
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991) val expectedContentRevision: Long,
+        @field:Max(MAX_SAFE_REVISION) val expectedContentRevision: Long,
     )
 
 data class ActionGuideAnalysisLatestResponse(val analysis: ActionGuideAnalysisResponse?)

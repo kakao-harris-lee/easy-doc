@@ -48,7 +48,7 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
             // 도메인 타입이 이미 끊었으므로 도달하면 **코드 버그**이고, 사용자 입력 오류가
             // 아니다. 그래서 422 가 아니라 500 으로 나간다.
             DocumentStorageLog.constraintViolation(FEEDBACK_TABLE, failure)
-            throw StorageException(STORAGE_FAILURE_MESSAGE)
+            throw StorageException(DOCUMENT_STORAGE_FAILURE_MESSAGE)
         }
 
     /**
@@ -103,7 +103,6 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
 
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
-        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
 
         const val FEEDBACK_TABLE = "conversion_feedback"
 

@@ -4,7 +4,6 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.document.CONTENT_REVISION_INVALID_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_DONE_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_FOUND_MESSAGE
-import kr.easydoc.application.document.MAX_SAFE_REVISION
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
@@ -14,6 +13,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionJobFailureCode
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionJobStatus
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant

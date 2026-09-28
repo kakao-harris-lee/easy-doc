@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.illustration.IllustrationPlacementService
 import kr.easydoc.application.illustration.IllustrationPlacementsView
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -15,8 +16,8 @@ import kr.easydoc.core.illustration.IllustrationAssetId
 import kr.easydoc.core.illustration.IllustrationPlacement
 import kr.easydoc.core.illustration.IllustrationPlacements
 import kr.easydoc.core.illustration.PLACEMENT_ASSET_NOT_SELECTABLE_MESSAGE
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
-import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -69,16 +70,12 @@ class IllustrationPlacementController(private val service: IllustrationPlacement
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(IllustrationPlacementsResponse.of(view))
 
     private companion object {
         const val CONVERSION_ID = "conversion_id"
         const val PLACEMENTS_PATH = "/conversions/{conversion_id}/illustration-placements"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 
@@ -87,7 +84,7 @@ data class IllustrationPlacementsRequest
     constructor(
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
         @param:JsonProperty("placements", required = true)
         @field:Valid

@@ -9,6 +9,7 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.actionguide.ActionGuideContentService
 import kr.easydoc.application.actionguide.ActionGuideResourceView
 import kr.easydoc.application.actionguide.ActionGuideView
@@ -20,6 +21,7 @@ import kr.easydoc.core.actionguide.ActionGuideSectionKind
 import kr.easydoc.core.actionguide.ActionGuideSectionStatus
 import kr.easydoc.core.actionguide.ActionGuideSourceAnchor
 import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -72,25 +74,20 @@ class ActionGuideContentController(private val service: ActionGuideContentServic
             .ok()
             .contentType(MediaType("text", "plain", Charsets.UTF_8))
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=action-guide.txt")
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(service.export(user.id, conversionId, guideRevision))
 
     private fun <T : Any> json(body: T): ResponseEntity<T> =
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(body)
 
     private companion object {
         const val ACTION_GUIDE_PATH = "/conversions/{conversion_id}/action-guide"
         const val ACTION_GUIDE_EXPORT_PATH = "$ACTION_GUIDE_PATH/export"
         const val CONVERSION_ID = "conversion_id"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 
@@ -102,12 +99,12 @@ data class ActionGuideSaveRequest
         val candidateId: UUID?,
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
         @param:JsonProperty("expected_guide_revision", required = true)
         @param:JsonSetter(nulls = Nulls.SET)
         @field:Min(0)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedGuideRevision: Long?,
         @param:JsonProperty("content", required = true) val content: JsonNode,
         @param:JsonProperty("mark_reviewed", required = true) val markReviewed: Boolean,

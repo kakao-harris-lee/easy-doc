@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.document.ReviewHistoryEventType
 import kr.easydoc.application.document.ReviewHistoryEventView
 import kr.easydoc.application.document.ReviewHistoryPageView
@@ -41,25 +42,20 @@ class ReviewHistoryController(private val service: ReviewHistoryService) {
             .ok()
             .contentType(MediaType("text", "plain", Charsets.UTF_8))
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=review-history.txt")
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(service.export(user.id, conversionId))
 
     private fun <T : Any> json(body: T): ResponseEntity<T> =
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(body)
 
     private companion object {
         const val REVIEW_HISTORY_PATH = "/conversions/{conversion_id}/review-history"
         const val REVIEW_HISTORY_EXPORT_PATH = "$REVIEW_HISTORY_PATH/export"
         const val CONVERSION_ID = "conversion_id"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 

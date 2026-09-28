@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobCollectionView
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobCreationView
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobService
@@ -14,6 +15,7 @@ import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobV
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultService
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultView
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
+import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -81,8 +83,7 @@ class IllustrationSuggestionController(
         ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(body)
 
     private fun accepted(
@@ -96,8 +97,7 @@ class IllustrationSuggestionController(
                 HttpHeaders.LOCATION,
                 "/conversions/$conversionId/illustration-suggestion-jobs/${creation.job.jobId}",
             ).header(CREDIT_BALANCE_HEADER, creation.availableCredits.toPlainString())
-            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
-            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .privateResponse()
             .body(IllustrationSuggestionJobResponse.of(creation.job))
 
     private companion object {
@@ -107,9 +107,6 @@ class IllustrationSuggestionController(
         const val CONVERSION_ID = "conversion_id"
         const val JOB_ID = "job_id"
         const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
-        const val NO_STORE = "no-store"
-        const val NOSNIFF = "nosniff"
     }
 }
 
@@ -120,7 +117,7 @@ data class IllustrationSuggestionJobCreateRequest
         @param:JsonProperty("request_id", required = true) val requestId: UUID,
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
-        @field:Max(9_007_199_254_740_991)
+        @field:Max(MAX_SAFE_REVISION)
         val expectedContentRevision: Long,
     )
 
