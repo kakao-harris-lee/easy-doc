@@ -235,11 +235,14 @@ class JdbcTossBillingStore(
             .list()
             .filterNotNull()
 
-    override fun authorizationCandidates(): List<UUID> =
+    override fun authorizationCandidates(retryCutoff: Instant): List<UUID> =
         jdbc
             .sql(
-                "SELECT workspace_id FROM toss_billing_sessions WHERE state='issuing' ORDER BY expires_at LIMIT 50",
-            ).query(UUID::class.java)
+                "SELECT workspace_id FROM toss_billing_sessions " +
+                    "WHERE state='issuing' AND expires_at>:retryCutoff " +
+                    "ORDER BY expires_at LIMIT 50",
+            ).param("retryCutoff", retryCutoff.atOffset(ZoneOffset.UTC))
+            .query(UUID::class.java)
             .list()
             .filterNotNull()
 

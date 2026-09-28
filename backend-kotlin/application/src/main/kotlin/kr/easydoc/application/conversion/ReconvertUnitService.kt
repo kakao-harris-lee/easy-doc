@@ -196,14 +196,15 @@ class ReconvertUnitService(
         requiredCredits: Credits,
     ): ReconversionReservation =
         transaction.inTransaction {
+            // Use the same conversion-before-credit update order as settlement.
+            val reservedCalls =
+                conversions.reserveReconversionCalls(ownerId, conversionId, RECONVERSION_CALL_COST, callBudget)
             credits.reserve(ownerId, workspaceId, documentId, requiredCredits)
-            conversions
-                .reserveReconversionCalls(ownerId, conversionId, RECONVERSION_CALL_COST, callBudget)
-                .also { reservedCalls ->
-                    if (reservedCalls is ReconversionReservation.Exhausted) {
-                        credits.release(workspaceId, ownerId, documentId, conversionId, requiredCredits)
-                    }
-                }
+            if (reservedCalls is ReconversionReservation.Exhausted) {
+                // Preserve insufficient-credit error precedence when both budgets are exhausted.
+                credits.release(workspaceId, ownerId, documentId, conversionId, requiredCredits)
+            }
+            reservedCalls
         }
 
     /** LLM 호출 뒤 정산하고 결과를 만든다 — [reconvert] 에서 갈라낸 자리(`LongMethod`). */

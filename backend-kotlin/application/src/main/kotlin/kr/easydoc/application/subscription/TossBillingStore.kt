@@ -65,5 +65,6 @@ interface TossBillingStore {
 
     fun cleanupCandidates(): List<UUID>
 
-    fun authorizationCandidates(): List<UUID>
+    /** Issuing sessions are eligible only while they remain inside the retry window. */
+    fun authorizationCandidates(retryCutoff: Instant): List<UUID>
 }

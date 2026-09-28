@@ -259,7 +259,8 @@ class TossBillingService(
     }
 
     private fun recoverAuthorizations() {
-        store.authorizationCandidates().forEach { workspace ->
+        val retryCutoff = clock.instant().minus(timing.retryWindow)
+        store.authorizationCandidates(retryCutoff).forEach { workspace ->
             val session = store.session(workspace) ?: return@forEach
             val auth = session.authKey ?: return@forEach
             if (retryWindowElapsed(session.expiresAt)) return@forEach
