@@ -40,8 +40,9 @@ interface OwnerGroup {
 /**
  * 목록을 소유자 이메일로 묶는다 — 계정이 처음 나온 순서를 지킨다.
  *
- * 묶음은 「지금 불러온 쪽」 안에서만 성립한다. API가 워크스페이스 단위로 쪽을 나누므로
- * 작업 공간이 많은 계정은 이웃한 두 쪽에 나뉘어 나올 수 있다 — MVP에서는 그대로 둔다.
+ * 묶음은 「지금 불러온 쪽」 안에서만 성립한다. 서버가 워크스페이스를 생성일 내림차순으로
+ * 늘어놓고 쪽을 나누므로, 한 계정의 작업 공간은 이웃하지 않은 여러 쪽에 흩어져 나올 수
+ * 있다 — 한 계정 것을 한자리에서 보려면 그 계정의 이메일로 검색한다(한 쪽에 20개).
  */
 function groupByOwner(items: AdminWorkspaceSummary[]): OwnerGroup[] {
   const groups: OwnerGroup[] = []
@@ -184,7 +185,7 @@ function WorkspaceDetailPanel({
       aria-labelledby={headingId}
     >
       <h3 id={headingId} className="text-[15px] font-semibold text-foreground">
-        {detail.summary.owner_email} · {detail.summary.name}
+        {detail.summary.owner_email} · {detail.summary.name} 상세
       </h3>
 
       <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin />
@@ -478,7 +479,8 @@ export function AdminWorkspacesTab() {
         <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
           <table className="usage-table">
             <caption>
-              계정별 워크스페이스 목록입니다. 작업 공간이 여러 개인 계정은 골라서 관리를 누르세요.
+              이 쪽에 실린 워크스페이스를 계정별로 묶었습니다. 작업 공간이 여러 개인 계정은 골라서
+              관리를 누르세요.
             </caption>
             <thead>
               <tr>
@@ -512,13 +514,24 @@ export function AdminWorkspacesTab() {
                         ) : (
                           <select
                             aria-label={`${group.ownerEmail}의 작업 공간 선택`}
+                            className="min-h-11 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
                             value={selected.workspace_id}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              const nextId = event.target.value
                               setSelectedByOwner((current) => ({
                                 ...current,
-                                [group.ownerEmail]: event.target.value,
+                                [group.ownerEmail]: nextId,
                               }))
-                            }
+                              // 이 계정의 상세가 열려 있다면 상세·크레딧 폼도 새로 고른
+                              // 작업 공간으로 옮긴다 — 열려 있지 않으면 건드리지 않는다.
+                              if (
+                                group.workspaces.some(
+                                  (workspace) => workspace.workspace_id === selectedId,
+                                )
+                              ) {
+                                setSelectedId(nextId)
+                              }
+                            }}
                           >
                             {group.workspaces.map((workspace) => (
                               <option key={workspace.workspace_id} value={workspace.workspace_id}>
@@ -544,6 +557,7 @@ export function AdminWorkspacesTab() {
                           type="button"
                           variant="outline"
                           size="sm"
+                          className="min-h-11"
                           aria-label={`${group.ownerEmail}의 ${selected.name} 관리`}
                           onClick={() => setSelectedId(selected.workspace_id)}
                         >
