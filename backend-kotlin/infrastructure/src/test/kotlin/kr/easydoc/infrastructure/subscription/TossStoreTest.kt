@@ -13,6 +13,7 @@ import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Test
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -73,6 +74,58 @@ class TossStoreTest {
                 encryption_scheme=encryption_scheme, key_version=key_version""",
         )
         assertThatThrownBy { newOnly.order(order.id) }.isInstanceOf(DecryptionFailedException::class.java)
+    }
+
+    @Test
+    fun `authorization candidates filter expired sessions before the batch limit`() {
+        val db = PostgresTestSupport.createEmptyDatabase("toss_authorization_candidates")
+        Flyway
+            .configure()
+            .dataSource(db.jdbcUrl, db.username, db.password)
+            .load()
+            .migrate()
+        val jdbc = JdbcClient.create(DriverManagerDataSource(db.jdbcUrl, db.username, db.password))
+        val store = JdbcTossBillingStore(jdbc, AesGcmContentCipher(mapOf(1 to key(1)), 1))
+        val now = Instant.parse("2026-09-28T00:00:00Z")
+        val retryWindow = Duration.ofDays(14)
+        val cutoff = now.minus(retryWindow)
+        val expired =
+            (0 until 50).map { index ->
+                saveIssuingSession(db, store, now.minus(retryWindow).minusSeconds(index + 1L), index)
+            }
+        val boundary = saveIssuingSession(db, store, cutoff, 50)
+        val live = saveIssuingSession(db, store, cutoff.plusSeconds(1), 51)
+
+        val candidates = store.authorizationCandidates(cutoff)
+
+        assertThat(candidates).containsExactly(live)
+        assertThat(candidates).doesNotContainAnyElementsOf(expired + boundary)
+        assertThat(store.session(expired.first())?.state).isEqualTo("issuing")
+        assertThat(store.session(expired.first())?.authKey).isEqualTo(Secret("auth-0"))
+    }
+
+    private fun saveIssuingSession(
+        db: kr.easydoc.infrastructure.DatabaseHandle,
+        store: JdbcTossBillingStore,
+        expiresAt: Instant,
+        index: Int,
+    ): UUID {
+        val owner = UUID.randomUUID()
+        val workspace = UUID.randomUUID()
+        db.execute("INSERT INTO users(id,email,password_hash) VALUES ('$owner','auth-$index@example.test','test')")
+        db.execute("INSERT INTO workspaces(id,user_id,name) VALUES ('$workspace','$owner','auth-$index')")
+        store.saveSession(
+            BillingSession(
+                workspace,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "start",
+                expiresAt,
+                Secret("auth-$index"),
+                state = "issuing",
+            ),
+        )
+        return workspace
     }
 
     private fun key(value: Byte) = Secret(Base64.getEncoder().encodeToString(ByteArray(32) { value }))

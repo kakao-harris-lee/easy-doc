@@ -152,8 +152,10 @@ class ReconvertUnitServiceTest {
         }
     }
 
-    private class RecordingCreditRepository(balance: Int) :
-        CreditAccountRepository by NoopCreditAccountRepository {
+    private class RecordingCreditRepository(
+        balance: Int,
+        private val onReserve: (() -> Unit)? = null,
+    ) : CreditAccountRepository by NoopCreditAccountRepository {
         private var balance = BigDecimal.valueOf(balance.toLong())
         private var reserved = BigDecimal.ZERO
         val reserveCalls = mutableListOf<BigDecimal>()
@@ -169,6 +171,7 @@ class ReconvertUnitServiceTest {
         ): ReservationResult {
             val available = balance - reserved
             if (enforced && available < amount.amount) return ReservationResult.Insufficient(available)
+            onReserve?.invoke()
             reserveCalls += amount.amount
             reserved += amount.amount
             return ReservationResult.Reserved(balance, reserved)
@@ -225,6 +228,22 @@ class ReconvertUnitServiceTest {
         assertThat(creditRepository.reserveCalls).containsExactly(BigDecimal("0.1"))
         assertThat(creditRepository.consumeCalls).containsExactly(BigDecimal("0.1"))
         assertThat(creditRepository.releaseCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("용량 예약은 크레딧 계정 전에 변환 예산 행을 잠근다")
+    fun `용량 예약은 변환 예산을 먼저 예약한다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val creditRepository =
+            RecordingCreditRepository(balance = 10) {
+                assertThat(conversions.reconversionBudgetOf(conversionId))
+                    .withFailMessage("크레딧 계정 예약 전에 변환 예산이 예약돼야 한다")
+                    .isEqualTo(2 to 0)
+            }
+
+        service(provider, credits = CreditAccountService(creditRepository, enforced = true))
+            .reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
     }
 
     @Test
@@ -339,7 +358,25 @@ class ReconvertUnitServiceTest {
     }
 
     @Test
-    @DisplayName("재변환 크레딧이 부족하면 LLM과 호출 예산을 쓰지 않고 402다")
+    @DisplayName("호출 예산이 남아 있어도 크레딧이 부족하면 LLM을 호출하지 않는다")
+    fun `호출 예산이 남아 있어도 크레딧 부족은 호출을 막는다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val creditRepository = RecordingCreditRepository(balance = 0)
+
+        assertThatThrownBy {
+            service(provider, credits = CreditAccountService(creditRepository, enforced = true))
+                .reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+        }.isInstanceOf(InsufficientCreditsException::class.java)
+
+        assertThat(provider.calls).isEmpty()
+        // The in-memory transaction runner does not roll back; JDBC tests cover budget rollback.
+        assertThat(creditRepository.consumeCalls).isEmpty()
+        assertThat(creditRepository.releaseCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("재변환 크레딧과 호출 예산이 모두 부족하면 크레딧 402 우선순위를 유지한다")
     fun `재변환 크레딧이 부족하면 호출하지 않는다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(reply(cleanText)))
@@ -348,6 +385,7 @@ class ReconvertUnitServiceTest {
         assertThatThrownBy {
             service(
                 provider,
+                callBudget = 0,
                 credits = CreditAccountService(creditRepository, enforced = true),
             ).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
         }.isInstanceOf(InsufficientCreditsException::class.java)
