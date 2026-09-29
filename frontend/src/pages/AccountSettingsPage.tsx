@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { deleteAccount } from '../api/auth'
 import { ApiError } from '../api/client'
@@ -10,7 +11,10 @@ import { useAuth } from '../auth/context'
 import { useWorkspace } from '../workspace/context'
 import { PageHeader } from '../components/PageHeader'
 import { PhoneVerificationSection } from '../components/PhoneVerificationSection'
+import { SetPasswordForm } from '../components/SetPasswordForm'
+import { SocialLinkStatus } from '../components/SocialLinkStatus'
 import { Button } from '../components/ui/Button'
+import { EMAIL_VERIFICATION_PATH } from '../routes/paths'
 
 /**
  * 탈퇴 확인 문구 — 서버 정본은 `DeleteAccountService.CONFIRMATION_PHRASE`. 화면은 이
@@ -43,7 +47,7 @@ interface AccountSummary {
  * `guardedSignOut`과 같은 규약).
  */
 export function AccountSettingsPage() {
-  const { user, signOut } = useAuth()
+  const { user, signOut, refreshMe } = useAuth()
   const { workspaces } = useWorkspace()
 
   const [summary, setSummary] = useState<AccountSummary | null>(null)
@@ -150,13 +154,53 @@ export function AccountSettingsPage() {
       <PageHeader
         context="계정"
         title="계정 설정"
-        description="로그인 계정, 휴대폰 인증과 회원 탈퇴를 관리합니다."
+        description="로그인 계정, 로그인 연결, 비밀번호, 휴대폰 인증과 회원 탈퇴를 관리합니다."
       />
 
       <section className="rounded-[16px] border border-border bg-card p-5 shadow-sm">
         <h2 className="text-[15px] font-semibold text-foreground">로그인 계정</h2>
         <p className="mt-2 text-sm text-foreground">{user.email}</p>
       </section>
+
+      <section
+        className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
+        aria-labelledby="social-link-heading"
+      >
+        <h2 id="social-link-heading" className="text-[15px] font-semibold text-foreground">
+          로그인 연결
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">연결한 계정으로도 로그인할 수 있어요.</p>
+        <SocialLinkStatus
+          className="mt-4"
+          identities={user.identities}
+          hasPassword={user.has_password}
+          onUnlinked={() => void refreshMe()}
+        />
+      </section>
+
+      {!user.has_password && (
+        <section
+          className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
+          aria-labelledby="set-password-heading"
+        >
+          <h2 id="set-password-heading" className="text-[15px] font-semibold text-foreground">
+            비밀번호
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            비밀번호를 만들면 이메일로도 로그인할 수 있어요.
+          </p>
+          {user.email_verified ? (
+            <SetPasswordForm className="mt-4" onCreated={() => void refreshMe()} />
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              <Link to={EMAIL_VERIFICATION_PATH} className="inline-block py-3">
+                이메일 인증
+              </Link>{' '}
+              후 비밀번호를 만들 수 있어요.
+            </p>
+          )}
+        </section>
+      )}
 
       <PhoneVerificationSection />
 

@@ -240,10 +240,14 @@ describe('좁은 화면', () => {
     renderPage()
 
     const list = await screen.findByRole('list', { name: /변환한 문서 목록입니다/ })
-    // 카드 안에서도 §6.6의 위계를 지킨다: 제목 → 할 일 → 보조 정보 → 삭제.
+    // 카드 안에서도 §6.6의 위계를 지킨다: 할 일 → 제목 → 보조 정보, 더보기는 오른쪽 위.
     const card = within(list).getByRole('listitem')
     expect(card).toHaveTextContent('검수 필요')
     expect(card).toHaveTextContent('붙여넣기 · 2026. 8. 7.')
+    const badge = within(card).getByText('검수 필요')
+    const title = within(card).getByRole('link', { name: '재난지원금 안내' })
+    expect(badge.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(card).getByRole('button', { name: '재난지원금 안내 더보기' })).toBeInTheDocument()
     expect(within(card).getByRole('link', { name: '재난지원금 안내' })).toHaveAttribute(
       'href',
       '/conversions/c1',
@@ -338,6 +342,11 @@ describe('작업 공간 필터', () => {
 })
 
 describe('문서 삭제', () => {
+  async function openMenuAndDelete(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 더보기' }))
+    await user.click(screen.getByRole('button', { name: '재난지원금 안내 삭제' }))
+  }
+
   /** 문서 한 건만 있는 첫 쪽. 삭제 뒤에는 빈 목록을 돌려준다. */
   function mockOneThenEmpty() {
     vi.mocked(listDocuments)
@@ -357,7 +366,7 @@ describe('문서 삭제', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+    await openMenuAndDelete(user)
 
     // 무엇이 사라지는지 대화상자 안에서 확인할 수 있어야 한다(§9) — 줄마다 같은 문장이
     // 뜨면 다른 문서의 삭제 버튼을 눌렀는지 알아챌 방법이 없다.
@@ -380,7 +389,7 @@ describe('문서 삭제', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+    await openMenuAndDelete(user)
 
     expect(vi.mocked(deleteDocument)).not.toHaveBeenCalled()
     expect(screen.getByText('재난지원금 안내')).toBeInTheDocument()
@@ -395,9 +404,84 @@ describe('문서 삭제', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+    await openMenuAndDelete(user)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('문서를 찾을 수 없습니다')
     expect(screen.getByText('재난지원금 안내')).toBeInTheDocument()
+  })
+})
+
+describe('행 더보기 메뉴', () => {
+  function mockTwo() {
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [
+        documentItem({ id: 'd1', title: '첫 문서' }),
+        documentItem({ id: 'd2', conversion_id: 'c2', title: '둘째 문서' }),
+      ],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+  }
+
+  it('삭제는 열기 전에는 보이지 않고 열면 첫 동작에 초점이 간다', async () => {
+    const user = userEvent.setup()
+    mockTwo()
+    renderPage()
+
+    const trigger = await screen.findByRole('button', { name: '첫 문서 더보기' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(trigger).not.toHaveAttribute('aria-controls')
+    expect(screen.queryByRole('button', { name: '첫 문서 삭제' })).not.toBeInTheDocument()
+
+    await user.click(trigger)
+
+    const remove = screen.getByRole('button', { name: '첫 문서 삭제' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(trigger).toHaveAttribute('aria-controls', remove.parentElement?.id)
+    expect(remove).toHaveFocus()
+  })
+
+  it('Esc로 닫고 초점을 트리거로 돌려준다', async () => {
+    const user = userEvent.setup()
+    mockTwo()
+    renderPage()
+    const trigger = await screen.findByRole('button', { name: '첫 문서 더보기' })
+    await user.click(trigger)
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('button', { name: '첫 문서 삭제' })).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it('바깥을 누르면 닫는다', async () => {
+    const user = userEvent.setup()
+    mockTwo()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '첫 문서 더보기' }))
+
+    await user.click(document.body)
+
+    expect(screen.queryByRole('button', { name: '첫 문서 삭제' })).not.toBeInTheDocument()
+  })
+
+  it('한 번에 한 줄의 메뉴만 열린다', async () => {
+    const user = userEvent.setup()
+    mockTwo()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '첫 문서 더보기' }))
+
+    await user.click(screen.getByRole('button', { name: '둘째 문서 더보기' }))
+
+    expect(screen.queryByRole('button', { name: '첫 문서 삭제' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '둘째 문서 삭제' })).toBeInTheDocument()
+  })
+
+  it('더보기 버튼은 44px 터치 대상이다', async () => {
+    mockTwo()
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: '첫 문서 더보기' })).toHaveClass('size-11')
   })
 })

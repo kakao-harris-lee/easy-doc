@@ -24,6 +24,21 @@ describe('페이지 헤더', () => {
     expect(screen.getByText(BASE.description)).toBeInTheDocument()
   })
 
+  it('제목은 모바일에서만 작게 그린다', () => {
+    render(
+      <MemoryRouter>
+        <PageHeader {...BASE} />
+      </MemoryRouter>,
+    )
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass(
+      'text-2xl',
+      'leading-8',
+      'sm:text-[28px]',
+      'sm:leading-9',
+    )
+  })
+
   it('대표 행동은 하나뿐이다', async () => {
     const user = userEvent.setup()
     const onClick = vi.fn()

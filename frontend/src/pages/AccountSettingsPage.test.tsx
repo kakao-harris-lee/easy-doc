@@ -1,9 +1,14 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { confirmPhoneVerification, deleteAccount, requestPhoneVerification } from '../api/auth'
+import {
+  confirmPhoneVerification,
+  deleteAccount,
+  oauthUnlink,
+  requestPhoneVerification,
+} from '../api/auth'
 import { ApiError } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { listInvoiceRequests } from '../api/invoices'
@@ -21,6 +26,8 @@ import { AccountSettingsPage } from './AccountSettingsPage'
 
 vi.mock('../api/auth', () => ({
   deleteAccount: vi.fn(),
+  oauthUnlink: vi.fn(),
+  setPassword: vi.fn(),
   requestPhoneVerification: vi.fn(),
   confirmPhoneVerification: vi.fn(),
 }))
@@ -57,6 +64,7 @@ function renderPage(
 
 beforeEach(() => {
   vi.mocked(deleteAccount).mockReset()
+  vi.mocked(oauthUnlink).mockReset()
   vi.mocked(requestPhoneVerification).mockReset()
   vi.mocked(confirmPhoneVerification).mockReset()
   vi.mocked(getWorkspaceCredits)
@@ -106,7 +114,7 @@ describe('계정 설정 화면', () => {
 
     await user.click(screen.getByRole('button', { name: '회원 탈퇴' }))
 
-    expect(screen.getByLabelText('비밀번호')).toBeInTheDocument()
+    expect(screen.getByLabelText('비밀번호', { selector: 'input' })).toBeInTheDocument()
   })
 
   it('소셜 전용 계정은 비밀번호 입력란이 없다', async () => {
@@ -115,7 +123,7 @@ describe('계정 설정 화면', () => {
 
     await user.click(screen.getByRole('button', { name: '회원 탈퇴' }))
 
-    expect(screen.queryByLabelText('비밀번호')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('비밀번호', { selector: 'input' })).not.toBeInTheDocument()
   })
 
   it('제출 성공은 signOut을 부른다', async () => {
@@ -125,7 +133,7 @@ describe('계정 설정 화면', () => {
 
     renderPage({ user: userResponse({ has_password: true }), signOut })
     await user.click(screen.getByRole('button', { name: '회원 탈퇴' }))
-    await user.type(screen.getByLabelText('비밀번호'), 'current-password')
+    await user.type(screen.getByLabelText('비밀번호', { selector: 'input' }), 'current-password')
     await user.type(screen.getByLabelText('확인 문구'), '탈퇴합니다')
     await user.click(screen.getByRole('button', { name: '계정을 영구히 삭제합니다' }))
 
@@ -177,5 +185,67 @@ describe('계정 설정 화면', () => {
 
     expect(screen.queryByLabelText('확인 문구')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '회원 탈퇴' })).toBeInTheDocument()
+  })
+
+  it('로그인 연결 절에 연결한 소셜 계정을 보여준다', () => {
+    renderPage({ user: userResponse({ identities: [{ provider: 'google' }] }) })
+
+    const section = screen.getByRole('region', { name: '로그인 연결' })
+    expect(within(section).getByText('연결한 계정으로도 로그인할 수 있어요.')).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: '연결 해제' })).toBeInTheDocument()
+  })
+
+  it('연결을 해제하면 refreshMe를 부른다', async () => {
+    vi.mocked(oauthUnlink).mockResolvedValue(undefined)
+    const refreshMe = vi.fn()
+    const user = userEvent.setup()
+
+    renderPage({
+      user: userResponse({
+        has_password: true,
+        identities: [{ provider: 'google' }, { provider: 'kakao' }],
+      }),
+      refreshMe,
+    })
+    await user.click(screen.getAllByRole('button', { name: '연결 해제' })[0]!)
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '연결 해제' }))
+
+    await waitFor(() => expect(refreshMe).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(oauthUnlink)).toHaveBeenCalledWith('google')
+  })
+
+  it('비밀번호가 있으면 비밀번호 절을 그리지 않는다', () => {
+    renderPage({ user: userResponse({ has_password: true }) })
+
+    expect(screen.queryByRole('region', { name: '비밀번호' })).not.toBeInTheDocument()
+  })
+
+  it('비밀번호가 없고 이메일이 미인증이면 인증 링크만 보여준다', () => {
+    renderPage({ user: userResponse({ has_password: false, email_verified: false }) })
+
+    const section = screen.getByRole('region', { name: '비밀번호' })
+    expect(
+      within(section).getByText('비밀번호를 만들면 이메일로도 로그인할 수 있어요.'),
+    ).toBeInTheDocument()
+    expect(within(section).getByRole('link', { name: '이메일 인증' })).toHaveAttribute(
+      'href',
+      '/verify-email',
+    )
+    expect(within(section).queryByRole('button', { name: '비밀번호 만들기' })).toBeNull()
+  })
+
+  it('비밀번호가 없고 이메일이 인증됐으면 비밀번호 만들기 폼을 보여준다', () => {
+    renderPage({ user: userResponse({ has_password: false, email_verified: true }) })
+
+    const section = screen.getByRole('region', { name: '비밀번호' })
+    expect(within(section).getByRole('button', { name: '비밀번호 만들기' })).toBeInTheDocument()
+  })
+
+  it('안내 절은 로그인 계정 뒤, 휴대폰 인증과 회원 탈퇴 앞에 온다', () => {
+    renderPage({ user: userResponse({ has_password: false, email_verified: true }) })
+
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+    expect(headings.slice(0, 3)).toEqual(['로그인 계정', '로그인 연결', '비밀번호'])
+    expect(headings.at(-1)).toBe('회원 탈퇴')
   })
 })

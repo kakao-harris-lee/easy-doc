@@ -657,7 +657,8 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
   })
 
-  it('구버전 PDF 응답에 선택지가 있으면 형식마다 버튼을 하나씩 그린다', () => {
+  it('선택지가 둘 이상이면 형식 버튼 대신 내려받기 버튼 하나가 형식 대화상자를 연다', async () => {
+    const user = userEvent.setup()
     render(
       <ReviewEditor
         conversion={conversion({
@@ -669,10 +670,40 @@ describe('검수 에디터', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: 'DOCX로 내려받기' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'HWPX로 내려받기' })).toBeInTheDocument()
-    // 선택지에 없는 형식의 버튼은 그리지 않는다.
-    expect(screen.queryByRole('button', { name: 'TXT로 내려받기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'DOCX로 내려받기' })).not.toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: '내려받기' })
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+
+    await user.click(trigger)
+
+    const dialog = screen.getByRole('dialog', { name: '내려받을 형식' })
+    expect(within(dialog).getAllByRole('radio')).toHaveLength(2)
+    expect(within(dialog).getByRole('radio', { name: /DOCX/ })).toBeChecked()
+    expect(within(dialog).queryByRole('radio', { name: /TXT/ })).not.toBeInTheDocument()
+  })
+
+  it('행동 줄은 좁은 화면에서 두 칸 격자이고 두 버튼이 꽉 찬다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          source_format: 'pdf',
+          export_format: null,
+          export_format_choices: ['docx', 'hwpx'],
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const bar = screen.getByRole('button', { name: '내려받기' }).parentElement
+    expect(bar).toHaveClass('grid', 'grid-cols-2', 'sm:flex')
+    expect(screen.getByRole('button', { name: '내려받기' })).toHaveClass('h-12', 'w-full')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass('h-12', 'w-full')
+  })
+
+  it('검수 안내 줄은 좁은 화면에서 작게 줄인다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
+
+    expect(screen.getByRole('note')).toHaveClass('px-3', 'py-2', 'text-sm', 'sm:px-4', 'sm:py-3')
   })
 
   it.each(['docx', 'hwpx'] as const)(
@@ -699,10 +730,14 @@ describe('검수 에디터', () => {
         />,
       )
 
+      await user.click(screen.getByRole('button', { name: '내려받기' }))
+      await user.click(screen.getByRole('radio', { name: new RegExp(format.toUpperCase()) }))
       await user.click(screen.getByRole('button', { name: `${format.toUpperCase()}로 내려받기` }))
 
       expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', format)
       expect(click).toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await waitFor(() => expect(screen.getByRole('button', { name: '내려받기' })).toHaveFocus())
 
       click.mockRestore()
       vi.unstubAllGlobals()
@@ -1135,8 +1170,7 @@ describe('원본 서식 유지 패널', () => {
     // 더는 참이 아닌 옛 문구를 남기지 않는다 — 버튼이 실제로 있다.
     expect(screen.queryByText(/이 문서에는\s*내려받기가 없습니다/)).not.toBeInTheDocument()
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'DOCX로 내려받기' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'HWPX로 내려받기' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '내려받기' })).toBeInTheDocument()
   })
 
   /**
@@ -3708,5 +3742,39 @@ describe('ER-17 그림 제안', () => {
 
     expect(screen.getByRole('button', { name: '그림 제안 확인' })).toBeDisabled()
     expect(screen.getByText(/저장하지 않은 본문 수정이 있습니다/)).toBeInTheDocument()
+  })
+})
+
+describe('내려받기 형식 대화상자와 저장', () => {
+  it('저장하지 않은 수정이 있으면 확인 버튼이 저장까지 말하고 저장한 뒤 고른 형식으로 내려받는다', async () => {
+    const user = userEvent.setup()
+    stubBlobSaving()
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({ source_format: 'pdf', export_format: null, edited_text: '첫 문단 수정' }),
+    )
+    vi.mocked(downloadExport).mockResolvedValue({ blob: new Blob(['내용']), filename: 'a.hwpx' })
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          source_format: 'pdf',
+          export_format: null,
+          export_format_choices: ['docx', 'hwpx'],
+          easy_text: '첫 문단',
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
+    await user.click(screen.getByRole('button', { name: '내려받기' }))
+    expect(
+      screen.getByText('저장하지 않은 수정이 있으면 먼저 저장한 뒤 내려받습니다.'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: /HWPX/ }))
+    await user.click(screen.getByRole('button', { name: '저장하고 HWPX로 내려받기' }))
+
+    await screen.findByText('검수 내용을 저장하고 HWPX 파일을 내려받았습니다.')
+    expect(vi.mocked(saveReview)).toHaveBeenCalled()
+    expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', 'hwpx')
   })
 })

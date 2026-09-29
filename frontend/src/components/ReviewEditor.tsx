@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type KeyboardEvent,
 } from 'react'
-import { Download, Save, ShieldAlert } from 'lucide-react'
+import { ChevronDown, Download, Save, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { HISTORY_PATH } from '../routes/paths'
 
@@ -38,6 +38,8 @@ import {
   withBaselines,
 } from '../review/unitMap'
 import { setUnsavedChanges } from '../review/unsavedChanges'
+import { DownloadFormatDialog } from './DownloadFormatDialog'
+import { downloadLabel } from './downloadLabel'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
@@ -298,15 +300,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [reconvertMessage, setReconvertMessage] = useState<ReconvertMessage | null>(null)
   /** 지금 열려 있는 재변환 후보 카드. 한 번에 하나만 연다. */
   const [candidate, setCandidate] = useState<SegmentedResultEditorCandidate | null>(null)
-  /**
-   * 지금 내려받는 중인 형식.
-   *
-   * PDF 원본은 버튼이 둘일 수 있다(`export_format_choices`) — `pending`만으로는 어느
-   * 버튼을 눌렀는지 구분되지 않아 두 버튼이 동시에 "내려받는 중…"이라고 말하게 된다.
-   * 이 값은 그 버튼 하나만 도는 것처럼 보이게 한다. 나머지 버튼은 `busy`로 여전히
-   * 잠기지만 문구는 그대로 둔다 — 누른 적 없는 버튼이 진행 중이라고 말하지 않는다.
-   */
-  const [pendingFormat, setPendingFormat] = useState<ExportFormat | null>(null)
+  const [formatDialogOpen, setFormatDialogOpen] = useState(false)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
   const [illustrationsOpen, setIllustrationsOpen] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
@@ -1113,7 +1107,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     const needsSave = dirty
     let saved = false
     setPending(needsSave ? 'saveAndDownload' : 'download')
-    setPendingFormat(format)
     setFeedback(null)
     try {
       if (needsSave) {
@@ -1153,7 +1146,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       setFeedback({ kind: 'error', message, announce: true })
     } finally {
       setPending(null)
-      setPendingFormat(null)
     }
   }
 
@@ -1267,6 +1259,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         }
 
   const historyEnabled = conversion.review_capabilities?.review_history === true
+  const formats = downloadFormats(conversion)
+  const singleFormat = formats.length === 1 ? formats[0] : undefined
+  const multipleFormats = formats.length > 1
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
   const illustrationsEnabled = conversion.review_capabilities?.illustrations === true
@@ -1280,7 +1275,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           HITL 고지는 이 화면에서 가장 먼저 읽혀야 하는 문장이라 DOM에서도 앞에 둔다. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p
-          className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+          className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2 text-sm font-semibold text-warning sm:px-4 sm:py-3 sm:text-base"
           role="note"
         >
           <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
@@ -1775,10 +1770,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             아니라 이 편집 묶음 안에서만 붙는 sticky다 — 묶음을 지나가면 함께 흘러가므로
             본문 마지막 요소(피드백·대응표)를 가리지 않는다. 아래 여백은 홈
             인디케이터가 있는 기기에서 버튼이 잘리지 않게 안전 영역만큼 더 준다. */}
-        <div className="sticky bottom-0 z-10 mt-4 flex flex-wrap items-center gap-2 border-t border-border bg-background/95 pt-3 backdrop-blur-sm [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="sticky bottom-0 z-10 mt-4 grid grid-cols-2 gap-2 border-t border-border bg-background/95 pt-3 backdrop-blur-sm sm:flex sm:flex-wrap sm:items-center [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
           <Button
             type="button"
-            className={cn('h-11 w-full sm:w-auto', dirty && 'ring-2 ring-ring/40')}
+            className={cn('h-12 w-full sm:h-11 sm:w-auto', dirty && 'ring-2 ring-ring/40')}
             variant={dirty ? 'primary' : 'secondary'}
             aria-describedby={statusId}
             onClick={(event) => {
@@ -1791,36 +1786,47 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             {pending !== 'save' && <Save className="size-[18px]" aria-hidden="true" />}
             {pending === 'save' ? '저장 중…' : '검수 내용 저장'}
           </Button>
-          {downloadFormats(conversion).map((format) => {
-            // 이 버튼을 눌러서 도는 중인지 — 선택지가 둘 이상인 미래 응답에서는
-            // `pendingFormat` 없이 `pending`만으로 어느 버튼인지 구분되지 않는다.
-            const thisDownloading = downloading && pendingFormat === format
-            return (
-              <Button
-                key={format}
-                className="h-11 grow sm:grow-0"
-                variant="outline"
-                type="button"
-                onClick={(event) => {
-                  refocusRef.current = event.currentTarget
-                  void handleDownload(format)
-                }}
-                disabled={busy || contentConflict}
-                loading={thisDownloading}
-              >
-                {!thisDownloading && <Download className="size-[18px]" aria-hidden="true" />}
-                {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다.
-                    형식 이름을 버튼에 넣어 무엇이 나오는지 누르기 전에 알린다 — 누른 뒤
-                    형식을 고르게 하는 모달은 두지 않는다. */}
-                {pending === 'saveAndDownload' && thisDownloading
-                  ? '저장하고 내려받는 중…'
-                  : pending === 'download' && thisDownloading
-                    ? '내려받는 중…'
-                    : `${dirty ? '저장하고 ' : ''}${format.toUpperCase()}로 내려받기`}
-              </Button>
-            )
-          })}
+          {(singleFormat !== undefined || multipleFormats) && (
+            <Button
+              className="h-12 w-full sm:h-11 sm:w-auto"
+              variant="outline"
+              type="button"
+              aria-haspopup={multipleFormats ? 'dialog' : undefined}
+              onClick={(event) => {
+                refocusRef.current = event.currentTarget
+                if (singleFormat !== undefined) {
+                  void handleDownload(singleFormat)
+                } else {
+                  setFormatDialogOpen(true)
+                }
+              }}
+              disabled={busy || contentConflict}
+              loading={downloading}
+            >
+              {!downloading && <Download className="size-[18px]" aria-hidden="true" />}
+              {pending === 'saveAndDownload'
+                ? '저장하고 내려받는 중…'
+                : pending === 'download'
+                  ? '내려받는 중…'
+                  : singleFormat !== undefined
+                    ? downloadLabel(singleFormat, dirty)
+                    : '내려받기'}
+              {!downloading && multipleFormats && (
+                <ChevronDown className="size-4" aria-hidden="true" />
+              )}
+            </Button>
+          )}
         </div>
+        <DownloadFormatDialog
+          open={formatDialogOpen}
+          formats={formats}
+          dirty={dirty}
+          onClose={() => setFormatDialogOpen(false)}
+          onConfirm={(format) => {
+            setFormatDialogOpen(false)
+            void handleDownload(format)
+          }}
+        />
 
         {conversion.review_capabilities?.review_support === true && !focusedReviewEnabled && (
           <ReviewSupportPanel

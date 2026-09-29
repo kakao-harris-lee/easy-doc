@@ -1,6 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
+import type { KeyboardEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { FilePlus2, FileText, Trash2 } from 'lucide-react'
+import { FilePlus2, FileText, MoreVertical, Trash2 } from 'lucide-react'
 
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import type { DocumentListItem } from '../api/types'
@@ -137,6 +138,99 @@ function useTableView(): boolean {
   return useSyncExternalStore(subscribeToTableView, getTableView, () => true)
 }
 
+/** 한 줄의 동작 메뉴. 열림 상태는 부모가 쥐어 한 번에 한 줄만 열린다. */
+function RowMenu({
+  title,
+  open,
+  deleting,
+  onOpenChange,
+  onDelete,
+}: {
+  title: string
+  open: boolean
+  deleting: boolean
+  onOpenChange: (open: boolean) => void
+  onDelete: () => void
+}) {
+  const panelId = useId()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const firstItemRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (open) {
+      firstItemRef.current?.focus()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+    function handlePointerDown(event: PointerEvent): void {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        onOpenChange(false)
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [open, onOpenChange])
+
+  function handleEscape(event: KeyboardEvent<HTMLElement>): void {
+    if (event.key !== 'Escape') {
+      return
+    }
+    event.stopPropagation()
+    onOpenChange(false)
+    triggerRef.current?.focus()
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          onOpenChange(false)
+        }
+      }}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={`${title} 더보기`}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={() => onOpenChange(!open)}
+        onKeyDown={handleEscape}
+        className="flex size-11 items-center justify-center rounded-full text-muted-foreground hover:bg-secondary hover:text-foreground"
+      >
+        <MoreVertical className="size-5" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          id={panelId}
+          className="absolute right-0 top-[calc(100%+0.25rem)] z-40 rounded-[12px] border border-border bg-card p-1.5 shadow-lg"
+        >
+          <Button
+            ref={firstItemRef}
+            variant="ghost"
+            type="button"
+            className="min-h-11 justify-start text-danger"
+            aria-label={`${title} 삭제`}
+            onClick={onDelete}
+            onKeyDown={handleEscape}
+            disabled={deleting}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            삭제
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
  * 변환 기록 화면.
  *
@@ -161,6 +255,7 @@ export function HistoryPage() {
   // offset만 보고 있으면 "0에서 0으로" 바뀌지 않아 effect가 돌지 않는다.
   const [reloadToken, setReloadToken] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   // 작업 공간이 바뀌면 첫 쪽부터 다시 본다. 렌더 중에 맞추는 이유: effect로 미루면
   // 바뀐 작업 공간과 예전 offset으로 한 번 더 조회가 나가고, 그 응답이 잘못된 목록을
   // 잠깐 보여준다(React 공식 "렌더 중 상태 조정" 패턴).
@@ -217,6 +312,7 @@ export function HistoryPage() {
    * 둔 쪽을 그대로 두면 아직 못 본 문서가 조용히 건너뛰어진다.
    */
   async function handleDelete(item: DocumentListItem): Promise<void> {
+    setMenuOpenId(null)
     if (!window.confirm(deleteConfirmMessage(item.title))) {
       return
     }
@@ -270,23 +366,15 @@ export function HistoryPage() {
     return <Badge tone={NEXT_ACTION_TONE[action]}>{action}</Badge>
   }
 
-  /** 삭제는 낮은 강조로 행 끝에 둔다(§6.6). */
-  function deleteButton(item: DocumentListItem) {
+  function rowMenu(item: DocumentListItem) {
     return (
-      <Button
-        // 모바일 카드에서는 터치 대상 44×44px을 지킨다(§10).
-        className={tableView ? undefined : 'min-h-11 min-w-11'}
-        variant="ghost"
-        size="sm"
-        type="button"
-        // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
-        aria-label={`${item.title} 삭제`}
-        onClick={() => void handleDelete(item)}
-        disabled={deletingId === item.id}
-      >
-        <Trash2 className="size-4" aria-hidden="true" />
-        삭제
-      </Button>
+      <RowMenu
+        title={item.title}
+        open={menuOpenId === item.id}
+        deleting={deletingId === item.id}
+        onOpenChange={(open) => setMenuOpenId(open ? item.id : null)}
+        onDelete={() => void handleDelete(item)}
+      />
     )
   }
 
@@ -347,7 +435,9 @@ export function HistoryPage() {
                   {/* 두 번째 열은 처리 상태가 아니라 사용자가 지금 할 일이다(§6.6). */}
                   <th scope="col">지금 할 일</th>
                   <th scope="col">글자 수</th>
-                  <th scope="col">삭제</th>
+                  <th scope="col">
+                    <span className="sr-only">더보기</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -363,26 +453,26 @@ export function HistoryPage() {
                     </th>
                     <td>{actionBadge(item)}</td>
                     <td>{item.char_count.toLocaleString('ko-KR')}자</td>
-                    <td>{deleteButton(item)}</td>
+                    <td>{rowMenu(item)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
             // 767px 이하에서는 표를 가로로 밀지 않고 카드 목록으로 바꾼다(§6.6·§10).
-            // 카드 안에서도 §6.6의 위계를 DOM 순서로 지킨다: 제목 → 할 일 → 보조 정보 → 삭제.
+            // 카드 안 DOM 순서: 할 일 → 제목 → 보조 정보. 더보기는 오른쪽 위에 얹는다.
             <ul aria-label={listDescription} className="flex flex-col gap-3 py-4">
               {items.map((item) => (
                 <li
-                  className="flex flex-col items-start gap-2 rounded-[12px] border border-border p-4"
+                  className="relative flex flex-col items-start gap-2 rounded-[12px] border border-border p-4 pr-16"
                   key={item.id}
                 >
-                  {documentTitle(item)}
                   {actionBadge(item)}
+                  {documentTitle(item)}
                   <p className="text-[13px] leading-4 text-muted-foreground">
                     {secondaryInfo(item)} · {item.char_count.toLocaleString('ko-KR')}자
                   </p>
-                  {deleteButton(item)}
+                  <div className="absolute right-2 top-2">{rowMenu(item)}</div>
                 </li>
               ))}
             </ul>

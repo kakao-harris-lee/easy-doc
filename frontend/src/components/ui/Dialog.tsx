@@ -1,6 +1,8 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
+import { cn } from '../../lib/utils'
+
 /** Tab 순서에 들어오는 요소들. `disabled`와 `tabindex="-1"`은 뺀다. */
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -30,6 +32,8 @@ export interface ModalDialogProps {
   labelledBy: string
   /** 설명 문단의 id — `aria-describedby`로 잇는다. */
   describedBy?: string
+  /** 바깥 배경 요소에 덧붙일 클래스 — 좁은 화면에서 시트처럼 아래에 붙이는 데 쓴다. */
+  className?: string
   children: ReactNode
 }
 
@@ -54,6 +58,7 @@ export function ModalDialog({
   onClose,
   labelledBy,
   describedBy,
+  className,
   children,
 }: ModalDialogProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
@@ -149,7 +154,10 @@ export function ModalDialog({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4"
+      className={cn(
+        'fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4',
+        className,
+      )}
     >
       {/* 초점은 항상 이 패널 안에 있으므로 keydown이 여기까지 올라온다. */}
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}

@@ -79,6 +79,14 @@ afterEach(() => {
 })
 
 describe('로그인 화면', () => {
+  it('카드 아래쪽에 회원가입으로 가는 보조 행동을 큰 링크로 보여준다', () => {
+    renderAt('/login')
+
+    const cta = screen.getByRole('region', { name: '아직 계정이 없으신가요?' })
+
+    expect(within(cta).getByRole('link', { name: '회원가입' })).toHaveAttribute('href', '/signup')
+  })
+
   it('설명 영역 제목은 짧은 구이고 서비스 정의는 본문으로 따라온다', () => {
     renderAt('/login')
 

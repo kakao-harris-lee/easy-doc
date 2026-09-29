@@ -113,6 +113,31 @@ const DOCX_HWPX_STRUCTURE_NOTICE =
 const PDF_EXTRACTION_NOTICE =
   'PDF는 읽는 순서·표·다단 구성에 따라 텍스트가 일부 누락되거나 잘못 추출될 수 있습니다. 변환 후 원문과 결과를 꼭 확인해 주세요. 결과는 레이아웃과 스타일 없이 TXT로 내려받습니다.'
 
+const SEGMENT_CLASS =
+  'flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-3 text-[15px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring'
+const SEGMENT_ON = 'bg-card font-bold text-primary shadow-sm'
+const SEGMENT_OFF = 'text-muted-foreground'
+
+const READING_LEVEL_OPTIONS = [
+  {
+    value: 'grade_5_6',
+    name: '기본',
+    grade: '초등 5~6학년',
+    description: '짧은 문장과 쉬운 표현으로 바꿔요.',
+  },
+  {
+    value: 'grade_3_4',
+    name: '더 쉽게',
+    grade: '초등 3~4학년',
+    description: '좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)',
+  },
+] as const satisfies readonly {
+  value: ReadingLevel
+  name: string
+  grade: string
+  description: string
+}[]
+
 type InputMode = 'text' | 'file'
 
 /** 서버 토글과 함께 켠 배포에서만 더 쉬운 수준을 선택하게 한다. */
@@ -246,6 +271,7 @@ export function UploadPage() {
   const titleFieldId = useId()
   const fileId = useId()
   const counterId = useId()
+  const readingLevelHintId = useId()
   const overflowId = useId()
   const shortTextId = useId()
   const guideId = useId()
@@ -761,81 +787,66 @@ export function UploadPage() {
             </div>
 
             {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
-            <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <legend className="col-span-full mb-1 text-[15px] font-semibold">
+            <fieldset>
+              <legend className="mb-2 text-[15px] font-semibold">
                 변환할 내용을 어떻게 넣을까요?
               </legend>
-              <label
-                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${mode === 'text' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
-              >
-                <input
-                  className="accent-primary"
-                  type="radio"
-                  name="input-mode"
-                  value="text"
-                  checked={mode === 'text'}
-                  onChange={() => selectMode('text')}
-                />
-                <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기 (권장)
-              </label>
-              <label
-                className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${mode === 'file' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
-              >
-                <input
-                  className="accent-primary"
-                  type="radio"
-                  name="input-mode"
-                  value="file"
-                  checked={mode === 'file'}
-                  onChange={() => selectMode('file')}
-                />
-                <Upload className="size-[18px]" aria-hidden="true" />
-                파일 올리기
-              </label>
-            </fieldset>
-
-            <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <legend className="col-span-full mb-1 text-[15px] font-semibold">
-                어느 정도로 쉽게 바꿀까요?
-              </legend>
-              <label
-                className={`flex min-h-24 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-3 ${readingLevel === 'grade_5_6' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
-              >
-                <span className="flex items-center gap-2 font-semibold">
+              <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
+                <label className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}>
                   <input
-                    className="accent-primary"
+                    className="sr-only"
                     type="radio"
-                    name="reading-level"
-                    value="grade_5_6"
-                    checked={readingLevel === 'grade_5_6'}
-                    onChange={() => setReadingLevel('grade_5_6')}
+                    name="input-mode"
+                    value="text"
+                    checked={mode === 'text'}
+                    onChange={() => selectMode('text')}
                   />
-                  기본 · 초등 5~6학년 수준
-                </span>
-                <span className="mt-1 pl-6 text-sm text-muted-foreground">
-                  짧은 문장과 쉬운 표현으로 바꿔요.
-                </span>
-              </label>
-              {extraEasyEnabled() && (
-                <label
-                  className={`flex min-h-24 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-3 ${readingLevel === 'grade_3_4' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
-                >
-                  <span className="flex items-center gap-2 font-semibold">
-                    <input
-                      className="accent-primary"
-                      type="radio"
-                      name="reading-level"
-                      value="grade_3_4"
-                      checked={readingLevel === 'grade_3_4'}
-                      onChange={() => setReadingLevel('grade_3_4')}
-                    />
-                    더 쉽게 · 초등 3~4학년 수준
-                  </span>
-                  <span className="mt-1 pl-6 text-sm text-muted-foreground">
-                    좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)
+                  <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기
+                  <span className="rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
+                    권장
                   </span>
                 </label>
-              )}
+                <label className={`${SEGMENT_CLASS} ${mode === 'file' ? SEGMENT_ON : SEGMENT_OFF}`}>
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    name="input-mode"
+                    value="file"
+                    checked={mode === 'file'}
+                    onChange={() => selectMode('file')}
+                  />
+                  <Upload className="size-[18px]" aria-hidden="true" />
+                  파일 올리기
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset aria-describedby={readingLevelHintId}>
+              <legend className="mb-2 text-[15px] font-semibold">어느 정도로 쉽게 바꿀까요?</legend>
+              <div className={`grid gap-2 ${extraEasyEnabled() ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                {READING_LEVEL_OPTIONS.filter(
+                  (option) => option.value === 'grade_5_6' || extraEasyEnabled(),
+                ).map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex min-h-16 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+                  >
+                    <input
+                      className="sr-only"
+                      type="radio"
+                      name="reading-level"
+                      value={option.value}
+                      checked={readingLevel === option.value}
+                      onChange={() => setReadingLevel(option.value)}
+                    />
+                    <span className="font-bold">{option.name}</span>
+                    <span className="text-sm text-muted-foreground">{option.grade}</span>
+                  </label>
+                ))}
+              </div>
+              <p id={readingLevelHintId} className="field-hint mt-2">
+                {READING_LEVEL_OPTIONS.find((option) => option.value === readingLevel)?.description}
+              </p>
             </fieldset>
 
             {mode === 'text' ? (
@@ -843,7 +854,7 @@ export function UploadPage() {
                 <label htmlFor={textareaId}>바꿀 글</label>
                 <textarea
                   id={textareaId}
-                  className="upload-textarea min-h-80"
+                  className="upload-textarea min-h-52 sm:min-h-80"
                   value={text}
                   rows={14}
                   aria-describedby={
@@ -882,18 +893,6 @@ export function UploadPage() {
                       긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.
                     </p>
                   )}
-                  <p
-                    id={counterId}
-                    className={`m-0 ml-auto text-sm tabular-nums ${
-                      tooLong
-                        ? 'font-medium text-danger'
-                        : nearLimit
-                          ? 'font-medium text-warning'
-                          : 'text-muted-foreground'
-                    }`}
-                  >
-                    {chars(charCount)} / {chars(MAX_CHARS)}자
-                  </p>
                   {/* 필요 크레딧은 언제나 보여준다(N). 가용(M)은 조회가 끝났을 때만
                   덧붙인다 — 조회 전이거나 실패하면 필요 크레딧만 보여준다(C2). 집행이
                   꺼져 있으면(조회로 확인된 경우만) 그 사실도 함께 알린다 — `/usage`
@@ -943,10 +942,31 @@ export function UploadPage() {
               </>
             )}
 
-            <Button type="submit" size="lg" loading={submitting} className="w-full sm:w-fit">
-              <Wand2 className="size-[18px]" aria-hidden="true" />
-              {submitting ? '올리는 중…' : '쉬운 글 초안 만들기'}
-            </Button>
+            <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t border-border bg-card/95 px-4 pt-3 backdrop-blur [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+              {mode === 'text' && (
+                <p
+                  id={counterId}
+                  className={`m-0 text-sm tabular-nums ${
+                    tooLong
+                      ? 'font-medium text-danger'
+                      : nearLimit
+                        ? 'font-medium text-warning'
+                        : 'text-muted-foreground'
+                  }`}
+                >
+                  {chars(charCount)} / {chars(MAX_CHARS)}자
+                </p>
+              )}
+              <Button
+                type="submit"
+                size="lg"
+                loading={submitting}
+                className="h-12 w-full sm:h-auto sm:w-fit"
+              >
+                <Wand2 className="size-[18px]" aria-hidden="true" />
+                {submitting ? '올리는 중…' : '쉬운 글 초안 만들기'}
+              </Button>
+            </div>
           </div>
         </form>
 

@@ -3,24 +3,17 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { oauthLinkStart } from '../api/auth'
-import { ApiError } from '../api/client'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { ACCOUNT_SETTINGS_PATH, EMAIL_VERIFICATION_PATH } from '../routes/paths'
 import { userResponse, workspaceContext } from '../test/factories'
-import { mockLocationAssign } from '../test/location'
 import { WorkspaceContext } from '../workspace/context'
 import { AppLayout } from './AppLayout'
 import { ThemeProvider } from '../theme/ThemeProvider'
 
 const EMAIL = 'gongmuwon@example.test'
-
-vi.mock('../api/auth', () => ({
-  oauthLinkStart: vi.fn(),
-}))
 
 // 인증된 사용자로 그릴 때마다 AppLayout이 활성 공지를 조회한다 — 이 파일의 관심사가
 // 아니지만 모킹하지 않으면 진짜 요청이 나간다(test/setup.ts).
@@ -84,9 +77,24 @@ function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
   )
 }
 
+function renderWithWorkspaces() {
+  return render(
+    <ThemeProvider>
+      <AuthContext.Provider value={authValue()}>
+        <WorkspaceContext.Provider value={workspaceContext()}>
+          <MemoryRouter>
+            <AppLayout>
+              <LocationProbe />
+            </AppLayout>
+          </MemoryRouter>
+        </WorkspaceContext.Provider>
+      </AuthContext.Provider>
+    </ThemeProvider>,
+  )
+}
+
 beforeEach(() => {
   window.sessionStorage.clear()
-  vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
 })
 
@@ -274,69 +282,6 @@ describe('모바일 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)',
   })
 })
 
-describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음 조각)', () => {
-  it('비밀번호가 없고 이메일이 인증된 계정은 「비밀번호 만들기」 버튼을 보여준다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: false,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByRole('button', { name: '비밀번호 만들기' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '이메일 인증' })).not.toBeInTheDocument()
-  })
-
-  it('비밀번호가 없고 이메일도 미인증이면 버튼 대신 인증 화면 링크를 보여준다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: false,
-        phone_verified: true,
-        has_password: false,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
-    const link = screen.getByRole('link', { name: '이메일 인증' })
-    expect(link).toHaveAttribute('href', '/verify-email')
-  })
-
-  it('이미 비밀번호가 있으면 버튼도 인증 링크도 보여주지 않는다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: false,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '이메일 인증' })).not.toBeInTheDocument()
-  })
-})
-
 describe('모바일 메뉴 ARIA', () => {
   it.each([
     ['새 변환', '/'],
@@ -451,206 +396,6 @@ describe('저장하지 않은 수정 가드', () => {
   })
 })
 
-describe('계정 메뉴 — 구글 계정 연결', () => {
-  it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByRole('button', { name: '구글 계정 연결' })).toBeInTheDocument()
-    expect(screen.queryByText('구글 계정 연결됨')).not.toBeInTheDocument()
-  })
-
-  it('이미 연결돼 있으면 연결 상태만 보여주고 버튼은 없다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [{ provider: 'google' }],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByText('구글 계정 연결됨')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '구글 계정 연결' })).not.toBeInTheDocument()
-  })
-
-  it('연결 버튼을 누르면 시작 요청 뒤 state를 저장하고 인가 URL로 이동한다', async () => {
-    const user = userEvent.setup()
-    vi.mocked(oauthLinkStart).mockResolvedValue({
-      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
-      state: 'link-state',
-    })
-    const assign = mockLocationAssign()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-    await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
-
-    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
-      'google',
-      `${window.location.origin}/auth/google/link/callback`,
-    )
-    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.state')).toBe('link-state')
-    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.redirect_uri')).toBe(
-      `${window.location.origin}/auth/google/link/callback`,
-    )
-    expect(assign).toHaveBeenCalledWith(
-      'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
-    )
-  })
-
-  it('시작 요청이 실패하면 로그아웃은 그대로 두고 이 자리에 오류를 보여준다', async () => {
-    const user = userEvent.setup()
-    vi.mocked(oauthLinkStart).mockRejectedValue(
-      new ApiError(422, '구글 로그인이 설정되지 않았습니다'),
-    )
-    const assign = mockLocationAssign()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-    await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
-
-    expect(await screen.findByText('구글 로그인이 설정되지 않았습니다')).toBeInTheDocument()
-    expect(assign).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: '로그아웃' })).toBeEnabled()
-  })
-})
-
-describe('계정 메뉴 — 카카오 계정 연결', () => {
-  it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByRole('button', { name: '카카오 계정 연결' })).toBeInTheDocument()
-    expect(screen.queryByText('카카오 계정 연결됨')).not.toBeInTheDocument()
-  })
-
-  it('이미 연결돼 있으면 연결 상태만 보여주고 버튼은 없다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [{ provider: 'kakao' }],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByText('카카오 계정 연결됨')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: '카카오 계정 연결' })).not.toBeInTheDocument()
-  })
-
-  it('연결 버튼을 누르면 시작 요청 뒤 state를 저장하고 인가 URL로 이동한다', async () => {
-    const user = userEvent.setup()
-    vi.mocked(oauthLinkStart).mockResolvedValue({
-      authorization_url: 'https://kauth.kakao.com/oauth/authorize?state=link-state',
-      state: 'link-state',
-    })
-    const assign = mockLocationAssign()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-    await user.click(screen.getByRole('button', { name: '카카오 계정 연결' }))
-
-    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
-      'kakao',
-      `${window.location.origin}/auth/kakao/link/callback`,
-    )
-    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.state')).toBe('link-state')
-    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.redirect_uri')).toBe(
-      `${window.location.origin}/auth/kakao/link/callback`,
-    )
-    expect(assign).toHaveBeenCalledWith('https://kauth.kakao.com/oauth/authorize?state=link-state')
-  })
-})
-
-describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
-  it('구글만 연결돼 있으면 구글은 연결됨, 카카오는 연결 버튼을 보여준다', async () => {
-    const user = userEvent.setup()
-    renderLayout({
-      user: {
-        id: 'u1',
-        email: EMAIL,
-        email_verified: true,
-        phone_verified: true,
-        has_password: true,
-        identities: [{ provider: 'google' }],
-        is_admin: false,
-      },
-    })
-
-    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
-
-    expect(screen.getByText('구글 계정 연결됨')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '카카오 계정 연결' })).toBeInTheDocument()
-  })
-})
-
 describe('머리말 구성', () => {
   it('익명 상태에서는 업무 메뉴와 계정 메뉴를 그리지 않는다', () => {
     renderLayout({ status: 'anonymous', user: null })
@@ -660,7 +405,7 @@ describe('머리말 구성', () => {
     expect(screen.getByRole('link', { name: 'EASY-DOC AI 홈' })).toBeInTheDocument()
   })
 
-  it('익명 상태에서는 이용 가이드·로그인·가입 링크를 보여 준다', () => {
+  it('익명 상태에서는 이용 가이드·로그인 링크와 테마 스위치만 보여 주고 가입 버튼은 없다', () => {
     renderLayout({ status: 'anonymous', user: null })
 
     const start = screen.getByRole('navigation', { name: '시작 메뉴' })
@@ -669,7 +414,17 @@ describe('머리말 구성', () => {
       '/guide',
     )
     expect(within(start).getByRole('link', { name: '로그인' })).toHaveAttribute('href', '/login')
-    expect(within(start).getByRole('link', { name: '가입하기' })).toHaveAttribute('href', '/signup')
+    expect(screen.queryByRole('link', { name: '가입하기' })).not.toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '다크 모드' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+
+  it.each(['/login', '/signup'])('%s 화면에서는 앱 바의 로그인 링크를 감춘다', (path) => {
+    renderLayout({ status: 'anonymous', user: null }, path)
+
+    expect(screen.queryByRole('link', { name: '로그인' })).not.toBeInTheDocument()
+    const start = screen.getByRole('navigation', { name: '시작 메뉴' })
+    expect(within(start).getByRole('link', { name: '이용 가이드' })).toBeInTheDocument()
   })
 
   it('익명 상태에도 푸터가 그려진다 (전자상거래법의 사업자 정보 초기 화면 표시 의무)', () => {
@@ -701,31 +456,106 @@ describe('머리말 구성', () => {
     expect(workspace?.compareDocumentPosition(account)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
-  it('모바일 작업 공간 메뉴는 오른쪽에 놓고 펼침 패널도 오른쪽을 기준으로 연다', async () => {
+  it('시트를 열면 앱 바 칩은 빠지고 시트 안의 행이 대신한다', async () => {
     const user = userEvent.setup()
-    const { container } = render(
-      <ThemeProvider>
-        <AuthContext.Provider value={authValue()}>
-          <WorkspaceContext.Provider value={workspaceContext()}>
-            <MemoryRouter>
-              <AppLayout>
-                <LocationProbe />
-              </AppLayout>
-            </MemoryRouter>
-          </WorkspaceContext.Provider>
-        </AuthContext.Provider>
-      </ThemeProvider>,
-    )
+    const { container } = renderWithWorkspaces()
 
-    const workspaceMenus = container.querySelectorAll<HTMLElement>('.workspace-menu')
-    expect(workspaceMenus).toHaveLength(2)
-    const mobileWorkspaceMenu = workspaceMenus[1]!
-    expect(mobileWorkspaceMenu.parentElement).toHaveClass('justify-end')
+    expect(container.querySelectorAll('.workspace-menu')).toHaveLength(2)
 
-    await user.click(within(mobileWorkspaceMenu).getByRole('button', { name: /^작업 공간:/ }))
-    const panel = mobileWorkspaceMenu.querySelector<HTMLElement>('div[id$="-menu"]')
-    expect(panel).toHaveClass('right-0')
-    expect(panel).not.toHaveClass('left-0')
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const sheet = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(sheet.querySelectorAll('.workspace-menu')).toHaveLength(1)
+    expect(container.querySelectorAll('.workspace-menu')).toHaveLength(2)
+  })
+
+  it('로그인 후 앱 바에는 테마 스위치가 데스크톱 자리 하나뿐이고 시트가 열리면 시트에도 하나 있다', async () => {
+    const user = userEvent.setup()
+    renderLayout()
+
+    expect(screen.getAllByRole('switch', { name: '다크 모드' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const sheet = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(within(sheet).getByRole('switch', { name: '다크 모드' })).toBeInTheDocument()
+    expect(screen.queryByText('테마')).not.toBeInTheDocument()
+  })
+})
+
+describe('모바일 메뉴 시트', () => {
+  it('앱 바 아래를 덮는 전체 화면 시트이고 본문 스크롤을 잠근다', async () => {
+    const user = userEvent.setup()
+    renderLayout()
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const sheet = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(sheet).toHaveClass('fixed', 'inset-x-0', 'bottom-0', 'overflow-y-auto', 'lg:hidden')
+    expect(document.body.style.overflow).toBe('hidden')
+
+    await user.click(screen.getByRole('button', { name: '메뉴 닫기' }))
+
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('Esc로 닫으면 메뉴 버튼으로 초점이 돌아온다', async () => {
+    const user = userEvent.setup()
+    renderLayout()
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('navigation', { name: '주요 메뉴 (모바일)' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '메뉴 열기' })).toHaveFocus()
+  })
+
+  it('계정 영역에는 이메일·계정 설정·로그아웃만 있고 소셜 연결과 비밀번호 만들기는 없다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        phone_verified: true,
+        has_password: false,
+        identities: [],
+        is_admin: false,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const sheet = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(within(sheet).getByText(EMAIL)).toBeInTheDocument()
+    expect(within(sheet).getByRole('link', { name: '계정 설정' })).toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: '로그아웃' })).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: /연결/ })).not.toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
+  })
+})
+
+describe('계정 메뉴 — 구성', () => {
+  it('소셜 연결과 비밀번호 만들기는 그리지 않는다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        phone_verified: true,
+        has_password: false,
+        identities: [],
+        is_admin: false,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByRole('link', { name: '계정 설정' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /연결/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '이메일 인증' })).not.toBeInTheDocument()
   })
 })
 

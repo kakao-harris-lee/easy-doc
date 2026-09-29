@@ -16,11 +16,14 @@ function twoWorkspaces() {
   ]
 }
 
-function renderMenu(overrides: Partial<WorkspaceContextValue> = {}) {
+function renderMenu(
+  overrides: Partial<WorkspaceContextValue> = {},
+  variant?: 'default' | 'compact' | 'row',
+) {
   const value = workspaceContext({ workspaces: twoWorkspaces(), ...overrides })
   const { container } = render(
     <WorkspaceContext.Provider value={value}>
-      <WorkspaceMenu />
+      <WorkspaceMenu variant={variant} />
     </WorkspaceContext.Provider>,
   )
   return { value, container }
@@ -240,5 +243,22 @@ describe('작업 공간 이름 바꾸기', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('작업 공간 이름을 입력해 주세요')
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['compact', 'rounded-full'],
+    ['row', 'min-h-[52px]'],
+  ] as const)('%s 변형도 같은 이름과 동작을 유지한다', async (variant, marker) => {
+    const user = userEvent.setup()
+    const select = vi.fn()
+    renderMenu({ select }, variant)
+
+    const trigger = screen.getByRole('button', { name: '작업 공간: 기본 작업 공간' })
+    expect(trigger).toHaveClass(marker)
+
+    await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: /민원 안내/ }))
+
+    expect(select).toHaveBeenCalledWith('w2')
   })
 })

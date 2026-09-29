@@ -29,7 +29,7 @@ export function SignupPage() {
         className="w-full max-w-[440px] justify-self-center lg:order-2"
         aria-labelledby="signup-heading"
       >
-        <div className="rounded-[16px] border border-border bg-card p-6 shadow-card sm:p-8">
+        <div className="rounded-[16px] border border-border bg-card p-5 shadow-card sm:p-8">
           <h1
             id="signup-heading"
             className="text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
@@ -61,9 +61,17 @@ export function SignupPage() {
           <SocialLoginButton provider="google" />
           <SocialLoginButton provider="kakao" />
           <SocialLoginButton provider="naver" />
-          <p className="mt-5 text-center text-sm text-muted-foreground">
-            이미 계정이 있으신가요? <Link to={LOGIN_PATH}>로그인</Link>
-          </p>
+          <section aria-labelledby="signup-login-cta" className="mt-6 border-t border-border pt-5">
+            <p id="signup-login-cta" className="text-center text-sm text-muted-foreground">
+              이미 계정이 있으신가요?
+            </p>
+            <Link
+              to={LOGIN_PATH}
+              className="mt-3 flex h-12 w-full items-center justify-center rounded-[12px] border-[1.5px] border-primary text-base font-bold text-primary no-underline hover:bg-secondary"
+            >
+              로그인
+            </Link>
+          </section>
         </div>
       </section>
       <AuthIntro headingId="signup-intro-heading" summary={SERVICE_DEFINITION} />
