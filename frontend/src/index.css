@@ -313,7 +313,7 @@ html[data-theme='dark'] {
 
   /*
    * 이용 가이드는 약관과 같은 Markdown 원본을 쓰되, 처음 방문한 사용자가 핵심 흐름을
-   * 먼저 훑을 수 있도록 그림과 첫 단계 목록에만 별도 위계를 준다. 문서 안의 실제 문구는
+   * 먼저 훑을 수 있도록 그림과 단계 목록에만 별도 위계를 준다. 문서 안의 실제 문구는
    * 계속 `src/content/guide/user-guide.md` 한 곳에서 관리한다.
    */
   .guide-page {
@@ -340,10 +340,11 @@ html[data-theme='dark'] {
   .guide-page .legal-document img {
     @apply mx-auto my-6 block w-full max-w-[430px] rounded-[16px] md:float-right md:mt-0 md:mb-4 md:ml-8 md:w-[320px];
   }
-  .guide-page .legal-document > ol:first-of-type {
+  /* 가이드 최상위 `ol`은 3항목 단계 카드 띠 전용이다 — 일반 목록은 `ul`로 쓴다. */
+  .guide-page .legal-document > ol {
     @apply my-6 grid list-none gap-3 p-0 md:grid-cols-3;
   }
-  .guide-page .legal-document > ol:first-of-type li {
+  .guide-page .legal-document > ol > li {
     @apply m-0 rounded-[12px] border border-border bg-background p-4 text-[15px] leading-6;
   }
   .guide-page .legal-document table {
