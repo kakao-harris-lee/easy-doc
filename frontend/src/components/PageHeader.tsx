@@ -62,7 +62,7 @@ export function PageHeader({ context, title, description, titleId, action }: Pag
         <p className="text-sm font-semibold leading-[22px] text-accent-foreground">{context}</p>
         <h1
           id={titleId}
-          className="mt-1 text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
+          className="mt-1 text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
         >
           {title}
         </h1>

@@ -1,5 +1,5 @@
 import { ThemeProvider } from '../theme/ThemeProvider'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -64,6 +64,14 @@ afterEach(() => {
 })
 
 describe('가입 화면', () => {
+  it('카드 아래쪽에 로그인으로 가는 보조 행동을 큰 링크로 보여준다', () => {
+    renderAt('/signup')
+
+    const cta = screen.getByRole('region', { name: '이미 계정이 있으신가요?' })
+
+    expect(within(cta).getByRole('link', { name: '로그인' })).toHaveAttribute('href', '/login')
+  })
+
   it('설명 영역 제목은 짧은 구이고 서비스 정의는 본문으로 따라온다', () => {
     renderAt('/signup')
 

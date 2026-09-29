@@ -224,49 +224,25 @@ async function seedAuthenticatedTheme(page: Page, theme: Theme = 'dark'): Promis
   )
 }
 
-async function themeControl(page: Page) {
-  const candidates = [
-    page.getByRole('combobox', { name: /테마|화면|모드/i }),
-    page.getByRole('button', { name: /테마|화면|모드/i }),
-    page.locator('[data-testid="theme-selector"]'),
-  ]
-  for (const candidate of candidates) {
-    const visible = candidate.filter({ visible: true }).first()
-    if ((await visible.count()) > 0) {
-      return visible
-    }
-  }
-  throw new Error('테마 선택 컨트롤을 찾지 못했습니다. 접근 가능한 테마 이름을 확인하세요.')
-}
+const THEME_SWITCH_NAME = '다크 모드'
 
-async function selectTheme(page: Page, theme: Exclude<Theme, 'system'> | Theme): Promise<void> {
-  const control = await themeControl(page)
-  const tagName = await control.evaluate((element) => element.tagName)
-  if (tagName === 'SELECT') {
-    await control.selectOption(theme)
-    return
+async function selectTheme(page: Page, theme: Exclude<Theme, 'system'>): Promise<void> {
+  const visibleSwitch = page
+    .getByRole('switch', { name: THEME_SWITCH_NAME })
+    .filter({ visible: true })
+  let openedSheet = false
+  if ((await visibleSwitch.count()) === 0) {
+    await page.getByRole('button', { name: '메뉴 열기', exact: true }).click()
+    openedSheet = true
   }
-
-  await control.click()
-  const optionCandidates = [
-    page.getByRole('option', {
-      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
-    }),
-    page.getByRole('menuitemradio', {
-      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
-    }),
-    page.getByRole('button', {
-      name: new RegExp(theme === 'dark' ? '다크' : theme === 'light' ? '라이트' : '시스템'),
-    }),
-  ]
-  for (const option of optionCandidates) {
-    const visible = option.filter({ visible: true }).last()
-    if ((await visible.count()) > 0) {
-      await visible.click()
-      return
-    }
+  const control = visibleSwitch.first()
+  const isDark = (await control.getAttribute('aria-checked')) === 'true'
+  if (isDark !== (theme === 'dark')) {
+    await control.click()
   }
-  throw new Error(`테마 옵션을 찾지 못했습니다: ${theme}`)
+  if (openedSheet) {
+    await page.getByRole('button', { name: '메뉴 닫기', exact: true }).click()
+  }
 }
 
 async function currentTheme(page: Page): Promise<string | null> {
@@ -291,7 +267,9 @@ async function expectThemeSettled(
           primaryForeground: 'rgb(255, 255, 255)',
         }
   await expect.poll(() => currentTheme(page)).toBe(theme)
-  await expect(page.getByLabel('화면 테마')).toHaveValue(theme)
+  await expect(
+    page.locator(`button[role="switch"][aria-label="${THEME_SWITCH_NAME}"]`).first(),
+  ).toHaveAttribute('aria-checked', String(theme === 'dark'))
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
     .toBe(colors.background)
@@ -403,10 +381,9 @@ test.describe('테마 디자인 브라우저 검증', () => {
   test('시스템 테마와 다른 탭의 변경을 화면에 반영한다', async ({ context, page }) => {
     await mockApi(page)
     await page.goto('/')
-    await selectTheme(page, 'system')
     await expect(
       page.evaluate((key) => window.localStorage.getItem(key), THEME_STORAGE_KEY),
-    ).resolves.toBe('system')
+    ).resolves.toBeNull()
 
     await page.emulateMedia({ colorScheme: 'dark' })
     await expect.poll(() => currentTheme(page)).toBe('dark')

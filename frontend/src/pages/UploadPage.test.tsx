@@ -157,8 +157,40 @@ describe('업로드 화면', () => {
     it('기능 플래그가 없으면 기본 수준만 보인다', () => {
       renderPage()
 
-      expect(screen.getByRole('radio', { name: /기본 · 초등 5~6학년 수준/ })).toBeChecked()
+      expect(screen.getByRole('radio', { name: /기본.*초등 5~6학년/ })).toBeChecked()
       expect(screen.queryByRole('radio', { name: /더 쉽게/ })).not.toBeInTheDocument()
+    })
+
+    it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {
+      renderPage()
+
+      for (const name of [/글 붙여넣기/, '파일 올리기', /기본.*초등 5~6학년/]) {
+        const radio = screen.getByRole('radio', { name })
+        expect(radio).not.toHaveClass('sr-only')
+        expect(radio).toHaveClass('absolute', 'inset-0', 'size-full', 'opacity-0')
+        expect(radio.closest('label')).toHaveClass('relative')
+      }
+    })
+
+    it('선택한 수준의 설명만 한 줄로 보여준다', async () => {
+      vi.stubEnv('VITE_EASYDOC_EXTRA_EASY_ENABLED', 'true')
+      try {
+        const user = userEvent.setup()
+        renderPage()
+
+        expect(screen.getByText('짧은 문장과 쉬운 표현으로 바꿔요.')).toBeInTheDocument()
+        expect(screen.queryByText(/최소 1.2배의 크레딧/)).not.toBeInTheDocument()
+
+        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
+
+        expect(screen.getByText(/최소 1.2배의 크레딧/)).toBeInTheDocument()
+        expect(screen.queryByText('짧은 문장과 쉬운 표현으로 바꿔요.')).not.toBeInTheDocument()
+        expect(
+          screen.getByRole('group', { name: '어느 정도로 쉽게 바꿀까요?' }),
+        ).toHaveAccessibleDescription(/최소 1.2배의 크레딧/)
+      } finally {
+        vi.unstubAllEnvs()
+      }
     })
 
     it('더 쉽게를 고르면 붙여넣기 예상 크레딧을 1.2배 후 0.1 단위로 올림하고 요청에 유지한다', async () => {
@@ -173,7 +205,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '더 쉬운 안내')
         fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
-        await user.click(screen.getByRole('radio', { name: /더 쉽게 · 초등 3~4학년 수준/ }))
+        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
 
         expect(screen.getByText('필요 크레딧 0.3')).toBeInTheDocument()
         expect(
@@ -209,7 +241,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '개인정보 안내')
         await user.type(screen.getByLabelText('바꿀 글'), '주민번호 내용을 확인해 주세요')
-        await user.click(screen.getByRole('radio', { name: /더 쉽게 · 초등 3~4학년 수준/ }))
+        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
         await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
         await user.click(await screen.findByRole('button', { name: '이대로 진행' }))
 
@@ -229,7 +261,7 @@ describe('업로드 화면', () => {
   it('파일보다 글 붙여넣기를 권장하고 이유를 먼저 알린다', () => {
     renderPage()
 
-    expect(screen.getByRole('radio', { name: '글 붙여넣기 (권장)' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /글 붙여넣기.*권장/ })).toBeChecked()
     expect(screen.getByText(/가능하면 문서의 글을 복사해 붙여넣어 주세요/)).toBeInTheDocument()
     expect(screen.getByText(/파일 구조의 영향을 받지 않아 가장 안정적입니다/)).toBeInTheDocument()
   })

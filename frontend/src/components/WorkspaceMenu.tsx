@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Check, ChevronDown, Pencil, Plus } from 'lucide-react'
 
 import { ApiError } from '../api/client'
+import { cn } from '../lib/utils'
 import { useWorkspace } from '../workspace/context'
 import { Button } from './ui/Button'
 import { ModalDialog } from './ui/Dialog'
@@ -20,10 +21,16 @@ type DialogMode = 'create' | 'rename'
  * (§9), 실패하면 사용자는 이름이 바뀐 줄로 안다. 대화상자는 제목·설명·이름 입력·취소·
  * 확인만 담는다. 초기 초점·포커스 가두기·Esc·초점 복귀는 `ModalDialog`가 맡는다.
  *
- * `AppLayout`이 이 컴포넌트를 DOM에 두 벌(데스크톱 자리 + 모바일 행) 그린다. 열림 상태와
- * `useId` 모두 인스턴스마다 따로이므로 두 벌이 함께 열리거나 id가 겹치지 않는다.
+ * `AppLayout`이 이 컴포넌트를 자리마다(데스크톱 앱 바·모바일 칩·메뉴 시트 행) 그린다.
+ * 열림 상태와 `useId` 모두 인스턴스마다 따로이므로 id가 겹치지 않는다.
  */
-export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) {
+export function WorkspaceMenu({
+  align = 'left',
+  variant = 'default',
+}: {
+  align?: 'left' | 'right'
+  variant?: 'default' | 'compact' | 'row'
+}) {
   const { workspaces, currentId, select, create, rename } = useWorkspace()
   const ids = useId()
   const menuId = `${ids}-menu`
@@ -121,7 +128,7 @@ export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) 
       ref={rootRef}
       role="group"
       aria-label="작업 공간 관리"
-      className="workspace-menu relative min-w-0 max-w-full"
+      className={cn('workspace-menu relative min-w-0 max-w-full', variant === 'row' && 'w-full')}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false)
       }}
@@ -135,7 +142,11 @@ export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) 
     >
       <Button
         ref={triggerRef}
-        className="min-h-11 max-w-full justify-between"
+        className={cn(
+          'min-h-11 max-w-full justify-between',
+          variant === 'compact' && 'rounded-full px-3',
+          variant === 'row' && 'min-h-[52px] w-full px-4',
+        )}
         variant="outline"
         type="button"
         aria-label={'작업 공간: ' + (current?.name ?? '선택해 주세요')}
@@ -143,7 +154,9 @@ export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) 
         aria-controls={menuId}
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="max-w-56 truncate">{current?.name ?? '작업 공간 선택'}</span>
+        <span className={cn('truncate', variant === 'default' ? 'max-w-56' : 'min-w-0')}>
+          {current?.name ?? '작업 공간 선택'}
+        </span>
         <ChevronDown
           className={'size-4 shrink-0 transition-transform ' + (expanded ? 'rotate-180' : '')}
           aria-hidden="true"
@@ -152,9 +165,11 @@ export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) 
       <div
         id={menuId}
         hidden={!expanded}
-        className={`absolute top-full z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg ${
-          align === 'right' ? 'right-0' : 'left-0'
-        }`}
+        className={cn(
+          'absolute top-full z-40 mt-2 rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg',
+          variant === 'row' ? 'inset-x-0' : 'w-72 max-w-[calc(100vw-2rem)]',
+          variant !== 'row' && (align === 'right' ? 'right-0' : 'left-0'),
+        )}
       >
         <p className="px-3 py-2 text-xs font-semibold text-muted-foreground">작업 공간</p>
         <div className="max-h-64 overflow-y-auto" role="group" aria-label="작업 공간 목록">

@@ -19,16 +19,14 @@ import {
   UserRound,
   X,
 } from 'lucide-react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 
-import type { UserIdentityResponse } from '../api/types'
 import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
 import {
   ACCOUNT_SETTINGS_PATH,
   ADMIN_PATH,
-  EMAIL_VERIFICATION_PATH,
   GUIDE_PATH,
   HISTORY_PATH,
   HOME_PATH,
@@ -39,10 +37,8 @@ import {
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
 import { PhoneVerificationBanner } from './PhoneVerificationBanner'
-import { SetPasswordForm } from './SetPasswordForm'
-import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo, SERVICE_NAME } from './Logo'
-import { ThemeSelector } from './ThemeSelector'
+import { ThemeSwitch } from './ThemeSwitch'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { CONTAINER } from './layoutStyles'
 import { Button } from './ui/Button'
@@ -66,6 +62,10 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
   )
 }
 
+function mobileLinkClass(state: { isActive: boolean }): string {
+  return cn(navLinkClass(state), 'min-h-[52px]')
+}
+
 /**
  * 계정 메뉴 — 로그인 이메일과 로그아웃.
  *
@@ -85,63 +85,14 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * 낭독기에 "메뉴가 열린다"고 알리는데, 여기서 열리는 패널에는 `role="menu"`도
  * `menuitem`도 없다 — 약속한 역할이 실재하지 않으면 그 예고가 거짓말이 된다.
  */
-/**
- * 계정 메뉴·모바일 메뉴가 함께 쓰는 "비밀번호 만들기" 자리.
- *
- * `SetPasswordForm`은 이메일이 인증된 계정만 부를 수 있다(`POST /auth/password`가
- * 403으로 거절한다, `PasswordService.set` KDoc — 네이버처럼 미검증 이메일로도 계정을
- * 만들 수 있는 제공자가 있어 소셜 로그인 상태만으로는 그 이메일의 소유가 증명되지
- * 않는다). 그래서 이미 비밀번호가 있으면 아무것도 그리지 않고, 없는데 이메일도
- * 미인증이면 폼 대신 인증 화면 링크 한 줄만 보여준다 — 눌러도 403만 받을 버튼을
- * 그리지 않는다.
- */
-function AccountPasswordSlot({
-  hasPassword,
-  emailVerified,
-  onButtonKeyDown,
-  onNavigate,
-  onCreated,
-}: {
-  hasPassword: boolean
-  emailVerified: boolean
-  onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
-  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void
-  onCreated: () => void
-}) {
-  if (hasPassword) {
-    return null
-  }
-  if (!emailVerified) {
-    return (
-      <p className="mt-2 border-t border-border pt-3 text-xs text-muted-foreground">
-        <Link to={EMAIL_VERIFICATION_PATH} onClick={onNavigate}>
-          이메일 인증
-        </Link>{' '}
-        후 비밀번호를 만들 수 있어요.
-      </p>
-    )
-  }
-  return <SetPasswordForm onButtonKeyDown={onButtonKeyDown} onCreated={onCreated} />
-}
-
 function AccountMenu({
   email,
-  identities,
-  hasPassword,
-  emailVerified,
   isAdmin,
   onSignOut,
-  onUnlinked,
-  onPasswordCreated,
 }: {
   email: string
-  identities: UserIdentityResponse[]
-  hasPassword: boolean
-  emailVerified: boolean
   isAdmin: boolean
   onSignOut: () => void
-  onUnlinked: () => void
-  onPasswordCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -261,21 +212,6 @@ function AccountMenu({
               관리
             </Link>
           )}
-          {/* 패널 안의 다른 버튼과 같은 이유로 Esc를 직접 받는다(non-native
-              interactive element에 keydown을 거는 대신, 실제 버튼 각각에 건다). */}
-          <SocialLinkStatus
-            identities={identities}
-            hasPassword={hasPassword}
-            className="mt-3"
-            onButtonKeyDown={handleEscape}
-            onUnlinked={onUnlinked}
-          />
-          <AccountPasswordSlot
-            hasPassword={hasPassword}
-            emailVerified={emailVerified}
-            onButtonKeyDown={handleEscape}
-            onCreated={onPasswordCreated}
-          />
         </div>
       )}
     </div>
@@ -298,11 +234,60 @@ function AccountMenu({
  * 먼저 물어본다(review/unsavedChanges.ts).
  */
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { status, user, signOut, refreshMe } = useAuth()
+  const { status, user, signOut } = useAuth()
+  const { pathname } = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
-  // 햄버거도 계정 메뉴와 같은 disclosure다 — 펼쳐지는 nav를 `aria-controls`로 가리켜야
-  // 낭독기가 "무엇이 펼쳐졌는지"를 안다. 접혔을 때 nav가 DOM에 없으므로 참조도 그때만 건다.
+  const [openedAt, setOpenedAt] = useState(pathname)
   const mobileNavId = useId()
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
+  const sheetRef = useRef<HTMLElement>(null)
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null)
+  const sheetOpen = mobileOpen && status === 'authenticated'
+
+  if (openedAt !== pathname) {
+    setOpenedAt(pathname)
+    setMobileOpen(false)
+  }
+
+  useEffect(() => {
+    if (!sheetOpen) {
+      return
+    }
+    const header = headerRef.current
+    const measure = (): void => setHeaderHeight(header?.offsetHeight ?? null)
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    if (header !== null) {
+      observer?.observe(header)
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    sheetRef.current?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus()
+
+    const desktop = window.matchMedia?.('(min-width: 1024px)')
+    const handleDesktop = (): void => {
+      if (desktop?.matches) {
+        setMobileOpen(false)
+      }
+    }
+    desktop?.addEventListener('change', handleDesktop)
+
+    function handleKeyDown(event: globalThis.KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        setMobileOpen(false)
+        menuButtonRef.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      observer?.disconnect()
+      desktop?.removeEventListener('change', handleDesktop)
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [sheetOpen])
 
   function guard(event: MouseEvent): void {
     if (!confirmDiscardUnsaved()) {
@@ -319,46 +304,48 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
   }
 
+  const showLoginLink = pathname !== LOGIN_PATH && pathname !== SIGNUP_PATH
+
   return (
     <div className="flex min-h-dvh flex-col">
       <a className="skip-link" href="#main">
         본문으로 건너뛰기
       </a>
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
-        <div className={cn(CONTAINER, 'flex min-h-16 flex-wrap items-center gap-3 py-2')}>
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur"
+      >
+        <div className={cn(CONTAINER, 'flex min-h-14 items-center gap-2 lg:min-h-16 lg:gap-3')}>
           <NavLink
-            // 로고 자체가 44px 이고, 머리말의 실제 누름 대상도 그보다 작지 않게 한다(§10).
-            // 머리말은 min-h-16 이라 세로 배치는 그대로다.
-            className="inline-flex min-h-11 shrink-0 items-center rounded-md"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md"
             to={HOME_PATH}
             end
             onClick={guard}
             aria-label={`${SERVICE_NAME} 홈`}
           >
-            <Logo />
+            <Logo compact />
           </NavLink>
           {status === 'anonymous' && (
-            <nav
-              aria-label="시작 메뉴"
-              className="ml-auto flex items-center gap-1 max-[639px]:basis-full max-[639px]:justify-end"
-            >
-              <NavLink
-                to={GUIDE_PATH}
-                className={(state) => cn(navLinkClass(state), 'hidden sm:flex')}
-              >
-                <HelpCircle className="size-4" aria-hidden="true" />
-                이용 가이드
-              </NavLink>
-              <NavLink to={LOGIN_PATH} className={navLinkClass}>
-                로그인
-              </NavLink>
-              <NavLink
-                to={SIGNUP_PATH}
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[15px] font-semibold text-primary-foreground hover:bg-primary-hover"
-              >
-                가입하기
-              </NavLink>
-            </nav>
+            <>
+              <nav aria-label="시작 메뉴" className="ml-auto flex items-center gap-1">
+                <NavLink
+                  to={GUIDE_PATH}
+                  aria-label="이용 가이드"
+                  className={(state) =>
+                    cn(navLinkClass(state), 'max-sm:size-11 max-sm:justify-center max-sm:px-0')
+                  }
+                >
+                  <HelpCircle className="size-5 sm:size-4" aria-hidden="true" />
+                  <span className="hidden sm:inline">이용 가이드</span>
+                </NavLink>
+                {showLoginLink && (
+                  <NavLink to={LOGIN_PATH} className={navLinkClass}>
+                    로그인
+                  </NavLink>
+                )}
+              </nav>
+              <ThemeSwitch />
+            </>
           )}
           {status === 'authenticated' && (
             <>
@@ -379,134 +366,114 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   이용 가이드
                 </NavLink>
               </nav>
-              <div className="ml-auto flex min-w-0 items-center gap-3">
+              <div className="ml-auto flex min-w-0 items-center gap-2 lg:gap-3">
                 <div className="hidden min-w-0 lg:block">
                   <WorkspaceMenu />
                 </div>
+                {!mobileOpen && (
+                  <div className="min-w-0 lg:hidden">
+                    <WorkspaceMenu variant="compact" align="right" />
+                  </div>
+                )}
+                <ThemeSwitch className="hidden lg:inline-flex" />
                 {user !== null && (
                   <div className="hidden lg:block">
                     <AccountMenu
                       email={user.email}
-                      identities={user.identities}
-                      hasPassword={user.has_password}
-                      emailVerified={user.email_verified}
                       isAdmin={user.is_admin}
                       onSignOut={guardedSignOut}
-                      onUnlinked={() => void refreshMe()}
-                      onPasswordCreated={() => void refreshMe()}
                     />
                   </div>
                 )}
                 <button
+                  ref={menuButtonRef}
                   type="button"
                   aria-label={mobileOpen ? '메뉴 닫기' : '메뉴 열기'}
                   aria-expanded={mobileOpen}
                   aria-controls={mobileOpen ? mobileNavId : undefined}
                   onClick={() => setMobileOpen((open) => !open)}
-                  className="flex size-11 items-center justify-center rounded-[10px] border border-border text-foreground hover:bg-secondary lg:hidden"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-[10px] border border-border text-foreground hover:bg-secondary lg:hidden"
                 >
                   {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
                 </button>
               </div>
             </>
           )}
-          <ThemeSelector className="max-[639px]:basis-full max-[639px]:justify-end" />
         </div>
-        {/*
-          모바일의 작업 공간 — 햄버거 안이 아니라 앱 바 바로 아래 전체 너비 행이다.
-          §10이 "모바일에서 작업 공간이 메뉴 안에 감춰지지 않게" 하라고 못박았고,
-          §6.7의 "메뉴 상단의 전체 너비 선택 행"이 바로 이 자리다.
-
-          그래서 `WorkspaceMenu`는 DOM에 두 벌 그려진다(데스크톱 자리 + 이 행). Tailwind
-          `hidden`은 `display:none`이라 뷰포트마다 정확히 하나만 보이고 숨은 쪽은 접근성
-          트리에서도 빠지므로, 낭독기에는 하나만 들린다. 조건부 렌더로 바꾸면 미디어 쿼리
-          훅과 리사이즈 처리가 딸려 오는데 얻는 것은 없다(e2e 로케이터도 이 성질에 맞춰
-          `filter({ visible: true })`로 좁혀 둔 상태다 — e2e/support/app.ts).
-        */}
-        {status === 'authenticated' && (
-          <div className="border-t border-border bg-card lg:hidden">
-            <div className={cn(CONTAINER, 'flex justify-end py-2')}>
-              <WorkspaceMenu align="right" />
+      </header>
+      {sheetOpen && (
+        // 헤더의 backdrop-blur가 fixed 자손의 기준 상자를 헤더로 바꾸므로 헤더 밖에 둔다.
+        <nav
+          ref={sheetRef}
+          id={mobileNavId}
+          aria-label="주요 메뉴 (모바일)"
+          style={headerHeight === null ? undefined : { top: headerHeight }}
+          className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto overscroll-contain bg-card lg:hidden"
+        >
+          <div className={cn(CONTAINER, 'flex min-h-full flex-col gap-1 py-4')}>
+            <WorkspaceMenu variant="row" />
+            <NavLink to={HOME_PATH} end onClick={guard} className={mobileLinkClass}>
+              <FilePlus2 className="size-5" aria-hidden="true" />새 변환
+            </NavLink>
+            <NavLink to={HISTORY_PATH} onClick={guard} className={mobileLinkClass}>
+              <History className="size-5" aria-hidden="true" />
+              변환 기록
+            </NavLink>
+            <NavLink to={USAGE_PATH} onClick={guard} className={mobileLinkClass}>
+              <BarChart3 className="size-5" aria-hidden="true" />
+              사용량
+            </NavLink>
+            <NavLink to={GUIDE_PATH} onClick={guard} className={mobileLinkClass}>
+              <HelpCircle className="size-5" aria-hidden="true" />
+              이용 가이드
+            </NavLink>
+            <div className="flex min-h-[52px] items-center px-3">
+              <ThemeSwitch />
             </div>
-          </div>
-        )}
-        {status === 'authenticated' && mobileOpen && (
-          <nav
-            id={mobileNavId}
-            aria-label="주요 메뉴 (모바일)"
-            className="max-h-[50dvh] overflow-y-auto overscroll-contain border-t border-border bg-card lg:hidden"
-          >
-            <div className={cn(CONTAINER, 'flex flex-col gap-1 py-3')}>
-              <NavLink to={HOME_PATH} end onClick={guard} className={navLinkClass}>
-                새 변환
-              </NavLink>
-              <NavLink to={HISTORY_PATH} onClick={guard} className={navLinkClass}>
-                변환 기록
-              </NavLink>
-              <NavLink to={USAGE_PATH} onClick={guard} className={navLinkClass}>
-                사용량
-              </NavLink>
-              <NavLink to={GUIDE_PATH} onClick={guard} className={navLinkClass}>
-                이용 가이드
-              </NavLink>
-              {/* 좁은 화면에서는 이 메뉴가 계정 메뉴를 겸한다 — 이메일도 여기서만 보인다. */}
+            <div className="mt-auto flex flex-col gap-1 border-t border-border pt-3">
               {user !== null && (
-                <p className="mt-2 truncate px-3 text-sm text-muted-foreground" title={user.email}>
+                <p className="truncate px-3 text-sm text-muted-foreground" title={user.email}>
                   <span className="font-semibold">로그인 계정</span> {user.email}
                 </p>
               )}
               {user !== null && user.is_admin && (
-                <NavLink to={ADMIN_PATH} onClick={guard} className={navLinkClass}>
-                  <ShieldCheck className="size-4" aria-hidden="true" />
+                <NavLink to={ADMIN_PATH} onClick={guard} className={mobileLinkClass}>
+                  <ShieldCheck className="size-5" aria-hidden="true" />
                   관리
                 </NavLink>
               )}
               {user !== null && (
-                <NavLink to={ACCOUNT_SETTINGS_PATH} onClick={guard} className={navLinkClass}>
-                  <Settings className="size-4" aria-hidden="true" />
+                <NavLink to={ACCOUNT_SETTINGS_PATH} onClick={guard} className={mobileLinkClass}>
+                  <Settings className="size-5" aria-hidden="true" />
                   계정 설정
                 </NavLink>
               )}
               <Button
                 variant="ghost"
-                className="min-h-11 justify-start"
+                className="min-h-[52px] justify-start px-3 text-[15px]"
                 onClick={guardedSignOut}
                 type="button"
               >
-                <LogOut className="size-4" aria-hidden="true" />
+                <LogOut className="size-5" aria-hidden="true" />
                 로그아웃
               </Button>
-              {user !== null && (
-                <SocialLinkStatus
-                  identities={user.identities}
-                  hasPassword={user.has_password}
-                  className="mt-2"
-                  onUnlinked={() => void refreshMe()}
-                />
-              )}
-              {user !== null && (
-                <AccountPasswordSlot
-                  hasPassword={user.has_password}
-                  emailVerified={user.email_verified}
-                  onNavigate={guard}
-                  onCreated={() => void refreshMe()}
-                />
-              )}
             </div>
-          </nav>
-        )}
-      </header>
-      {status === 'authenticated' && <AnnouncementBanner />}
-      {status === 'authenticated' && <PhoneVerificationBanner onNavigate={guard} />}
-      <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
-        {children}
-      </main>
-      {/*
+          </div>
+        </nav>
+      )}
+      <div className="flex flex-1 flex-col" {...(sheetOpen ? { inert: '' } : {})}>
+        {status === 'authenticated' && <AnnouncementBanner />}
+        {status === 'authenticated' && <PhoneVerificationBanner onNavigate={guard} />}
+        <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
+          {children}
+        </main>
+        {/*
         로그인 여부와 무관하게 모든 화면에 나온다(전자상거래법의 사업자 정보 초기
         화면 표시 의무) — 위 머리말 메뉴들과 달리 `status === 'authenticated'`로
         가리지 않는다.
       */}
-      <Footer />
+        <Footer />
+      </div>
     </div>
   )
 }

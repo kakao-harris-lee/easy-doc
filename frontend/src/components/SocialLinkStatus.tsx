@@ -1,5 +1,4 @@
 import { useId, useState } from 'react'
-import type { KeyboardEvent } from 'react'
 import { CircleCheck } from 'lucide-react'
 
 import { oauthUnlink } from '../api/auth'
@@ -30,7 +29,7 @@ const UNLINK_ERROR_MESSAGE: Record<OAuthProvider, string> = {
  *
  * 비밀번호 설정을 함께 안내한다(backlog §1.4 후속 — `POST /auth/password`가 열리면서
  * 갱신. 이전에는 그 엔드포인트가 없어 다른 소셜 계정 연결만 안내했다). 지금은 탈출구가
- * 둘이다 — 계정 메뉴의 「비밀번호 만들기」(`SetPasswordForm`)와 다른 소셜 계정 연결.
+ * 둘이다 — 계정 설정의 「비밀번호 만들기」(`SetPasswordForm`)와 다른 소셜 계정 연결.
  */
 const LAST_LOGIN_METHOD_HINT =
   '마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요.'
@@ -44,14 +43,12 @@ interface SocialLinkStatusProps {
    */
   hasPassword: boolean
   className?: string
-  /** 패널을 감싸는 컨테이너의 Esc 처리에 이 요소도 걸리게 한다(AccountMenu 전용). */
-  onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
-  /** 연결 해제 성공 뒤 호출된다 — 호출한 쪽(`AppLayout`)이 `/auth/me`를 다시 읽는다. */
+  /** 연결 해제 성공 뒤 호출한 쪽이 `/auth/me`를 다시 읽도록 알린다. */
   onUnlinked?: () => void
 }
 
 /**
- * 계정 메뉴·모바일 메뉴가 함께 쓰는 "연결된 계정" 조각.
+ * 계정 설정 화면의 "연결된 계정" 조각.
  *
  * 지원하는 제공자(구글·카카오·네이버)마다 한 줄씩 보여준다 — 연결돼 있으면 「연결 해제」
  * 버튼을 함께, 아니면 연결을 시작하는 버튼을 그린다(연결 해제는 backlog §1.4 다음 조각,
@@ -63,7 +60,6 @@ export function SocialLinkStatus({
   identities,
   hasPassword,
   className,
-  onButtonKeyDown,
   onUnlinked,
 }: SocialLinkStatusProps) {
   const [confirmProvider, setConfirmProvider] = useState<OAuthProvider | null>(null)
@@ -133,7 +129,6 @@ export function SocialLinkStatus({
           provider={provider}
           linked={identities.some((identity) => identity.provider === provider)}
           disableUnlink={lastLoginMethod}
-          onButtonKeyDown={onButtonKeyDown}
           onRequestUnlink={requestUnlink}
         />
       ))}
@@ -200,13 +195,12 @@ interface ProviderLinkRowProps {
   linked: boolean
   /** 이 신원이 마지막 로그인 수단이라 해제 버튼을 비활성화해야 하는지. */
   disableUnlink: boolean
-  onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
   onRequestUnlink: (provider: OAuthProvider) => void
 }
 
 /**
- * 시작 자체가 실패해도(네트워크 등) 이 줄 안에서만 오류를 보여준다 — 계정 메뉴의 다른
- * 행동(로그아웃)을 막을 이유가 아니다(`SocialLoginButton`과 같은 원칙). 해제 성공·실패
+ * 시작 자체가 실패해도(네트워크 등) 이 줄 안에서만 오류를 보여준다 — 화면의 다른
+ * 행동을 막을 이유가 아니다(`SocialLoginButton`과 같은 원칙). 해제 성공·실패
  * 안내는 이 행이 아니라 `SocialLinkStatus` 목록 수준에 있다 — 해제가 성공하면 이 행은
  * `linked`가 거짓으로 바뀌어 사라지기 때문이다(그 컴포넌트 KDoc).
  */
@@ -214,7 +208,6 @@ function ProviderLinkRow({
   provider,
   linked,
   disableUnlink,
-  onButtonKeyDown,
   onRequestUnlink,
 }: ProviderLinkRowProps) {
   const [starting, setStarting] = useState(false)
@@ -249,7 +242,6 @@ function ProviderLinkRow({
             disabled={disableUnlink}
             aria-describedby={disableUnlink ? reasonId : undefined}
             onClick={() => onRequestUnlink(provider)}
-            onKeyDown={onButtonKeyDown}
           >
             연결 해제
           </Button>
@@ -271,7 +263,6 @@ function ProviderLinkRow({
         className="mt-1 min-h-11 w-full justify-start"
         loading={starting}
         onClick={() => void handleClick()}
-        onKeyDown={onButtonKeyDown}
       >
         {name} 계정 연결
       </Button>
