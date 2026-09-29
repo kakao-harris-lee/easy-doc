@@ -17,9 +17,12 @@ describe('TrialCreditSteps', () => {
   it('이메일 인증 안내를 제공자 이름 없이 구조로 설명한다', () => {
     render(<TrialCreditSteps />)
 
-    // 네이버처럼 emailVerified=false 를 넘기는 소셜 계정도 휴대폰 인증 앞에서 막히므로
-    // 안내는 이메일 가입자만이 아니라 「제공자가 이메일을 확인해 주지 않은 경우」를 포함해야 한다.
+    // 계약(contracts/easy-doc-v1.yaml, 소셜 로그인 account_linking·providers.x-note 의
+    // email_verified 주석)에 따라 제공자가 이메일을 확인해 주지 않는 소셜 가입은 가입 직후
+    // 인증 코드가 발급되고 휴대폰 인증 앞에서 막힌다. 안내는 이메일 가입자만이 아니라 이
+    // 경우를 포함해야 한다.
     expect(screen.getByText(/소셜 제공자가 이메일을 확인해 주지 않은 경우/)).toBeInTheDocument()
-    expect(screen.queryByText(/이메일로 가입한 경우 휴대폰 인증 전에/)).not.toBeInTheDocument()
+    expect(screen.getByText(/휴대폰 인증 전에/)).toBeInTheDocument()
+    expect(screen.getByText(/인증 코드/)).toBeInTheDocument()
   })
 })
