@@ -717,6 +717,24 @@ describe('검수 에디터', () => {
     expect(bar).not.toHaveClass('grid-cols-2')
   })
 
+  it('제목·변환 완료 배지·저장 상태 배지가 한 줄 머리에 모이고 상태 영역은 하나다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
+
+    const heading = screen.getByRole('heading', { level: 1, name: '쉬운 글 확인' })
+    const status = screen.getByRole('status')
+    const row = heading.closest('div.flex-wrap')
+    expect(row).not.toBeNull()
+    expect(row).toContainElement(status)
+    expect(within(row as HTMLElement).getByText('변환 완료')).toBeInTheDocument()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(status).not.toHaveClass('contents')
+    expect(status).toHaveTextContent('저장 전')
+    expect(status).toHaveTextContent('아직 저장한 검수 내용이 없습니다.')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveAccessibleDescription(
+      /저장 전/,
+    )
+  })
+
   it('검수 안내 줄은 좁은 화면에서 작게 줄인다', () => {
     render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 

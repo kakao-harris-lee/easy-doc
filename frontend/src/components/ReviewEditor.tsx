@@ -1271,78 +1271,69 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     conversion.review_capabilities?.illustration_suggestions === true
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
-      {/* 상단 줄: 왼쪽은 HITL 고지, 오른쪽은 저장 상태다.
-          HITL 고지는 이 화면에서 가장 먼저 읽혀야 하는 문장이라 DOM에서도 앞에 둔다. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p
-          className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2 text-sm font-semibold text-warning sm:px-4 sm:py-3 sm:text-base"
-          role="note"
-        >
-          <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
-          AI가 만든 초안입니다 — 반드시 검토 후 사용하세요.
-        </p>
+      <p
+        className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2 text-sm font-semibold text-warning sm:px-4 sm:py-3 sm:text-base"
+        role="note"
+      >
+        <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
+        AI가 만든 초안입니다 — 반드시 검토 후 사용하세요.
+      </p>
 
-        {/* 이 화면에서 "저장했는가"를 말하는 곳은 여기 하나다. 저장 여부는 토스트로
-            흘려보내지 않고 화면에 남긴다. 색만으로 구분하지 않도록 배지에 문구와
-            아이콘을 함께 둔다. */}
-        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
-          <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
-            <Badge tone={status.tone}>{status.label}</Badge>
-            {status.detail !== null && (
-              <span className="text-sm text-muted-foreground sm:text-right">{status.detail}</span>
-            )}
+      <header className="flex flex-col gap-2 [&>*]:min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="flex items-center gap-2">
+            {/*
+              이 화면의 h1이다. 검수 화면은 `PageHeader`를 쓰지 않는다 — 그 컴포넌트는 맥락
+              라벨과 오른쪽 대표 행동을 전제하는데 여기서는 저장 상태가 그 자리를 쓴다. 그래도
+              **본문의 첫 제목은 h1이어야 한다**: h2로 시작하면 낭독기 목차에 뿌리가 없어
+              "지금 어느 화면인가"를 제목으로 물을 수 없다.
+            */}
+            <h1
+              className="text-2xl font-extrabold tracking-tight"
+              id="review-heading"
+              ref={headingRef}
+              tabIndex={-1}
+            >
+              쉬운 글 확인
+            </h1>
+            <Badge tone="success">변환 완료</Badge>
           </div>
 
-          {/* 의견을 보냈다는 사실은 저장 상태와 **다른 사실**이라 배지를 따로 둔다 —
-              「저장 전」과 「의견 보냄」이 동시에 참일 수 있고, 하나로 뭉치면 어느 쪽이
-              끝난 일인지 화면에서 사라진다. 색만으로 구분하지 않도록 배지에 시각까지
-              문구로 적는다.
-
-              위 `role="status"` 바깥에 두는 것이 중요하다. 여기에 넣으면 제출 성공을
-              폼의 안내와 이 배지가 잇달아 두 번 낭독한다 —
-              「의견을 보냈습니다」는 폼이 이미 말했고, 이 배지는 그 뒤에도 화면에
-              남아 있는 기록이 그 몫이다. */}
-          {hasFeedback && (
-            <div className="flex flex-col items-start gap-1 sm:items-end">
-              <Badge tone="success">
-                의견 보냄 · {new Date(feedbackSubmittedAt).toLocaleString('ko-KR')}
-              </Badge>
-              {/* 의견의 내용은 서버가 돌려주지 않는다. 다시 볼 수 있는 척하지 않고
-                  없다고 적는다. */}
-              <span className="text-sm text-muted-foreground sm:text-right">
-                검수 내용 저장과 따로 기록되며, 적은 내용은 이 화면에 다시 표시되지 않습니다.
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-        <div>
-          <Badge tone="success" className="mb-2">
-            변환 완료
-          </Badge>
-          {/*
-            이 화면의 h1이다. 검수 화면은 `PageHeader`를 쓰지 않는다 —
-            그 컴포넌트는 맥락 라벨과 오른쪽 대표 행동을 전제하는데 여기서는 위의 HITL
-            고지와 저장 상태가 그 자리를 쓴다. 그래도 **본문의 첫 제목은 h1이어야 한다**:
-            h2로 시작하면 낭독기 목차에 뿌리가 없어 "지금 어느 화면인가"를 제목으로
-            물을 수 없다(머리말의 로고는 제목이 아니다).
-
-            글자 크기는 클래스가 정하므로 태그를 바꿔도 보이는 모양은 그대로다.
-          */}
-          <h1
-            className="text-2xl font-extrabold tracking-tight"
-            id="review-heading"
-            ref={headingRef}
-            tabIndex={-1}
+          {/* "저장했는가"를 말하는 곳은 이 영역 하나다. 색만으로 구분하지 않도록 배지에
+              문구와 아이콘을 함께 둔다. */}
+          <div
+            className="ml-auto flex max-w-full shrink-0 flex-col items-end gap-1 text-right max-sm:ml-0 max-sm:basis-full max-sm:items-start max-sm:text-left"
+            id={statusId}
+            role="status"
           >
-            쉬운 글 확인
-          </h1>
-          <p className="mt-1 text-[15px] text-muted-foreground">
-            원문과 비교해 필요한 내용을 고치고, 저장한 뒤 내려받으세요.
-          </p>
+            <Badge tone={status.tone}>{status.label}</Badge>
+            {status.detail !== null && (
+              <span className="text-sm text-muted-foreground">{status.detail}</span>
+            )}
+          </div>
         </div>
+
+        <p className="text-[15px] text-muted-foreground">
+          원문과 비교해 필요한 내용을 고치고, 저장한 뒤 내려받으세요.
+        </p>
+
+        {/* 의견을 보냈다는 사실은 저장 상태와 **다른 사실**이라 배지를 따로 둔다 —
+            「저장 전」과 「의견 보냄」이 동시에 참일 수 있고, 하나로 뭉치면 어느 쪽이
+            끝난 일인지 화면에서 사라진다.
+
+            위 `role="status"` 바깥에 두는 것이 중요하다. 여기에 넣으면 제출 성공을
+            폼의 안내와 이 배지가 잇달아 두 번 낭독한다 — 「의견을 보냈습니다」는 폼이 이미
+            말했고, 이 배지는 그 뒤에도 화면에 남아 있는 기록이 그 몫이다. */}
+        {hasFeedback && (
+          <div className="flex flex-col items-start gap-1">
+            <Badge tone="success">
+              의견 보냄 · {new Date(feedbackSubmittedAt).toLocaleString('ko-KR')}
+            </Badge>
+            <span className="text-sm text-muted-foreground">
+              검수 내용 저장과 따로 기록되며, 적은 내용은 이 화면에 다시 표시되지 않습니다.
+            </span>
+          </div>
+        )}
       </header>
 
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이

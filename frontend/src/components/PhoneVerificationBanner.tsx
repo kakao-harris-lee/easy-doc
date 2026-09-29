@@ -1,5 +1,5 @@
 import { type MouseEvent } from 'react'
-import { Check, Gift, Smartphone } from 'lucide-react'
+import { Gift } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
@@ -29,37 +29,22 @@ export function PhoneVerificationBanner({ onNavigate }: PhoneVerificationBannerP
       className="border-b border-warning/30 bg-warning-surface"
       aria-labelledby="phone-trial-heading"
     >
-      <div className={`${CONTAINER} flex flex-col gap-4 py-4 lg:flex-row lg:items-center`}>
-        <div className="min-w-0 flex-1">
-          <h2
-            id="phone-trial-heading"
-            className="flex items-center gap-2 text-sm font-bold text-foreground"
-          >
-            <Gift className="size-[18px] shrink-0 text-warning" aria-hidden="true" />
+      <div className={`${CONTAINER} flex items-center gap-3 py-2`}>
+        <Gift className="size-[18px] shrink-0 text-warning" aria-hidden="true" />
+        <div className="min-w-0 flex-1 sm:flex sm:items-baseline sm:gap-3">
+          <h2 id="phone-trial-heading" className="break-keep text-sm font-bold text-foreground">
             휴대폰 인증하고 체험 5크레딧 받기
           </h2>
-          <p className="mt-1 text-sm leading-[22px] text-muted-foreground">
+          <p className="sr-only text-sm text-muted-foreground sm:not-sr-only">
             {needsEmailVerification
-              ? '이메일 인증을 먼저 완료한 뒤 휴대폰 인증번호를 요청해 주세요. 인증을 마치면 샘플 변환용 5크레딧을 한 번 드립니다.'
-              : '계정 설정에서 휴대폰 인증번호를 요청하고 확인하면 샘플 변환용 5크레딧을 한 번 드립니다.'}
+              ? '이메일 인증을 먼저 마쳐 주세요.'
+              : '인증을 마치면 샘플 변환용 5크레딧을 한 번 드립니다.'}
           </p>
-          <ol className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-foreground">
-            <li className="flex items-center gap-1.5">
-              <Check className="size-4 text-success" aria-hidden="true" /> 가입 완료
-            </li>
-            <li className="flex items-center gap-1.5">
-              <Check className="size-4 text-success" aria-hidden="true" /> 로그인 완료
-            </li>
-            <li className="flex items-center gap-1.5 font-semibold">
-              <Smartphone className="size-4 text-warning" aria-hidden="true" /> 휴대폰 인증 필요
-            </li>
-            <li className="text-muted-foreground">인증 완료 → 5크레딧 발급</li>
-          </ol>
         </div>
         <Link
           to={target}
           onClick={onNavigate}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground no-underline hover:bg-primary-hover"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground no-underline hover:bg-primary-hover"
         >
           {action}
         </Link>

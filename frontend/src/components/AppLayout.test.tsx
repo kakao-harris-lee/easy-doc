@@ -624,10 +624,7 @@ describe('휴대폰 인증 안내', () => {
     renderLayout({ user: userResponse({ phone_verified: false }) })
 
     const banner = screen.getByRole('region', { name: '휴대폰 인증하고 체험 5크레딧 받기' })
-    expect(banner).toHaveTextContent('가입 완료')
-    expect(banner).toHaveTextContent('로그인 완료')
-    expect(banner).toHaveTextContent('휴대폰 인증 필요')
-    expect(banner).toHaveTextContent('5크레딧 발급')
+    expect(banner).toHaveTextContent('샘플 변환용 5크레딧')
     expect(screen.getByRole('link', { name: '휴대폰 인증하기' })).toHaveAttribute(
       'href',
       ACCOUNT_SETTINGS_PATH,
