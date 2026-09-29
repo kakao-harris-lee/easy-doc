@@ -161,6 +161,17 @@ describe('업로드 화면', () => {
       expect(screen.queryByRole('radio', { name: /더 쉽게/ })).not.toBeInTheDocument()
     })
 
+    it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {
+      renderPage()
+
+      for (const name of [/글 붙여넣기/, '파일 올리기', /기본.*초등 5~6학년/]) {
+        const radio = screen.getByRole('radio', { name })
+        expect(radio).not.toHaveClass('sr-only')
+        expect(radio).toHaveClass('absolute', 'inset-0', 'size-full', 'opacity-0')
+        expect(radio.closest('label')).toHaveClass('relative')
+      }
+    })
+
     it('선택한 수준의 설명만 한 줄로 보여준다', async () => {
       vi.stubEnv('VITE_EASYDOC_EXTRA_EASY_ENABLED', 'true')
       try {

@@ -113,8 +113,10 @@ const DOCX_HWPX_STRUCTURE_NOTICE =
 const PDF_EXTRACTION_NOTICE =
   'PDF는 읽는 순서·표·다단 구성에 따라 텍스트가 일부 누락되거나 잘못 추출될 수 있습니다. 변환 후 원문과 결과를 꼭 확인해 주세요. 결과는 레이아웃과 스타일 없이 TXT로 내려받습니다.'
 
+const RADIO_OVERLAY_CLASS =
+  'absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0'
 const SEGMENT_CLASS =
-  'flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-3 text-[15px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring'
+  'relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-3 text-[15px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring'
 const SEGMENT_ON = 'bg-card font-bold text-primary shadow-sm'
 const SEGMENT_OFF = 'text-muted-foreground'
 
@@ -794,7 +796,7 @@ export function UploadPage() {
               <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
                 <label className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}>
                   <input
-                    className="sr-only"
+                    className={RADIO_OVERLAY_CLASS}
                     type="radio"
                     name="input-mode"
                     value="text"
@@ -808,7 +810,7 @@ export function UploadPage() {
                 </label>
                 <label className={`${SEGMENT_CLASS} ${mode === 'file' ? SEGMENT_ON : SEGMENT_OFF}`}>
                   <input
-                    className="sr-only"
+                    className={RADIO_OVERLAY_CLASS}
                     type="radio"
                     name="input-mode"
                     value="file"
@@ -829,10 +831,10 @@ export function UploadPage() {
                 ).map((option) => (
                   <label
                     key={option.value}
-                    className={`flex min-h-16 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+                    className={`relative flex min-h-16 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
                   >
                     <input
-                      className="sr-only"
+                      className={RADIO_OVERLAY_CLASS}
                       type="radio"
                       name="reading-level"
                       value={option.value}
