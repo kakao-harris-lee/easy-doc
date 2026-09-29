@@ -41,7 +41,8 @@ export function TrialCreditSteps({ className }: { className?: string }) {
         ))}
       </ol>
       <p className="mt-3 text-xs leading-5 text-muted-foreground">
-        이메일로 가입한 경우 휴대폰 인증 전에 이메일 인증을 먼저 완료해 주세요.
+        이메일로 가입했거나 소셜 제공자가 이메일을 확인해 주지 않은 경우, 휴대폰 인증 전에 메일로
+        받은 인증 코드를 먼저 입력해 주세요.
       </p>
     </section>
   )
