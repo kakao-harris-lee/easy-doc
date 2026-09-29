@@ -38,6 +38,28 @@ describe('이용 가이드 화면', () => {
     expect(screen.getByText('확인하고 내려받기', { exact: true })).toBeInTheDocument()
   })
 
+  it('무료 체험 5크레딧을 받는 방법을 세 단계 안내보다 먼저 알려 준다', () => {
+    render(<GuidePage />)
+
+    const trialHeading = screen.getByRole('heading', { name: '무료로 먼저 써 보세요', level: 2 })
+    const stepsHeading = screen.getByRole('heading', { name: '세 단계로 이용하세요', level: 2 })
+
+    expect(trialHeading).toBeInTheDocument()
+    expect(screen.getByText(/체험 5크레딧/)).toBeInTheDocument()
+    expect(screen.getByText(/이메일·네이버 가입자는 메일로 받은 인증 코드/)).toBeInTheDocument()
+    expect(trialHeading.compareDocumentPosition(stepsHeading)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('플랜 이용 방법과 지금 결제할 수 있는 플랜을 밝힌다', () => {
+    render(<GuidePage />)
+
+    expect(screen.getByRole('heading', { name: '플랜 이용하기', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('99,000원')).toBeInTheDocument()
+    expect(screen.getAllByText('결제 준비 중')).toHaveLength(2)
+  })
+
   it('작성자용 규칙을 화면에 그리지 않는다', () => {
     render(<GuidePage />)
 
