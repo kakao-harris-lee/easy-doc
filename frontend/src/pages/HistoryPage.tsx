@@ -319,15 +319,17 @@ export function HistoryPage() {
     const { rowId } = pendingFocus.current
     pendingFocus.current = null
     const heading = document.getElementById('history-heading')
-    const target =
+    const rowTarget =
       rowId === null
-        ? heading
+        ? null
         : (document.querySelector<HTMLElement>(`a[data-document-title="${rowId}"]`) ??
           triggerRefs.current.get(rowId))
-    if (target === heading && heading !== null) {
+    if (rowTarget) {
+      rowTarget.focus()
+    } else if (heading !== null) {
       heading.tabIndex = -1
+      heading.focus()
     }
-    target?.focus()
   }, [items, loading])
 
   /**
@@ -358,6 +360,7 @@ export function HistoryPage() {
           ? caught.message
           : '문서를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
       )
+      triggerRefs.current.get(item.id)?.focus()
     } finally {
       setDeletingId(null)
     }

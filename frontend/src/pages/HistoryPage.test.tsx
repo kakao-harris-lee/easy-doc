@@ -449,6 +449,40 @@ describe('문서 삭제', () => {
     )
   })
 
+  it('이어 붙인 쪽에서 지워 이웃이 사라지면 화면 제목으로 초점을 옮긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listDocuments)
+      .mockResolvedValueOnce({
+        items: [documentItem({ id: 'd0', title: '첫 쪽 문서' })],
+        limit: 20,
+        offset: 0,
+        has_more: true,
+      })
+      .mockResolvedValueOnce({
+        items: [documentItem({ id: 'd1', title: '재난지원금 안내' })],
+        limit: 20,
+        offset: 1,
+        has_more: false,
+      })
+      .mockResolvedValue({
+        items: [documentItem({ id: 'd3', conversion_id: 'c3', title: '새 첫 문서' })],
+        limit: 20,
+        offset: 0,
+        has_more: false,
+      })
+    vi.mocked(deleteDocument).mockResolvedValue(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: '더 보기' }))
+    await screen.findByText('재난지원금 안내')
+
+    await openMenuAndDelete(user)
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '변환한 문서를 확인합니다' })).toHaveFocus(),
+    )
+  })
+
   it('지우지 못하면 사유를 알리고 줄을 남겨 둔다', async () => {
     const user = userEvent.setup()
     mockOneThenEmpty()
@@ -459,6 +493,7 @@ describe('문서 삭제', () => {
     await openMenuAndDelete(user)
 
     expect(await screen.findByRole('alert')).toHaveTextContent('문서를 찾을 수 없습니다')
+    expect(screen.getByRole('button', { name: '재난지원금 안내 더보기' })).toHaveFocus()
     expect(screen.getByText('재난지원금 안내')).toBeInTheDocument()
   })
 })
