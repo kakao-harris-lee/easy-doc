@@ -35,7 +35,9 @@ export function PhoneVerificationBanner({ onNavigate }: PhoneVerificationBannerP
           <h2 id="phone-trial-heading" className="break-keep text-sm font-bold text-foreground">
             휴대폰 인증하고 체험 5크레딧 받기
           </h2>
-          <p className="sr-only text-sm text-muted-foreground sm:not-sr-only">
+          <p
+            className={`text-sm text-muted-foreground ${needsEmailVerification ? '' : 'sr-only sm:not-sr-only'}`}
+          >
             {needsEmailVerification
               ? '이메일 인증을 먼저 마쳐 주세요.'
               : '인증을 마치면 샘플 변환용 5크레딧을 한 번 드립니다.'}

@@ -36,7 +36,7 @@ describe('PhoneVerificationBanner', () => {
 
     const link = screen.getByRole('link', { name: '이메일 인증하기' })
     expect(link).toHaveAttribute('href', EMAIL_VERIFICATION_PATH)
-    expect(screen.getByText('이메일 인증을 먼저 마쳐 주세요.')).toBeInTheDocument()
+    expect(screen.getByText('이메일 인증을 먼저 마쳐 주세요.')).not.toHaveClass('sr-only')
   })
 
   it('이메일 인증 사용자는 계정 설정으로 가는 휴대폰 인증 링크와 안내 문장을 본다', () => {
@@ -44,9 +44,10 @@ describe('PhoneVerificationBanner', () => {
 
     const link = screen.getByRole('link', { name: '휴대폰 인증하기' })
     expect(link).toHaveAttribute('href', ACCOUNT_SETTINGS_PATH)
-    expect(
-      screen.getByText('인증을 마치면 샘플 변환용 5크레딧을 한 번 드립니다.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('인증을 마치면 샘플 변환용 5크레딧을 한 번 드립니다.')).toHaveClass(
+      'sr-only',
+      'sm:not-sr-only',
+    )
   })
 
   it('제목이 영역의 이름이 되고 단계 목록은 없다', () => {
