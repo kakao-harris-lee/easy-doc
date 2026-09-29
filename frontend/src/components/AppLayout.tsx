@@ -240,6 +240,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const [openedAt, setOpenedAt] = useState(pathname)
   const mobileNavId = useId()
   const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const headerRef = useRef<HTMLElement>(null)
+  const sheetRef = useRef<HTMLElement>(null)
+  const [headerHeight, setHeaderHeight] = useState<number | null>(null)
+  const sheetOpen = mobileOpen && status === 'authenticated'
 
   if (openedAt !== pathname) {
     setOpenedAt(pathname)
@@ -247,11 +251,29 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (!mobileOpen) {
+    if (!sheetOpen) {
       return
     }
+    const header = headerRef.current
+    const measure = (): void => setHeaderHeight(header?.offsetHeight ?? null)
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    if (header !== null) {
+      observer?.observe(header)
+    }
+
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    sheetRef.current?.querySelector<HTMLElement>('a[href], button:not([disabled])')?.focus()
+
+    const desktop = window.matchMedia?.('(min-width: 1024px)')
+    const handleDesktop = (): void => {
+      if (desktop?.matches) {
+        setMobileOpen(false)
+      }
+    }
+    desktop?.addEventListener('change', handleDesktop)
+
     function handleKeyDown(event: globalThis.KeyboardEvent): void {
       if (event.key === 'Escape') {
         setMobileOpen(false)
@@ -260,10 +282,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => {
+      observer?.disconnect()
+      desktop?.removeEventListener('change', handleDesktop)
       document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [mobileOpen])
+  }, [sheetOpen])
 
   function guard(event: MouseEvent): void {
     if (!confirmDiscardUnsaved()) {
@@ -287,10 +311,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <a className="skip-link" href="#main">
         본문으로 건너뛰기
       </a>
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
+      <header
+        ref={headerRef}
+        className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur"
+      >
         <div className={cn(CONTAINER, 'flex min-h-14 items-center gap-2 lg:min-h-16 lg:gap-3')}>
           <NavLink
-            className="inline-flex min-h-11 shrink-0 items-center rounded-md"
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md"
             to={HOME_PATH}
             end
             onClick={guard}
@@ -374,12 +401,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
           )}
         </div>
       </header>
-      {status === 'authenticated' && mobileOpen && (
+      {sheetOpen && (
         // 헤더의 backdrop-blur가 fixed 자손의 기준 상자를 헤더로 바꾸므로 헤더 밖에 둔다.
         <nav
+          ref={sheetRef}
           id={mobileNavId}
           aria-label="주요 메뉴 (모바일)"
-          className="fixed inset-x-0 bottom-0 top-[57px] z-40 overflow-y-auto overscroll-contain bg-card lg:hidden"
+          style={headerHeight === null ? undefined : { top: headerHeight }}
+          className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto overscroll-contain bg-card lg:hidden"
         >
           <div className={cn(CONTAINER, 'flex min-h-full flex-col gap-1 py-4')}>
             <WorkspaceMenu variant="row" />
@@ -432,17 +461,19 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </nav>
       )}
-      {status === 'authenticated' && <AnnouncementBanner />}
-      {status === 'authenticated' && <PhoneVerificationBanner onNavigate={guard} />}
-      <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
-        {children}
-      </main>
-      {/*
+      <div className="flex flex-1 flex-col" {...(sheetOpen ? { inert: '' } : {})}>
+        {status === 'authenticated' && <AnnouncementBanner />}
+        {status === 'authenticated' && <PhoneVerificationBanner onNavigate={guard} />}
+        <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
+          {children}
+        </main>
+        {/*
         로그인 여부와 무관하게 모든 화면에 나온다(전자상거래법의 사업자 정보 초기
         화면 표시 의무) — 위 머리말 메뉴들과 달리 `status === 'authenticated'`로
         가리지 않는다.
       */}
-      <Footer />
+        <Footer />
+      </div>
     </div>
   )
 }

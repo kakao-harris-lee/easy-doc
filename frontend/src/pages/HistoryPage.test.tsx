@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -397,6 +397,58 @@ describe('문서 삭제', () => {
     expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(1)
   })
 
+  it('취소하면 초점이 그 줄의 더보기 버튼으로 돌아간다', async () => {
+    const user = userEvent.setup()
+    mockOneThenEmpty()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPage()
+
+    await openMenuAndDelete(user)
+
+    expect(screen.getByRole('button', { name: '재난지원금 안내 더보기' })).toHaveFocus()
+  })
+
+  it('지운 뒤 다음 줄의 제목으로 초점을 옮긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listDocuments)
+      .mockResolvedValueOnce({
+        items: [
+          documentItem({ id: 'd1', title: '재난지원금 안내' }),
+          documentItem({ id: 'd2', conversion_id: 'c2', title: '둘째 문서' }),
+        ],
+        limit: 20,
+        offset: 0,
+        has_more: false,
+      })
+      .mockResolvedValue({
+        items: [documentItem({ id: 'd2', conversion_id: 'c2', title: '둘째 문서' })],
+        limit: 20,
+        offset: 0,
+        has_more: false,
+      })
+    vi.mocked(deleteDocument).mockResolvedValue(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+
+    await openMenuAndDelete(user)
+
+    await waitFor(() => expect(screen.getByRole('link', { name: '둘째 문서' })).toHaveFocus())
+  })
+
+  it('마지막 문서를 지우면 화면 제목으로 초점을 옮긴다', async () => {
+    const user = userEvent.setup()
+    mockOneThenEmpty()
+    vi.mocked(deleteDocument).mockResolvedValue(undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+
+    await openMenuAndDelete(user)
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '변환한 문서를 확인합니다' })).toHaveFocus(),
+    )
+  })
+
   it('지우지 못하면 사유를 알리고 줄을 남겨 둔다', async () => {
     const user = userEvent.setup()
     mockOneThenEmpty()
@@ -453,6 +505,23 @@ describe('행 더보기 메뉴', () => {
 
     expect(screen.queryByRole('button', { name: '첫 문서 삭제' })).not.toBeInTheDocument()
     expect(trigger).toHaveFocus()
+  })
+
+  it('닫힌 메뉴의 Esc는 가로채지 않는다', async () => {
+    const user = userEvent.setup()
+    mockTwo()
+    renderPage()
+    const trigger = await screen.findByRole('button', { name: '첫 문서 더보기' })
+    trigger.focus()
+    const outer = vi.fn()
+    document.addEventListener('keydown', outer)
+
+    await user.keyboard('{Escape}')
+    document.removeEventListener('keydown', outer)
+
+    expect(outer).toHaveBeenCalled()
+    const event = outer.mock.calls[0]?.[0] as KeyboardEvent
+    expect(event.defaultPrevented).toBe(false)
   })
 
   it('바깥을 누르면 닫는다', async () => {

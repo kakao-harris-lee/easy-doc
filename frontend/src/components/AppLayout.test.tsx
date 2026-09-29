@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -532,6 +532,66 @@ describe('모바일 메뉴 시트', () => {
     expect(within(sheet).getByRole('button', { name: '로그아웃' })).toBeInTheDocument()
     expect(within(sheet).queryByRole('button', { name: /연결/ })).not.toBeInTheDocument()
     expect(within(sheet).queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
+  })
+})
+
+describe('모바일 메뉴 시트 — 접근성과 뷰포트', () => {
+  it('열면 초점이 시트 안으로 가고 뒤의 본문·푸터는 inert가 된다', async () => {
+    const user = userEvent.setup()
+    renderLayout()
+    const main = screen.getByRole('main')
+    expect(main.closest('[inert]')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const sheet = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(sheet.contains(document.activeElement)).toBe(true)
+    expect(main.closest('[inert]')).not.toBeNull()
+    expect(screen.getByRole('contentinfo').closest('[inert]')).not.toBeNull()
+    expect(screen.getByRole('button', { name: '메뉴 닫기' }).closest('[inert]')).toBeNull()
+
+    await user.keyboard('{Escape}')
+
+    expect(main.closest('[inert]')).toBeNull()
+  })
+
+  it('lg 이상으로 넓어지면 시트를 닫고 스크롤 잠금을 푼다', async () => {
+    const user = userEvent.setup()
+    let listener: (() => void) | null = null
+    const media = {
+      matches: false,
+      addEventListener: (_type: string, next: () => void) => {
+        listener = next
+      },
+      removeEventListener: () => {
+        listener = null
+      },
+    }
+    const original = window.matchMedia
+    window.matchMedia = vi.fn(() => media) as unknown as typeof window.matchMedia
+    try {
+      renderLayout()
+      await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+      expect(document.body.style.overflow).toBe('hidden')
+
+      media.matches = true
+      await act(async () => listener?.())
+
+      expect(
+        screen.queryByRole('navigation', { name: '주요 메뉴 (모바일)' }),
+      ).not.toBeInTheDocument()
+      expect(document.body.style.overflow).not.toBe('hidden')
+    } finally {
+      window.matchMedia = original
+    }
+  })
+})
+
+describe('머리말 로고', () => {
+  it('로고 링크는 좁은 화면에서도 44px 너비를 지킨다', () => {
+    renderLayout()
+
+    expect(screen.getByRole('link', { name: 'EASY-DOC AI 홈' })).toHaveClass('min-w-11')
   })
 })
 

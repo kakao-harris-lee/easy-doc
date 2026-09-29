@@ -143,18 +143,20 @@ function RowMenu({
   title,
   open,
   deleting,
+  registerTrigger,
   onOpenChange,
   onDelete,
 }: {
   title: string
   open: boolean
   deleting: boolean
+  registerTrigger: (element: HTMLButtonElement | null) => void
   onOpenChange: (open: boolean) => void
   onDelete: () => void
 }) {
   const panelId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const firstItemRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -177,7 +179,7 @@ function RowMenu({
   }, [open, onOpenChange])
 
   function handleEscape(event: KeyboardEvent<HTMLElement>): void {
-    if (event.key !== 'Escape') {
+    if (!open || event.key !== 'Escape') {
       return
     }
     event.stopPropagation()
@@ -196,7 +198,10 @@ function RowMenu({
       }}
     >
       <button
-        ref={triggerRef}
+        ref={(element) => {
+          triggerRef.current = element
+          registerTrigger(element)
+        }}
         type="button"
         aria-label={`${title} 더보기`}
         aria-expanded={open}
@@ -256,6 +261,8 @@ export function HistoryPage() {
   const [reloadToken, setReloadToken] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const triggerRefs = useRef(new Map<string, HTMLButtonElement>())
+  const pendingFocus = useRef<{ rowId: string | null } | null>(null)
   // 작업 공간이 바뀌면 첫 쪽부터 다시 본다. 렌더 중에 맞추는 이유: effect로 미루면
   // 바뀐 작업 공간과 예전 offset으로 한 번 더 조회가 나가고, 그 응답이 잘못된 목록을
   // 잠깐 보여준다(React 공식 "렌더 중 상태 조정" 패턴).
@@ -305,6 +312,24 @@ export function HistoryPage() {
     return () => controller.abort()
   }, [offset, reloadToken, workspaceId])
 
+  useEffect(() => {
+    if (loading || pendingFocus.current === null) {
+      return
+    }
+    const { rowId } = pendingFocus.current
+    pendingFocus.current = null
+    const heading = document.getElementById('history-heading')
+    const target =
+      rowId === null
+        ? heading
+        : (document.querySelector<HTMLElement>(`a[data-document-title="${rowId}"]`) ??
+          triggerRefs.current.get(rowId))
+    if (target === heading && heading !== null) {
+      heading.tabIndex = -1
+    }
+    target?.focus()
+  }, [items, loading])
+
   /**
    * 문서를 파기한다. 되돌릴 수 없으므로 반드시 먼저 묻는다.
    *
@@ -314,11 +339,15 @@ export function HistoryPage() {
   async function handleDelete(item: DocumentListItem): Promise<void> {
     setMenuOpenId(null)
     if (!window.confirm(deleteConfirmMessage(item.title))) {
+      triggerRefs.current.get(item.id)?.focus()
       return
     }
     setDeletingId(item.id)
     try {
       await deleteDocument(item.id)
+      const index = items.findIndex((candidate) => candidate.id === item.id)
+      const neighbor = items[index + 1] ?? items[index - 1]
+      pendingFocus.current = { rowId: neighbor?.id ?? null }
       setError(null)
       setLoading(true)
       setOffset(0)
@@ -352,6 +381,7 @@ export function HistoryPage() {
       <span className={shape}>{item.title}</span>
     ) : (
       <Link
+        data-document-title={item.id}
         className={`${shape} text-primary underline-offset-4 hover:underline`}
         to={conversionPath(item.conversion_id)}
       >
@@ -372,6 +402,13 @@ export function HistoryPage() {
         title={item.title}
         open={menuOpenId === item.id}
         deleting={deletingId === item.id}
+        registerTrigger={(element) => {
+          if (element === null) {
+            triggerRefs.current.delete(item.id)
+          } else {
+            triggerRefs.current.set(item.id, element)
+          }
+        }}
         onOpenChange={(open) => setMenuOpenId(open ? item.id : null)}
         onDelete={() => void handleDelete(item)}
       />

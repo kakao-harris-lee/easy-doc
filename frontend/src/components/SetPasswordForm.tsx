@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import type { FormEvent, KeyboardEvent } from 'react'
+import type { FormEvent } from 'react'
 
 import { setPassword } from '../api/auth'
 import { ApiError } from '../api/client'
@@ -11,20 +11,19 @@ const GENERIC_ERROR_MESSAGE = '요청을 처리하지 못했습니다. 다시 �
 
 interface SetPasswordFormProps {
   className?: string
-  onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
-  /** 설정 성공 뒤 호출된다 — 호출한 쪽(`AppLayout`)이 `/auth/me`를 다시 읽는다. */
+  /** 성공 뒤 호출한 쪽이 `/auth/me`를 다시 읽도록 알린다. */
   onCreated?: () => void
 }
 
 /**
- * 계정 메뉴가 `SocialLinkStatus`와 나란히 쓰는 "비밀번호 만들기" 조각.
+ * 계정 설정 화면의 "비밀번호 만들기" 조각.
  *
  * `me.has_password === false`(소셜 로그인으로만 가입한 계정)일 때만 부모가 이 컴포넌트를
  * 렌더링한다 — 이미 비밀번호가 있으면 만들 것이 없다. 「비밀번호 만들기」 버튼을 누르면
  * 작은 인라인 폼(새 비밀번호 + 확인)이 펼쳐지고, `CredentialsForm`의 가입 화면과 같은
  * 검증 안내(최소 길이)를 쓴다 — 다만 이메일 필드가 없다(이미 인증된 사용자다).
  */
-export function SetPasswordForm({ className, onButtonKeyDown, onCreated }: SetPasswordFormProps) {
+export function SetPasswordForm({ className, onCreated }: SetPasswordFormProps) {
   const [open, setOpen] = useState(false)
   const [password, setPasswordValue] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -76,7 +75,6 @@ export function SetPasswordForm({ className, onButtonKeyDown, onCreated }: SetPa
           type="button"
           className="min-h-11 w-full justify-start"
           onClick={openForm}
-          onKeyDown={onButtonKeyDown}
         >
           비밀번호 만들기
         </Button>

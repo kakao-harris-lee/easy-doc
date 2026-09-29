@@ -1770,7 +1770,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             아니라 이 편집 묶음 안에서만 붙는 sticky다 — 묶음을 지나가면 함께 흘러가므로
             본문 마지막 요소(피드백·대응표)를 가리지 않는다. 아래 여백은 홈
             인디케이터가 있는 기기에서 버튼이 잘리지 않게 안전 영역만큼 더 준다. */}
-        <div className="sticky bottom-0 z-10 mt-4 grid grid-cols-2 gap-2 border-t border-border bg-background/95 pt-3 backdrop-blur-sm sm:flex sm:flex-wrap sm:items-center [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]">
+        <div
+          className={cn(
+            'sticky bottom-0 z-10 mt-4 grid gap-2 border-t border-border bg-background/95 pt-3 backdrop-blur-sm sm:flex sm:flex-wrap sm:items-center [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))]',
+            formats.length > 0 ? 'grid-cols-2' : 'grid-cols-1',
+          )}
+        >
           <Button
             type="button"
             className={cn('h-12 w-full sm:h-11 sm:w-auto', dirty && 'ring-2 ring-ring/40')}

@@ -700,6 +700,23 @@ describe('검수 에디터', () => {
     expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass('h-12', 'w-full')
   })
 
+  it('내려받을 형식이 없으면 저장 버튼이 좁은 화면에서 한 칸 전체를 쓴다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          source_format: 'pdf',
+          export_format: null,
+          export_format_choices: [],
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const bar = screen.getByRole('button', { name: '검수 내용 저장' }).parentElement
+    expect(bar).toHaveClass('grid-cols-1')
+    expect(bar).not.toHaveClass('grid-cols-2')
+  })
+
   it('검수 안내 줄은 좁은 화면에서 작게 줄인다', () => {
     render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
@@ -3774,6 +3791,7 @@ describe('내려받기 형식 대화상자와 저장', () => {
     await user.click(screen.getByRole('button', { name: '저장하고 HWPX로 내려받기' }))
 
     await screen.findByText('검수 내용을 저장하고 HWPX 파일을 내려받았습니다.')
+    await waitFor(() => expect(screen.getByRole('button', { name: '내려받기' })).toHaveFocus())
     expect(vi.mocked(saveReview)).toHaveBeenCalled()
     expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', 'hwpx')
   })
