@@ -6,10 +6,9 @@ import { GUIDE_PATH, PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
 import { CONTAINER } from './layoutStyles'
 
 const POLICY_LINK_CLASS =
-  'inline-flex min-h-11 min-w-11 shrink-0 items-center whitespace-nowrap text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
+  'inline-flex min-h-11 min-w-11 sm:pointer-fine:min-h-6 sm:pointer-fine:min-w-0 shrink-0 items-center whitespace-nowrap text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
 
-/** 모바일에서는 문단을 촘촘히, 넓은 화면에서는 링크와 44px 높이로 맞춘다. */
-const INFO_TEXT_CLASS = 'inline-flex items-center whitespace-nowrap sm:min-h-11'
+const INFO_TEXT_CLASS = 'inline-flex items-center whitespace-nowrap'
 
 /** 모든 화면에서 회사 정보와 정책·문의 링크를 제공한다. */
 export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {}) {
@@ -32,7 +31,7 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
       <div
         className={cn(
           CONTAINER,
-          'space-y-0 py-2 text-xs leading-relaxed text-muted-foreground sm:space-y-1 sm:py-4',
+          'space-y-0.5 py-2 text-xs leading-relaxed text-muted-foreground sm:py-3',
         )}
       >
         <div className="flex flex-col items-start sm:flex-row sm:items-center sm:justify-between sm:gap-x-6">
@@ -49,7 +48,7 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
             </Link>
             <Link
               to={PRIVACY_PATH}
-              className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap font-bold text-foreground underline decoration-2 underline-offset-2"
+              className="inline-flex min-h-11 sm:pointer-fine:min-h-6 shrink-0 items-center whitespace-nowrap font-bold text-foreground underline decoration-2 underline-offset-2"
             >
               개인정보처리방침
             </Link>
@@ -82,7 +81,7 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
           )}
         </div>
         <p>{address}</p>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-0 sm:gap-y-1">
+        <div className="flex flex-wrap items-center gap-x-4">
           <a href={`mailto:${supportEmail}`} className={POLICY_LINK_CLASS}>
             고객지원 {supportEmail}
           </a>

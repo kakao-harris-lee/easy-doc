@@ -36,7 +36,7 @@ export const COMPANY_INFO: CompanyInfo = {
   name: '몬딱 솔루션',
   representativeName: '이치훈',
   businessRegistrationNumber: '671-47-01204',
-  address: '제주특별자치도 제주시 첨단로동길 106, 312동 403호',
+  address: '제주특별자치도 제주시 첨단로동길 106 312-403',
   privacyOfficerName: '이치훈',
   privacyOfficerRole: '대표',
   supportEmail: 'mobydick@hanmail.net',
