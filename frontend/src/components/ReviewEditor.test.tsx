@@ -717,6 +717,42 @@ describe('검수 에디터', () => {
     expect(bar).not.toHaveClass('grid-cols-2')
   })
 
+  it('제목·변환 완료 배지·저장 상태 배지가 한 줄 머리에 모이고 상태 영역은 하나다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
+
+    const heading = screen.getByRole('heading', { level: 1, name: '쉬운 글 확인' })
+    const status = screen.getByRole('status')
+    let row = heading.parentElement
+    while (row !== null && !row.contains(status)) {
+      row = row.parentElement
+    }
+    expect(row).not.toBeNull()
+    expect(row).not.toBe(document.body)
+    expect(within(row as HTMLElement).getByText('변환 완료')).toBeInTheDocument()
+    expect(within(row as HTMLElement).queryByRole('note')).not.toBeInTheDocument()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(status).not.toHaveClass('contents')
+    expect(status).toHaveClass('max-sm:basis-full')
+    expect(status).toHaveTextContent('저장 전')
+    expect(status).toHaveTextContent('아직 저장한 검수 내용이 없습니다.')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveAccessibleDescription(
+      /저장 전/,
+    )
+  })
+
+  it('의견 보냄 배지는 저장 상태 영역 밖에 있다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ feedback_submitted_at: '2026-08-27T02:00:00Z' })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const badge = screen.getByText(/^의견 보냄 · /)
+    expect(badge).toBeInTheDocument()
+    expect(screen.getByRole('status')).not.toContainElement(badge)
+  })
+
   it('검수 안내 줄은 좁은 화면에서 작게 줄인다', () => {
     render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
