@@ -85,7 +85,7 @@ describe('Footer', () => {
     const companyRow = screen.getByText(COMPANY_INFO.name).parentElement
     const policyNavigation = screen.getByRole('navigation', { name: '정책' })
 
-    expect(footerContent).toHaveClass('space-y-0', 'py-2', 'sm:space-y-1', 'sm:py-4')
+    expect(footerContent).toHaveClass('space-y-0.5', 'py-2', 'sm:py-3')
     expect(companyRow).toHaveClass('flex-col', 'items-start', 'sm:flex-row', 'sm:items-center')
     expect(policyNavigation).toHaveClass('w-full', 'justify-between', 'sm:w-auto')
   })
@@ -99,9 +99,21 @@ describe('Footer', () => {
     const businessLookup = screen.getByRole('link', { name: /^사업자정보 확인:/ })
 
     expect(representative.parentElement).toHaveClass('items-center')
-    expect(representative).toHaveClass('inline-flex', 'items-center', 'sm:min-h-11')
-    expect(representative).not.toHaveClass('min-h-11')
+    expect(representative).toHaveClass('inline-flex', 'items-center')
+    expect(representative.className).not.toContain('min-h-11')
     expect(businessLookup).toHaveClass('whitespace-nowrap')
+  })
+
+  it('링크는 터치 44px를 유지하되 넓은 화면의 마우스에서만 줄어든다', () => {
+    renderFooter()
+
+    for (const link of screen.getAllByRole('link')) {
+      expect(link).toHaveClass('min-h-11', 'sm:pointer-fine:min-h-6')
+    }
+    expect(screen.getByRole('link', { name: '이용약관' })).toHaveClass(
+      'min-w-11',
+      'sm:pointer-fine:min-w-0',
+    )
   })
 
   it('대표와 개인정보 보호책임자가 같으면 이름을 합쳐 표시한다', () => {
