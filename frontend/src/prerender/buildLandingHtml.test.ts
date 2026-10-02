@@ -22,10 +22,12 @@ const TEMPLATE = `<!doctype html>
     <meta property="og:description" content="셸 기본 설명" />
     <meta name="twitter:description" content="셸 기본 설명" />
     <title>EASY-DOC AI</title>
+    <script type="module" crossorigin src="/assets/index-abc123.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-abc123.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-abc123.css">
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/assets/index.js"></script>
   </body>
 </html>
 `
@@ -57,7 +59,9 @@ describe('buildLandingHtml', () => {
 
     expect(html).toContain(`<div id="root">${MARKUP}</div>`)
     // 클라이언트 번들 스크립트는 그대로 남아 React가 내용을 교체한다.
-    expect(html).toContain('<script type="module" src="/assets/index.js"></script>')
+    expect(html).toContain(
+      '<script type="module" crossorigin src="/assets/index-abc123.js"></script>',
+    )
   })
 
   it('canonical은 정확히 하나다', () => {
@@ -152,6 +156,10 @@ describe('buildLandingHtml', () => {
 
   it('마크업에 h1이 없으면 빌드를 실패시킨다', () => {
     expect(() => build({ markup: '<article><p>제목 없음</p></article>' })).toThrow(/h1/)
+  })
+
+  it('</head>가 없으면 빌드를 실패시킨다', () => {
+    expect(() => build({ template: TEMPLATE.replace('</head>', '') })).toThrow(/head/)
   })
 
   it('#root 자리가 없으면 빌드를 실패시킨다', () => {
