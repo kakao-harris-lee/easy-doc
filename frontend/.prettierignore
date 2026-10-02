@@ -13,3 +13,6 @@ blob-report
 
 # 법정 고지는 원문 바이트 단위로 버전을 관리한다.
 src/content/legal
+
+# 네이버 서치어드바이저 소유확인 파일은 내려받은 내용 그대로 둔다.
+public/naver*.html
