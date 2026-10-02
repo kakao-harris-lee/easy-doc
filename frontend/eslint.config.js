@@ -33,4 +33,16 @@ export default tseslint.config(
     files: ['**/*.test.{ts,tsx}', 'src/test/**/*.ts', 'e2e/**/*.ts', 'playwright*.config.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+  // 프리렌더 엔트리는 빌드 때 Node에서만 돌고 클라이언트 번들에 들어가지 않는다 —
+  // Fast Refresh 규칙(컴포넌트만 내보내라)이 적용될 파일이 아니다.
+  {
+    files: ['src/prerender/**/*.{ts,tsx}'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  // 빌드 스크립트는 Node에서 바로 도는 ESM이다(타입 검사 대상이 아니라 별도 블록).
+  {
+    files: ['scripts/**/*.mjs'],
+    extends: [js.configs.recommended, prettier],
+    languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: globals.node },
+  },
 )

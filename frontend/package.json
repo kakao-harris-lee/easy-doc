@@ -11,7 +11,7 @@
     "check": "tsc -b && eslint . && prettier --check .",
     "test": "vitest",
     "test:e2e": "playwright test",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && vite build --ssr src/prerender/landing-entry.tsx --outDir dist-ssr && node scripts/prerender-landing.mjs",
     "format": "prettier --write .",
     "preview": "vite preview"
   },
