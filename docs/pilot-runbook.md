@@ -693,3 +693,49 @@ EASYDOC_PHONE_VERIFICATION_PEPPER=<openssl rand -hex 32 결과>
 ## 토스 테스트 구독 운영
 
 카드 등록·월 승인·worker 갱신·환불·영수증·키 교체·웹훅 설정은 [토스 테스트 구독 결제](plans/2026-09-13-toss-test-billing.md)를 따른다. 공개 체험 키로 실제 토스 테스트 API E2E를 검증했으며 라이브 결제는 차단한다. 관리자 환불은 작업 공간 상세의 테스트 결제 내역에서 처리한다. 환불과 구독 갱신 중단은 별도 동작이다.
+
+## 검색 엔진 노출 운영 절차
+
+### 배포 산출물
+
+프런트엔드 이미지에 다음이 포함된다(계획 `docs/plans/2026-10-02-search-engine-exposure.md` 참고):
+- `/`는 빌드 시 프리렌더링한 `landing.html`(JS 없이 읽을 수 있음)
+- 그 외 라우트는 기존 SPA 셸 `index.html`에 `noindex` 메타
+- `robots.txt`: `/` 허용, 나머지 경로(`/api/`, `/login`, `/signup`, `/guide`, `/terms`, `/privacy` 등) 차단, `Sitemap` 줄 포함
+- `sitemap.xml`: `https://easydoc.kr/` 하나의 URL, `lastmod`은 빌드 날짜
+
+### 운영자 체크리스트
+
+- [ ] 구글 서치콘솔: 도메인 속성 생성 → DNS TXT 등록(또는 `google-site-verification` 메타 토큰을 개발자가 `frontend/index.html`에 추가)
+- [ ] 네이버 서치어드바이저: 사이트 등록 → `naver-site-verification` 토큰 받음 → 개발자가 `frontend/index.html`에 추가
+- [ ] 배포 뒤: 서치콘솔에서 `https://easydoc.kr/` URL 검사 → 색인 요청, 네이버에서 robots.txt 수집 확인 → 사이트맵 제출 → `/` 수집 요청
+
+### 호스트 nginx 변경 (저장소 밖, `/etc/nginx/sites-available/easydoc_kr`)
+
+**이 단계와 파일럿 재배포는 운영 변경으로, 사용자의 명시적 승인 뒤에만 수행한다.**
+
+443 server 블록에 아래를 추가(다른 설정 전):
+
+```nginx
+if ($host = www.easydoc.kr) { return 301 https://easydoc.kr$request_uri; }
+```
+
+그 뒤 적용:
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### 배포 뒤 검증
+
+```bash
+curl -s https://easydoc.kr/ | grep -c '<h1'
+curl -s https://easydoc.kr/guide | grep -c noindex
+curl -sI https://easydoc.kr/robots.txt
+curl -sI https://easydoc.kr/sitemap.xml
+curl -sI https://www.easydoc.kr/
+```
+
+예상 결과: 첫 번째 1 이상(본문 제목), 두 번째 1(SPA 셸에만 noindex), 셋째·넷째 200(정적 파일), 다섯째 301 + Location 헤더에 `https://easydoc.kr/`.
+
+`/guide`, `/terms`, `/privacy`, `/login`, `/signup`은 의도적으로 색인 대상에서 제외되며, 후속 계획은 계획 파일 §8을 참고한다.
