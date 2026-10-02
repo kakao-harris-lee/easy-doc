@@ -24,7 +24,7 @@
 
 ## 노출·운영
 
-1. [검색 엔진 노출 준비 — 기본 페이지 하나만 색인](2026-10-02-search-engine-exposure.md) (pending approval)
+1. [검색 엔진 노출 준비 — 기본 페이지 하나만 색인](2026-10-02-search-engine-exposure.md) (PR #176 리뷰 중)
 
 ## 상태 규칙
 
