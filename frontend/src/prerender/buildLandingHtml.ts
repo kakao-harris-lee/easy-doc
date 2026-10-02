@@ -87,7 +87,8 @@ function setMetaContent(html: string, selector: string, content: string): string
       throw new Error(`메타 태그 ${selector}에 content 속성이 없다`)
     }
     replaced = true
-    return tag.replace(CONTENT_ATTRIBUTE, `content="${escapeAttribute(content)}"`)
+    // 치환 문자열이 아니라 함수로 넘긴다 — content의 `$&`·`` $` `` 가 해석되면 안 된다.
+    return tag.replace(CONTENT_ATTRIBUTE, () => `content="${escapeAttribute(content)}"`)
   })
   if (!replaced) {
     throw new Error(`셸 템플릿에 ${selector} 메타 태그가 없어 description을 채울 수 없다`)
@@ -122,7 +123,8 @@ export function buildLandingHtml({
   const indent = headClose[1] ?? ''
   const childIndent = `${indent}  `
 
-  let html = template.replace(ROOT_PLACEHOLDER, `<div id="root">${markup}</div>`)
+  // 마크업에 `$&` 같은 치환 패턴이 있어도 그대로 들어가도록 함수로 넘긴다.
+  let html = template.replace(ROOT_PLACEHOLDER, () => `<div id="root">${markup}</div>`)
   html = html.replace(CANONICAL_LINK, '').replace(ROBOTS_META, '')
   html = setMetaContent(html, 'name="description"', description)
   html = setMetaContent(html, 'property="og:description"', description)
@@ -141,7 +143,9 @@ export function buildLandingHtml({
   if (!html.includes('<h1')) {
     throw new Error('결과 HTML에 h1이 없다')
   }
-  if (!html.includes(description)) {
+  // 비교는 이스케이프한 형태로 한다 — 메타 content와 React 본문 모두 `&`를
+  // `&amp;`로 쓰므로, 원문 그대로 찾으면 `&`가 든 문장에서 빌드가 헛되게 실패한다.
+  if (!html.includes(escapeAttribute(description))) {
     throw new Error('결과 HTML에 서비스 정의 문장(description)이 없다')
   }
   if (html.includes('noindex')) {

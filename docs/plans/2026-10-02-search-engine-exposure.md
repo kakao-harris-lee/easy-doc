@@ -39,7 +39,8 @@
 ### 3.1 `/`는 빌드 시 프리렌더링한 `landing.html`, 나머지는 기존 SPA 셸
 
 - `vite build` 뒤에 **Node 전용 SSR 빌드**로 `LandingPage`를 `renderToStaticMarkup`하여 `dist/index.html`(셸)을 템플릿으로 `dist/landing.html`을 만든다. 브라우저(Playwright)를 쓰지 않으므로 `node:22-alpine` 빌드 스테이지에서 그대로 동작한다.
-- 컨테이너 nginx의 `location = /`를 `try_files /landing.html =404`로 바꾼다(`frontend/nginx.conf:35-38`). 그 외 경로는 지금처럼 `index.html` 셸.
+- 컨테이너 nginx의 `location = /`를 `try_files /landing.html /index.html =404`로 바꾼다(`frontend/nginx.conf:35-38`). 그 외 경로는 지금처럼 `index.html` 셸.
+- 프리렌더가 빠진 이미지로도 홈이 죽지 않도록 `/`는 `landing.html` → `index.html` 순으로 떨어진다(홈 404보다 색인되지 않는 셸이 낫다). `/landing.html` 직접 접근은 `/`의 중복 주소이므로 그 location에 `X-Robots-Tag: noindex`를 붙인다.
 - 클라이언트 마운트는 `createRoot(...).render` 그대로 둔다(`frontend/src/main.tsx`). React가 프리렌더 내용을 교체하므로 hydration 불일치 문제가 없다. 대신 **로그인한 사용자가 `/`에 들어오면 JS 로드 전 랜딩 내용이 잠깐 보인다** — 지금은 빈 화면이 보이는 구간이라 수용한다(§6 위험 1).
 - `LandingPage`만 렌더하고 `App` 셸(헤더·푸터·`AuthProvider`)은 렌더하지 않는다. 셸은 인증 상태 fetch에 묶여 있어 SSR 대상이 아니다. `Link`는 `StaticRouter`로 감싼다(react-router v7의 import 경로는 구현 시 확인).
 - 대안으로 검토한 것: ⑴ Playwright 스냅샷 — alpine에 Chromium이 없어 빌드 이미지가 커진다. ⑵ `index.html`에 정적 랜딩 본문을 직접 적기 — 모든 딥링크에서 랜딩이 번쩍이고 `LandingPage.tsx`와 문구가 갈라진다. ⑶ `noscript` 본문 — 네이버 Yeti가 JS를 일부 실행하므로 효과가 불확실하고 ⑵와 같은 drift가 생긴다. 모두 기각.
@@ -48,7 +49,7 @@
 
 - `frontend/index.html`(셸)에 `<meta name="robots" content="noindex">`를 넣고 **canonical을 뺀다**(noindex 페이지가 `/`를 canonical로 가리키는 모순 제거). OG·Twitter 태그는 딥링크 공유 미리보기용으로 남긴다.
 - 프리렌더 스크립트가 `landing.html`을 만들 때 `noindex` 메타를 제거하고 `<link rel="canonical" href="https://easydoc.kr/">`와 `<meta name="robots" content="index,follow">`를 넣는다. 런타임 코드로 메타를 바꾸지 않는다.
-- `frontend/public/robots.txt`: `User-agent: *` 아래 `Allow: /`를 두고 사적·보조 경로 접두사를 `Disallow`로 명시한다(`/api/`, `/login`, `/signup`, `/reset-password`, `/verify-email`, `/auth/`, `/conversions/`, `/history`, `/usage`, `/account`, `/admin`, `/billing/`, `/guide`, `/terms`, `/privacy`, `/assets/`는 허용). `$` 와일드카드에 의존하지 않는다(네이버 지원 여부가 불확실). 마지막 줄에 `Sitemap: https://easydoc.kr/sitemap.xml`.
+- `frontend/public/robots.txt`: `User-agent: *` 아래 `Allow: /`를 두고 `Disallow`는 `/api/` 하나만 둔다. 마지막 줄에 `Sitemap: https://easydoc.kr/sitemap.xml`. **색인 제어는 robots가 아니라 셸의 `noindex` 메타가 맡는다** — 크롤을 막은 경로는 크롤러가 `noindex`를 읽을 수 없고, 그 주소가 다른 페이지에서 링크돼 있으면(`/guide`·`/signup`은 랜딩 본문에서 링크된다) 본문 없는 항목으로 색인될 수 있다. robots로 막을 것은 색인 의도가 없는 백엔드 API 크롤뿐이다. `$`·`*` 와일드카드에도 의존하지 않는다(네이버 지원 여부가 불확실).
 - `frontend/public/sitemap.xml`: `<loc>https://easydoc.kr/</loc>` 하나. `lastmod`는 빌드 시 프리렌더 스크립트가 날짜로 채운다(정적 파일에 손으로 박지 않는다).
 
 ### 3.3 메타·구조화 데이터는 한 출처에서

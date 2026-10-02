@@ -132,6 +132,24 @@ describe('buildLandingHtml', () => {
     expect(countOf(html, '</script>')).toBe(countOf(TEMPLATE, '</script>') + 1)
   })
 
+  it('마크업·설명의 $& 같은 치환 패턴이 그대로 남는다', () => {
+    // String.replace에 치환 문자열을 넘기면 `$&`·`` $` ``가 주변 텍스트로 바뀐다.
+    const markup = '<article><h1>제목 $& 뒤</h1><p>$` 앞 · $$ · $1</p></article>'
+
+    const html = buildLandingHtml({
+      template: TEMPLATE,
+      markup,
+      description: '설명 $& 와 $` 와 $1',
+      canonicalUrl: CANONICAL_URL,
+      jsonLd: JSON_LD,
+    })
+
+    // 마크업은 이미 HTML이라 그대로 들어간다.
+    expect(html).toContain(`<div id="root">${markup}</div>`)
+    // 속성 값에서는 `&`만 이스케이프되고 `$` 시퀀스는 해석되지 않는다.
+    expect(html).toContain('content="설명 $&amp; 와 $` 와 $1"')
+  })
+
   it('마크업에 h1이 없으면 빌드를 실패시킨다', () => {
     expect(() => build({ markup: '<article><p>제목 없음</p></article>' })).toThrow(/h1/)
   })

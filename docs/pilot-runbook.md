@@ -701,7 +701,7 @@ EASYDOC_PHONE_VERIFICATION_PEPPER=<openssl rand -hex 32 결과>
 프런트엔드 이미지에 다음이 포함된다(계획 `docs/plans/2026-10-02-search-engine-exposure.md` 참고):
 - `/`는 빌드 시 프리렌더링한 `landing.html`(JS 없이 읽을 수 있음)
 - 그 외 라우트는 기존 SPA 셸 `index.html`에 `noindex` 메타
-- `robots.txt`: `/` 허용, 나머지 경로(`/api/`, `/login`, `/signup`, `/guide`, `/terms`, `/privacy` 등) 차단, `Sitemap` 줄 포함
+- `robots.txt`: 전 경로 크롤 허용에 `/api/`만 차단, `Sitemap` 줄 포함. 색인 제어는 셸의 `noindex` 메타가 맡는다 — `Disallow`된 경로는 크롤러가 `noindex`를 읽지 못해 오히려 색인될 수 있다
 - `sitemap.xml`: `https://easydoc.kr/` 하나의 URL, `lastmod`은 빌드 날짜
 
 ### 운영자 체크리스트
@@ -714,14 +714,12 @@ EASYDOC_PHONE_VERIFICATION_PEPPER=<openssl rand -hex 32 결과>
 
 **이 단계와 파일럿 재배포는 운영 변경으로, 사용자의 명시적 승인 뒤에만 수행한다.**
 
-443 server 블록에 아래를 추가(다른 설정 전):
+저장소의 미러 파일 `ops/nginx/easydoc.kr.conf`가 적용할 내용의 기준이다 — 손으로 스니펫을
+끼워 넣지 않고 이 파일을 복사하거나 같은 diff를 적용한다. `www.easydoc.kr`을 apex로 301
+보내는 전용 443 server 블록이 들어 있다.
 
-```nginx
-if ($host = www.easydoc.kr) { return 301 https://easydoc.kr$request_uri; }
-```
-
-그 뒤 적용:
 ```bash
+sudo cp ops/nginx/easydoc.kr.conf /etc/nginx/sites-available/easydoc_kr
 sudo nginx -t
 sudo systemctl reload nginx
 ```
