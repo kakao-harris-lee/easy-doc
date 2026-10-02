@@ -34,10 +34,11 @@ import {
   SIGNUP_PATH,
   USAGE_PATH,
 } from '../routes/paths'
+import { SERVICE_NAME } from '../content/identity'
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
 import { PhoneVerificationBanner } from './PhoneVerificationBanner'
-import { Logo, SERVICE_NAME } from './Logo'
+import { Logo } from './Logo'
 import { ThemeSwitch } from './ThemeSwitch'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { CONTAINER } from './layoutStyles'

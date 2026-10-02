@@ -1,0 +1,7 @@
+# 색인 제어는 SPA 셸의 noindex 메타가 맡고, robots는 백엔드 API 크롤만 막는다
+# (Disallow된 경로는 noindex를 읽을 수 없어 오히려 색인될 수 있다).
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://easydoc.kr/sitemap.xml
