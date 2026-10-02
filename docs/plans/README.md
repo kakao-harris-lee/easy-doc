@@ -22,6 +22,10 @@
 8. [R7 문맥 기반 그림 제안·생성 수정 계획](2026-09-24-contextual-illustration-correction.md)
 9. [읽기 수준 선택·집중 검토 UX 추가 계획](2026-09-24-reading-level-focused-review.md)
 
+## 노출·운영
+
+1. [검색 엔진 노출 준비 — 기본 페이지 하나만 색인](2026-10-02-search-engine-exposure.md) (pending approval)
+
 ## 상태 규칙
 
 - 활성 계획의 경로와 명령은 Kotlin/Gradle 또는 React/npm 기준이어야 한다.
