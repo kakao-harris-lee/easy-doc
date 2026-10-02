@@ -82,7 +82,9 @@ Compose 파일을 함께 사용한다. `auto` 또는 미설정 상태에서도 �
 파일럿 오버레이는 브라우저가 POST에 보내는 `Origin`을 위해 `https://easydoc.kr`과
 `https://www.easydoc.kr`을 백엔드 CORS 허용 목록으로 주입한다. 이 값이 빠지면 브라우저의
 OAuth 시작 요청 등이 `403 Invalid CORS request`로 거절되지만 Origin 없는 `curl`은 200이라
-단순 health 확인만으로는 발견되지 않는다.
+단순 health 확인만으로는 발견되지 않는다. www는 호스트 nginx에서 apex로 301 되므로 www
+Origin이 실제로 오는 경우는 없어야 하지만, 아직 www를 들고 있는 북마크·링크의 전환
+기간용으로 항목을 남긴다.
 Docker 서비스가 부팅 시 활성화되어 있으면 서버 재부팅 뒤 컨테이너도 자동으로 복구된다.
 운영 중 `docker compose down`을 실행하면 컨테이너 자체가 없어져 자동 복구되지 않으므로,
 일시 중단에는 `stop` 대신 가급적 재배포 명령의 `up -d`를 사용한다.
@@ -710,16 +712,27 @@ EASYDOC_PHONE_VERIFICATION_PEPPER=<openssl rand -hex 32 결과>
 - [ ] 네이버 서치어드바이저: 사이트 등록 → `naver-site-verification` 토큰 받음 → 개발자가 `frontend/index.html`에 추가
 - [ ] 배포 뒤: 서치콘솔에서 `https://easydoc.kr/` URL 검사 → 색인 요청, 네이버에서 robots.txt 수집 확인 → 사이트맵 제출 → `/` 수집 요청
 
-### 호스트 nginx 변경 (저장소 밖, `/etc/nginx/sites-available/easydoc_kr`)
+### 프런트엔드 이미지 재빌드가 먼저다
 
-**이 단계와 파일럿 재배포는 운영 변경으로, 사용자의 명시적 승인 뒤에만 수행한다.**
-
-저장소의 미러 파일 `ops/nginx/easydoc.kr.conf`가 적용할 내용의 기준이다 — 손으로 스니펫을
-끼워 넣지 않고 이 파일을 복사하거나 같은 diff를 적용한다. `www.easydoc.kr`을 apex로 301
-보내는 전용 443 server 블록이 들어 있다.
+`landing.html`·`robots.txt`·`sitemap.xml`은 빌드 산출물이라 프런트엔드 이미지를 다시 빌드한
+뒤에만 존재한다. 위 「배포」 절차(`./docker_startup.sh restart` 또는 같은 절의 compose
+`up -d --build`)를 그대로 쓰며, **운영 변경이므로 사용자의 명시적 승인 뒤에만 수행한다.**
+재빌드 뒤 컨테이너에 파일이 올라갔는지 확인한다.
 
 ```bash
-sudo cp ops/nginx/easydoc.kr.conf /etc/nginx/sites-available/easydoc_kr
+docker compose -f compose.yml -f compose.pilot.yml exec frontend ls /usr/share/nginx/html/landing.html
+```
+
+### 호스트 nginx 변경 (저장소 밖, `/etc/nginx/sites-available/easydoc_kr`)
+
+**이 단계도 운영 변경으로, 사용자의 명시적 승인 뒤에만 수행한다.**
+
+저장소의 미러 파일 `ops/nginx/easydoc.kr.conf`가 적용할 내용의 기준이다 — 손으로 스니펫을
+끼워 넣지 않고 이 파일을 설치하거나 같은 diff를 적용한다. `www.easydoc.kr`을 apex로 301
+보내는 전용 443 server 블록이 들어 있다. 설치·검증 명령은 위 「배포」 절과 같다.
+
+```bash
+sudo install -m 644 ops/nginx/easydoc.kr.conf /etc/nginx/sites-available/easydoc_kr
 sudo nginx -t
 sudo systemctl reload nginx
 ```

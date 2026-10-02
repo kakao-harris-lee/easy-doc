@@ -8,15 +8,16 @@
  * 조립이 조용히 실패하면 검색 엔진에는 빈 `<div id="root">`만 노출되므로, 이 모듈의
  * 모든 검사는 경고가 아니라 예외다. 예외는 빌드를 non-zero로 끝낸다.
  */
+import { SERVICE_NAME } from '../content/identity'
 
-/** `/`의 정본 주소. 셸·랜딩·sitemap이 같은 값을 쓴다. */
+/**
+ * `/`의 정본 주소. 랜딩·sitemap·JSON-LD가 같은 값을 쓴다 — 셸은 noindex라
+ * canonical을 두지 않는다.
+ */
 export const CANONICAL_URL = 'https://easydoc.kr/'
 
 /** JSON-LD `Organization.logo`. 1200×630 OG 이미지가 아니라 정사각 로고를 쓴다. */
 export const ORGANIZATION_LOGO_URL = 'https://easydoc.kr/icons/icon-320.png'
-
-/** 사업자 상호(`Organization.name`)와 다른 서비스명(`WebSite.name`). */
-export const SITE_NAME = 'EASY-DOC AI'
 
 export type JsonLdNode = Readonly<Record<string, unknown>>
 
@@ -38,7 +39,13 @@ const ROBOTS_META = /[ \t]*<meta\b[^>]*name="robots"[^>]*>\n?/g
 const CONTENT_ATTRIBUTE = /content="[^"]*"/
 const HEAD_CLOSE = /([ \t]*)<\/head>/
 
-/** 랜딩에 싣는 구조화 데이터. 근거 콘텐츠가 있는 두 타입만 넣는다. */
+/**
+ * 랜딩에 싣는 구조화 데이터. `Organization`·`WebSite` 두 타입만 넣는다.
+ *
+ * 본문에는 사업자명·로고가 없다 — 근거는 화면이 아니라 푸터와 같은 출처
+ * (`COMPANY_INFO`)를 쓴다는 점이다. 뒷받침할 본문이 없는 `SoftwareApplication`·
+ * `FAQPage`는 넣지 않는다.
+ */
 export function buildLandingJsonLd({
   organizationName,
 }: {
@@ -55,7 +62,7 @@ export function buildLandingJsonLd({
     {
       '@context': 'https://schema.org',
       '@type': 'WebSite',
-      name: SITE_NAME,
+      name: SERVICE_NAME,
       url: CANONICAL_URL,
       inLanguage: 'ko',
     },

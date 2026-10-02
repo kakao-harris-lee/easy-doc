@@ -1,5 +1,4 @@
-/** 머리말·탭 제목에 쓰는 서비스명. 화면 문구가 갈라지지 않게 한곳에서 읽는다. */
-export const SERVICE_NAME = 'EASY-DOC AI'
+import { SERVICE_NAME } from '../content/identity'
 
 /** `compact`는 lg 미만에서 아이콘을 32px로 줄이고 부제를 감춘다. */
 export function Logo({ compact = false }: { compact?: boolean }) {

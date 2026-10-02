@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { SERVICE_NAME } from '../content/identity'
 import {
   CANONICAL_URL,
   buildLandingHtml,
@@ -123,7 +124,7 @@ describe('buildLandingHtml', () => {
     })
     expect(nodes[1]).toMatchObject({
       '@context': 'https://schema.org',
-      name: 'EASY-DOC AI',
+      name: SERVICE_NAME,
       url: CANONICAL_URL,
       inLanguage: 'ko',
     })
@@ -186,8 +187,7 @@ describe('buildLandingHtml', () => {
     expect(() => build({ template: withGooglebot })).toThrow(/noindex/)
   })
 
-  it('설명 문장이 결과에 없으면 빌드를 실패시킨다', () => {
-    // description 메타는 채워지므로, 문장이 사라질 수 있는 경로는 메타 치환 실패뿐이다.
+  it('빈 description이면 빌드를 실패시킨다', () => {
     expect(() => build({ description: '' })).toThrow(/description/)
   })
 })

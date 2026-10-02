@@ -50,7 +50,7 @@
 - `frontend/index.html`(셸)에 `<meta name="robots" content="noindex">`를 넣고 **canonical을 뺀다**(noindex 페이지가 `/`를 canonical로 가리키는 모순 제거). OG·Twitter 태그는 딥링크 공유 미리보기용으로 남긴다.
 - 프리렌더 스크립트가 `landing.html`을 만들 때 `noindex` 메타를 제거하고 `<link rel="canonical" href="https://easydoc.kr/">`와 `<meta name="robots" content="index,follow">`를 넣는다. 런타임 코드로 메타를 바꾸지 않는다.
 - `frontend/public/robots.txt`: `User-agent: *` 아래 `Allow: /`를 두고 `Disallow`는 `/api/` 하나만 둔다. 마지막 줄에 `Sitemap: https://easydoc.kr/sitemap.xml`. **색인 제어는 robots가 아니라 셸의 `noindex` 메타가 맡는다** — 크롤을 막은 경로는 크롤러가 `noindex`를 읽을 수 없고, 그 주소가 다른 페이지에서 링크돼 있으면(`/guide`·`/signup`은 랜딩 본문에서 링크된다) 본문 없는 항목으로 색인될 수 있다. robots로 막을 것은 색인 의도가 없는 백엔드 API 크롤뿐이다. `$`·`*` 와일드카드에도 의존하지 않는다(네이버 지원 여부가 불확실).
-- `frontend/public/sitemap.xml`: `<loc>https://easydoc.kr/</loc>` 하나. `lastmod`는 빌드 시 프리렌더 스크립트가 날짜로 채운다(정적 파일에 손으로 박지 않는다).
+- `sitemap.xml`은 `public/`에 두지 않는다 — 프리렌더 스크립트가 빌드 때 `dist/sitemap.xml`로 직접 쓴다. 내용은 `<loc>https://easydoc.kr/</loc>` 하나이고 `lastmod`는 빌드 날짜다(정적 파일에 손으로 박지 않는다).
 
 ### 3.3 메타·구조화 데이터는 한 출처에서
 
@@ -72,7 +72,7 @@
 |---|---|---|---|
 | A | **프리렌더 스파이크 → 구현.** `frontend/src/prerender/landing-entry.tsx`(`StaticRouter` + `LandingPage` → `renderToStaticMarkup`), `frontend/scripts/prerender-landing.mjs`(템플릿 읽기 → `#root` 안에 주입, `noindex` 제거, canonical·`index,follow`·description·JSON-LD 주입, `sitemap.xml`의 `lastmod` 채우기, `<h1>`과 `SERVICE_DEFINITION`이 결과에 없으면 **빌드 실패**). `package.json` `build`에 `vite build --ssr ... --outDir dist-ssr` + 스크립트 실행 추가(`dist-ssr`은 이미 `.gitignore`). 주입 함수는 순수 함수로 분리해 Vitest로 고정한다(TDD: 템플릿·마크업 → 결과 HTML에 canonical 1개, noindex 0개, description = `SERVICE_DEFINITION`). | `frontend/src/prerender/**`, `frontend/scripts/**`, `frontend/package.json`, `frontend/vite.config.ts`(필요 시) | — |
 | B | **셸 메타 정리.** `frontend/index.html`에 `noindex` 메타 추가, canonical 제거, `og:image`를 `/og/landing.png` 1200×630으로, `twitter:card`를 `summary_large_image`로. 소유 확인 메타는 사용자가 토큰을 주면 같은 조각에서 추가. | `frontend/index.html` | — |
-| C | **robots·sitemap.** `frontend/public/robots.txt`, `frontend/public/sitemap.xml`(템플릿, `lastmod` 자리). | `frontend/public/**` | — |
+| C | **robots·sitemap.** `frontend/public/robots.txt`. `sitemap.xml`은 `public/`에 두지 않고 조각 A의 스크립트가 `dist/sitemap.xml`로 쓴다. | `frontend/public/**` | — |
 | D | **nginx.** `location = /`를 `try_files /landing.html =404`로. `robots.txt`·`sitemap.xml`은 정적 파일로 그대로 서빙되는지 확인. | `frontend/nginx.conf` | A |
 | E | **OG 이미지.** designer가 1200×630 PNG 제작·커밋. | `frontend/public/og/landing.png` | — |
 | F | **e2e 1건.** Playwright `request.get('/')` 본문에 `<h1`·`SERVICE_DEFINITION`·`rel="canonical"`이 있고 `noindex`가 없음, `request.get('/guide')` 본문에 `noindex`가 있고 canonical이 없음. e2e가 nginx 컨테이너를 통하는 구성(`compose.e2e.yml`)에서만 의미가 있으므로 `playwright.config.ts`의 `FRONTEND_ORIGIN`이 nginx를 가리키는지 먼저 확인하고, Vite dev 서버를 쓰는 구성이면 이 조각을 compose 기반 수동 검증(§5)으로 대체하고 그 사실을 PR에 적는다. | `frontend/e2e/seo.spec.ts` | A, D |
@@ -123,3 +123,4 @@
 - 로그인 사용자용 `/` 랜딩 플래시 억제.
 - `/guide`·`/terms`·`/privacy` 노출이 필요해지면 조각 A의 엔트리에 라우트를 추가하는 방식으로 확장(스크립트는 라우트 목록을 받도록 설계).
 - 검색 유입 측정(서치콘솔 실적 리포트로 시작, 별도 분석 도구는 필요 시).
+- sitemap `lastmod`가 빌드 날짜라 랜딩 내용이 그대로여도 재배포마다 바뀐다 — 크롤러에 잘못된 변경 신호가 되면 랜딩 소스의 커밋 날짜로 바꾼다.
