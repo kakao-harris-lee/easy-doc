@@ -19,6 +19,7 @@ import java.util.UUID
 
 class BillingNotificationSchedulerTest {
     private lateinit var jdbc: JdbcClient
+    private lateinit var transaction: org.springframework.transaction.support.TransactionTemplate
     private val workspace = UUID.randomUUID()
     private val owner = UUID.randomUUID()
     private val accounts = Mockito.mock(CreditAccountRepository::class.java)
@@ -33,7 +34,13 @@ class BillingNotificationSchedulerTest {
             .dataSource(db.jdbcUrl, db.username, db.password)
             .load()
             .migrate()
-        jdbc = JdbcClient.create(DriverManagerDataSource(db.jdbcUrl, db.username, db.password))
+        val source = DriverManagerDataSource(db.jdbcUrl, db.username, db.password)
+        jdbc = JdbcClient.create(source)
+        transaction =
+            org.springframework.transaction.support.TransactionTemplate(
+                org.springframework.jdbc.datasource
+                    .DataSourceTransactionManager(source),
+            )
         jdbc
             .sql("INSERT INTO users(id,email,password_hash) VALUES(:id,:email,'test')")
             .param("id", owner)
@@ -122,6 +129,240 @@ class BillingNotificationSchedulerTest {
                 .single(),
         ).isEqualTo("toss_test")
     }
+
+    @Test
+    fun `administrator must confirm non delivery before uncertain retry and UUID replay cannot queue twice`() {
+        enqueue("review", "toss_test")
+        scheduler("toss_test", fail = true).run()
+        val id =
+            jdbc
+                .sql(
+                    "SELECT id FROM billing_notifications WHERE event_key='review'",
+                ).query(Long::class.java)
+                .single()
+        val query =
+            kr.easydoc.infrastructure.admin.JdbcAdminOperationsQuery(
+                jdbc,
+                PaymentProperties(provider = "toss_test"),
+            )
+        val revision =
+            jdbc
+                .sql(
+                    "SELECT revision FROM billing_notifications WHERE id=:id",
+                ).param("id", id)
+                .query(Long::class.java)
+                .single()
+        val retry =
+            kr.easydoc.application.admin
+                .AdminNotificationCommand(UUID.randomUUID(), revision, "미전달 확인", null)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { notificationAction(query, id, retry, true) }
+            .isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        val resolve = retry.copy(operationId = UUID.randomUUID(), resolution = "not_delivered")
+        val resolved = notificationAction(query, id, resolve, false)
+        val accepted = retry.copy(expectedRevision = resolved["revision"] as Long)
+        notificationAction(query, id, accepted, true)
+        scheduler("toss_test").run()
+        val replay = notificationAction(query, id, accepted, true)
+        assertThat(replay["state"]).isEqualTo("sent")
+        assertThat(replay["recipient_email"]).isEqualTo("$owner@example.test")
+        assertThat(replay["failure_code"]).isNull()
+        assertThat(
+            jdbc
+                .sql("SELECT count(*) FROM billing_notification_attempts WHERE notification_id=:id")
+                .param("id", id)
+                .query(Long::class.java)
+                .single(),
+        ).isEqualTo(2)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                notificationAction(query, id, accepted.copy(reason = "다른 내용"), true)
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+    }
+
+    @Test
+    fun `operations count tasks and notification environment guard blocks retry`() {
+        enqueue("failed-live", "toss_live")
+        enqueue("failed-unknown", null)
+        jdbc.sql("UPDATE billing_notifications SET state='failed'").update()
+        val query =
+            kr.easydoc.infrastructure.admin.JdbcAdminOperationsQuery(
+                jdbc,
+                PaymentProperties(provider = "toss_test"),
+            )
+        val page = query.operations(mapOf("kind" to "notification"), 1, 1)
+        assertThat(page["total"]).isEqualTo(2L)
+        assertThat(page["counts"]).isEqualTo(mapOf("notification" to 2L))
+        assertThat(page["items"] as List<*>).hasSize(1)
+        assertThat(query.operations(mapOf("kind" to "notification", "environment" to "unknown"), 1, 20)["total"])
+            .isEqualTo(1L)
+        assertThat(query.operations(mapOf("kind" to "notification", "state" to "sent"), 1, 20)["total"])
+            .isEqualTo(0L)
+        val second = query.operations(mapOf("kind" to "notification"), 2, 1)["items"] as List<*>
+        assertThat(second).hasSize(1).doesNotContain((page["items"] as List<*>).single())
+        val id =
+            jdbc
+                .sql(
+                    "SELECT id FROM billing_notifications WHERE event_key='failed-live'",
+                ).query(Long::class.java)
+                .single()
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                query.notificationAction(
+                    id,
+                    owner,
+                    kr.easydoc.application.admin
+                        .AdminNotificationCommand(UUID.randomUUID(), 0, "재발송", null),
+                    true,
+                )
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        assertThat(query.billingState(workspace)["audit"]).isEqualTo(emptyList<Any>())
+        assertThat(query.errors(emptyMap(), 1, 20)["total"]).isEqualTo(0L)
+    }
+
+    @Test
+    fun `concurrent retry with one UUID queues exactly once and stale revision rejects another operator`() {
+        enqueue("concurrent", "toss_test")
+        jdbc.sql("UPDATE billing_notifications SET state='failed'").update()
+        val id =
+            jdbc
+                .sql(
+                    "SELECT id FROM billing_notifications WHERE event_key='concurrent'",
+                ).query(Long::class.java)
+                .single()
+        val query =
+            kr.easydoc.infrastructure.admin.JdbcAdminOperationsQuery(
+                jdbc,
+                PaymentProperties(provider = "toss_test"),
+            )
+        val command =
+            kr.easydoc.application.admin
+                .AdminNotificationCommand(UUID.randomUUID(), 0, "확정 실패 재발송", null)
+        val start = java.util.concurrent.CountDownLatch(1)
+        val executor =
+            java.util.concurrent.Executors
+                .newFixedThreadPool(2)
+        try {
+            val tasks =
+                (1..2).map {
+                    executor.submit<Map<String, Any?>> {
+                        start.await()
+                        notificationAction(query, id, command, true)
+                    }
+                }
+            start.countDown()
+            tasks.forEach {
+                assertThat(
+                    it.get(10, java.util.concurrent.TimeUnit.SECONDS)["state"],
+                ).isEqualTo("pending")
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+        assertThat(
+            jdbc
+                .sql("SELECT count(*) FROM admin_notification_actions WHERE notification_id=:id")
+                .param("id", id)
+                .query(Long::class.java)
+                .single(),
+        ).isEqualTo(1)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                notificationAction(query, id, command.copy(operationId = UUID.randomUUID()), true)
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        scheduler("toss_test").run()
+        assertThat(messages).hasSize(1)
+        val attempts =
+            jdbc
+                .sql("SELECT state FROM billing_notification_attempts WHERE notification_id=:id")
+                .param("id", id)
+                .query(String::class.java)
+                .list()
+        assertThat(attempts).containsExactly("sent")
+    }
+
+    @Test
+    fun `worker crash retains claimed attempt and restart quarantines without sending again`() {
+        enqueue("crash", "toss_test")
+        val crashing =
+            BillingNotificationScheduler(
+                jdbc,
+                accounts,
+                users,
+                object : MailSender {
+                    override fun send(message: OutboundMail): MailDelivery =
+                        throw AssertionError("simulated termination after claim")
+                },
+                PaymentProperties(provider = "toss_test"),
+            )
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy { crashing.run() }
+            .isInstanceOf(AssertionError::class.java)
+        assertThat(state("crash")).isEqualTo("sending")
+        assertThat(jdbc.sql("SELECT state FROM billing_notification_attempts").query(String::class.java).single())
+            .isEqualTo("sending")
+        jdbc
+            .sql(
+                "UPDATE billing_notifications SET attempted_at=now()-interval '11 minutes' WHERE event_key='crash'",
+            ).update()
+        scheduler("toss_test").run()
+        assertThat(state("crash")).isEqualTo("manual_review")
+        assertThat(messages).isEmpty()
+        assertThat(jdbc.sql("SELECT state FROM billing_notification_attempts").query(String::class.java).single())
+            .isEqualTo("manual_review")
+        assertThat(
+            jdbc.sql("SELECT failure_code FROM billing_notification_attempts").query(String::class.java).single(),
+        ).isEqualTo("uncertain")
+    }
+
+    @Test
+    fun `late SMTP completion racing expiry preserves quarantined attempt without another send`() {
+        enqueue("late", "toss_test")
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val slow =
+            BillingNotificationScheduler(
+                jdbc,
+                accounts,
+                users,
+                object : MailSender {
+                    override fun send(message: OutboundMail): MailDelivery {
+                        entered.countDown()
+                        check(release.await(10, java.util.concurrent.TimeUnit.SECONDS))
+                        return MailDelivery.Sent()
+                    }
+                },
+                PaymentProperties(provider = "toss_test"),
+            )
+        val executor =
+            java.util.concurrent.Executors
+                .newSingleThreadExecutor()
+        try {
+            val sending = executor.submit { slow.run() }
+            check(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            jdbc
+                .sql(
+                    "UPDATE billing_notifications SET attempted_at=now()-interval '11 minutes' WHERE event_key='late'",
+                ).update()
+            scheduler("toss_test").run()
+            release.countDown()
+            sending.get(10, java.util.concurrent.TimeUnit.SECONDS)
+            assertThat(state("late")).isEqualTo("manual_review")
+            assertThat(jdbc.sql("SELECT state FROM billing_notification_attempts").query(String::class.java).single())
+                .isEqualTo("manual_review")
+            assertThat(messages).isEmpty()
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    private fun notificationAction(
+        query: kr.easydoc.infrastructure.admin.JdbcAdminOperationsQuery,
+        id: Long,
+        command: kr.easydoc.application.admin.AdminNotificationCommand,
+        retry: Boolean,
+    ): Map<String, Any?> = checkNotNull(transaction.execute { query.notificationAction(id, owner, command, retry) })
 
     private fun scheduler(
         environment: String,

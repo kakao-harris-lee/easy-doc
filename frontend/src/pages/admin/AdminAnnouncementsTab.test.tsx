@@ -49,6 +49,8 @@ describe('AdminAnnouncementsTab — 공지 (어드민 최소, 계약 2.25.0)', (
     await waitFor(() => expect(vi.mocked(listAdminAnnouncements)).toHaveBeenCalled())
 
     await user.type(screen.getByLabelText('공지 내용'), '새 공지입니다.')
+    expect(vi.mocked(createAdminAnnouncement)).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('checkbox'))
     await user.click(screen.getByRole('button', { name: '공지 만들기' }))
 
     expect(await screen.findByText('새 공지입니다.')).toBeInTheDocument()
@@ -100,6 +102,7 @@ describe('AdminAnnouncementsTab — 공지 (어드민 최소, 계약 2.25.0)', (
     const textarea = textareas[textareas.length - 1] as HTMLTextAreaElement
     await user.clear(textarea)
     await user.type(textarea, '고친 내용')
+    await user.click(screen.getByLabelText('미리보기를 확인했으며 게시에 동의합니다.'))
     await user.click(screen.getByRole('button', { name: '저장' }))
 
     expect(vi.mocked(updateAdminAnnouncement)).toHaveBeenCalledWith('a1', { body: '고친 내용' })

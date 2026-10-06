@@ -3,6 +3,7 @@ package kr.easydoc.api.admin
 import com.fasterxml.jackson.annotation.JsonProperty
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
+import jakarta.validation.constraints.Pattern
 import kr.easydoc.application.admin.AdminFeedbackItem
 import kr.easydoc.application.admin.AdminFeedbackQuery
 import kr.easydoc.core.privacy.CONTENT_MASK
@@ -21,12 +22,36 @@ import java.util.UUID
 @Profile("!migrate")
 @RequestMapping("/admin/feedback")
 class AdminFeedbackController(private val query: AdminFeedbackQuery) {
+    @Suppress("LongParameterList", "ComplexCondition") // Independent optional HTTP filters.
     @GetMapping
     fun list(
         @RequestParam(name = "page", defaultValue = "1") @Min(1) @Max(100000) page: Int,
         @RequestParam(name = "size", defaultValue = "20") @Min(1) @Max(100) size: Int,
+        @RequestParam(name = "publish_intent", required = false)
+        @Pattern(regexp = "as_is|with_edits|not_usable") publishIntent: String? = null,
+        @RequestParam(name = "max_quality_score", required = false) @Min(1) @Max(5) maxQualityScore: Int? = null,
+        @RequestParam(required = false) from: Instant? = null,
+        @RequestParam(required = false) to: Instant? = null,
     ): ResponseEntity<AdminFeedbackListResponse> {
-        val result = query.list(page, size)
+        if (from != null && to != null &&
+            from >= to
+        ) {
+            throw kr.easydoc.core.exceptions
+                .InvalidInputException("조회 기간을 확인하세요")
+        }
+        val result =
+            if (publishIntent == null && maxQualityScore == null && from == null &&
+                to == null
+            ) {
+                query.list(page, size)
+            } else {
+                query.filteredList(
+                    page,
+                    size,
+                    kr.easydoc.application.admin
+                        .AdminFeedbackFilters(publishIntent, maxQualityScore, from, to),
+                )
+            }
         return adminResponse(HttpStatus.OK).body(
             AdminFeedbackListResponse(result.items.map(AdminFeedbackResponse::of), page, size, result.total),
         )

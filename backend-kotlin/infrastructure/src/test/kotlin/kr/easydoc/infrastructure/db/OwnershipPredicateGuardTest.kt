@@ -455,6 +455,7 @@ class OwnershipPredicateGuardTest {
                 // Administrator-only billing operations and their durable worker replay; no user-facing raw store.
                 "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders]",
+                "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | INSERT [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
@@ -465,6 +466,11 @@ class OwnershipPredicateGuardTest {
                 "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
                 // 관리자 결제 시도 조회도 확인한 작업공간 소유자로 SQL 범위를 고정한다.
                 "$ADMIN/JdbcAdminMonthlyReportRepository.kt | WITH [toss_billing_orders]",
+                // Admin operations metadata only: protected by admin endpoints and no body projection.
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
                 // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) —
                 // `conversion_feedback`(V2)은 FK가 없어 CASCADE가 닿지 않아 사용자 삭제
                 // 전에 이 DELETE로 명시로 지운다. 소유 술어(`d.user_id = :userId`)는
@@ -713,6 +719,7 @@ class OwnershipPredicateGuardTest {
                 // Administrator-only billing operations and their durable worker replay; no user-facing raw store.
                 "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders]",
+                "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | INSERT [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
@@ -721,6 +728,11 @@ class OwnershipPredicateGuardTest {
                 // 관리자 전용 의견 목록과 전체 건수. AdminReachTest가 권한 경계를 검증한다.
                 "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
                 "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
+                // Admin operations metadata only: protected by admin endpoints and no body projection.
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminOperationsQuery.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
                 // 미검증 계정 파기 배치(2026-09-07) — 같은 사유. 후보 선택 SELECT 와 건너뛴
                 // 건수 카운트 SELECT 둘 다 `documents.user_id` 를 `users.id` 와 비교할 뿐
                 // `:ownerId` 매개변수를 받지 않는다(위 KDoc).
@@ -907,6 +919,8 @@ class OwnershipPredicateGuardTest {
         // 79 -> 90: four admin-only audited billing statements and seven additions to the existing
         // locked billing repository boundary (two joined reads, three retry operations, two worker/webhook scans).
         // TossReachTest covers non-owner 404, non-admin 403, refund replay and durable recovery.
-        const val MAX_UNGUARDED_STATEMENTS = 90
+        // 90 -> 95: admin operations queue, billing revision/state, and two error-page metadata reads.
+        // AdminMonthlyReachTest verifies admin authorization; audit and error payloads exclude source content.
+        const val MAX_UNGUARDED_STATEMENTS = 95
     }
 }

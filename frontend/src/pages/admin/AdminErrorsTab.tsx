@@ -1,8 +1,11 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 
 import { ApiError } from '../../api/client'
-import { readAdminErrors } from '../../api/admin'
+import { listAdminErrorEvents, readAdminErrors } from '../../api/admin'
 import type { AdminErrorsResponse } from '../../api/types'
+
+import { useAdminQuery, adminPageNumber, adminDate } from './useAdminQuery'
+import { Button } from '../../components/ui/Button'
 
 const LOAD_ERROR_MESSAGE = '오류 집계를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
 
@@ -26,9 +29,13 @@ function formatCount(value: number): string {
 
 /** 「오류」 탭 — 기간별 코드 집계 + 최근 목록 (어드민 최소, 계약 2.25.0). 본문·프롬프트 없음. */
 export function AdminErrorsTab() {
-  const [mode, setMode] = useState<PeriodMode>('this-month')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+  const [query, updateQuery] = useAdminQuery()
+  const mode: PeriodMode = query.get('errors_period') === 'custom' ? 'custom' : 'this-month'
+  const customFrom = adminDate(query.get('errors_from')) ?? ''
+  const customTo = adminDate(query.get('errors_to')) ?? ''
+  const setMode = (value: PeriodMode) => updateQuery({ errors_period: value, errors_page: '1' })
+  const setCustomFrom = (value: string) => updateQuery({ errors_from: value, errors_page: '1' })
+  const setCustomTo = (value: string) => updateQuery({ errors_to: value, errors_page: '1' })
   const [data, setData] = useState<AdminErrorsResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -208,38 +215,115 @@ export function AdminErrorsTab() {
             </table>
           </div>
 
-          <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
-            {/* 본문·프롬프트는 계약이 애초에 실어 보내지 않는다(x-admin-only 노트). */}
-            <table className="usage-table">
-              <caption>최근 실패 50건입니다. 본문·프롬프트는 담지 않습니다.</caption>
-              <thead>
-                <tr>
-                  <th scope="col">워크스페이스</th>
-                  <th scope="col">실패 사유</th>
-                  <th scope="col">일시</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="text-muted-foreground">
-                      이 기간에 실패한 변환이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  data.recent.map((item) => (
-                    <tr key={item.id}>
-                      <th scope="row">{item.workspace_id}</th>
-                      <td>{item.failure_code}</td>
-                      <td>{new Date(item.created_at).toLocaleString('ko-KR')}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+          <ErrorEvents
+            key={`${periodKey}:${query.get('errors_code')}:${query.get('errors_page')}`}
+            period={period ?? {}}
+          />
         </>
       )}
     </div>
+  )
+}
+
+function ErrorEvents({ period }: { period: { from?: string; to?: string } }) {
+  const [query, update] = useAdminQuery()
+  const page = adminPageNumber(query.get('errors_page'))
+  const code = query.get('errors_code') || undefined
+  const [data, setData] = useState<Awaited<ReturnType<typeof listAdminErrorEvents>> | null>(null)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState('')
+  useEffect(() => {
+    const controller = new AbortController()
+    listAdminErrorEvents(
+      {
+        from: period.from ? `${period.from}T00:00:00+09:00` : undefined,
+        to: period.to
+          ? new Date(Date.parse(`${period.to}T00:00:00+09:00`) + 86400000).toISOString()
+          : undefined,
+        page,
+        failure_code: code,
+      },
+      controller.signal,
+    )
+      .then((result) => {
+        if (!controller.signal.aborted) setData(result)
+      })
+      .catch((e: unknown) => {
+        if (!controller.signal.aborted)
+          setError(e instanceof Error ? e.message : '오류 목록 조회 실패')
+      })
+    return () => controller.abort()
+  }, [period, page, code])
+  return (
+    <section aria-label="변환 오류 상세" className="space-y-3">
+      <label>
+        오류 코드
+        <input
+          defaultValue={code ?? ''}
+          onBlur={(e) => update({ errors_code: e.target.value, errors_page: '1' })}
+        />
+      </label>
+      {error && <p role="alert">{error}</p>}
+      {copied && <p role="status">{copied}</p>}
+      <table className="usage-table">
+        <caption>변환 오류 목록입니다. 본문·프롬프트는 담지 않습니다.</caption>
+        <thead>
+          <tr>
+            <th>작업공간</th>
+            <th>변환 ID</th>
+            <th>오류 코드</th>
+            <th>일시</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data?.items.map((item) => (
+            <tr key={item.conversion_id}>
+              <td>
+                <a
+                  className="text-primary underline"
+                  href={`/admin?tab=workspaces&workspace=${encodeURIComponent(item.workspace_id)}`}
+                >
+                  {item.workspace_id}
+                </a>
+              </td>
+              <td>
+                {item.conversion_id}
+                <Button
+                  aria-label={`변환 ID 복사 ${item.conversion_id}`}
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(item.conversion_id)
+                      .then(() => setCopied('변환 ID를 복사했습니다.'))
+                      .catch(() =>
+                        setCopied('복사하지 못했습니다. 표시된 ID를 직접 선택해 주세요.'),
+                      )
+                  }}
+                >
+                  복사
+                </Button>
+              </td>
+              <td>{item.failure_code}</td>
+              <td>{new Date(item.created_at).toLocaleString('ko-KR')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {data && (
+        <nav aria-label="오류 페이지" className="flex gap-3">
+          <Button disabled={page <= 1} onClick={() => update({ errors_page: String(page - 1) })}>
+            이전
+          </Button>
+          <span>
+            {page}쪽 · {data.total}건
+          </span>
+          <Button
+            disabled={page * data.size >= data.total}
+            onClick={() => update({ errors_page: String(page + 1) })}
+          >
+            다음
+          </Button>
+        </nav>
+      )}
+    </section>
   )
 }

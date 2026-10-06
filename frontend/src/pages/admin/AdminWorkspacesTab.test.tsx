@@ -2,7 +2,12 @@ import { act, render, screen, waitFor, within, fireEvent } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as admin from '../../api/admin'
-import { getAdminBilling, getSubscription, refundTossPayment } from '../../api/subscriptions'
+import {
+  getAdminBilling,
+  getAdminBillingRequest,
+  getSubscription,
+  refundTossPayment,
+} from '../../api/subscriptions'
 import { ApiError } from '../../api/client'
 import type { AdminMonthlySummary } from '../../api/adminMonthlyTypes'
 import {
@@ -24,6 +29,7 @@ vi.mock('../../api/admin', () => ({
 }))
 vi.mock('../../api/subscriptions', () => ({
   getAdminBilling: vi.fn(),
+  getAdminBillingRequest: vi.fn(),
   adminBillingAction: vi.fn(),
   getSubscription: vi.fn(),
   refundTossPayment: vi.fn(),
@@ -84,7 +90,7 @@ function monthly(month = currentMonth()): AdminMonthlySummary {
 const page = { items: [], page: 1, size: 20, total: 0 }
 beforeEach(() => {
   vi.resetAllMocks()
-  vi.mocked(getAdminBilling).mockResolvedValue({ orders: [], operations: [] })
+  vi.mocked(getAdminBilling).mockResolvedValue({ revision: 3, orders: [], operations: [] })
   sessionStorage.clear()
   window.history.replaceState({}, '', '/admin')
   vi.mocked(admin.listAdminWorkspaces).mockResolvedValue(
@@ -128,6 +134,33 @@ async function open() {
   return user
 }
 describe('월별 관리자 작업공간', () => {
+  it('결산 장애 중에도 결제 운영과 현재 구독을 확인할 수 있다', async () => {
+    vi.mocked(admin.readAdminMonthlySummary).mockRejectedValue(new Error('report unavailable'))
+    const user = userEvent.setup()
+    render(<AdminWorkspacesTab />)
+    await user.click(await screen.findByRole('button', { name: /의 .* 관리/ }))
+    expect(await screen.findByRole('region', { name: '결제 운영 관리' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '상태 새로고침' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '결산 다시 조회' })).toBeInTheDocument()
+    expect(getSubscription).toHaveBeenCalled()
+  })
+  it('직접 링크와 뒤로 가기로 작업공간 월과 쪽을 복원한다', async () => {
+    window.history.replaceState({}, '', '/admin?month=2026-09&workspace=w1&workspace_page=2')
+    render(<AdminWorkspacesTab />)
+    await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
+    expect(screen.getByLabelText('조회 월')).toHaveValue('2026-09')
+    expect(admin.listAdminWorkspaces).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 2 }),
+      expect.anything(),
+    )
+    act(() => {
+      window.history.replaceState({}, '', '/admin?month=2026-10&workspace_page=1')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    expect(screen.getByLabelText('조회 월')).toHaveValue('2026-10')
+    expect(screen.queryByRole('form', { name: '크레딧 부여 및 조정' })).not.toBeInTheDocument()
+  })
+
   it('현재 가용과 선택 월 사용을 구분해 표시하고 월·검색·선택을 URL에 유지한다', async () => {
     const user = await open()
     expect(screen.getByRole('columnheader', { name: '가용/사용 크레딧' })).toBeInTheDocument()
@@ -319,7 +352,8 @@ describe('월별 관리자 작업공간', () => {
       vi.mocked(admin.adjustAdminWorkspaceCredits).mock.calls[1]?.[1],
     )
   })
-  it('오래된 계정 상태 충돌은 다시 조회하고 확인을 다시 받는다', async () => {
+  it('요청 없음이 확인된 계정 상태 충돌은 다시 조회하고 확인을 다시 받는다', async () => {
+    vi.mocked(getAdminBillingRequest).mockRejectedValue(new ApiError(404, 'not found'))
     vi.mocked(admin.adjustAdminWorkspaceCredits).mockRejectedValue(
       new ApiError(409, '계정 상태가 바뀌었습니다'),
     )
@@ -467,38 +501,24 @@ describe('월별 관리자 작업공간', () => {
     expect(vi.mocked(admin.listAdminWorkspaces).mock.calls[0]?.[0]?.month).toBeUndefined()
     expect(screen.getByLabelText('조회 월')).toHaveValue(currentMonth('UTC'))
   })
-  it('목록에 실제 결제 금액과 한국 시간 결제일을 표시하고 테스트·미상 날짜는 제외한다', async () => {
+  it('목록 응답의 결제와 환불일을 표시하며 원장을 행마다 조회하지 않는다', async () => {
     window.history.replaceState({}, '', '/admin?month=2026-09')
-    const payment = {
-      id: 'paid',
-      payment_id: 'p1',
-      kind: 'payment' as const,
-      amount_krw: 5000,
-      is_test: false,
-      occurred_at: '2026-08-31T15:30:00Z',
-      original_created_at: '2026-08-30T00:00:00Z',
-      plan_id: 'start',
-      status: 'paid',
-      credit_transaction_id: null,
-      original_amount_krw: 5000,
-      refunded_amount_krw: 0,
-      provider: 'toss',
-    }
-    vi.mocked(admin.listAdminPayments).mockResolvedValue({
-      items: [
-        payment,
-        { ...payment, id: 'test', is_test: true, amount_krw: 9999 },
-        { ...payment, id: 'unknown', occurred_at: null, amount_krw: 7777 },
+    const response = adminWorkspaceListResponse()
+    response.items[0]!.selected_month = {
+      month: '2026-09',
+      credits: 0,
+      paid_krw: 5000,
+      refunded_krw: 1000,
+      recent_events: [
+        { id: 'paid', kind: 'payment', amount_krw: 5000, occurred_at: '2026-08-31T15:30:00Z' },
+        { id: 'refund', kind: 'refund', amount_krw: 1000, occurred_at: '2026-09-02T15:30:00Z' },
       ],
-      page: 1,
-      size: 100,
-      total: 3,
-    })
+    }
+    vi.mocked(admin.listAdminWorkspaces).mockResolvedValue(response)
     render(<AdminWorkspacesTab />)
-    expect(await screen.findByText('5,000원 (2026-09-01)')).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: '결제액(결제일)/환불액' })).toBeInTheDocument()
-    expect(screen.queryByText(/9,999원/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/7,777원/)).not.toBeInTheDocument()
+    expect(await screen.findByText('결제 5,000원 (2026-09-01)')).toBeInTheDocument()
+    expect(screen.getByText('환불 1,000원 (2026-09-03)')).toBeInTheDocument()
+    expect(admin.listAdminPayments).not.toHaveBeenCalled()
   })
   it('운영 시작 월보다 이전인 URL과 직접 입력을 허용하지 않는다', async () => {
     window.history.replaceState({}, '', '/admin?month=2026-08')

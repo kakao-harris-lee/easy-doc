@@ -1,4 +1,6 @@
 import { requestJson, requestVoid } from './client'
+import type { AdminBillingRequest, AdminBillingView, BillingOperation } from './adminBillingTypes'
+export type { AdminBillingRequest, AdminBillingView, BillingOperation } from './adminBillingTypes'
 
 /** 현재 판매하는 유일한 월 구독 플랜. */
 export type TestSubscriptionPlanId = 'start'
@@ -108,50 +110,29 @@ export function completeTossBilling(
 export function getTossReceipt(workspace: string, id: string) {
   return requestJson<{ receipt_url: string }>(`/workspaces/${workspace}/payments/${id}/receipt`)
 }
-export interface BillingOperation {
-  operation_id: string
-  workspace_id: string
-  payment_id: string
-  amount: number
-  recovery_credits: number
-  stop_renewal: boolean
-  reason: string
-  status: 'pending' | 'completed' | 'failed'
-  created_at: string
-  updated_at: string
-}
-export interface AdminBillingView {
-  actions?: Array<{
-    operation_id: string
-    action: string
-    status: string
-    reason: string
-    created_at: string
-    updated_at: string
-  }>
-  orders: Array<{
-    id: string
-    kind: string
-    status: string
-    amount: number
-    created_at: string
-    environment: string
-    needs_review: boolean
-  }>
-  operations: BillingOperation[]
-}
 export function getAdminBilling(workspace: string, signal?: AbortSignal) {
   return requestJson<AdminBillingView>(`/admin/workspaces/${workspace}/billing`, { signal })
+}
+export function getAdminBillingRequest(workspace: string, operation: string, signal?: AbortSignal) {
+  return requestJson<AdminBillingRequest>(
+    `/admin/workspaces/${workspace}/billing/requests/${operation}`,
+    { signal },
+  )
 }
 export function adminBillingAction(
   workspace: string,
   action: string,
   operation: string,
   reason: string,
+  expectedRevision?: number,
 ) {
   return requestVoid(`/admin/workspaces/${workspace}/billing/${action}`, {
     method: 'POST',
-    body: { operation_id: operation, reason },
+    body: {
+      operation_id: operation,
+      reason,
+      ...(expectedRevision === undefined ? {} : { expected_revision: expectedRevision }),
+    },
   })
 }
 export function refundTossPayment(

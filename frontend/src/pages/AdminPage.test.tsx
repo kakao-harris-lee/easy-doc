@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  listAdminOperations,
+  listAdminNotifications,
+  listAdminErrorEvents,
   listAdminFeedback,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
@@ -13,6 +16,9 @@ import { adminWorkspaceListResponse } from '../test/factories'
 import { AdminPage } from './AdminPage'
 
 vi.mock('../api/admin', () => ({
+  listAdminOperations: vi.fn(),
+  listAdminNotifications: vi.fn(),
+  listAdminErrorEvents: vi.fn(),
   listAdminFeedback: vi.fn(),
   listAdminWorkspaces: vi.fn(),
   readAdminWorkspace: vi.fn(),
@@ -26,6 +32,16 @@ vi.mock('../api/admin', () => ({
 }))
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/admin')
+  vi.mocked(listAdminNotifications).mockResolvedValue({ items: [], total: 0, page: 1, size: 20 })
+  vi.mocked(listAdminOperations).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 20,
+    counts: {},
+  })
+  vi.mocked(listAdminErrorEvents).mockResolvedValue({ items: [], total: 0, page: 1, size: 20 })
   vi.mocked(listAdminFeedback).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
   vi.mocked(listAdminWorkspaces).mockResolvedValue(adminWorkspaceListResponse())
   vi.mocked(listAdminInvoiceRequests).mockResolvedValue({
@@ -43,11 +59,13 @@ afterEach(() => {
 })
 
 describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
-  it('탭 5개를 role=tablist로 보여주고 첫 탭(워크스페이스)이 선택돼 있다', async () => {
+  it('관리 탭을 role=tablist로 보여주고 첫 탭(처리할 일)이 선택돼 있다', async () => {
     render(<AdminPage />)
 
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual([
+      '처리할 일',
+      '메일',
       '워크스페이스',
       '사용자 의견',
       '세금계산서',
@@ -77,7 +95,7 @@ describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
 
     await user.keyboard('{ArrowRight}')
 
-    const invoicesTab = screen.getByRole('tab', { name: '사용자 의견' })
+    const invoicesTab = screen.getByRole('tab', { name: '메일' })
     expect(invoicesTab).toHaveFocus()
     expect(invoicesTab).toHaveAttribute('aria-selected', 'true')
   })
@@ -101,6 +119,7 @@ describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
     render(<AdminPage />)
     await screen.findAllByRole('tab')
 
+    await user.click(screen.getByRole('tab', { name: '워크스페이스' }))
     const search = screen.getByLabelText('이름·소유자 이메일 검색')
     await user.type(search, '복지')
     expect(search).toHaveValue('복지')

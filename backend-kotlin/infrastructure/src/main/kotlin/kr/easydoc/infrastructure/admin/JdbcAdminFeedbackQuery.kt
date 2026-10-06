@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.admin
 
+import kr.easydoc.application.admin.AdminFeedbackFilters
 import kr.easydoc.application.admin.AdminFeedbackItem
 import kr.easydoc.application.admin.AdminFeedbackPage
 import kr.easydoc.application.admin.AdminFeedbackQuery
@@ -20,8 +21,34 @@ open class JdbcAdminFeedbackQuery(
     override fun list(
         page: Int,
         size: Int,
+    ): AdminFeedbackPage = filteredList(page, size, AdminFeedbackFilters())
+
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    @Suppress("LongMethod") // Decode encrypted comments in the same read snapshot as the page count.
+    override fun filteredList(
+        page: Int,
+        size: Int,
+        filters: AdminFeedbackFilters,
     ): AdminFeedbackPage {
-        val total = jdbc.sql("SELECT COUNT(*) FROM conversion_feedback").query(Long::class.java).single()
+        val where = """WHERE (:intent::text IS NULL OR f.publish_intent=:intent)
+            AND (:score::int IS NULL OR f.quality_score<=:score)
+            AND (:from::timestamptz IS NULL OR f.submitted_at>=:from)
+            AND (:to::timestamptz IS NULL OR f.submitted_at<:to)"""
+        val params =
+            mapOf(
+                "intent" to filters.publishIntent,
+                "score" to filters.maxQualityScore,
+                "from" to filters.from?.atOffset(java.time.ZoneOffset.UTC),
+                "to" to filters.to?.atOffset(java.time.ZoneOffset.UTC),
+            )
+
+        val total =
+            jdbc
+                .sql(
+                    "SELECT COUNT(*) FROM conversion_feedback f $where",
+                ).params(params)
+                .query(Long::class.java)
+                .single()
         val items =
             jdbc
                 .sql(
@@ -31,10 +58,12 @@ open class JdbcAdminFeedbackQuery(
                            f.encryption_scheme, f.key_version, f.submitted_at
                     FROM conversion_feedback f
                     LEFT JOIN users u ON u.id = f.user_id
+                    $where
                     ORDER BY f.submitted_at DESC, f.conversion_id DESC
                     LIMIT :size OFFSET :offset
                     """.trimIndent(),
-                ).param("size", size)
+                ).params(params)
+                .param("size", size)
                 .param("offset", (page - 1) * size)
                 .query { rs, _ ->
                     val id = rs.getObject("conversion_id", UUID::class.java)

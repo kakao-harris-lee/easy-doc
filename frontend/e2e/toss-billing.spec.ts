@@ -1,5 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { test, expect } from '@playwright/test'
+import type { AdminBillingRequest, AdminBillingView } from '../src/api/adminBillingTypes'
+import type { AdminWorkspaceListResponse, UserResponse } from '../src/api/types'
+import type { AdminOperationsResponse } from '../src/api/adminOperationsTypes'
 import {
   API_BASE_URL,
   newAccount,
@@ -146,15 +149,20 @@ test.describe('Toss test billing', () => {
     sql(
       `UPDATE users SET is_admin=true WHERE id=(SELECT user_id FROM workspaces WHERE id='${workspace}')`,
     )
+    const adminIdentity = await request.get(`${API_BASE_URL}/auth/me`, { headers })
+    expect(adminIdentity.status()).toBe(200)
+    const adminUser = (await adminIdentity.json()) as UserResponse
+    expect(adminUser.is_admin).toBe(true)
+    const refundRequests: string[] = []
+    const month = new Intl.DateTimeFormat('sv-SE', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+    }).format(new Date())
     // Refund both real test approvals; replay each operation to verify idempotency at the HTTP boundary.
     for (const payment of renewed.payments as Array<{ id: string }>) {
       const path = `${API_BASE_URL}/admin/workspaces/${workspace}/payments/${payment.id}/refund`
       for (const amount of [40_000, 59_000]) {
-        const month = new Intl.DateTimeFormat('sv-SE', {
-          timeZone: 'Asia/Seoul',
-          year: 'numeric',
-          month: '2-digit',
-        }).format(new Date())
         const accountResponse = await request.get(
           `${API_BASE_URL}/admin/workspaces/${workspace}/monthly-summary?month=${month}`,
           { headers },
@@ -171,6 +179,20 @@ test.describe('Toss test billing', () => {
         }
         expect((await request.post(path, { headers, data })).status()).toBe(200)
         expect((await request.post(path, { headers, data })).status()).toBe(200)
+        refundRequests.push(data.operation_id)
+        const recovered = await request.get(
+          `${API_BASE_URL}/admin/workspaces/${workspace}/billing/requests/${data.operation_id}`,
+          { headers },
+        )
+        expect(recovered.status()).toBe(200)
+        const operation = (await recovered.json()) as AdminBillingRequest
+        expect(operation).toMatchObject({
+          operation_id: data.operation_id,
+          kind: 'refund',
+          status: 'completed',
+        })
+        expect(Number.isFinite(Date.parse(operation.created_at))).toBe(true)
+        expect(Number.isFinite(Date.parse(operation.updated_at))).toBe(true)
       }
     }
     const refunded = await read()
@@ -180,9 +202,68 @@ test.describe('Toss test billing', () => {
           p.status === 'refunded' && p.refunded_amount === 99_000,
       ),
     ).toBe(true)
+    const billingResponse = await request.get(
+      `${API_BASE_URL}/admin/workspaces/${workspace}/billing`,
+      { headers },
+    )
+    expect(billingResponse.status()).toBe(200)
+    const billing = (await billingResponse.json()) as AdminBillingView
+    const refundAudit =
+      billing.audit?.filter((entry) => refundRequests.includes(entry.operation_id)) ?? []
+    expect(refundAudit).toHaveLength(4)
+    expect(new Set(refundAudit.map((entry) => entry.operation_id)).size).toBe(4)
+    for (const entry of refundAudit) {
+      expect(entry).toMatchObject({
+        actor_user_id: adminUser.id,
+        action: 'refund',
+        status: 'completed',
+        reason: '격리된 Toss 테스트 환불',
+      })
+      expect(renewed.payments.map((payment: { id: string }) => payment.id)).toContain(
+        entry.target_id,
+      )
+      expect(Number.isFinite(Date.parse(entry.created_at))).toBe(true)
+    }
+    expect(JSON.stringify(billing)).not.toMatch(
+      /"(?:billing_key|payment_key|customer_key|raw_response|provider_response|encrypted_key)"/,
+    )
+    const queueResponse = await request.get(
+      `${API_BASE_URL}/admin/operations?kind=refund&environment=toss_test&state=pending`,
+      { headers },
+    )
+    expect(queueResponse.status()).toBe(200)
+    const queue = (await queueResponse.json()) as AdminOperationsResponse
+    expect(queue.items).toEqual([])
+    expect(queue.total).toBe(0)
+    expect(Object.values(queue.counts).reduce((sum, count) => sum + count, 0)).toBe(0)
+    const listResponse = await request.get(
+      `${API_BASE_URL}/admin/workspaces?month=${month}&q=${encodeURIComponent(account.email)}`,
+      { headers },
+    )
+    expect(listResponse.status()).toBe(200)
+    const listing = (await listResponse.json()) as AdminWorkspaceListResponse
+    const listedWorkspace = listing.items.find((item) => item.workspace_id === workspace)
+    // The list's real-money summaries must never count Toss sandbox approvals or refunds.
+    expect(listedWorkspace?.selected_month).toMatchObject({
+      month,
+      paid_krw: 0,
+      refunded_krw: 0,
+      recent_events: [],
+    })
     await page.reload()
     await page.getByRole('button', { name: '구독 갱신 중단', exact: true }).click()
     await expect(page.getByText('현재 이용 기간이 끝나면 구독이 종료됩니다.')).toBeVisible()
     expect((await read()).billing_state).toBe('revoked')
+    await page.goto(`/admin?tab=workspaces&workspace=${workspace}&month=${month}`)
+    await expect(page.getByRole('region', { name: '결제 운영 관리' })).toBeVisible()
+    await expect(page.getByLabel('조회 월', { exact: true })).toHaveValue(month)
+    const refundDetails = page
+      .locator('details')
+      .filter({ has: page.getByText('환불 관리 작업 4건', { exact: true }) })
+    await refundDetails.locator('summary').click()
+    await expect(refundDetails.getByText(new RegExp(refundRequests[0]!))).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('region', { name: '결제 운영 관리' })).toBeVisible()
+    await expect(page.getByLabel('조회 월', { exact: true })).toHaveValue(month)
   })
 })

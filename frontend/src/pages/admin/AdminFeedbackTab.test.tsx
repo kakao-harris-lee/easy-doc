@@ -5,7 +5,10 @@ import { listAdminFeedback } from '../../api/admin'
 import { AdminFeedbackTab } from './AdminFeedbackTab'
 
 vi.mock('../../api/admin', () => ({ listAdminFeedback: vi.fn() }))
-beforeEach(() => vi.mocked(listAdminFeedback).mockReset())
+beforeEach(() => {
+  window.history.replaceState({}, '', '/admin')
+  vi.mocked(listAdminFeedback).mockReset()
+})
 
 it('의견 내용과 척도를 보여주고 다음 페이지를 조회한다', async () => {
   const user = userEvent.setup()
@@ -99,4 +102,47 @@ it('복호화 실패를 미작성 의견과 구분한다', async () => {
   render(<AdminFeedbackTab />)
   expect(await screen.findByText('저장된 의견을 읽을 수 없습니다.')).toBeInTheDocument()
   expect(screen.queryByText('자유 의견이 없거나 보존 기간이 끝났습니다.')).not.toBeInTheDocument()
+})
+
+it('filters all feedback on the server and restores query values', async () => {
+  window.history.replaceState(
+    {},
+    '',
+    '/admin?feedback_intent=not_usable&feedback_score=2&feedback_from=2026-10-01&feedback_to=2026-10-03',
+  )
+  vi.mocked(listAdminFeedback).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
+  render(<AdminFeedbackTab />)
+  await waitFor(() =>
+    expect(listAdminFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publish_intent: 'not_usable',
+        max_quality_score: 2,
+        from: '2026-10-01T00:00:00+09:00',
+        to: '2026-10-03T15:00:00.000Z',
+      }),
+      expect.any(AbortSignal),
+    ),
+  )
+  expect(screen.getByLabelText('사용 가능 여부')).toHaveValue('not_usable')
+})
+
+it('invalid direct-link dates and filters do not crash or reach date conversion', async () => {
+  window.history.replaceState(
+    {},
+    '',
+    '/admin?feedback_from=invalid&feedback_to=2026-02-31&feedback_score=bad&feedback_intent=bad',
+  )
+  vi.mocked(listAdminFeedback).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
+  render(<AdminFeedbackTab />)
+  await waitFor(() =>
+    expect(listAdminFeedback).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: undefined,
+        to: undefined,
+        max_quality_score: undefined,
+        publish_intent: undefined,
+      }),
+      expect.any(AbortSignal),
+    ),
+  )
 })

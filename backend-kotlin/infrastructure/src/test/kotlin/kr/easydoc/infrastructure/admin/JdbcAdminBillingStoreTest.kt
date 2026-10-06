@@ -166,6 +166,102 @@ class JdbcAdminBillingStoreTest {
     }
 
     @Test
+    @Suppress("LongMethod") // Replay, snapshot and cross-namespace checks share one durable request fixture.
+    fun `management revision rejects stale requests but accepted UUID replays and audit excludes raw snapshots`() {
+        val command = command()
+        val current =
+            JdbcAdminOperationsQuery(
+                jdbc,
+                kr.easydoc.infrastructure.subscription
+                    .PaymentProperties(),
+            ).billingState(command.workspaceId)["revision"] as Long
+        assertThatThrownBy {
+            transaction.executeWithoutResult {
+                store.lock(command.workspaceId)
+                store.audit(
+                    command.workspaceId,
+                    command.actorUserId,
+                    command.operationId,
+                    "stop_renewal",
+                    "고객 요청",
+                    null,
+                    current + 1,
+                )
+            }
+        }.isInstanceOf(ConflictException::class.java)
+        transaction.executeWithoutResult {
+            store.lock(command.workspaceId)
+            store.audit(
+                command.workspaceId,
+                command.actorUserId,
+                command.operationId,
+                "stop_renewal",
+                "고객 요청",
+                null,
+                current,
+            )
+        }
+        jdbc
+            .sql(
+                """
+                UPDATE admin_billing_actions SET before_state=before_state ||
+                    '{"provider_response":"secret","billing_key":"hidden"}'::jsonb WHERE operation_id=:id
+                """.trimIndent(),
+            ).param("id", command.operationId)
+            .update()
+        val query =
+            JdbcAdminOperationsQuery(
+                jdbc,
+                kr.easydoc.infrastructure.subscription
+                    .PaymentProperties(),
+            )
+        jdbc
+            .sql(
+                """
+                INSERT INTO workspace_subscriptions(workspace_id,plan_id,allowance,monthly_price,status,cycle_ends_at,provider)
+                VALUES (:id,'start',50,99000,'active',now()+interval '1 month','toss_test')
+                """.trimIndent(),
+            ).param("id", command.workspaceId)
+            .update()
+        assertThat(query.billingState(command.workspaceId)["revision"] as Long).isGreaterThan(current)
+        transaction.executeWithoutResult {
+            store.lock(command.workspaceId)
+            assertThat(
+                store.audit(
+                    command.workspaceId,
+                    command.actorUserId,
+                    command.operationId,
+                    "stop_renewal",
+                    "고객 요청",
+                    null,
+                    current,
+                ),
+            ).isTrue()
+        }
+        val result = query.billingState(command.workspaceId)
+        assertThat(result["audit"].toString())
+            .contains(command.actorUserId.toString(), command.operationId.toString())
+            .doesNotContain("provider_response", "billing_key", "secret", "hidden")
+        assertThat(query.request(command.workspaceId, command.operationId)["status"]).isEqualTo("pending")
+        assertThatThrownBy { query.request(UUID.randomUUID(), command.operationId) }
+            .isInstanceOf(kr.easydoc.core.exceptions.NotFoundException::class.java)
+        jdbc
+            .sql(
+                """
+                INSERT INTO admin_credit_adjustments(operation_id,workspace_id,actor_user_id,credits,reason,note,
+                    expected_balance,expected_reserved,expected_revision)
+                VALUES (:id,:workspace,:actor,1,'manual','같은 번호',10,0,0)
+                """.trimIndent(),
+            ).param("id", command.operationId)
+            .param("workspace", command.workspaceId)
+            .param("actor", command.actorUserId)
+            .update()
+        assertThatThrownBy {
+            query.request(command.workspaceId, command.operationId)
+        }.isInstanceOf(ConflictException::class.java)
+    }
+
+    @Test
     fun `refund hold prevents paid allowance replacement and cycle expiration`() {
         val command = command()
         jdbc
@@ -194,6 +290,124 @@ class JdbcAdminBillingStoreTest {
             JdbcCreditCycleReset(jdbc, ZoneId.of("Asia/Seoul")).reset(Instant.now(), 100)
         }
         assertAccount(command.workspaceId, "10", "4")
+    }
+
+    @Test
+    @Suppress("LongMethod") // Coordinate two transactions then verify operational versus lease-only version changes.
+    fun `row local billing revision never waits for a locked workspace and ignores lease churn`() {
+        val command = command()
+        val workspace = command.workspaceId
+        jdbc
+            .sql(
+                """
+                INSERT INTO workspace_subscriptions(workspace_id,plan_id,allowance,monthly_price,status,cycle_ends_at,provider)
+                VALUES (:id,'start',50,99000,'active',now()+interval '1 month','toss_test')
+                """.trimIndent(),
+            ).param("id", workspace)
+            .update()
+        val locked = java.util.concurrent.CountDownLatch(1)
+        val workerFinished = java.util.concurrent.CountDownLatch(1)
+        val executor =
+            java.util.concurrent.Executors
+                .newFixedThreadPool(2)
+        try {
+            val admin =
+                executor.submit {
+                    transaction.executeWithoutResult {
+                        store.lock(workspace)
+                        locked.countDown()
+                        assertThat(workerFinished.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue()
+                    }
+                }
+            val worker =
+                executor.submit {
+                    check(locked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+                    jdbc
+                        .sql(
+                            "UPDATE workspace_subscriptions SET monthly_price=monthly_price+1 WHERE workspace_id=:id",
+                        ).param("id", workspace)
+                        .update()
+                    workerFinished.countDown()
+                }
+            admin.get(10, java.util.concurrent.TimeUnit.SECONDS)
+            worker.get(10, java.util.concurrent.TimeUnit.SECONDS)
+        } finally {
+            executor.shutdownNow()
+        }
+        jdbc
+            .sql(
+                """
+                INSERT INTO toss_billing_orders(id,workspace_id,plan_id,amount,created_at,cycle_ends_at,kind,status,
+                    payload_encrypted,encryption_scheme,key_version,cycle_id)
+                VALUES (:order,:workspace,'start',100,now(),now()+interval '1 month','charge','pending',
+                    decode('01','hex'),'aes256gcm-v1',1,:order)
+                """.trimIndent(),
+            ).param("order", command.paymentId)
+            .param("workspace", workspace)
+            .update()
+        val query =
+            JdbcAdminOperationsQuery(
+                jdbc,
+                kr.easydoc.infrastructure.subscription
+                    .PaymentProperties(),
+            )
+        val revision = query.billingState(workspace)["revision"] as Long
+        jdbc
+            .sql(
+                "UPDATE toss_billing_orders SET next_attempt_at=now(),lease_until=now()+interval '1 minute' " +
+                    "WHERE id=:id",
+            ).param("id", command.paymentId)
+            .update()
+        assertThat(query.billingState(workspace)["revision"]).isEqualTo(revision)
+        jdbc
+            .sql(
+                "UPDATE toss_billing_orders SET status='manual_review' WHERE id=:id",
+            ).param("id", command.paymentId)
+            .update()
+        assertThat(query.billingState(workspace)["revision"] as Long).isGreaterThan(revision)
+    }
+
+    @Test
+    fun `card deletion start is set on entering pending and reset after completion and reentry`() {
+        val command = command()
+        jdbc
+            .sql(
+                """
+                INSERT INTO toss_billing_sessions(workspace_id,id,customer,plan_id,state,expires_at,
+                    payload_encrypted,encryption_scheme,key_version)
+                VALUES (:workspace,:id,:id,'start','active',now()+interval '1 day',decode('01','hex'),'aes256gcm-v1',1)
+                """.trimIndent(),
+            ).param("workspace", command.workspaceId)
+            .param("id", UUID.randomUUID())
+            .update()
+
+        fun pendingSince(): Instant? =
+            jdbc
+                .sql("SELECT deletion_pending_since FROM toss_billing_sessions WHERE workspace_id=:id")
+                .param("id", command.workspaceId)
+                .query { rs, _ -> rs.getTimestamp(1)?.toInstant() }
+                .list()
+                .single()
+        assertThat(pendingSince()).isNull()
+        jdbc
+            .sql(
+                "UPDATE toss_billing_sessions SET state='revoking' WHERE workspace_id=:id",
+            ).param("id", command.workspaceId)
+            .update()
+        assertThat(pendingSince()).isNotNull()
+        jdbc
+            .sql(
+                "UPDATE toss_billing_sessions SET state='revoked' WHERE workspace_id=:id",
+            ).param("id", command.workspaceId)
+            .update()
+        assertThat(pendingSince()).isNull()
+        val before = Instant.now().minusSeconds(1)
+        jdbc
+            .sql(
+                "UPDATE toss_billing_sessions SET state='revoking' WHERE workspace_id=:id",
+            ).param("id", command.workspaceId)
+            .update()
+        assertThat(pendingSince()).isAfter(before)
     }
 
     private fun command(): AdminRefundCommand {

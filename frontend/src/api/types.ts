@@ -1081,7 +1081,18 @@ export interface DictionaryLookupResponse {
  * `summary`) 공용. 계약 `components/schemas/AdminWorkspaceSummary`.
  */
 export interface AdminWorkspaceSummary {
-  selected_month?: { month: string; credits: number; paid_krw: number; refunded_krw: number }
+  selected_month?: {
+    month: string
+    credits: number
+    paid_krw: number
+    refunded_krw: number
+    recent_events?: Array<{
+      id: string
+      kind: 'payment' | 'refund'
+      amount_krw: number
+      occurred_at: string | null
+    }>
+  }
   workspace_id: string
   name: string
   owner_email: string

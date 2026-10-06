@@ -91,6 +91,8 @@ data class InvoiceRequestPage(
  * 전체 워크스페이스를 가로지른다(어드민 최소 계획 §2 결정 4).
  */
 interface InvoiceRequestRepository {
+    fun findForAdmin(id: UUID): InvoiceRequestRow? = null
+
     @Suppress("LongParameterList")
     fun create(
         id: UUID,

@@ -30,6 +30,8 @@ import { getSubscription } from './api/subscriptions'
 import { getWorkspaceUsage } from './api/usage'
 import { listActiveAnnouncements } from './api/announcements'
 import {
+  listAdminOperations,
+  listAdminErrorEvents,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
   listAdminWorkspaces,
@@ -94,6 +96,8 @@ vi.mock('./api/admin', () => ({
   listAdminWorkspaces: vi.fn(),
   listAdminInvoiceRequests: vi.fn(),
   readAdminErrors: vi.fn(),
+  listAdminOperations: vi.fn(),
+  listAdminErrorEvents: vi.fn(),
   listAdminAnnouncements: vi.fn(),
 }))
 
@@ -404,7 +408,7 @@ const SCREENS: readonly {
       vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
       renderAt('/admin', 'authenticated', ADMIN_USER)
     },
-    settle: () => screen.findByRole('heading', { name: '고객과 사용자 의견을 확인합니다' }),
+    settle: () => screen.findByRole('heading', { name: '처리할 일을 확인하고 고객을 관리합니다' }),
   },
 ]
 
@@ -512,6 +516,15 @@ function liveRegionTexts(): string[] {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+  vi.mocked(listAdminOperations).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 20,
+    counts: {},
+  })
+  vi.mocked(listAdminErrorEvents).mockResolvedValue({ items: [], total: 0, page: 1, size: 20 })
   vi.mocked(getSubscription).mockResolvedValue({
     mock_enabled: false,
     plans: [],

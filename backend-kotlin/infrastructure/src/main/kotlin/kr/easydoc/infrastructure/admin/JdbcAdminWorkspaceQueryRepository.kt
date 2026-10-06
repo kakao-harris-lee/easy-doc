@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.admin
 import kr.easydoc.application.admin.AdminCreditBalance
 import kr.easydoc.application.admin.AdminMonthPeriod
 import kr.easydoc.application.admin.AdminMonthUsage
+import kr.easydoc.application.admin.AdminRecentPaymentEvent
 import kr.easydoc.application.admin.AdminSelectedMonth
 import kr.easydoc.application.admin.AdminWorkspaceQueryRepository
 import kr.easydoc.application.admin.AdminWorkspaceRow
@@ -82,12 +83,36 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
                     rs.getObject("workspace_id", UUID::class.java) to (rs.getLong("paid") to rs.getLong("refunded"))
                 }.list()
                 .toMap()
+        val events =
+            jdbc
+                .sql(
+                    """
+                    SELECT * FROM (SELECT id,workspace_id,kind,amount_krw,occurred_at,
+                        row_number() OVER (PARTITION BY workspace_id ORDER BY occurred_at DESC,id DESC) AS ranking
+                        FROM subscription_payment_events WHERE workspace_id IN (:ids) AND NOT is_test
+                        AND occurred_at>=:from AND occurred_at<:until) events WHERE ranking<=3
+                    ORDER BY workspace_id,occurred_at DESC,id DESC
+                    """.trimIndent(),
+                ).param("ids", workspaceIds.toList())
+                .param("from", period.from.toOffsetDateTime())
+                .param("until", period.until.toOffsetDateTime())
+                .query { rs, _ ->
+                    rs.getObject("workspace_id", UUID::class.java) to
+                        AdminRecentPaymentEvent(
+                            rs.getObject("id", UUID::class.java),
+                            rs.getString("kind"),
+                            rs.getInt("amount_krw"),
+                            rs.getTimestamp("occurred_at")?.toInstant(),
+                        )
+                }.list()
+                .groupBy({ it.first }, { it.second })
         return workspaceIds.associateWith { id ->
             AdminSelectedMonth(
                 period.month,
                 credits[id] ?: BigDecimal.ZERO,
                 payments[id]?.first ?: 0L,
                 payments[id]?.second ?: 0L,
+                events[id].orEmpty(),
             )
         }
     }

@@ -173,6 +173,10 @@ async function mockApi(page: Page): Promise<void> {
       await json(route, SUBSCRIPTION)
       return
     }
+    if (['/admin/operations', '/admin/notifications', '/admin/errors/events'].includes(path)) {
+      await json(route, { items: [], page: 1, size: 20, total: 0, counts: {} })
+      return
+    }
     if (path === '/admin/workspaces') {
       await json(route, {
         items: [],
@@ -440,7 +444,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
       { path: '/history', heading: '변환한 문서를 확인합니다' },
       { path: '/usage', heading: '플랜과 사용량' },
       { path: '/account', heading: '계정 설정' },
-      { path: '/admin', heading: '고객과 사용자 의견을 확인합니다' },
+      { path: '/admin', heading: '처리할 일을 확인하고 고객을 관리합니다' },
       { path: `/conversions/${CONVERSION_ID}`, heading: '쉬운 글 확인' },
     ]
 
@@ -630,4 +634,55 @@ test.describe('테마 디자인 브라우저 검증', () => {
     }
     await authenticatedPage.close()
   })
+})
+
+// Uses only synthetic customer data and no mail/provider connections.
+test('관리자 처리할 일에서 상세로 이동하고 URL과 뒤로 가기를 복원한다', async ({ page }) => {
+  await mockApi(page)
+  await seedAuthenticatedTheme(page)
+  await page.route(`${API_BASE_URL}/admin/operations*`, async (route) => {
+    await json(route, {
+      items: [
+        {
+          id: 'invoice-1',
+          kind: 'invoice',
+          state: 'requested',
+          environment: null,
+          workspace_id: WORKSPACE_ID,
+          workspace_name: '합성 고객',
+          created_at: '2026-10-01T00:00:00Z',
+          severity: 2,
+          next_action: '세금계산서 확인',
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 20,
+      counts: { invoice: 1 },
+    })
+  })
+  await page.goto('/admin')
+  await expect(page.getByRole('tab', { name: '처리할 일', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(page.getByText('총 1 작업 건')).toBeVisible()
+  await page.getByRole('link', { name: '상세 확인', exact: true }).click()
+  await expect(page).toHaveURL(/tab=invoices.*invoice=invoice-1/)
+  await expect(page.getByRole('tab', { name: '세금계산서', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await page.goBack()
+  await expect(page.getByRole('tab', { name: '처리할 일', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await page.getByRole('tab', { name: '처리할 일', exact: true }).focus()
+  await page.keyboard.press('End')
+  await expect(page.getByRole('tab', { name: '공지', exact: true })).toBeFocused()
+  await page.getByLabel('공지 내용', { exact: true }).fill('확인 전 게시되지 않는 공지')
+  await page.getByRole('button', { name: '공지 만들기', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('게시 확인')
+  await expect(page.getByRole('region', { name: '공지 노출 미리보기' })).toBeVisible()
 })

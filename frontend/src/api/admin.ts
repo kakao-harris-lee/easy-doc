@@ -74,10 +74,11 @@ export function adjustAdminWorkspaceCredits(
  * 조회한다. `status`(선택)로 좁힐 수 있다. 최신순.
  */
 export function listAdminInvoiceRequests(
-  params: { status?: InvoiceRequestStatus; page?: number; size?: number } = {},
+  params: { status?: InvoiceRequestStatus; page?: number; size?: number; id?: string } = {},
   signal?: AbortSignal,
 ): Promise<AdminInvoiceRequestListResponse> {
   const query = new URLSearchParams()
+  if (params.id) query.set('id', params.id)
   if (params.status !== undefined) {
     query.set('status', params.status)
   }
@@ -165,14 +166,108 @@ export function updateAdminAnnouncement(
 
 /** 검증된 관리자만 자유 의견을 읽는다. */
 export function listAdminFeedback(
-  params: { page?: number; size?: number } = {},
+  params: {
+    page?: number
+    size?: number
+    publish_intent?: import('./types').PublishIntent
+    max_quality_score?: number
+    from?: string
+    to?: string
+  } = {},
   signal?: AbortSignal,
 ): Promise<import('./types').AdminFeedbackListResponse> {
   const query = new URLSearchParams({
     page: String(params.page ?? 1),
     size: String(params.size ?? 20),
   })
+  if (params.publish_intent !== undefined)
+    query.set('publish_intent', String(params.publish_intent))
+  if (params.max_quality_score !== undefined)
+    query.set('max_quality_score', String(params.max_quality_score))
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
   return requestJson('/admin/feedback?' + query.toString(), { signal })
+}
+
+function adminQuery(params: Record<string, string | number | undefined>): string {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  }
+  return query.size ? `?${query}` : ''
+}
+
+export function listAdminOperations(
+  params: {
+    kind?: string
+    state?: string
+    environment?: string
+    page?: number
+    size?: number
+  } = {},
+  signal?: AbortSignal,
+) {
+  return requestJson<import('./adminOperationsTypes').AdminOperationsResponse>(
+    `/admin/operations${adminQuery(params)}`,
+    { signal },
+  )
+}
+
+export function listAdminNotifications(
+  params: {
+    state?: string
+    environment?: string
+    event_type?: string
+    page?: number
+    size?: number
+    id?: number
+  } = {},
+  signal?: AbortSignal,
+) {
+  return requestJson<
+    import('./adminOperationsTypes').AdminPageResult<
+      import('./adminOperationsTypes').AdminNotification
+    >
+  >(`/admin/notifications${adminQuery(params)}`, { signal })
+}
+
+export function resolveAdminNotification(
+  id: number,
+  request: import('./adminOperationsTypes').AdminNotificationCommand & {
+    resolution: 'delivered' | 'not_delivered'
+  },
+) {
+  return requestJson<import('./adminOperationsTypes').AdminNotification>(
+    `/admin/notifications/${id}/resolve`,
+    {
+      method: 'POST',
+      body: request,
+    },
+  )
+}
+
+export function retryAdminNotification(
+  id: number,
+  request: import('./adminOperationsTypes').AdminNotificationCommand,
+) {
+  return requestJson<import('./adminOperationsTypes').AdminNotification>(
+    `/admin/notifications/${id}/retry`,
+    {
+      method: 'POST',
+      body: request,
+    },
+  )
+}
+
+export function listAdminErrorEvents(
+  params: { failure_code?: string; from?: string; to?: string; page?: number; size?: number } = {},
+  signal?: AbortSignal,
+) {
+  return requestJson<
+    import('./adminOperationsTypes').AdminPageResult<
+      import('./adminOperationsTypes').AdminErrorEvent
+    >
+  >(`/admin/errors/events${adminQuery(params)}`, { signal })
 }
 
 export function readAdminMonthlySummary(workspaceId: string, month: string, signal?: AbortSignal) {

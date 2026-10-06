@@ -29,9 +29,14 @@ class BillingNotificationScheduler(
         if (properties.autoChargeEnabled) queueUpcoming()
         jdbc
             .sql(
-                "UPDATE billing_notifications SET state='manual_review' " +
-                    "WHERE environment=:environment AND state='sending' " +
-                    "AND attempted_at < now()-interval '10 minutes'",
+                """
+                WITH expired AS (
+                    UPDATE billing_notifications SET state='manual_review',revision=revision+1
+                    WHERE environment=:environment AND state='sending' AND attempted_at<now()-interval '10 minutes'
+                    RETURNING id
+                ) UPDATE billing_notification_attempts SET state='manual_review',finished_at=now(),failure_code='uncertain'
+                  WHERE notification_id IN (SELECT id FROM expired) AND state='sending'
+                """.trimIndent(),
             ).param("environment", properties.provider)
             .update()
         repeat(BATCH_SIZE) {
@@ -39,24 +44,24 @@ class BillingNotificationScheduler(
             try {
                 val owner = accounts.ownerOf(job.workspace)
                 val user = owner?.let(users::findById)
-                val state =
+                val result =
                     if (job.environment != properties.provider) {
-                        "manual_review"
+                        "manual_review" to "uncertain"
                     } else if (user == null) {
-                        "failed"
+                        "failed" to "recipient_missing"
                     } else {
                         when (
                             sender.send(
                                 notification(user.email, job),
                             )
                         ) {
-                            is MailDelivery.Sent -> "sent"
-                            is MailDelivery.Rejected -> "failed"
+                            is MailDelivery.Sent -> "sent" to null
+                            is MailDelivery.Rejected -> "failed" to "provider_rejected"
                         }
                     }
-                finish(job.id, state)
+                finish(job, result.first, result.second)
             } catch (_: RuntimeException) {
-                finish(job.id, "manual_review")
+                finish(job, "manual_review", "uncertain")
             }
         }
     }
@@ -79,11 +84,14 @@ class BillingNotificationScheduler(
         jdbc
             .sql(
                 """
-                UPDATE billing_notifications SET state='sending',attempted_at=now()
+                WITH claimed AS (UPDATE billing_notifications SET state='sending',attempted_at=now(),revision=revision+1
                 WHERE id=(SELECT id FROM billing_notifications WHERE state='pending' AND environment=:environment
                           ORDER BY id
                           FOR UPDATE SKIP LOCKED LIMIT 1)
-                RETURNING id,workspace_id,event_type,environment
+                RETURNING id,workspace_id,event_type,environment),
+                attempt AS (INSERT INTO billing_notification_attempts(notification_id,state)
+                    SELECT id,'sending' FROM claimed RETURNING id AS attempt_id,notification_id)
+                SELECT claimed.*,attempt.attempt_id FROM claimed JOIN attempt ON attempt.notification_id=claimed.id
                 """.trimIndent(),
             ).param("environment", properties.provider)
             .query {
@@ -95,20 +103,33 @@ class BillingNotificationScheduler(
                     row.getObject("workspace_id", UUID::class.java),
                     row.getString("event_type"),
                     row.getString("environment"),
+                    row.getLong("attempt_id"),
                 )
             }.optional()
             .orElse(null)
 
     private fun finish(
-        id: Long,
+        job: Job,
         state: String,
+        failureCode: String?,
     ) {
         jdbc
             .sql(
-                "UPDATE billing_notifications SET state=:state,sent_at=CASE WHEN :state='sent' THEN now() END " +
-                    "WHERE id=:id AND state='sending'",
+                """
+                WITH locked AS MATERIALIZED (
+                    SELECT id FROM billing_notifications WHERE id=:id AND state='sending' FOR UPDATE
+                ), finished AS (
+                    UPDATE billing_notification_attempts SET state=:state,finished_at=now(),failure_code=:failure
+                    WHERE id=:attempt AND notification_id IN (SELECT id FROM locked) AND state='sending'
+                    RETURNING notification_id
+                ) UPDATE billing_notifications SET state=:state,revision=revision+1,
+                    sent_at=CASE WHEN :state='sent' THEN now() ELSE sent_at END
+                  WHERE id IN (SELECT notification_id FROM finished) AND state='sending'
+                """.trimIndent(),
             ).param("state", state)
-            .param("id", id)
+            .param("id", job.id)
+            .param("attempt", job.attempt)
+            .param("failure", failureCode)
             .update()
     }
 
@@ -159,6 +180,7 @@ class BillingNotificationScheduler(
         val workspace: UUID,
         val event: String,
         val environment: String,
+        val attempt: Long,
     )
 
     private companion object {

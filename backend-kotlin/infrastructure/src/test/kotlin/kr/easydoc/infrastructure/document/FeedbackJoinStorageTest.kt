@@ -140,6 +140,43 @@ class FeedbackJoinStorageTest {
      * 저장할 피드백 한 행. 수기 값은 **아무래도 좋다** — 이 파일이 재는 것은 조인이지 값이
      * 아니다. 파생 지표 셋은 함께 비운다(`EditMetrics` 의 「초안 없음」 갈래와 같은 조합이다).
      */
+    @Test
+    fun `admin filters are applied before pagination across the entire feedback dataset`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "전체 의견 필터").id
+        val ids = (1..3).map { seedConversion(owner, workspace) }
+        ids.forEach { feedback.upsert(owner, feedbackFor(it)) }
+        ids.forEachIndexed { index, id ->
+            jdbc
+                .sql(
+                    "UPDATE conversion_feedback SET submitted_at=:at,quality_score=:score,publish_intent=:intent " +
+                        "WHERE conversion_id=:id",
+                ).param("at", java.time.OffsetDateTime.parse("2020-01-0${index + 1}T00:00:00Z"))
+                .param("score", index + 1)
+                .param("intent", if (index == 2) "as_is" else "not_usable")
+                .param("id", id)
+                .update()
+        }
+        val query =
+            kr.easydoc.infrastructure.admin.JdbcAdminFeedbackQuery(
+                jdbc,
+                org.mockito.Mockito.mock(kr.easydoc.application.crypto.ContentCipher::class.java),
+            )
+        val filters =
+            kr.easydoc.application.admin.AdminFeedbackFilters(
+                "not_usable",
+                2,
+                java.time.Instant.parse("2020-01-01T00:00:00Z"),
+                java.time.Instant.parse("2020-02-01T00:00:00Z"),
+            )
+        val first = query.filteredList(1, 1, filters)
+        val second = query.filteredList(2, 1, filters)
+        assertThat(first.total).isEqualTo(2)
+        assertThat(first.items.single().conversionId).isEqualTo(ids[1])
+        assertThat(second.items.single().conversionId).isEqualTo(ids[0])
+        assertThat(query.filteredList(3, 1, filters).items).isEmpty()
+    }
+
     private fun feedbackFor(conversionId: UUID): StoredFeedback =
         StoredFeedback(
             conversionId = conversionId,

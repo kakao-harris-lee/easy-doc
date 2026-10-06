@@ -18,6 +18,7 @@ import { PaymentActions } from '../../components/subscription/PaymentActions'
 import { Button } from '../../components/ui/Button'
 import { formatCredits } from '../../lib/credits'
 import { SERVICE_START_MONTH } from './adminMonths'
+import { useAdminQuery, adminPageNumber } from './useAdminQuery'
 import { AdminBillingPanel } from './AdminBillingPanel'
 import { AdminCreditAdjustment } from './AdminCreditAdjustment'
 
@@ -88,7 +89,9 @@ export function AdminMonthlyPanel({
   month,
   onChanged,
   onMonthChange,
+  refreshToken = 0,
 }: {
+  refreshToken?: number
   workspaceId: string
   month: string
   onChanged: () => void
@@ -96,16 +99,22 @@ export function AdminMonthlyPanel({
 }) {
   const [billingPending, setBillingPending] = useState(true)
   const [billingError, setBillingError] = useState(false)
-  const [reload, setReload] = useState(0)
+  const [localReload, setReload] = useState(0)
+  const reload = `${refreshToken}:${localReload}`
   const [summary, setSummary] = useState<AdminMonthlySummary | null>(null)
   const [history, setHistory] = useState<AdminMonthlyHistory | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [creditError, setCreditError] = useState<string | null>(null)
   const [paymentError, setPaymentError] = useState<string | null>(null)
   const [historyError, setHistoryError] = useState<string | null>(null)
-  const [creditPage, setCreditPage] = useState(1)
-  const [paymentPage, setPaymentPage] = useState(1)
-  const [kind, setKind] = useState('')
+  const [query, updateQuery] = useAdminQuery()
+  const creditPage = adminPageNumber(query.get('credit_page'))
+  const paymentPage = adminPageNumber(query.get('payment_page'))
+  const kind = query.get('credit_kind') ?? ''
+  const setCreditPage = (value: number) => updateQuery({ credit_page: String(value) })
+  const setPaymentPage = (value: number) => updateQuery({ payment_page: String(value) })
+  const setKind = (value: string) =>
+    updateQuery({ credit_kind: value || undefined, credit_page: '1' })
   const [credits, setCredits] = useState<{
     key: string
     data: AdminReportPage<AdminCreditEvent>
@@ -210,6 +219,8 @@ export function AdminMonthlyPanel({
   if (!summary || summary.month !== month)
     return (
       <div>
+        <AdminBillingPanel workspaceId={workspaceId} onChanged={changed} refreshToken={reload} />
+        <Button onClick={changed}>결산 다시 조회</Button>
         {error ? <p role="alert">{error}</p> : <p role="status">월별 결산을 불러오는 중입니다…</p>}
       </div>
     )
@@ -227,7 +238,7 @@ export function AdminMonthlyPanel({
   ]
   return (
     <div className="space-y-5">
-      <AdminBillingPanel workspaceId={workspaceId} onChanged={changed} />
+      <AdminBillingPanel workspaceId={workspaceId} onChanged={changed} refreshToken={reload} />
       {error && <p role="alert">{error}</p>}
       <section aria-label="현재 크레딧" className="rounded-xl border border-border p-4">
         <h4 className="font-semibold">현재 크레딧</h4>

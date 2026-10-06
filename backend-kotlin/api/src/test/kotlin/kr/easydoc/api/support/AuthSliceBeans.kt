@@ -230,6 +230,10 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.subscription.SubscriptionService::class.java)
 
     @Bean
+    fun adminOperationsQuery(): kr.easydoc.application.admin.AdminOperationsQuery =
+        org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminOperationsQuery::class.java)
+
+    @Bean
     fun adminFeedbackQuery(): kr.easydoc.application.admin.AdminFeedbackQuery =
         object : kr.easydoc.application.admin.AdminFeedbackQuery {
             override fun list(

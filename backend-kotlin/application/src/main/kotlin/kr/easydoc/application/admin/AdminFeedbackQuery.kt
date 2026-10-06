@@ -7,6 +7,12 @@ import java.util.UUID
 
 /** 관리자 권한을 확인한 HTTP 경계에서만 호출하는 의견 조회 포트. */
 interface AdminFeedbackQuery {
+    fun filteredList(
+        page: Int,
+        size: Int,
+        filters: AdminFeedbackFilters,
+    ): AdminFeedbackPage = list(page, size)
+
     fun list(
         page: Int,
         size: Int,
@@ -32,3 +38,10 @@ data class AdminFeedbackItem(
     override fun toString(): String =
         "AdminFeedbackItem(conversionId=$conversionId, ownerEmail=$CONTENT_MASK, comment=$CONTENT_MASK)"
 }
+
+data class AdminFeedbackFilters(
+    val publishIntent: String? = null,
+    val maxQualityScore: Int? = null,
+    val from: Instant? = null,
+    val to: Instant? = null,
+)

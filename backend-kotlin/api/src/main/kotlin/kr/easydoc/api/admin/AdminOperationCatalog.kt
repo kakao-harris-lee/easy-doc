@@ -16,6 +16,15 @@ object AdminOperationCatalog {
 
     private val OPERATIONS: Map<Route, String> =
         mapOf(
+            Route("GET", "/admin/operations") to "listAdminOperations",
+            Route("GET", "/admin/notifications") to "listAdminNotifications",
+            Route("POST", "/admin/notifications/{id}/resolve") to "resolveAdminNotification",
+            Route("POST", "/admin/notifications/{id}/retry") to "retryAdminNotification",
+            Route("GET", "/admin/errors/events") to "listAdminErrorEvents",
+            Route(
+                "GET",
+                "/admin/workspaces/{workspace_id}/billing/requests/{operation_id}",
+            ) to "getAdminBillingRequest",
             Route("GET", "/admin/workspaces/{workspace_id}/monthly-summary") to "readAdminMonthlySummary",
             Route("GET", "/admin/workspaces/{workspace_id}/monthly-history") to "readAdminMonthlyHistory",
             Route("GET", "/admin/workspaces/{workspace_id}/credit-transactions") to "listAdminCreditTransactions",

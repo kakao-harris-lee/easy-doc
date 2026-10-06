@@ -33,6 +33,10 @@ export function writeToken(token: string): void {
 export function clearToken(): void {
   try {
     window.localStorage.removeItem(TOKEN_KEY)
+    for (const key of Object.keys(window.sessionStorage)) {
+      if (key.startsWith('admin-operation:') || key.startsWith('admin-credit-operation:'))
+        window.sessionStorage.removeItem(key)
+    }
   } catch {
     // 위와 같은 이유.
   }

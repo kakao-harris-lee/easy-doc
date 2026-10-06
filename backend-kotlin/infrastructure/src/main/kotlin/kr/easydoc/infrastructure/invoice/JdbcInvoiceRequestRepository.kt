@@ -133,6 +133,14 @@ class JdbcInvoiceRequestRepository(private val jdbc: JdbcClient) : InvoiceReques
      * 관리자 목록(`GET /admin/invoice-requests`) — 소유 술어 없이 전체를 훑는다
      * ([InvoiceRequestRepository] KDoc). [status]가 `null`이면 전체 상태.
      */
+    override fun findForAdmin(id: UUID): InvoiceRequestRow? =
+        jdbc
+            .sql("SELECT $RETURNING_COLUMNS FROM invoice_requests WHERE id=:id")
+            .param("id", id)
+            .query { rs, _ -> toRow(rs) }
+            .optional()
+            .orElse(null)
+
     override fun listAll(
         status: InvoiceRequestStatus?,
         page: Int,

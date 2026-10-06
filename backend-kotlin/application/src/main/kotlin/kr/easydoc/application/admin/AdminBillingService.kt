@@ -66,6 +66,8 @@ data class AdminBillingOrder(
     val createdAt: Instant,
     val environment: String,
     val needsReview: Boolean,
+    val canSync: Boolean = false,
+    val syncBlockedReason: String? = null,
 )
 
 @Suppress("TooManyFunctions") // Refund and management action recovery share one workspace transaction boundary.
@@ -95,6 +97,7 @@ interface AdminBillingStore {
         action: String,
         reason: String,
         target: UUID?,
+        expectedRevision: Long? = null,
     ): Boolean
 
     fun pendingActions(): List<AdminBillingAction>
@@ -114,7 +117,10 @@ class AdminBillingService(
 ) {
     fun orders(workspace: UUID): List<AdminBillingOrder> {
         owner(workspace)
-        return store.orders(workspace)
+        return store.orders(workspace).map {
+            val allowed = it.environment == billing.environment && it.status != "scheduled"
+            it.copy(canSync = allowed, syncBlockedReason = if (allowed) null else "현재 결제 환경과 상태를 확인하세요")
+        }
     }
 
     fun operations(workspace: UUID): List<AdminRefundOperation> = store.operations(workspace)
@@ -184,8 +190,10 @@ class AdminBillingService(
         action: String,
         reason: String,
         target: UUID? = null,
+        expectedRevision: Long? = null,
     ) {
         requireReason(reason)
+        if (expectedRevision != null && expectedRevision < 0) throw InvalidInputException("확인 버전을 확인하세요")
         val pending =
             transaction.inTransaction {
                 store.lock(workspace)
@@ -194,7 +202,7 @@ class AdminBillingService(
                 ) {
                     throw NotFoundException("결제 내역이 없습니다")
                 }
-                store.audit(workspace, actor, request, action, reason, target)
+                store.audit(workspace, actor, request, action, reason, target, expectedRevision)
             }
         if (pending) performAction(AdminBillingAction(workspace, actor, request, action, reason, target))
     }

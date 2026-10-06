@@ -43,8 +43,16 @@ class AdminInvoiceRequestController(
         @Min(1)
         @Max(100)
         size: Int,
+        @RequestParam(required = false) id: UUID? = null,
     ): ResponseEntity<AdminInvoiceRequestListResponse> {
-        val result = repository.listAll(status, page, size)
+        val result =
+            if (id == null) {
+                repository.listAll(status, page, size)
+            } else {
+                val item = repository.findForAdmin(id)?.takeIf { status == null || it.status == status }
+                kr.easydoc.application.invoice
+                    .InvoiceRequestPage(listOfNotNull(item), if (item == null) 0 else 1)
+            }
         return adminResponse(HttpStatus.OK).body(AdminInvoiceRequestListResponse.of(result, page, size))
     }
 

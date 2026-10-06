@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 
 import { cn } from '../lib/utils'
@@ -9,9 +9,22 @@ import { AdminFeedbackTab } from './admin/AdminFeedbackTab'
 import { AdminInvoicesTab } from './admin/AdminInvoicesTab'
 import { AdminWorkspacesTab } from './admin/AdminWorkspacesTab'
 
-type TabKey = 'workspaces' | 'feedback' | 'invoices' | 'errors' | 'announcements'
+import { useAdminQuery } from './admin/useAdminQuery'
+import { AdminOperationsTab } from './admin/AdminOperationsTab'
+import { AdminNotificationsTab } from './admin/AdminNotificationsTab'
+
+type TabKey =
+  | 'operations'
+  | 'notifications'
+  | 'workspaces'
+  | 'feedback'
+  | 'invoices'
+  | 'errors'
+  | 'announcements'
 
 const TABS: readonly { key: TabKey; label: string }[] = [
+  { key: 'operations', label: '처리할 일' },
+  { key: 'notifications', label: '메일' },
   { key: 'workspaces', label: '워크스페이스' },
   { key: 'feedback', label: '사용자 의견' },
   { key: 'invoices', label: '세금계산서' },
@@ -26,11 +39,14 @@ const TABS: readonly { key: TabKey; label: string }[] = [
  * 않는다(routes/RequireAdmin.tsx). 여기서는 관리자 API 403을 다시 신경 쓰지 않아도
  * 되지만, 각 탭은 그래도 서버 문구를 그대로 보여준다(회수가 즉시 반영되는 경우를 대비).
  *
- * 5개 탭을 WAI-ARIA 탭 패턴으로 묶는다(`ReviewEditor`의 탭과 같은 구현) — 화살표
+ * 관리 탭을 WAI-ARIA 탭 패턴으로 묶는다(`ReviewEditor`의 탭과 같은 구현) — 화살표
  * 좌우·Home·End로 이동하고, 선택은 초점을 따라간다.
  */
 export function AdminPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('workspaces')
+  const [query, updateQuery] = useAdminQuery()
+  const requestedTab = query.get('tab')
+  const activeTab: TabKey = TABS.find((tab) => tab.key === requestedTab)?.key ?? 'operations'
+  const setActiveTab = (tab: TabKey) => updateQuery({ tab })
   const tabRefs = useRef<Partial<Record<TabKey, HTMLButtonElement | null>>>({})
   const panelBaseId = useId()
 
@@ -58,7 +74,7 @@ export function AdminPage() {
     <section aria-labelledby="admin-heading">
       <PageHeader
         context="관리자"
-        title="고객과 사용자 의견을 확인합니다"
+        title="처리할 일을 확인하고 고객을 관리합니다"
         description="사용자 의견, 워크스페이스와 사용량, 오류와 공지를 확인합니다."
         titleId="admin-heading"
       />
@@ -94,6 +110,22 @@ export function AdminPage() {
         ))}
       </div>
 
+      <div
+        role="tabpanel"
+        id={`${panelBaseId}-operations-panel`}
+        aria-labelledby={`${panelBaseId}-operations-tab`}
+        hidden={activeTab !== 'operations'}
+      >
+        {activeTab === 'operations' && <AdminOperationsTab />}
+      </div>
+      <div
+        role="tabpanel"
+        id={`${panelBaseId}-notifications-panel`}
+        aria-labelledby={`${panelBaseId}-notifications-tab`}
+        hidden={activeTab !== 'notifications'}
+      >
+        {activeTab === 'notifications' && <AdminNotificationsTab />}
+      </div>
       {/*
         기존 네 패널은 계속 마운트해 둔다(`hidden` 속성으로만 감춘다) — `ReviewEditor`의
         원문/결과 패널과 같은 이유다. 조건부 마운트(`activeTab === key && <Tab/>`)로

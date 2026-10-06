@@ -13,6 +13,7 @@ vi.mock('../../api/admin', () => ({
 }))
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/admin')
   vi.mocked(listAdminInvoiceRequests).mockReset()
   vi.mocked(handleAdminInvoiceRequest).mockReset()
 })
@@ -82,19 +83,20 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
 
     render(<AdminInvoicesTab />)
     await screen.findByText('쉬운글 주식회사')
+    await user.click(screen.getByRole('button', { name: '쉬운글 주식회사' }))
 
     const form = screen.getByRole('form', {
       name: '쉬운글 주식회사 요청 처리 (2026-08-01~2026-08-31)',
     })
     await user.selectOptions(form.querySelector('select') as HTMLSelectElement, 'issued')
-    await user.click(screen.getByRole('button', { name: '처리하기' }))
+    await user.click(screen.getByRole('button', { name: '발급 완료로 기록' }))
 
     expect(await screen.findByText(/발급됨 처리했습니다/)).toBeInTheDocument()
     expect(vi.mocked(handleAdminInvoiceRequest)).toHaveBeenCalledWith('inv1', {
       status: 'issued',
       note: null,
     })
-    await waitFor(() => expect(vi.mocked(listAdminInvoiceRequests)).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(vi.mocked(listAdminInvoiceRequests)).toHaveBeenCalledTimes(3))
   })
 
   it('메모를 채워 처리하면 그 메모를 그대로 보낸다', async () => {
@@ -118,13 +120,14 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
 
     render(<AdminInvoicesTab />)
     await screen.findByText('쉬운글 주식회사')
+    await user.click(screen.getByRole('button', { name: '쉬운글 주식회사' }))
 
     const form = screen.getByRole('form', {
       name: '쉬운글 주식회사 요청 처리 (2026-08-01~2026-08-31)',
     })
     await user.selectOptions(form.querySelector('select') as HTMLSelectElement, 'rejected')
     await user.type(screen.getByLabelText('메모 (선택)'), '사업자등록번호 확인 불가')
-    await user.click(screen.getByRole('button', { name: '처리하기' }))
+    await user.click(screen.getByRole('button', { name: '거절로 기록' }))
 
     expect(await screen.findByText(/거절됨 처리했습니다/)).toBeInTheDocument()
     expect(vi.mocked(handleAdminInvoiceRequest)).toHaveBeenCalledWith('inv1', {
@@ -134,6 +137,7 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
   })
 
   it('이미 처리된 요청에는 처리 폼을 그리지 않는다', async () => {
+    const user = userEvent.setup()
     vi.mocked(listAdminInvoiceRequests).mockResolvedValue({
       items: [invoiceRequest({ id: 'inv1', company_name: '쉬운글 주식회사', status: 'issued' })],
       page: 1,
@@ -143,6 +147,7 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
 
     render(<AdminInvoicesTab />)
     await screen.findByText('쉬운글 주식회사')
+    await user.click(screen.getByRole('button', { name: '쉬운글 주식회사' }))
 
     expect(
       screen.queryByRole('form', { name: '쉬운글 주식회사 요청 처리 (2026-08-01~2026-08-31)' }),
@@ -168,7 +173,8 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
 
     render(<AdminInvoicesTab />)
     await screen.findByText('쉬운글 주식회사')
-    await user.click(screen.getByRole('button', { name: '처리하기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운글 주식회사' }))
+    await user.click(screen.getByRole('button', { name: '발급 완료로 기록' }))
 
     expect(await screen.findByText('이미 처리된 요청입니다')).toBeInTheDocument()
   })
@@ -182,4 +188,27 @@ describe('AdminInvoicesTab — 세금계산서 (어드민 최소, 계약 2.25.0)
 
     expect(await screen.findByText('관리자 권한이 필요합니다')).toBeInTheDocument()
   })
+})
+
+it('direct-link selection ignores stale pagination and status, then releases ID when filtering', async () => {
+  window.history.replaceState(
+    {},
+    '',
+    '/admin?invoice=inv-old&invoice_page=9&invoice_status=requested',
+  )
+  vi.mocked(listAdminInvoiceRequests).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
+  render(<AdminInvoicesTab />)
+  await waitFor(() =>
+    expect(listAdminInvoiceRequests).toHaveBeenCalledWith(
+      { id: 'inv-old', status: undefined, page: 1, size: 20 },
+      expect.any(AbortSignal),
+    ),
+  )
+  await userEvent.setup().selectOptions(screen.getByLabelText('상태'), 'issued')
+  await waitFor(() =>
+    expect(listAdminInvoiceRequests).toHaveBeenLastCalledWith(
+      { id: undefined, status: 'issued', page: 1, size: 20 },
+      expect.any(AbortSignal),
+    ),
+  )
 })

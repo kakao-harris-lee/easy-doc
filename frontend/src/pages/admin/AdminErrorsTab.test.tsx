@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { readAdminErrors } from '../../api/admin'
+import { listAdminErrorEvents, readAdminErrors } from '../../api/admin'
 import { ApiError } from '../../api/client'
 import {
   adminErrorItem,
@@ -13,11 +13,14 @@ import {
 import { AdminErrorsTab } from './AdminErrorsTab'
 
 vi.mock('../../api/admin', () => ({
+  listAdminErrorEvents: vi.fn(),
   readAdminErrors: vi.fn(),
 }))
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/admin')
   vi.mocked(readAdminErrors).mockReset()
+  vi.mocked(listAdminErrorEvents).mockResolvedValue({ items: [], total: 0, page: 1, size: 20 })
 })
 
 afterEach(() => {
@@ -35,9 +38,21 @@ describe('AdminErrorsTab — 오류 (어드민 최소, 계약 2.25.0)', () => {
 
     render(<AdminErrorsTab />)
 
+    vi.mocked(listAdminErrorEvents).mockResolvedValue({
+      items: [
+        {
+          conversion_id: 'c1',
+          workspace_id: 'w1',
+          failure_code: 'llm_error',
+          created_at: '2026-10-01T00:00:00Z',
+        },
+      ],
+      total: 1,
+      page: 1,
+      size: 20,
+    })
     // 코드별 건수 표와 최근 목록 표 둘 다 'llm_error'를 담는다.
-    const occurrences = await screen.findAllByText('llm_error')
-    expect(occurrences).toHaveLength(2)
+    await waitFor(() => expect(screen.getAllByText('llm_error')).toHaveLength(2))
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(vi.mocked(readAdminErrors)).toHaveBeenCalledWith({}, expect.anything())
   })
@@ -99,7 +114,7 @@ describe('AdminErrorsTab — 오류 (어드민 최소, 계약 2.25.0)', () => {
 
     render(<AdminErrorsTab />)
 
-    expect(await screen.findAllByText('이 기간에 실패한 변환이 없습니다.')).toHaveLength(2)
+    expect(await screen.findAllByText('이 기간에 실패한 변환이 없습니다.')).toHaveLength(1)
     expect(screen.getByText('이 기간에 실패한 LLM 호출이 없습니다.')).toBeInTheDocument()
   })
 

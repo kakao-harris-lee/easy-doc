@@ -97,4 +97,12 @@ data class AdminSelectedMonth(
     val credits: BigDecimal,
     val paidKrw: Long,
     val refundedKrw: Long,
+    val recentEvents: List<AdminRecentPaymentEvent> = emptyList(),
+)
+
+data class AdminRecentPaymentEvent(
+    val id: UUID,
+    val kind: String,
+    val amountKrw: Int,
+    val occurredAt: Instant?,
 )

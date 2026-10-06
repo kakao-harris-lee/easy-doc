@@ -290,6 +290,41 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         }
     }
 
+    @Test
+    fun `refund only month includes its actual event date and excludes test events`() {
+        val (_, workspace) = newOwnedWorkspace("환불 월", "refund-summary")
+        val from = Instant.parse("2020-02-01T00:00:00Z")
+        val until = Instant.parse("2020-03-01T00:00:00Z")
+        listOf(false, true).forEach { test ->
+            jdbc
+                .sql(
+                    """
+                    INSERT INTO subscription_payment_events(payment_id,workspace_id,kind,amount_krw,is_test,occurred_at,operation_key)
+                    VALUES (:payment,:workspace,'refund',100,:test,:at,:key)
+                    """.trimIndent(),
+                ).param("payment", UUID.randomUUID())
+                .param("workspace", workspace)
+                .param("test", test)
+                .param(
+                    "at",
+                    from.plusSeconds(3600).atOffset(ZoneOffset.UTC),
+                ).param("key", UUID.randomUUID().toString())
+                .update()
+        }
+        val result =
+            repository
+                .selectedMonthTotals(
+                    listOf(workspace),
+                    kr.easydoc.application.admin
+                        .AdminMonthPeriod("2020-02", from, until, false),
+                ).getValue(workspace)
+        assertThat(result.paidKrw).isZero()
+        assertThat(result.refundedKrw).isEqualTo(100)
+        assertThat(result.recentEvents).hasSize(1)
+        assertThat(result.recentEvents.single().kind).isEqualTo("refund")
+        assertThat(result.recentEvents.single().occurredAt).isEqualTo(from.plusSeconds(3600))
+    }
+
     private fun ownerEmailOf(ownerId: UUID): String =
         jdbc
             .sql("SELECT email FROM users WHERE id = :id")

@@ -102,6 +102,130 @@ class AdminMonthlyReachTest {
         assertThat(get(admin, "/admin/workspaces/${UUID.randomUUID()}/monthly-summary").statusCode()).isEqualTo(404)
     }
 
+    @Test
+    fun `operations APIs reject non administrators and return safe paged metadata`() {
+        val admin = account(true)
+        val owner = account(false)
+        val workspace = ((body(get(owner, "/workspaces"))["items"] as List<*>).single() as Map<*, *>)["id"].toString()
+        val endpoints =
+            mapOf(
+                "/admin/operations" to "AdminOperationsResponse",
+                "/admin/notifications" to "AdminNotificationsResponse",
+                "/admin/errors/events" to "AdminErrorEventsResponse",
+            )
+        endpoints.forEach { (path, schema) ->
+            assertThat(get(null, path).statusCode()).isEqualTo(401)
+            assertThat(get(owner, path).statusCode()).isEqualTo(403)
+            val response = get(admin, path)
+            assertThat(response.statusCode()).describedAs(response.body()).isEqualTo(200)
+            assertThat(response.headers().firstValue("Cache-Control").orElse("")).contains("no-store")
+            assertThat(body(response).keys.map { it.toString() }).containsAll(ContractSpec.schemaRequired(schema))
+            assertThat(get(admin, "$path?size=101").statusCode()).isEqualTo(422)
+        }
+        val operation = UUID.randomUUID()
+        val requestPath = "/admin/workspaces/$workspace/billing/requests/$operation"
+        assertThat(get(owner, requestPath).statusCode()).isEqualTo(403)
+        assertThat(get(admin, requestPath).statusCode()).isEqualTo(404)
+        val payload =
+            json.writeValueAsString(
+                mapOf(
+                    "operation_id" to operation,
+                    "expected_revision" to 0,
+                    "reason" to "확인",
+                    "resolution" to "not_delivered",
+                ),
+            )
+        listOf("resolve", "retry").forEach { action ->
+            assertThat(send("/admin/notifications/1/$action", null, payload).statusCode()).isEqualTo(401)
+            assertThat(send("/admin/notifications/1/$action", owner, payload).statusCode()).isEqualTo(403)
+        }
+        val billing = get(admin, "/admin/workspaces/$workspace/billing")
+        assertThat(billing.statusCode()).describedAs(billing.body()).isEqualTo(200)
+        assertThat(body(billing).keys.map { it.toString() }).contains("revision", "allowed_actions", "audit")
+        assertThat(billing.body()).doesNotContain("payload_encrypted", "billing_key", "provider_response")
+    }
+
+    @Test
+    fun `admin notification resolution deserializes and preserves UUID replay and numeric identity`() {
+        val admin = account(true)
+        val workspace = ((body(get(admin, "/workspaces"))["items"] as List<*>).single() as Map<*, *>)["id"].toString()
+        val key = "reach-${UUID.randomUUID()}"
+        database.execute(
+            """
+            INSERT INTO billing_notifications(workspace_id,event_key,event_type,state,environment)
+            VALUES ('$workspace','$key','charge_failed','manual_review','toss_test')
+            """.trimIndent(),
+        )
+        val id =
+            database
+                .queryFirstColumn(
+                    "SELECT id FROM billing_notifications WHERE event_key='$key'",
+                ).single()
+                .toLong()
+        val request =
+            mapOf(
+                "operation_id" to UUID.randomUUID(),
+                "expected_revision" to 0,
+                "reason" to "미전달 확인",
+                "resolution" to "not_delivered",
+            )
+        val payload = json.writeValueAsString(request)
+        val response = send("/admin/notifications/$id/resolve", admin, payload)
+        assertThat(response.statusCode()).describedAs(response.body()).isEqualTo(200)
+        val notification = body(response)
+        assertThat(
+            notification.keys.map { it.toString() },
+        ).containsAll(ContractSpec.schemaRequired("AdminNotification"))
+        assertThat(notification["id"]).isInstanceOf(Number::class.java)
+        assertThat(notification["resolution"]).isEqualTo("not_delivered")
+        assertThat((notification["revision"] as Number).toLong()).isEqualTo(1)
+        val replay = send("/admin/notifications/$id/resolve", admin, payload)
+        assertThat(replay.statusCode()).describedAs(replay.body()).isEqualTo(200)
+        assertThat(body(replay)["revision"]).isEqualTo(notification["revision"])
+        val listed = body(get(admin, "/admin/notifications?id=$id"))["items"] as List<*>
+        assertThat(listed).hasSize(1)
+        assertThat(((listed.single() as Map<*, *>)["id"] as Number).toLong()).isEqualTo(id)
+        val changed = json.writeValueAsString(request + ("reason" to "다른 내용"))
+        assertThat(send("/admin/notifications/$id/resolve", admin, changed).statusCode()).isEqualTo(409)
+        val retry =
+            json.writeValueAsString(
+                mapOf(
+                    "operation_id" to UUID.randomUUID(),
+                    "expected_revision" to 1,
+                    "reason" to "재발송",
+                ),
+            )
+        // This API fixture uses the disabled stub worker; the known test environment must not be mixed.
+        assertThat(send("/admin/notifications/$id/retry", admin, retry).statusCode()).isEqualTo(409)
+    }
+
+    @Test
+    fun `a billing change during projection cannot attach its newer revision to earlier rows`() {
+        val workspace = UUID.randomUUID()
+        val service = org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminBillingService::class.java)
+        val query = org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminOperationsQuery::class.java)
+        var revision = 1L
+        org.mockito.Mockito
+            .`when`(query.billingState(workspace))
+            .thenAnswer { mapOf("revision" to revision) }
+        org.mockito.Mockito.`when`(service.orders(workspace)).thenAnswer {
+            revision = 2L // A worker commits while the multi-query projection is being assembled.
+            emptyList<kr.easydoc.application.admin.AdminBillingOrder>()
+        }
+        org.mockito.Mockito
+            .`when`(service.operations(workspace))
+            .thenReturn(emptyList())
+        org.mockito.Mockito
+            .`when`(service.actions(workspace))
+            .thenReturn(emptyList())
+        val response =
+            kr.easydoc.api.admin
+                .AdminBillingController(service, query)
+                .read(workspace)
+        assertThat(revision).isEqualTo(2L)
+        assertThat(response["revision"]).isEqualTo(1L)
+    }
+
     private fun account(admin: Boolean): String {
         val email = "monthly-${UUID.randomUUID()}@example.test"
         val payload = json.writeValueAsString(mapOf("email" to email, "password" to "correct horse battery"))

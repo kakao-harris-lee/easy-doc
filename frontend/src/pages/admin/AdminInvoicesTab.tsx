@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from 'react'
+import { Fragment, useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { ApiError } from '../../api/client'
 import { handleAdminInvoiceRequest, listAdminInvoiceRequests } from '../../api/admin'
 import type { InvoiceRequestResponse, InvoiceRequestStatus } from '../../api/types'
+import { useAdminQuery, adminPageNumber } from './useAdminQuery'
 import { Button } from '../../components/ui/Button'
 
 const PAGE_SIZE = 20
@@ -39,8 +40,10 @@ function defaultHandleFormState(): HandleFormState {
 function HandleForm({
   request,
   onHandled,
+  onReconcile,
 }: {
   request: InvoiceRequestResponse
+  onReconcile: (message: string) => void
   onHandled: (handled: InvoiceRequestResponse) => void
 }) {
   const [form, setForm] = useState<HandleFormState>(defaultHandleFormState)
@@ -62,6 +65,7 @@ function HandleForm({
       onHandled(handled)
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : HANDLE_ERROR_MESSAGE)
+      onReconcile(caught instanceof ApiError ? caught.message : HANDLE_ERROR_MESSAGE)
     } finally {
       setSubmitting(false)
     }
@@ -110,7 +114,11 @@ function HandleForm({
       </div>
 
       <Button type="submit" loading={submitting}>
-        {submitting ? '처리하는 중…' : '처리하기'}
+        {submitting
+          ? '처리하는 중…'
+          : form.status === 'issued'
+            ? '발급 완료로 기록'
+            : '거절로 기록'}
       </Button>
     </form>
   )
@@ -118,8 +126,18 @@ function HandleForm({
 
 /** 「세금계산서」 탭 — 상태 필터·목록·처리 (어드민 최소, 계약 2.25.0). */
 export function AdminInvoicesTab() {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('requested')
-  const [page, setPage] = useState(1)
+  const [query, updateQuery] = useAdminQuery()
+  const requestedStatus = query.get('invoice_status') ?? 'requested'
+  const statusFilter: StatusFilter = ['requested', 'issued', 'rejected', 'all'].includes(
+    requestedStatus,
+  )
+    ? (requestedStatus as StatusFilter)
+    : 'requested'
+  const page = query.get('invoice') ? 1 : adminPageNumber(query.get('invoice_page'))
+  const selected = query.get('invoice')
+  const setPage = (value: number) => updateQuery({ invoice_page: String(value) })
+  const setStatusFilter = (value: StatusFilter) =>
+    updateQuery({ invoice_status: value, invoice_page: '1', invoice: undefined })
   const [items, setItems] = useState<InvoiceRequestResponse[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -131,7 +149,7 @@ export function AdminInvoicesTab() {
 
   // 필터·쪽·새로고침 신호가 바뀌었는지 렌더 중에 잰다("렌더 중 상태 조정" 패턴) —
   // effect 안에서 곧바로 setLoading(true)를 부르면 안 된다는 규칙을 지킨다.
-  const queryKey = `${statusFilter}|${page}|${reloadToken}`
+  const queryKey = `${statusFilter}|${page}|${reloadToken}|${selected}`
   const [renderedQueryKey, setRenderedQueryKey] = useState(queryKey)
   if (renderedQueryKey !== queryKey) {
     setRenderedQueryKey(queryKey)
@@ -141,23 +159,34 @@ export function AdminInvoicesTab() {
   useEffect(() => {
     const controller = new AbortController()
     listAdminInvoiceRequests(
-      { status: statusFilter === 'all' ? undefined : statusFilter, page, size: PAGE_SIZE },
+      {
+        id: selected || undefined,
+        status: selected || statusFilter === 'all' ? undefined : statusFilter,
+        page,
+        size: PAGE_SIZE,
+      },
       controller.signal,
     )
       .then((response) => {
+        if (controller.signal.aborted) return
         setItems(response.items)
         setTotal(response.total)
         setError(null)
       })
       .catch((caught: unknown) => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') {
+        if (
+          controller.signal.aborted ||
+          (caught instanceof DOMException && caught.name === 'AbortError')
+        ) {
           return
         }
         setError(caught instanceof ApiError ? caught.message : LIST_ERROR_MESSAGE)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
     return () => controller.abort()
-  }, [statusFilter, page, reloadToken])
+  }, [statusFilter, page, reloadToken, selected])
 
   function handleHandled(handled: InvoiceRequestResponse): void {
     setStatusMessage(
@@ -176,7 +205,6 @@ export function AdminInvoicesTab() {
           id={filterId}
           value={statusFilter}
           onChange={(event) => {
-            setPage(1)
             setStatusMessage(null)
             setStatusFilter(event.target.value as StatusFilter)
           }}
@@ -229,15 +257,64 @@ export function AdminInvoicesTab() {
                   </tr>
                 ) : (
                   items.map((item) => (
-                    <tr key={item.id}>
-                      <th scope="row">{item.company_name}</th>
-                      <td>{item.business_number}</td>
-                      <td>
-                        {item.period_from} ~ {item.period_to}
-                      </td>
-                      <td>{STATUS_LABEL[item.status] ?? item.status}</td>
-                      <td>{new Date(item.requested_at).toLocaleString('ko-KR')}</td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr>
+                        <th scope="row">
+                          <button
+                            className="text-primary underline"
+                            aria-expanded={selected === item.id}
+                            onClick={() =>
+                              updateQuery({ invoice: selected === item.id ? undefined : item.id })
+                            }
+                          >
+                            {item.company_name}
+                          </button>
+                        </th>
+                        <td>{item.business_number}</td>
+                        <td>
+                          {item.period_from} ~ {item.period_to}
+                        </td>
+                        <td>{STATUS_LABEL[item.status] ?? item.status}</td>
+                        <td>{new Date(item.requested_at).toLocaleString('ko-KR')}</td>
+                      </tr>
+                      {selected === item.id && (
+                        <tr>
+                          <td colSpan={5}>
+                            <section
+                              aria-label={`${item.company_name} 요청 상세`}
+                              className="space-y-2 p-3"
+                            >
+                              <p>
+                                상호: {item.company_name} · 사업자번호: {item.business_number}
+                              </p>
+                              <p>
+                                기간: {item.period_from} ~ {item.period_to}
+                              </p>
+                              <p>담당자 이메일: {item.contact_email}</p>
+                              <p>
+                                대표자: {item.representative_name} · 주소: {item.address}
+                              </p>
+                              <p>
+                                처리 메모: {item.operator_note ?? '없음'} · 처리 시각:{' '}
+                                {item.handled_at
+                                  ? new Date(item.handled_at).toLocaleString('ko-KR')
+                                  : '미처리'}
+                              </p>
+                              {item.status === 'requested' && (
+                                <HandleForm
+                                  request={item}
+                                  onHandled={handleHandled}
+                                  onReconcile={(message) => {
+                                    setStatusMessage(message)
+                                    setReloadToken((n) => n + 1)
+                                  }}
+                                />
+                              )}
+                            </section>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))
                 )}
               </tbody>
@@ -247,7 +324,7 @@ export function AdminInvoicesTab() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => setPage(Math.max(1, page - 1))}
                 disabled={page <= 1}
               >
                 이전
@@ -256,21 +333,13 @@ export function AdminInvoicesTab() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => setPage(page + 1)}
                 disabled={!hasMore}
               >
                 다음
               </Button>
             </div>
           </div>
-
-          {/* 처리 대기(`requested`)만 폼을 낸다 — 발급·거절이 끝난 요청은 다시 처리할
-          수 없다(서버 409). */}
-          {items
-            .filter((item) => item.status === 'requested')
-            .map((item) => (
-              <HandleForm key={item.id} request={item} onHandled={handleHandled} />
-            ))}
         </div>
       )}
     </div>

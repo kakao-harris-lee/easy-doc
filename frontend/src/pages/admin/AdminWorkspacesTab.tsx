@@ -1,6 +1,7 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useState, useCallback } from 'react'
 import type { FormEvent } from 'react'
 
+import { useAdminQuery, adminPageNumber } from './useAdminQuery'
 import { ApiError } from '../../api/client'
 import { listAdminWorkspaces, readAdminWorkspace } from '../../api/admin'
 import type { AdminWorkspaceDetailResponse, AdminWorkspaceSummary } from '../../api/types'
@@ -133,8 +134,9 @@ function WorkspaceDetailPanel({
       </h3>
 
       <AdminMonthlyPanel
-        key={`${workspaceId}|${month}`}
+        key={workspaceId}
         workspaceId={workspaceId}
+        refreshToken={reloadToken}
         month={month}
         onMonthChange={onMonthChange}
         onChanged={() => {
@@ -142,7 +144,12 @@ function WorkspaceDetailPanel({
           onCreditsAdjusted()
         }}
       />
-      <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin hidePayments />
+      <SubscriptionCard
+        key={`${workspaceId}:${reloadToken}`}
+        workspaceId={workspaceId}
+        admin
+        hidePayments
+      />
       <div>
         <h4 className="mb-2 text-sm font-semibold text-foreground">세금계산서 요청</h4>
         <table className="usage-table">
@@ -214,21 +221,30 @@ function WorkspaceDetailPanel({
 
 /** 「워크스페이스」 탭 — 사용자 검색·목록·상세·크레딧 부여 (어드민 최소, 계약 2.25.0). */
 export function AdminWorkspacesTab() {
-  const [initialQuery] = useState(() => new URLSearchParams(window.location.search))
-  const [month, setMonth] = useState(() => validMonth(initialQuery.get('month')) ?? currentMonth())
+  const [initialQuery, updateQuery] = useAdminQuery()
+  const rawMonth = initialQuery.get('month')
+  useEffect(() => {
+    if (rawMonth && !validMonth(rawMonth)) updateQuery({ month: currentMonth() })
+  }, [rawMonth, updateQuery])
+  const month = validMonth(initialQuery.get('month')) ?? currentMonth()
+  const setMonth = useCallback((value: string) => updateQuery({ month: value }), [updateQuery])
   const [timezone, setTimezone] = useState('Asia/Seoul')
   const [hasChosenMonth, setHasChosenMonth] = useState(
     Boolean(validMonth(initialQuery.get('month'))),
   )
   const maximumMonth = currentMonth(timezone)
   const [q, setQ] = useState(initialQuery.get('q') ?? '')
-  const [appliedQ, setAppliedQ] = useState(q)
-  const [page, setPage] = useState(1)
+  const appliedQ = initialQuery.get('q') ?? ''
+  const setAppliedQ = (value: string) => updateQuery({ q: value || undefined, workspace_page: '1' })
+  const page = adminPageNumber(initialQuery.get('workspace_page'))
+  const setPage = (value: number | ((current: number) => number)) =>
+    updateQuery({ workspace_page: String(typeof value === 'function' ? value(page) : value) })
   const [items, setItems] = useState<AdminWorkspaceSummary[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(initialQuery.get('workspace'))
+  const selectedId = initialQuery.get('workspace')
+  const setSelectedId = (value: string) => updateQuery({ workspace: value })
   // 계정별로 「지금 고른 작업 공간」. 목록이 바뀌어 저장해 둔 id가 사라지면 아래에서
   // 그 계정의 첫 작업 공간으로 되돌려 쓴다 — 따로 초기화하지 않아도 된다.
   const [selectedByOwner, setSelectedByOwner] = useState<Record<string, string>>({})
@@ -278,22 +294,12 @@ export function AdminWorkspacesTab() {
         if (!controller.signal.aborted) setLoading(false)
       })
     return () => controller.abort()
-  }, [appliedQ, page, reloadToken, month, hasChosenMonth])
+  }, [appliedQ, page, reloadToken, month, hasChosenMonth, setMonth])
 
-  useEffect(() => {
-    const url = new URL(window.location.href)
-    url.searchParams.set('month', month)
-    if (appliedQ) url.searchParams.set('q', appliedQ)
-    else url.searchParams.delete('q')
-    if (selectedId) url.searchParams.set('workspace', selectedId)
-    else url.searchParams.delete('workspace')
-    window.history.replaceState(window.history.state, '', url)
-  }, [month, appliedQ, selectedId])
   function changeMonth(value: string) {
     if (validMonth(value, maximumMonth)) {
       setHasChosenMonth(true)
-      setMonth(value)
-      setPage(1)
+      updateQuery({ month: value, workspace_page: '1', credit_page: '1', payment_page: '1' })
     }
   }
 
@@ -448,6 +454,7 @@ export function AdminWorkspacesTab() {
                             workspaceId={selected.workspace_id}
                             month={month}
                             timezone={timezone}
+                            events={selected.selected_month.recent_events}
                             paid={selected.selected_month.paid_krw}
                             refunded={selected.selected_month.refunded_krw}
                           />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { listAdminFeedback } from '../../api/admin'
 import { ApiError } from '../../api/client'
 import type { AdminFeedbackListResponse, PublishIntent } from '../../api/types'
+import { adminPageNumber, useAdminQuery, adminDate } from './useAdminQuery'
 import { Button } from '../../components/ui/Button'
 
 const INTENT_LABELS: Record<PublishIntent, string> = {
@@ -11,24 +12,92 @@ const INTENT_LABELS: Record<PublishIntent, string> = {
 }
 
 export function AdminFeedbackTab() {
-  const [page, setPage] = useState(1)
+  const [query, updateQuery] = useAdminQuery()
+  const page = adminPageNumber(query.get('feedback_page'))
+  const intent = query.get('feedback_intent')
+  const score = Number(query.get('feedback_score'))
+  const filters = {
+    publish_intent:
+      intent && Object.hasOwn(INTENT_LABELS, intent) ? (intent as PublishIntent) : undefined,
+    max_quality_score: Number.isInteger(score) && score >= 1 && score <= 5 ? score : undefined,
+    from: adminDate(query.get('feedback_from')),
+    to: adminDate(query.get('feedback_to')),
+  }
+  const setPage = (value: number) => updateQuery({ feedback_page: String(value) })
   const [revision, setRevision] = useState(0)
   return (
-    <FeedbackPage
-      key={`${page}:${revision}`}
-      page={page}
-      onPage={setPage}
-      onRefresh={() => setRevision((value) => value + 1)}
-    />
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3">
+        <label>
+          사용 가능 여부
+          <select
+            aria-label="사용 가능 여부"
+            value={filters.publish_intent ?? ''}
+            onChange={(e) => updateQuery({ feedback_intent: e.target.value, feedback_page: '1' })}
+          >
+            <option value="">전체</option>
+            {Object.entries(INTENT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          최대 평점
+          <select
+            value={filters.max_quality_score ?? ''}
+            onChange={(e) => updateQuery({ feedback_score: e.target.value, feedback_page: '1' })}
+          >
+            <option value="">전체</option>
+            {[1, 2, 3, 4, 5].map((score) => (
+              <option key={score} value={score}>
+                {score}점 이하
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          시작일
+          <input
+            type="date"
+            value={filters.from ?? ''}
+            onChange={(e) => updateQuery({ feedback_from: e.target.value, feedback_page: '1' })}
+          />
+        </label>
+        <label>
+          종료일
+          <input
+            type="date"
+            value={filters.to ?? ''}
+            onChange={(e) => updateQuery({ feedback_to: e.target.value, feedback_page: '1' })}
+          />
+        </label>
+      </div>
+      <FeedbackPage
+        key={`${page}:${revision}:${JSON.stringify(filters)}`}
+        filters={filters}
+        page={page}
+        onPage={setPage}
+        onRefresh={() => setRevision((value) => value + 1)}
+      />
+    </div>
   )
 }
 
 function FeedbackPage({
   page,
+  filters,
   onPage,
   onRefresh,
 }: {
   page: number
+  filters: {
+    publish_intent?: PublishIntent
+    max_quality_score?: number
+    from?: string
+    to?: string
+  }
   onPage: (page: number) => void
   onRefresh: () => void
 }) {
@@ -36,7 +105,18 @@ function FeedbackPage({
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     const controller = new AbortController()
-    listAdminFeedback({ page, size: 20 }, controller.signal)
+    listAdminFeedback(
+      {
+        page,
+        size: 20,
+        ...filters,
+        from: filters.from ? `${filters.from}T00:00:00+09:00` : undefined,
+        to: filters.to
+          ? new Date(Date.parse(`${filters.to}T00:00:00+09:00`) + 86400000).toISOString()
+          : undefined,
+      },
+      controller.signal,
+    )
       .then((response) => {
         if (!controller.signal.aborted) setData(response)
       })
@@ -47,7 +127,7 @@ function FeedbackPage({
           )
       })
     return () => controller.abort()
-  }, [page])
+  }, [page, filters])
 
   return (
     <section aria-label="사용자 의견 목록" className="space-y-4">

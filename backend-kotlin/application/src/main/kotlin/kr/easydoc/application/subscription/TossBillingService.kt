@@ -489,14 +489,25 @@ class TossBillingService(
         } catch (failure: TossDeclined) {
             failed(order, failure.requiresCard)
         } catch (_: TossUncertain) {
-            transaction.inTransaction {
-                if (retryWindowElapsed(order.createdAt) &&
-                    order.status in listOf("pending", "processing", "scheduled")
-                ) {
-                    store.saveOrder(order.copy(status = "manual_review"))
-                } else {
-                    store.release(id, clock.instant().plus(timing.retryInterval))
-                }
+            handleUncertain(owner, order)
+        }
+    }
+
+    private fun handleUncertain(
+        owner: UUID,
+        order: BillingOrder,
+    ) {
+        // Serialize meaningful revision stamps with every other workspace billing writer.
+        // Re-read after the provider call so a late uncertain result cannot overwrite a settled order.
+        owned(owner, order.workspaceId) {
+            val current = store.order(order.id) ?: return@owned
+            if (current.status in listOf("paid", "failed", "canceled")) return@owned
+            if (retryWindowElapsed(current.createdAt) &&
+                current.status in listOf("pending", "processing", "scheduled")
+            ) {
+                store.saveOrder(current.copy(status = "manual_review"))
+            } else {
+                store.release(order.id, clock.instant().plus(timing.retryInterval))
             }
         }
     }

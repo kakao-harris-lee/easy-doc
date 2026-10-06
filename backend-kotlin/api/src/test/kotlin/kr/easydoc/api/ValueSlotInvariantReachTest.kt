@@ -325,6 +325,10 @@ class ValueSlotInvariantReachTest {
                 common + listOf("UUID 문법 아님" to "abc")
             }
 
+            "date-time" -> {
+                common + listOf("ISO 시각 문법 아님" to "abc")
+            }
+
             STRING_KIND -> {
                 val outsider = enumOutsider(parameter)
                 common + if (outsider == null) emptyList() else listOf("enum 밖" to outsider)
@@ -345,6 +349,7 @@ class ValueSlotInvariantReachTest {
 
     /** 계약 파라미터 스키마의 선언 타입. `anyOf` 는 널이 아닌 갈래를 읽는다. */
     private fun declaredKindOf(parameter: ContractQueryParameter): String {
+        if (parameter.schema["type"] == INTEGER_KIND) return INTEGER_KIND
         val direct =
             parameter.schema["format"]?.toString()
                 ?: parameter.schema["type"]?.toString()?.takeIf { it != NULL_TYPE }
@@ -492,6 +497,12 @@ class ValueSlotInvariantReachTest {
                 "auth_key":"test-auth"}""",
                 "TossRefundRequest" to """{"operation_id":"00000000-0000-0000-0000-000000000001","amount":100,
                     "recovery_credits":0,"stop_renewal":false,"reason":"support","expected_revision":0}""",
+                "AdminNotificationResolveRequest" to
+                    """{"operation_id":"00000000-0000-0000-0000-000000000001","expected_revision":0,
+                    "reason":"support","resolution":"not_delivered"}""",
+                "AdminNotificationRetryRequest" to
+                    """{"operation_id":"00000000-0000-0000-0000-000000000001","expected_revision":0,
+                    "reason":"support"}""",
                 "AdminBillingActionRequest" to
                     """{"operation_id":"00000000-0000-0000-0000-000000000001","reason":"support"}""",
                 "SubscriptionCheckoutRequest" to

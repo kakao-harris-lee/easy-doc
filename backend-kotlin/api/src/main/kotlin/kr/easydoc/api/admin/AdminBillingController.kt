@@ -21,12 +21,17 @@ import java.util.UUID
 
 @RestController
 @Profile("!migrate")
-class AdminBillingController(private val service: AdminBillingService) {
+class AdminBillingController(
+    private val service: AdminBillingService,
+    private val query: kr.easydoc.application.admin.AdminOperationsQuery,
+) {
     @GetMapping("/admin/workspaces/{workspace_id}/billing")
     fun read(
         @PathVariable("workspace_id") workspace: UUID,
-    ): Map<String, Any> =
-        mapOf(
+    ): Map<String, Any?> {
+        // Read the revision first: an intervening update can only make this token stale, never authorize stale data.
+        val state = query.billingState(workspace)
+        return mapOf(
             "orders" to
                 service.orders(workspace).map {
                     mapOf(
@@ -37,11 +42,14 @@ class AdminBillingController(private val service: AdminBillingService) {
                         "created_at" to it.createdAt,
                         "environment" to it.environment,
                         "needs_review" to it.needsReview,
+                        "can_sync" to it.canSync,
+                        "sync_blocked_reason" to it.syncBlockedReason,
                     )
                 },
             "operations" to service.operations(workspace).map(AdminRefundResponse::of),
             "actions" to service.actions(workspace).map(AdminBillingActionResponse::of),
-        )
+        ) + state
+    }
 
     @PostMapping("/admin/workspaces/{workspace_id}/payments/{id}/refund", consumes = ["application/json"])
     fun refund(
@@ -74,7 +82,7 @@ class AdminBillingController(private val service: AdminBillingService) {
         @PathVariable id: UUID,
         @RequestBody request: AdminBillingActionRequest,
     ) {
-        service.action(workspace, user.id, request.operationId, "sync", request.reason, id)
+        service.action(workspace, user.id, request.operationId, "sync", request.reason, id, request.expectedRevision)
     }
 
     @PostMapping("/admin/workspaces/{workspace_id}/billing/stop-renewal", consumes = ["application/json"])
@@ -84,7 +92,14 @@ class AdminBillingController(private val service: AdminBillingService) {
         @PathVariable("workspace_id") workspace: UUID,
         @RequestBody request: AdminBillingActionRequest,
     ) {
-        service.action(workspace, user.id, request.operationId, "stop_renewal", request.reason)
+        service.action(
+            workspace,
+            user.id,
+            request.operationId,
+            "stop_renewal",
+            request.reason,
+            expectedRevision = request.expectedRevision,
+        )
     }
 
     @PostMapping("/admin/workspaces/{workspace_id}/billing/retry-card-deletion", consumes = ["application/json"])
@@ -94,7 +109,14 @@ class AdminBillingController(private val service: AdminBillingService) {
         @PathVariable("workspace_id") workspace: UUID,
         @RequestBody request: AdminBillingActionRequest,
     ) {
-        service.action(workspace, user.id, request.operationId, "retry_card_deletion", request.reason)
+        service.action(
+            workspace,
+            user.id,
+            request.operationId,
+            "retry_card_deletion",
+            request.reason,
+            expectedRevision = request.expectedRevision,
+        )
     }
 }
 
@@ -116,6 +138,9 @@ data class AdminBillingActionRequest
     constructor(
         @param:JsonProperty("operation_id") val operationId: UUID,
         @param:JsonProperty("reason") val reason: String,
+        @param:JsonProperty("expected_revision")
+        @param:com.fasterxml.jackson.annotation.JsonSetter(nulls = com.fasterxml.jackson.annotation.Nulls.SET)
+        val expectedRevision: Long? = null,
     ) {
         override fun toString(): String = "AdminBillingActionRequest(operationId=$operationId, reason=[MASKED])"
     }

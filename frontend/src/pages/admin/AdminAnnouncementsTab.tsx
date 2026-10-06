@@ -25,6 +25,7 @@ function CreateAnnouncementForm({
   onCreated: (created: AnnouncementResponse) => void
 }) {
   const [body, setBody] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const bodyId = useId()
@@ -36,10 +37,15 @@ function CreateAnnouncementForm({
       setError('공지 내용을 입력해 주세요.')
       return
     }
+    if (!confirmed) {
+      setError('미리보기를 확인하고 게시 확인을 선택해 주세요.')
+      return
+    }
     setSubmitting(true)
     try {
       const created = await createAdminAnnouncement({ body })
       setBody('')
+      setConfirmed(false)
       onCreated(created)
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : CREATE_ERROR_MESSAGE)
@@ -66,10 +72,22 @@ function CreateAnnouncementForm({
           className="review-textarea min-h-24"
           maxLength={MAX_BODY_LENGTH}
           value={body}
-          onChange={(event) => setBody(event.target.value)}
+          onChange={(event) => {
+            setBody(event.target.value)
+            setConfirmed(false)
+          }}
         />
         <p className="field-hint">{MAX_BODY_LENGTH}자 이내. 만들면 바로 활성으로 게시됩니다.</p>
       </div>
+      {body.trim() && <AnnouncementPreview body={body} />}
+      <label>
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(e) => setConfirmed(e.target.checked)}
+        />
+        미리보기를 확인했으며 모든 사용자에게 즉시 게시합니다.
+      </label>
       <Button type="submit" loading={submitting} className="self-start">
         {submitting ? '만드는 중…' : '공지 만들기'}
       </Button>
@@ -86,6 +104,7 @@ function AnnouncementRow({
   onUpdated: (updated: AnnouncementResponse) => void
 }) {
   const [editing, setEditing] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
   const [draft, setDraft] = useState(announcement.body)
   const [toggling, setToggling] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -97,6 +116,10 @@ function AnnouncementRow({
 
   async function handleToggleActive(): Promise<void> {
     setError(null)
+    if (!announcement.active && !confirmed) {
+      setError('미리보기를 확인하고 게시 확인을 선택해 주세요.')
+      return
+    }
     setToggling(true)
     try {
       const updated = await updateAdminAnnouncement(announcement.id, {
@@ -115,6 +138,10 @@ function AnnouncementRow({
     setError(null)
     if (draft.trim() === '') {
       setError('공지 내용을 입력해 주세요.')
+      return
+    }
+    if (announcement.active && !confirmed) {
+      setError('미리보기를 확인하고 게시 확인을 선택해 주세요.')
       return
     }
     setSaving(true)
@@ -147,6 +174,10 @@ function AnnouncementRow({
           <p id={previewId} className="mt-2 whitespace-pre-wrap text-foreground">
             {announcement.body}
           </p>
+          <p className="text-sm text-muted-foreground">
+            작성: {new Date(announcement.created_at).toLocaleString('ko-KR')} · 수정:{' '}
+            {new Date(announcement.updated_at).toLocaleString('ko-KR')}
+          </p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button
@@ -166,6 +197,7 @@ function AnnouncementRow({
               onClick={() => {
                 setDraft(announcement.body)
                 setEditing(true)
+                setConfirmed(false)
               }}
             >
               고치기
@@ -174,6 +206,19 @@ function AnnouncementRow({
         </div>
       </div>
 
+      {(!announcement.active || editing) && (
+        <>
+          <AnnouncementPreview body={editing ? draft : announcement.body} />
+          <label>
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+            />
+            미리보기를 확인했으며 게시에 동의합니다.
+          </label>
+        </>
+      )}
       {editing && (
         <form
           className="flex flex-col gap-3"
@@ -188,7 +233,10 @@ function AnnouncementRow({
               className="review-textarea min-h-24"
               maxLength={MAX_BODY_LENGTH}
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                setConfirmed(false)
+              }}
             />
           </div>
           <div className="flex gap-3">
@@ -269,5 +317,17 @@ export function AdminAnnouncementsTab() {
         </ul>
       )}
     </div>
+  )
+}
+
+function AnnouncementPreview({ body }: { body: string }) {
+  return (
+    <section aria-label="공지 노출 미리보기" className="border-b border-border bg-accent/40 p-4">
+      <p className="mb-2 text-sm">게시 후 노출 미리보기</p>
+      <div className="flex items-start justify-between gap-3 rounded-[10px] border border-border bg-card px-4 py-3">
+        <p className="m-0 text-sm text-foreground">{body}</p>
+        <span className="shrink-0 text-sm">닫기</span>
+      </div>
+    </section>
   )
 }

@@ -51,7 +51,15 @@ data class AdminWorkspaceSummaryResponse(
                 monthCostUsd = summary.monthCostUsd?.toPlainString(),
                 selectedMonth =
                     summary.selectedMonth?.let {
-                        AdminSelectedMonthResponse(it.month, it.credits, it.paidKrw, it.refundedKrw)
+                        AdminSelectedMonthResponse(
+                            it.month,
+                            it.credits,
+                            it.paidKrw,
+                            it.refundedKrw,
+                            it.recentEvents.map { event ->
+                                AdminRecentPaymentEventResponse(event.id, event.kind, event.amountKrw, event.occurredAt)
+                            },
+                        )
                     },
             )
     }
@@ -145,4 +153,12 @@ data class AdminSelectedMonthResponse(
     val credits: BigDecimal,
     @get:JsonProperty("paid_krw") val paidKrw: Long,
     @get:JsonProperty("refunded_krw") val refundedKrw: Long,
+    @get:JsonProperty("recent_events") val recentEvents: List<AdminRecentPaymentEventResponse> = emptyList(),
+)
+
+data class AdminRecentPaymentEventResponse(
+    val id: UUID,
+    val kind: String,
+    @get:JsonProperty("amount_krw") val amountKrw: Int,
+    @get:JsonProperty("occurred_at") val occurredAt: Instant?,
 )

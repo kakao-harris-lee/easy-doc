@@ -40,6 +40,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
@@ -123,9 +124,15 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         val items =
             ex.parameterValidationResults.flatMap { result ->
                 val parameter = result.methodParameter
+                val query = parameter.getParameterAnnotation(RequestParam::class.java)
+                val path = parameter.getParameterAnnotation(PathVariable::class.java)
+                val wireName =
+                    query?.name?.ifEmpty { query.value }?.ifEmpty { null }
+                        ?: path?.name?.ifEmpty { path.value }?.ifEmpty { null }
+                        ?: parameter.parameterName
                 result.resolvableErrors.map { error ->
                     ValidationErrorItem(
-                        loc = listOfNotNull(locationOf(parameter), parameter.parameterName),
+                        loc = listOfNotNull(locationOf(parameter), wireName),
                         msg = error.defaultMessage ?: INVALID_INPUT_MESSAGE,
                         type = errorTypeOf(error.codes?.lastOrNull()),
                     )

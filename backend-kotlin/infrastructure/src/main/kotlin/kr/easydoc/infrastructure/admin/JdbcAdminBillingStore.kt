@@ -201,6 +201,7 @@ class JdbcAdminBillingStore(private val jdbc: JdbcClient) : AdminBillingStore {
                 )
             }.list()
 
+    @Suppress("LongMethod") // Immutable replay validation and reservation share the workspace lock.
     override fun audit(
         workspace: UUID,
         actor: UUID,
@@ -208,13 +209,14 @@ class JdbcAdminBillingStore(private val jdbc: JdbcClient) : AdminBillingStore {
         action: String,
         reason: String,
         target: UUID?,
+        expectedRevision: Long?,
     ): Boolean {
         val existing =
             jdbc
                 .sql(
                     """
                     SELECT workspace_id=:workspace AND actor_user_id=:actor AND action=:action AND reason=:reason
-                        AND target_id IS NOT DISTINCT FROM :target AS matches,status
+                        AND target_id IS NOT DISTINCT FROM :target AND expected_revision IS NOT DISTINCT FROM :revision AS matches,status
                     FROM admin_billing_actions WHERE operation_id=:id
                     """.trimIndent(),
                 ).param(
@@ -226,6 +228,7 @@ class JdbcAdminBillingStore(private val jdbc: JdbcClient) : AdminBillingStore {
                 ).param("action", action)
                 .param("reason", reason)
                 .param("target", target)
+                .param("revision", expectedRevision)
                 .param("id", operation)
                 .query { rs, _ -> rs.getBoolean("matches") to rs.getString("status") }
                 .optional()
@@ -233,12 +236,26 @@ class JdbcAdminBillingStore(private val jdbc: JdbcClient) : AdminBillingStore {
             if (!existing.get().first) throw ConflictException("같은 요청 번호로 다른 작업을 요청할 수 없습니다")
             return existing.get().second == "pending"
         }
+        if (expectedRevision != null) {
+            val current =
+                jdbc
+                    .sql(
+                        """
+                        SELECT greatest(coalesce((SELECT admin_revision FROM workspace_subscriptions WHERE workspace_id=:id),0),
+                            coalesce((SELECT admin_revision FROM toss_billing_sessions WHERE workspace_id=:id),0),
+                            coalesce((SELECT max(admin_revision) FROM toss_billing_orders WHERE workspace_id=:id),0))
+                        """.trimIndent(),
+                    ).param("id", workspace)
+                    .query(Long::class.java)
+                    .single()
+            if (current != expectedRevision) throw ConflictException("상태가 변경되었습니다. 다시 조회하세요")
+        }
         jdbc
             .sql(
                 """
                 INSERT INTO admin_billing_actions(operation_id,workspace_id,actor_user_id,action,target_id,
-                    reason,before_state)
-                SELECT :id,:workspace,:actor,:action,:target,:reason,
+                    reason,expected_revision,before_state)
+                SELECT :id,:workspace,:actor,:action,:target,:reason,:revision,
                     jsonb_build_object('subscription_status',s.status,'cycle_ends_at',s.cycle_ends_at,
                         'card_state',b.state)
                 FROM workspaces w LEFT JOIN workspace_subscriptions s ON s.workspace_id=w.id
@@ -254,6 +271,7 @@ class JdbcAdminBillingStore(private val jdbc: JdbcClient) : AdminBillingStore {
             .param("action", action)
             .param("target", target)
             .param("reason", reason)
+            .param("revision", expectedRevision)
             .update()
         return true
     }

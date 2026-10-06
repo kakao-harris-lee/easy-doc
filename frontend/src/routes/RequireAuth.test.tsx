@@ -8,6 +8,8 @@ import { fetchMe, login } from '../api/auth'
 import { listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import {
+  listAdminOperations,
+  listAdminErrorEvents,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
   listAdminWorkspaces,
@@ -48,6 +50,8 @@ vi.mock('../api/admin', () => ({
   listAdminWorkspaces: vi.fn(),
   listAdminInvoiceRequests: vi.fn(),
   readAdminErrors: vi.fn(),
+  listAdminOperations: vi.fn(),
+  listAdminErrorEvents: vi.fn(),
   listAdminAnnouncements: vi.fn(),
 }))
 
@@ -70,6 +74,15 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+  vi.mocked(listAdminOperations).mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 20,
+    counts: {},
+  })
+  vi.mocked(listAdminErrorEvents).mockResolvedValue({ items: [], total: 0, page: 1, size: 20 })
   window.localStorage.clear()
   vi.mocked(login).mockReset()
   vi.mocked(fetchMe).mockReset()
@@ -203,7 +216,7 @@ describe('관리자 가드 (어드민 최소, 계약 2.25.0)', () => {
     renderAt('/admin')
 
     expect(
-      await screen.findByRole('heading', { name: '고객과 사용자 의견을 확인합니다' }),
+      await screen.findByRole('heading', { name: '처리할 일을 확인하고 고객을 관리합니다' }),
     ).toBeInTheDocument()
   })
 })

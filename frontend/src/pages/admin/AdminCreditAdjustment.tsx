@@ -1,43 +1,13 @@
 import { useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { adjustAdminWorkspaceCredits } from '../../api/admin'
+import { getAdminBillingRequest } from '../../api/subscriptions'
 import { ApiError } from '../../api/client'
 import type { AdminCreditAdjustmentRequest } from '../../api/types'
 import { Button } from '../../components/ui/Button'
 import { formatCredits, isCreditAmount } from '../../lib/credits'
 
-// Preserve unresolved operations across month changes and browser refreshes.
-function readPending(workspaceId: string): AdminCreditAdjustmentRequest | null {
-  try {
-    const value: unknown = JSON.parse(
-      sessionStorage.getItem(`admin-credit-operation:${workspaceId}`) ?? 'null',
-    )
-    if (!value || typeof value !== 'object') return null
-    const item = value as Partial<AdminCreditAdjustmentRequest>
-    if (
-      typeof item.operation_id !== 'string' ||
-      typeof item.credits !== 'number' ||
-      typeof item.note !== 'string' ||
-      typeof item.expected_balance !== 'number' ||
-      typeof item.expected_reserved !== 'number' ||
-      typeof item.expected_revision !== 'number' ||
-      !['manual', 'refund', 'plan_monthly'].includes(item.reason ?? '')
-    )
-      return null
-    return item as AdminCreditAdjustmentRequest
-  } catch {
-    return null
-  }
-}
-function savePending(workspaceId: string, request: AdminCreditAdjustmentRequest | null) {
-  try {
-    const key = `admin-credit-operation:${workspaceId}`
-    if (request) sessionStorage.setItem(key, JSON.stringify(request))
-    else sessionStorage.removeItem(key)
-  } catch {
-    /* Component state still preserves the exact operation for retries. */
-  }
-}
+import { useAdminOperationKey, readOperation, saveOperation } from './adminOperationStorage'
 
 export function AdminCreditAdjustment({
   workspaceId,
@@ -52,7 +22,8 @@ export function AdminCreditAdjustment({
   revision: number
   onChanged: () => void
 }) {
-  const [pending] = useState(() => readPending(workspaceId))
+  const storageKey = useAdminOperationKey(workspaceId, 'credit')
+  const [pending] = useState(() => readOperation<AdminCreditAdjustmentRequest>(storageKey))
   const [amount, setAmount] = useState(pending ? String(Math.abs(pending.credits)) : '')
   const [kind, setKind] = useState<'grant' | 'withdraw' | 'restore'>(
     pending
@@ -113,11 +84,11 @@ export function AdminCreditAdjustment({
     if (!preview || busy) return
     setBusy(true)
     setError(null)
-    savePending(workspaceId, preview)
     try {
+      saveOperation(storageKey, preview)
       await adjustAdminWorkspaceCredits(workspaceId, preview)
       attempt.current = null
-      savePending(workspaceId, null)
+      saveOperation(storageKey, null)
       setUncertain(false)
       setPreview(null)
       setAmount('')
@@ -130,11 +101,33 @@ export function AdminCreditAdjustment({
           ? cause.message
           : '결과를 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.',
       )
-      const unknownResult =
-        !(cause instanceof ApiError) || cause.status === 0 || cause.status >= 500
-      setUncertain(unknownResult)
-      if (!unknownResult) savePending(workspaceId, null)
+      let confirmedAbsent = false
       if (cause instanceof ApiError && cause.status === 409) {
+        try {
+          const result = await getAdminBillingRequest(workspaceId, preview.operation_id)
+          if (result.status === 'completed') {
+            saveOperation(storageKey, null)
+            attempt.current = null
+            setUncertain(false)
+            setPreview(null)
+            setError(null)
+            setMessage('크레딧을 반영했습니다.')
+            onChanged()
+            return
+          }
+        } catch (lookupError) {
+          confirmedAbsent = lookupError instanceof ApiError && lookupError.status === 404
+        }
+        onChanged()
+      }
+      const unknownResult =
+        !(cause instanceof ApiError) ||
+        cause.status === 0 ||
+        cause.status >= 500 ||
+        (cause.status === 409 && !confirmedAbsent)
+      setUncertain(unknownResult)
+      if (!unknownResult) saveOperation(storageKey, null)
+      if (cause instanceof ApiError && (cause.status === 422 || confirmedAbsent)) {
         setPreview(null)
         attempt.current = null
         onChanged()
