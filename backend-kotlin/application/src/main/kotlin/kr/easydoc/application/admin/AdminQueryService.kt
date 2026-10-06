@@ -32,6 +32,7 @@ data class AdminWorkspaceSummary(
     val monthDocuments: Int,
     val monthCredits: BigDecimal,
     val monthCostUsd: BigDecimal?,
+    val selectedMonth: AdminSelectedMonth? = null,
 ) {
     /** 이름·이메일을 찍지 않는다 — `Workspace`·`User`와 같은 규약. */
     override fun toString(): String =
@@ -47,6 +48,8 @@ data class AdminWorkspaceListPage(
     val page: Int,
     val size: Int,
     val total: Int,
+    val timezone: String = "Asia/Seoul",
+    val currentMonth: String = "",
 )
 
 /** `GET /admin/workspaces/{workspace_id}` 응답 — 기본 정보 + 거래 50 + 세금계산서 요청 + 최근 변환 20. */
@@ -96,16 +99,31 @@ class AdminQueryService(
         rawQuery: String?,
         page: Int,
         size: Int,
+        month: String? = null,
     ): AdminWorkspaceListPage {
+        val selectedPeriod = AdminMonthResolver(zone, clock).resolve(month)
         val query = rawQuery?.trim()?.ifEmpty { null }
         val result = workspaces.search(query, page, size)
         val workspaceIds = result.items.map { it.workspaceId }
         val balances = workspaces.creditBalances(workspaceIds)
         val period = resolvePeriod(rawFrom = null, rawTo = null)
         val monthUsage = workspaces.monthUsage(workspaceIds, period.first, period.second)
+        val selected = workspaces.selectedMonthTotals(workspaceIds, selectedPeriod)
         val items =
-            result.items.map { row -> listSummaryOf(row, balances[row.workspaceId], monthUsage[row.workspaceId]) }
-        return AdminWorkspaceListPage(items, page, size, result.total)
+            result.items.map { row ->
+                listSummaryOf(row, balances[row.workspaceId], monthUsage[row.workspaceId]).copy(
+                    selectedMonth =
+                        selected[row.workspaceId] ?: AdminSelectedMonth(selectedPeriod.month, BigDecimal.ZERO, 0, 0),
+                )
+            }
+        return AdminWorkspaceListPage(
+            items,
+            page,
+            size,
+            result.total,
+            zone.id,
+            AdminMonthResolver(zone, clock).resolve(null).month,
+        )
     }
 
     /** 없으면 [NotFoundException] — 관리자 전용이라 존재 은닉이 아니라 진짜 404다. */

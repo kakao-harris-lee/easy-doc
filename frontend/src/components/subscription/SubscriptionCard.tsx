@@ -14,16 +14,19 @@ import { Button } from '../ui/Button'
 import { TargetPlanCatalog } from './TargetPlanCatalog'
 
 const won = (amount: number) => `${amount.toLocaleString('ko-KR')}원`
-const date = (value: string) => new Date(value).toLocaleDateString('ko-KR')
+const date = (value: string) =>
+  new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
 
 export function SubscriptionCard({
   workspaceId,
   onChanged,
   admin = false,
+  hidePayments = false,
 }: {
   workspaceId: string
   onChanged?: () => void
   admin?: boolean
+  hidePayments?: boolean
 }) {
   const [view, setView] = useState<SubscriptionOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -43,13 +46,39 @@ export function SubscriptionCard({
     return () => controller.abort()
   }, [workspaceId, admin])
 
+  useEffect(() => {
+    if (
+      !view?.pending &&
+      view?.billing_state !== 'issuing' &&
+      view?.billing_state !== 'revoking' &&
+      view?.billing_state !== 'cancel_requested'
+    )
+      return
+    const controller = new AbortController()
+    const timer = window.setInterval(() => {
+      void getSubscription(workspaceId, controller.signal, admin)
+        .then((data) => {
+          if (!controller.signal.aborted) setView(data)
+        })
+        .catch(() => {
+          /* Existing state stays visible while recovery continues. */
+        })
+    }, 5000)
+    return () => {
+      controller.abort()
+      window.clearInterval(timer)
+    }
+  }, [workspaceId, admin, view?.pending, view?.billing_state])
+
   async function act(cancel: boolean, plan: TestSubscriptionPlanId = 'start', fail = false) {
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
       if (!cancel && view?.toss_enabled) {
-        await openTossBilling(workspaceId, plan, fail)
+        if (view.billing_environment === 'toss_live')
+          await openTossBilling(workspaceId, plan, false, 'purchase', 'start-monthly-v1')
+        else await openTossBilling(workspaceId, plan, fail)
         return
       }
       if (
@@ -90,19 +119,19 @@ export function SubscriptionCard({
     setBusy(true)
     setError(null)
     try {
-      if (view.subscription.status === 'active') setView(await cancelSubscription(workspaceId))
-      await openTossBilling(workspaceId, 'start', false)
+      await openTossBilling(workspaceId, 'start', false, 'replace_card')
     } catch (cause) {
       setError(
         cause instanceof ApiError
           ? cause.message
-          : '카드 변경을 완료하지 못했습니다. 새 카드로 구독 재개를 눌러 다시 시도하세요.',
+          : '카드 변경을 완료하지 못했습니다. 기존 카드와 구독 상태를 확인한 뒤 다시 시도하세요.',
       )
     } finally {
       setBusy(false)
     }
   }
 
+  const live = view?.billing_environment === 'toss_live'
   const current = view?.subscription
   const active = current?.status === 'active' || current?.status === 'canceling'
   return (
@@ -138,7 +167,9 @@ export function SubscriptionCard({
                   : '구독 서비스 준비 중'}
             </p>
             {(view.mock_enabled || view.toss_enabled || current) && (
-              <p className="mt-2 text-sm font-medium text-primary">테스트 결제 · 실제 청구 없음</p>
+              <p className="mt-2 text-sm font-medium text-primary">
+                {live ? '실제 카드 결제 · 매월 자동결제' : '테스트 결제 · 실제 청구 없음'}
+              </p>
             )}
             {active && (
               <>
@@ -147,9 +178,58 @@ export function SubscriptionCard({
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {date(current.cycle_ends_at)}{' '}
-                  {current.status === 'canceling' ? '구독 종료 예정' : '다음 테스트 결제'}
+                  {current.status === 'canceling'
+                    ? '구독 종료 예정'
+                    : live
+                      ? '이용 기간 종료 / 다음 결제 예정'
+                      : '다음 테스트 결제'}
                 </p>
               </>
+            )}
+            {view.card_last_four && /^\d{4}$/.test(view.card_last_four) && (
+              <p className="mt-2 text-sm">등록 카드 •••• {view.card_last_four}</p>
+            )}
+            {view.current_period_start && (
+              <p className="mt-2 text-sm">이용 시작일: {date(view.current_period_start)}</p>
+            )}
+            {view.next_billing_at && (
+              <p className="mt-1 text-sm">다음 청구 예정: {date(view.next_billing_at)}</p>
+            )}
+            {view.billing_state && (
+              <p className="mt-1 text-sm">
+                카드 연결 상태:{' '}
+                {
+                  {
+                    authorizing: '등록 대기',
+                    issuing: '등록 결과 확인 중',
+                    active: '연결됨',
+                    revoking: '삭제 처리 중',
+                    revoked: '해제됨',
+                    needs_card: '카드 재등록 필요',
+                    cancel_requested: '등록 취소 처리 중',
+                    manual_review: '관리자 확인 필요',
+                  }[view.billing_state]
+                }
+              </p>
+            )}
+            {view.billing_state === 'needs_card' && (
+              <p role="alert" className="mt-2 text-danger">
+                등록한 카드로 결제할 수 없습니다. 결제 카드 변경을 눌러 카드를 다시 등록해 주세요.
+                이미 결제한 이용 기간과 크레딧은 유지됩니다.
+              </p>
+            )}
+            {(view.manual_review || view.billing_state === 'manual_review') && (
+              <p role="status" className="mt-2 text-danger">
+                결제 결과를 관리자가 확인하고 있습니다. 중복 결제를 방지하기 위해 새 결제를 시작할
+                수 없습니다.
+              </p>
+            )}
+            {view.retry_at && (
+              <p className="mt-2 text-sm">
+                다음 재시도:{' '}
+                {new Date(view.retry_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} ·{' '}
+                {view.retry_count ?? 0}회 시도
+              </p>
             )}
             {current?.status === 'past_due' && (
               <p className="mt-2 text-sm text-danger">갱신 결제가 실패해 구독이 중단되었습니다.</p>
@@ -159,10 +239,10 @@ export function SubscriptionCard({
             )}
             {!(view.mock_enabled || view.toss_enabled) && !current && (
               <p className="mt-2 text-sm text-muted-foreground">
-                현재는 무료 파일럿으로 운영하며, 월 구독 결제를 받지 않습니다.
+                현재 신규 구독 접수를 준비하고 있습니다.
               </p>
             )}
-            {!admin && (view.mock_enabled || view.toss_enabled) && current?.status === 'active' && (
+            {!admin && current?.status === 'active' && (
               <Button
                 variant="ghost"
                 className="mt-4"
@@ -182,36 +262,52 @@ export function SubscriptionCard({
                 카드 등록 취소
               </Button>
             )}
-            {!admin && view.toss_enabled && active && (
+            {!admin && view.toss_enabled && current && current.status !== 'expired' && (
               <Button
                 variant="ghost"
                 className="mt-4"
-                disabled={busy || view.pending}
+                disabled={
+                  busy ||
+                  view.manual_review ||
+                  view.billing_state === 'manual_review' ||
+                  view.billing_state === 'cancel_requested' ||
+                  view.billing_state === 'revoking' ||
+                  (view.pending && !view.retry_at)
+                }
                 onClick={() => void changeCard()}
               >
-                {current.status === 'canceling' ? '새 카드로 구독 재개' : '결제 카드 변경'}
+                결제 카드 변경
               </Button>
             )}
             {view.billing_state === 'issuing' && (
               <p role="status" className="mt-3 text-sm">
-                카드 등록 결과 확인 중입니다. 잠시 후 새로고침해 주세요.
+                카드 등록 결과 확인 중입니다. 자동으로 다시 확인합니다.
               </p>
             )}
             {view.pending && (
               <p role="status" className="mt-3 text-sm">
-                결제 결과 확인 중입니다. 잠시 후 새로고침해 주세요.
+                결제 결과 확인 중입니다. 자동으로 다시 확인합니다.
               </p>
             )}
-            {view.payments.length > 0 && (
+            {!hidePayments && view.payments.length > 0 && (
               <details className="mt-4 border-t border-border pt-3 text-sm">
-                <summary className="cursor-pointer">테스트 결제 내역</summary>
+                <summary className="cursor-pointer">
+                  {live ? '결제 내역' : '테스트 결제 내역'}
+                </summary>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  테스트 기록이며 카드 영수증이나 세무 증빙이 아닙니다.
+                  {live
+                    ? '승인된 카드 결제와 환불 내역입니다.'
+                    : '테스트 기록이며 카드 영수증이나 세무 증빙이 아닙니다.'}
                 </p>
                 <ul className="mt-2 space-y-2">
                   {view.payments.map((payment) => (
                     <li key={payment.id}>
-                      {date(payment.created_at)} · {won(payment.amount)} ·{' '}
+                      {payment.approved_at
+                        ? date(payment.approved_at)
+                        : payment.status === 'failed'
+                          ? date(payment.created_at)
+                          : '승인 시각 미상'}{' '}
+                      · {won(payment.amount)} ·{' '}
                       {
                         {
                           paid: '성공',
@@ -225,7 +321,10 @@ export function SubscriptionCard({
                         payment={payment}
                         admin={admin}
                         pending={view.pending}
-                        onChanged={setView}
+                        onChanged={() => {
+                          void getSubscription(workspaceId, undefined, admin).then(setView)
+                          onChanged?.()
+                        }}
                       />
                     </li>
                   ))}
@@ -244,10 +343,19 @@ export function SubscriptionCard({
           workspaceId={workspaceId}
           checkoutEnabled={Boolean(
             (view?.mock_enabled || view?.toss_enabled) &&
+            view?.purchase_enabled !== false &&
+            !view?.manual_review &&
             view?.plans.some((availablePlan) => availablePlan.id === 'start'),
           )}
           tossEnabled={Boolean(view?.toss_enabled)}
-          pending={Boolean(view?.pending)}
+          live={live}
+          pending={Boolean(
+            view?.pending ||
+            view?.manual_review ||
+            view?.billing_state === 'manual_review' ||
+            view?.billing_state === 'cancel_requested' ||
+            view?.billing_state === 'revoking',
+          )}
           busy={busy}
           activePlanId={active ? (current?.plan_id ?? null) : null}
           className="order-3 md:col-span-2"

@@ -21,6 +21,73 @@ class JdbcTossBillingStore(
 ) : TossBillingStore {
     private val codec = BillingPayloadCodec(cipher)
 
+    override fun stopScheduled(workspace: UUID) {
+        jdbc
+            .sql(
+                """
+                UPDATE toss_billing_orders SET status='canceled' WHERE workspace_id=:workspace
+                    AND status IN ('scheduled','suspend_pending')
+                """.trimIndent(),
+            ).param("workspace", workspace)
+            .update()
+    }
+
+    override fun replacementBlocked(workspace: UUID): Boolean =
+        jdbc
+            .sql(
+                """
+                SELECT EXISTS(SELECT 1 FROM toss_billing_orders WHERE workspace_id=:workspace
+                    AND status IN ('pending','processing','manual_review')) OR EXISTS(
+                    SELECT 1 FROM admin_billing_operations WHERE workspace_id=:workspace AND status='pending')
+                """.trimIndent(),
+            ).param("workspace", workspace)
+            .query(Boolean::class.java)
+            .single()
+
+    override fun expiredReplacements(now: Instant): List<UUID> =
+        jdbc
+            .sql(
+                """
+                SELECT workspace_id FROM toss_billing_sessions WHERE purpose='replace_card'
+                    AND state='authorizing' AND expires_at<=:now ORDER BY expires_at LIMIT 50
+                """.trimIndent(),
+            ).param("now", now.atOffset(ZoneOffset.UTC))
+            .query(UUID::class.java)
+            .list()
+            .filterNotNull()
+
+    override fun sessionByBillingKey(
+        key: kr.easydoc.core.security.Secret,
+        environment: String,
+    ): BillingSession? =
+        jdbc
+            .sql("SELECT workspace_id FROM toss_billing_sessions WHERE key_fingerprint=:key AND environment=:env")
+            .param("key", fingerprint(key))
+            .param("env", environment)
+            .query(UUID::class.java)
+            .optional()
+            .orElse(null)
+            ?.let(::session)
+
+    private fun fingerprint(key: kr.easydoc.core.security.Secret?): String? =
+        key?.let {
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(it.reveal().toByteArray())
+                .joinToString("") { byte -> "%02x".format(byte) }
+        }
+
+    override fun latestOrder(workspace: UUID): BillingOrder? =
+        jdbc
+            .sql(
+                "SELECT id FROM toss_billing_orders WHERE workspace_id=:workspace AND kind<>'refund' " +
+                    "ORDER BY created_at DESC,attempt DESC LIMIT 1",
+            ).param("workspace", workspace)
+            .query(UUID::class.java)
+            .optional()
+            .orElse(null)
+            ?.let(::order)
+
     override fun session(workspace: UUID): BillingSession? =
         jdbc
             .sql("SELECT * FROM toss_billing_sessions WHERE workspace_id=:workspace")
@@ -38,6 +105,14 @@ class JdbcTossBillingStore(
                     data.billingKey,
                     rs.getString("state"),
                     data.simulateFailure,
+                    rs.getString("environment"),
+                    rs.getString("purpose"),
+                    rs.getString("consent_version"),
+                    rs.getObject("consent_at", OffsetDateTime::class.java)?.toInstant(),
+                    data.previousBillingKey,
+                    data.previousCustomer,
+                    data.cardLastFour,
+                    data.previousCardLastFour,
                 )
             }.optional()
             .orElse(null)
@@ -48,14 +123,21 @@ class JdbcTossBillingStore(
             .sql(
                 """
                 INSERT INTO toss_billing_sessions
-                  (workspace_id,id,customer,plan_id,state,expires_at,payload_encrypted,encryption_scheme,key_version)
-                VALUES (:workspace,:id,:customer,:plan,:state,:expires,:payload,:scheme,:version)
+                  (workspace_id,id,customer,plan_id,state,expires_at,payload_encrypted,encryption_scheme,key_version,environment,purpose,consent_version,consent_at,key_fingerprint,cleanup_pending)
+                VALUES (:workspace,:id,:customer,:plan,:state,:expires,:payload,:scheme,:version,:environment,:purpose,:consentVersion,:consentAt,:fingerprint,:cleanup)
                 ON CONFLICT (workspace_id) DO UPDATE SET id=EXCLUDED.id, customer=EXCLUDED.customer,
-                  plan_id=EXCLUDED.plan_id,
+                  plan_id=EXCLUDED.plan_id, environment=EXCLUDED.environment,purpose=EXCLUDED.purpose,
+                  consent_version=EXCLUDED.consent_version,consent_at=EXCLUDED.consent_at,key_fingerprint=EXCLUDED.key_fingerprint,cleanup_pending=EXCLUDED.cleanup_pending,
                   state=EXCLUDED.state, expires_at=EXCLUDED.expires_at, payload_encrypted=EXCLUDED.payload_encrypted,
                   encryption_scheme=EXCLUDED.encryption_scheme, key_version=EXCLUDED.key_version
                 """.trimIndent(),
             ).param("workspace", session.workspaceId)
+            .param("environment", session.environment)
+            .param("purpose", session.purpose)
+            .param("cleanup", session.previousBillingKey != null)
+            .param("fingerprint", fingerprint(session.billingKey))
+            .param("consentVersion", session.consentVersion)
+            .param("consentAt", session.consentAt?.atOffset(ZoneOffset.UTC))
             .param("id", session.id)
             .param("customer", session.customer)
             .param(
@@ -90,6 +172,11 @@ class JdbcTossBillingStore(
                     rs.getString("status"),
                     payment,
                     rs.getBoolean("simulate_failure"),
+                    rs.getString("environment"),
+                    rs.getObject("cycle_id", UUID::class.java),
+                    rs.getInt("attempt"),
+                    rs.getObject("first_failure_at", OffsetDateTime::class.java)?.toInstant(),
+                    instant(rs, "next_attempt_at"),
                 )
             }.optional()
             .orElse(null)
@@ -101,17 +188,27 @@ class JdbcTossBillingStore(
                 """
                 INSERT INTO toss_billing_orders
                   (id,workspace_id,plan_id,amount,created_at,cycle_ends_at,kind,original_id,
-                  previous_remaining,status,simulate_failure,payload_encrypted,encryption_scheme,key_version)
+                  previous_remaining,status,simulate_failure,payload_encrypted,encryption_scheme,key_version,
+                  environment,cycle_id,attempt,first_failure_at,next_attempt_at,approved_at,canceled_at)
                 VALUES (:id,:workspace,:plan,:amount,:created,:end,:kind,:original,:previous,:status,:fail,:payload,
-                  :scheme,:version)
+                  :scheme,:version,:environment,:cycle,:attempt,:firstFailure,:next,:approved,:canceled)
                 ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status,payload_encrypted=EXCLUDED.payload_encrypted,
                   encryption_scheme=EXCLUDED.encryption_scheme,key_version=EXCLUDED.key_version,lease_until=NULL,
-                    sync_requested=false
+                    sync_requested=false,cycle_ends_at=EXCLUDED.cycle_ends_at,
+                    first_failure_at=EXCLUDED.first_failure_at,next_attempt_at=EXCLUDED.next_attempt_at,
+                    approved_at=EXCLUDED.approved_at,canceled_at=EXCLUDED.canceled_at
                 """.trimIndent(),
             ).param(
                 "id",
                 order.id,
-            ).param("workspace", order.workspaceId)
+            ).param("environment", order.environment)
+            .param("cycle", order.cycleId)
+            .param("attempt", order.attempt)
+            .param("firstFailure", order.firstFailureAt?.atOffset(ZoneOffset.UTC))
+            .param("next", order.nextAttemptAt.atOffset(ZoneOffset.UTC))
+            .param("approved", order.payment?.approvedAt?.atOffset(ZoneOffset.UTC))
+            .param("canceled", order.payment?.canceledAt?.atOffset(ZoneOffset.UTC))
+            .param("workspace", order.workspaceId)
             .param("plan", order.planId)
             .param("amount", order.amount)
             .param(
@@ -132,8 +229,11 @@ class JdbcTossBillingStore(
     override fun pending(workspace: UUID): Boolean =
         jdbc
             .sql(
-                "SELECT count(*) FROM toss_billing_orders WHERE workspace_id=:workspace AND status IN " +
-                    "('pending','processing','manual_review')",
+                "SELECT sum(n) FROM (SELECT count(*) AS n FROM toss_billing_orders " +
+                    "WHERE workspace_id=:workspace AND status IN " +
+                    "('pending','processing','manual_review','suspend_pending','scheduled') " +
+                    "UNION ALL SELECT count(*) FROM admin_billing_operations " +
+                    "WHERE workspace_id=:workspace AND status='pending') AS pending_operations",
             ).param("workspace", workspace)
             .query(Int::class.java)
             .single() > 0
@@ -146,8 +246,10 @@ class JdbcTossBillingStore(
             jdbc
                 .sql(
                     """
-                    UPDATE toss_billing_orders SET lease_until=:lease
+                    UPDATE toss_billing_orders SET lease_until=:lease,
+                      status=CASE WHEN status IN ('pending','scheduled') THEN 'processing' ELSE status END
                     WHERE id=:id AND (lease_until IS NULL OR lease_until <= :now)
+                      AND (status NOT IN ('pending','scheduled','suspend_pending') OR next_attempt_at<=:now)
                     """.trimIndent(),
                 ).param(
                     "id",
@@ -176,8 +278,8 @@ class JdbcTossBillingStore(
         jdbc
             .sql(
                 """
-                SELECT id FROM toss_billing_orders WHERE ((status IN ('pending','processing') AND
-                  next_attempt_at<=:now) OR sync_requested)
+                SELECT id FROM toss_billing_orders WHERE ((status IN ('pending','processing','suspend_pending','scheduled') AND
+                  next_attempt_at<=:now) OR sync_requested OR (status='paid' AND kind IN ('charge','renewal') AND next_attempt_at<=:now))
                   AND (lease_until IS NULL OR lease_until<=:now) ORDER BY next_attempt_at LIMIT 50
                 """.trimIndent(),
             ).param("now", now.atOffset(ZoneOffset.UTC))
@@ -188,7 +290,7 @@ class JdbcTossBillingStore(
     override fun requestSync(id: UUID) {
         jdbc
             .sql(
-                "UPDATE toss_billing_orders SET sync_requested=true WHERE id=:id AND kind='charge'",
+                "UPDATE toss_billing_orders SET sync_requested=true WHERE id=:id AND kind IN ('charge','renewal')",
             ).param("id", id)
             .update()
     }
@@ -208,7 +310,7 @@ class JdbcTossBillingStore(
                 """
                 INSERT INTO subscription_payments
                   (workspace_id,id,plan_id,amount,status,created_at,simulated_failure,provider,refunded_amount)
-                VALUES (:workspace,:id,:plan,:amount,:status,:created,:fail,'toss_test',:refunded)
+                VALUES (:workspace,:id,:plan,:amount,:status,:created,:fail,:provider,:refunded)
                 ON CONFLICT (workspace_id,id) DO UPDATE SET
                   status=EXCLUDED.status,refunded_amount=EXCLUDED.refunded_amount
                 """.trimIndent(),
@@ -221,7 +323,8 @@ class JdbcTossBillingStore(
             .param(
                 "status",
                 status,
-            ).param("created", order.createdAt.atOffset(ZoneOffset.UTC))
+            ).param("created", (payment.approvedAt ?: order.createdAt).atOffset(ZoneOffset.UTC))
+            .param("provider", order.environment)
             .param("fail", order.simulateFailure)
             .param("refunded", payment.amount - payment.remainingAmount)
             .update()
@@ -230,7 +333,8 @@ class JdbcTossBillingStore(
     override fun cleanupCandidates(): List<UUID> =
         jdbc
             .sql(
-                "SELECT workspace_id FROM toss_billing_sessions WHERE state='revoking' LIMIT 50",
+                "SELECT workspace_id FROM toss_billing_sessions WHERE state='revoking' " +
+                    "OR (state IN ('active','needs_card') AND cleanup_pending) LIMIT 50",
             ).query(UUID::class.java)
             .list()
             .filterNotNull()
@@ -239,10 +343,9 @@ class JdbcTossBillingStore(
         jdbc
             .sql(
                 "SELECT workspace_id FROM toss_billing_sessions " +
-                    "WHERE state='issuing' AND expires_at>:retryCutoff " +
+                    "WHERE state='issuing' " +
                     "ORDER BY expires_at LIMIT 50",
-            ).param("retryCutoff", retryCutoff.atOffset(ZoneOffset.UTC))
-            .query(UUID::class.java)
+            ).query(UUID::class.java)
             .list()
             .filterNotNull()
 

@@ -168,7 +168,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                 FROM credit_transactions
                 WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
                   AND kind = 'consume'
-                  AND reason IN ('conversion', 'action_guide', 'illustration_suggestion')
+
                   AND created_at >= :from AND created_at < :toExclusive
                 HAVING count(*) > 0
                 """.trimIndent(),

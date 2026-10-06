@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.48.0"
+  version: "2.50.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -50,6 +50,7 @@ info:
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
     **HTTP 오퍼레이션은 91개다** — 제품 90개 + 헬스 체크 1개.
+    2.49.0은 관리자 월별 결산·결제 이벤트 조회와 동시성·멱등성 검증 크레딧 조정을 추가한다.
     2.48.0은 실제 행동 분석·항목별 검토·두 모드 보완·전체 반영과 이전 본문 조회를 추가한다.
     경로·메서드 목록의 정본은 아래 `paths`다.
 
@@ -1691,7 +1692,7 @@ paths:
       tags: [subscriptions]
       security: [{ HTTPBearer: [] }]
       summary: beginTossBilling
-      description: 토스 테스트 전용. 인증·소유권·이메일 인증·휴대폰 인증을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
+      description: 저장된 결제 환경의 토스 자격증명을 사용한다. 인증·소유권·이메일 인증·휴대폰 인증을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
       requestBody:
         required: true
         content:
@@ -1699,7 +1700,7 @@ paths:
             schema: { $ref: '#/components/schemas/TossBeginRequest' }
       responses:
         '200':
-          description: 테스트 처리 결과. 실제 청구 및 세무 증빙이 아니다.
+          description: 해당 결제 환경의 처리 결과. toss_live는 실제 카드 거래다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TossSession' }
@@ -1719,7 +1720,7 @@ paths:
       tags: [subscriptions]
       security: [{ HTTPBearer: [] }]
       summary: completeTossBilling
-      description: 토스 테스트 전용. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
+      description: 저장된 결제 환경의 토스 자격증명을 사용한다. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
       requestBody:
         required: true
         content:
@@ -1727,7 +1728,7 @@ paths:
             schema: { $ref: '#/components/schemas/TossCompleteRequest' }
       responses:
         '200':
-          description: 테스트 처리 결과. 실제 청구 및 세무 증빙이 아니다.
+          description: 해당 결제 환경의 처리 결과. toss_live는 실제 카드 거래다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SubscriptionOverview' }
@@ -1751,10 +1752,10 @@ paths:
       tags: [subscriptions]
       security: [{ HTTPBearer: [] }]
       summary: getTossReceipt
-      description: 토스 테스트 전용. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
+      description: 저장된 결제 환경의 토스 자격증명을 사용한다. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
       responses:
         '200':
-          description: 테스트 처리 결과. 실제 청구 및 세무 증빙이 아니다.
+          description: 해당 결제 환경의 처리 결과. toss_live는 실제 카드 거래다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/TossReceipt' }
@@ -1763,6 +1764,173 @@ paths:
         '404': { description: 리소스 없음 }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/workspaces/{workspace_id}/billing:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getAdminBilling
+      x-admin-only: true
+      summary: getAdminBilling
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      responses:
+        '200':
+          description: 결제 운영 상태
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminBillingView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업 공간 또는 주문 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: 요청 값 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default:
+          description: 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/workspaces/{workspace_id}/billing/orders/{id}/sync:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: syncAdminBillingOrder
+      x-admin-only: true
+      summary: syncAdminBillingOrder
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBillingActionRequest' }
+      responses:
+        '204': { description: 관리 조치 접수 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업 공간 또는 주문 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: 요청 값 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default:
+          description: 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/workspaces/{workspace_id}/billing/stop-renewal:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: stopAdminBillingRenewal
+      x-admin-only: true
+      summary: stopAdminBillingRenewal
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBillingActionRequest' }
+      responses:
+        '204': { description: 관리 조치 접수 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업 공간 또는 주문 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: 요청 값 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default:
+          description: 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/workspaces/{workspace_id}/billing/retry-card-deletion:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: retryAdminCardDeletion
+      x-admin-only: true
+      summary: retryAdminCardDeletion
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminBillingActionRequest' }
+      responses:
+        '204': { description: 관리 조치 접수 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업 공간 또는 주문 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: 요청 값 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        default:
+          description: 오류
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /admin/workspaces/{workspace_id}/payments/{id}/refund:
     parameters:
       - name: workspace_id
@@ -1779,7 +1947,7 @@ paths:
       security: [{ HTTPBearer: [] }]
       x-admin-only: true
       summary: refundTossPayment
-      description: 토스 테스트 전용. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
+      description: 저장된 결제 환경의 토스 자격증명을 사용한다. 인증과 소유권을 먼저 검사한다. 승인 확인 후 이용량을 한 번만 반영한다.
       requestBody:
         required: true
         content:
@@ -1787,10 +1955,10 @@ paths:
             schema: { $ref: '#/components/schemas/TossRefundRequest' }
       responses:
         '200':
-          description: 테스트 처리 결과. 실제 청구 및 세무 증빙이 아니다.
+          description: 해당 결제 환경의 처리 결과. toss_live는 실제 카드 거래다.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/SubscriptionOverview' }
+              schema: { $ref: '#/components/schemas/AdminBillingOperation' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 권한 없음 }
         '404': { description: 리소스 없음 }
@@ -5620,6 +5788,178 @@ paths:
   # 403 「관리자 권한이 필요합니다」(`AuthenticationCoverageContractTest`의 관리자 축이
   # 이 표식과 `/admin/` 접두어를 대조한다).
   # ===========================================================================
+  /admin/workspaces/{workspace_id}/monthly-summary:
+    get:
+      tags: [admin]
+      operationId: readAdminMonthlySummary
+      summary: 관리자 월별 monthly-summary
+      description: 달력 월은 사용량 시간대 기준이다. 현재 잔액과 월 결산을 구분한다. 발생일 미상 과거 결제는 모든 월의 페이지에 별도 표식으로 포함되며 월 합계에서 제외한다.
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminMonthlySummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업공간 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/workspaces/{workspace_id}/monthly-history:
+    get:
+      tags: [admin]
+      operationId: readAdminMonthlyHistory
+      summary: 관리자 월별 monthly-history
+      description: 달력 월은 사용량 시간대 기준이다. 현재 잔액과 월 결산을 구분한다. 발생일 미상 과거 결제는 모든 월의 페이지에 별도 표식으로 포함되며 월 합계에서 제외한다.
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: year
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 9999 }
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminMonthlyHistory' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업공간 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/workspaces/{workspace_id}/credit-transactions:
+    get:
+      tags: [admin]
+      operationId: listAdminCreditTransactions
+      summary: 관리자 월별 credit-transactions
+      description: 달력 월은 사용량 시간대 기준이다. 현재 잔액과 월 결산을 구분한다. 발생일 미상 과거 결제는 모든 월의 페이지에 별도 표식으로 포함되며 월 합계에서 제외한다.
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: kind
+          in: query
+          required: false
+          schema: { type: string, enum: [grant, reserve, consume, release, adjust, cycle_set, cycle_reset] }
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminCreditLedgerPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업공간 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/workspaces/{workspace_id}/payments:
+    get:
+      tags: [admin]
+      operationId: listAdminPaymentEvents
+      summary: 관리자 월별 payments
+      description: 달력 월은 사용량 시간대 기준이다. 현재 잔액과 월 결산을 구분한다. 발생일 미상 과거 결제는 모든 월의 페이지에 별도 표식으로 포함되며 월 합계에서 제외한다.
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 조회 결과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminPaymentEventPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자 권한 필요
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: 작업공간 없음
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /admin/workspaces:
     get:
       tags: [admin]
@@ -5633,6 +5973,10 @@ paths:
         `CreditAccountService.read`·`UsageQueryService.usageOf`를 그 워크스페이스의
         실제 소유자로 재사용한다(계획 §2 결정 4).
       parameters:
+        - name: month
+          in: query
+          required: false
+          schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
         - name: q
           in: query
           required: false
@@ -5720,7 +6064,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       description: |
-        `credit-grant` 운영 프로필(C2)과 같은 경로를 재사용한다 — `credits`가 0 이상이면
+        요청 번호와 확인 시점 잔액·예약·버전을 검증해 한 번만 반영한다. `credits`가 양수이면
         GRANT, 음수면 ADJUST. `reason`은 `plan_monthly`·`manual`·`refund` 셋만 허용한다
         (가입 보너스·문서 변환 전용 사유는 화면에서 만들 수 없다). 반영된 거래의
         `actor_user_id`(V17)에 호출한 관리자의 id가 남는다(계획 §2 결정 3).
@@ -5750,6 +6094,11 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 workspace_not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '409':
+          description: '계정 상태 변경, 확보량을 침범하는 회수 또는 같은 요청 번호의 다른 입력'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           description: credits가 0이거나 reason이 허용값 밖이다
@@ -6489,12 +6838,67 @@ components:
             short_secret: { value: { detail: "인증 서명 키는 32바이트 이상이어야 합니다" } }
 
   schemas:
+    AdminBillingActionRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, reason]
+      properties:
+        operation_id: { type: string, format: uuid }
+        reason: { type: string, minLength: 1, maxLength: 200 }
+    AdminBillingOperation:
+      type: object
+      required: [operation_id, workspace_id, payment_id, amount, recovery_credits, stop_renewal, reason, status, created_at, updated_at]
+      properties:
+        operation_id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        amount: { type: integer }
+        recovery_credits: { type: number, multipleOf: 0.1 }
+        stop_renewal: { type: boolean }
+        reason: { type: string }
+        status: { type: string, enum: [pending, completed, failed] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdminBillingView:
+      type: object
+      required: [orders, operations]
+      properties:
+        actions:
+          type: array
+          items:
+            type: object
+            required: [operation_id, action, status, reason, created_at, updated_at]
+            properties:
+              operation_id: { type: string, format: uuid }
+              action: { type: string }
+              status: { type: string }
+              reason: { type: string }
+              created_at: { type: string, format: date-time }
+              updated_at: { type: string, format: date-time }
+        orders:
+          type: array
+          items:
+            type: object
+            required: [id, kind, status, amount, created_at, environment, needs_review]
+            properties:
+              id: { type: string, format: uuid }
+              kind: { type: string }
+              status: { type: string }
+              amount: { type: integer }
+              created_at: { type: string, format: date-time }
+              environment: { type: string, enum: [stub, toss_test, toss_live] }
+              needs_review: { type: boolean }
+        operations:
+          type: array
+          items: { $ref: '#/components/schemas/AdminBillingOperation' }
     TossBeginRequest:
       type: object
       additionalProperties: false
       required: [plan_id]
       properties:
         plan_id: { type: string, enum: [start] }
+        purpose: { type: string, enum: [purchase, replace_card], default: purchase }
+        consent_version: { type: [string, 'null'], description: '실결제 신규 구매 시 start-monthly-v1 동의 필요' }
     TossCompleteRequest:
       type: object
       additionalProperties: false
@@ -6507,17 +6911,22 @@ components:
     TossRefundRequest:
       type: object
       additionalProperties: false
-      required: [operation_id, amount]
+      required: [operation_id, amount, recovery_credits, stop_renewal, reason, expected_revision]
       properties:
         operation_id: { type: string, format: uuid }
         amount: { type: integer, minimum: 1 }
+        recovery_credits: { type: number, minimum: 0, multipleOf: 0.1 }
+        stop_renewal: { type: boolean }
+        reason: { type: string, minLength: 1, maxLength: 200 }
+        expected_revision: { type: integer, format: int64, minimum: 0 }
     TossSession:
       type: object
-      required: [session_id, customer_key, client_key]
+      required: [session_id, customer_key, client_key, billing_environment]
       properties:
         session_id: { type: string, format: uuid }
         customer_key: { type: string, format: uuid }
         client_key: { type: string }
+        billing_environment: { type: string, enum: [toss_test, toss_live] }
     TossReceipt:
       type: object
       required: [receipt_url]
@@ -6556,17 +6965,29 @@ components:
         plan_id: { type: string }
         amount: { type: integer }
         status: { type: string, enum: [paid, failed, partially_refunded, refunded] }
-        provider: { type: string, enum: [stub, toss_test] }
+        provider: { type: string, enum: [stub, toss_test, toss_live] }
         refunded_amount: { type: integer, minimum: 0 }
+        approved_at: { type: [string, 'null'], format: date-time }
+        canceled_at: { type: [string, 'null'], format: date-time }
         created_at: { type: string, format: date-time }
     SubscriptionOverview:
       type: object
       required: [mock_enabled, plans, subscription, payments]
       properties:
+        billing_environment: { type: string, enum: [stub, toss_test, toss_live] }
+        purchase_enabled: { type: boolean }
+        auto_charge_enabled: { type: boolean }
+        card_last_four: { type: [string, 'null'], pattern: '^[0-9]{4}$', description: '저장된 카드 끝 4자리만 반환한다.' }
+        current_period_start: { type: [string, 'null'], format: date-time }
+        next_billing_at: { type: [string, 'null'], format: date-time }
+        manual_review: { type: boolean }
+        retry_at: { type: [string, 'null'], format: date-time }
+        retry_count: { type: integer, minimum: 0 }
+        first_failure_at: { type: [string, 'null'], format: date-time }
         mock_enabled: { type: boolean }
         toss_enabled: { type: boolean }
         pending: { type: boolean }
-        billing_state: { type: [string, 'null'], enum: [authorizing, issuing, active, revoking, revoked, null] }
+        billing_state: { type: [string, 'null'], enum: [authorizing, issuing, active, revoking, revoked, needs_card, cancel_requested, manual_review, null] }
         plans:
           type: array
           items: { $ref: '#/components/schemas/SubscriptionPlan' }
@@ -9547,6 +9968,158 @@ components:
     # ---------------------------------------------------------------------
     # 어드민 최소 (2.25.0 신설) — docs/plans/2026-09-07-admin-minimum.md §2
     # ---------------------------------------------------------------------
+    AdminCurrentCredits:
+      type: object
+      required: [balance, reserved, available, allowance, cycle_started_at, cycle_ends_at, subscription_status, as_of, revision]
+      properties:
+        balance: { type: number }
+        reserved: { type: number }
+        available: { type: number }
+        allowance: { type: number }
+        cycle_started_at: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        cycle_ends_at: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        subscription_status: { anyOf: [{ type: string }, { type: 'null' }] }
+        as_of: { type: string, format: date-time }
+        revision: { type: integer, format: int64 }
+
+    AdminMonthlyCredits:
+      type: object
+      required: [opening, granted, consumed, expired, adjustment, cycle_net, closing, reserved, available, legacy_cycle_count]
+      properties:
+        opening: { type: number }
+        granted: { type: number }
+        consumed: { type: number }
+        expired: { type: number }
+        adjustment: { type: number }
+        cycle_net: { type: number }
+        closing: { type: number }
+        reserved: { type: number }
+        available: { type: number }
+        legacy_cycle_count: { type: integer }
+
+    AdminMonthlyUsage:
+      type: object
+      required: [documents, input_tokens, output_tokens, known_cost_usd, unknown_cost_calls, credits_by_reason, estimated_legacy_credits]
+      properties:
+        documents: { type: integer }
+        input_tokens: { type: integer, format: int64 }
+        output_tokens: { type: integer, format: int64 }
+        known_cost_usd: { anyOf: [{ type: string }, { type: 'null' }] }
+        unknown_cost_calls: { type: integer }
+        credits_by_reason: { type: object, additionalProperties: { type: number } }
+        estimated_legacy_credits: { type: number }
+
+    AdminMonthlyPayments:
+      type: object
+      required: [paid_krw, refunded_krw, net_krw, test_paid_krw, test_refunded_krw, unknown_date_refund_krw, unknown_date_paid_krw, test_unknown_date_paid_krw, test_unknown_date_refund_krw]
+      properties:
+        paid_krw: { type: integer, format: int64 }
+        refunded_krw: { type: integer, format: int64 }
+        net_krw: { type: integer, format: int64 }
+        test_paid_krw: { type: integer, format: int64 }
+        test_refunded_krw: { type: integer, format: int64 }
+        unknown_date_refund_krw: { type: integer, format: int64 }
+        unknown_date_paid_krw: { type: integer, format: int64 }
+        test_unknown_date_paid_krw: { type: integer, format: int64 }
+        test_unknown_date_refund_krw: { type: integer, format: int64 }
+
+    AdminMonthlyCompleteness:
+      type: object
+      required: [ledger_matches_account, monthly_equation_matches, warnings]
+      properties:
+        ledger_matches_account: { type: boolean }
+        monthly_equation_matches: { type: boolean }
+        warnings: { type: array, items: { type: string } }
+
+    AdminMonthlySummary:
+      type: object
+      required: [workspace_id, month, timezone, is_current_month, current, credits, usage, payments, completeness]
+      properties:
+        workspace_id: { type: string, format: uuid }
+        month: { type: string }
+        timezone: { type: string }
+        is_current_month: { type: boolean }
+        current: { $ref: '#/components/schemas/AdminCurrentCredits' }
+        credits: { $ref: '#/components/schemas/AdminMonthlyCredits' }
+        usage: { $ref: '#/components/schemas/AdminMonthlyUsage' }
+        payments: { $ref: '#/components/schemas/AdminMonthlyPayments' }
+        completeness: { $ref: '#/components/schemas/AdminMonthlyCompleteness' }
+
+    AdminCreditLedgerItem:
+      type: object
+      required: [id, kind, reason, balance_delta, reserved_delta, note, actor_user_id, payment_id, created_at, granted_amount, expired_amount, adjustment_amount, cycle_started_at_before, cycle_ends_at_before, cycle_started_at_after, cycle_ends_at_after]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { type: string }
+        reason: { type: string }
+        balance_delta: { type: number }
+        reserved_delta: { type: number }
+        note: { anyOf: [{ type: string }, { type: 'null' }] }
+        actor_user_id: { anyOf: [{ type: string, format: uuid }, { type: 'null' }] }
+        payment_id: { anyOf: [{ type: string, format: uuid }, { type: 'null' }] }
+        created_at: { type: string, format: date-time }
+        granted_amount: { anyOf: [{ type: number }, { type: 'null' }] }
+        expired_amount: { anyOf: [{ type: number }, { type: 'null' }] }
+        adjustment_amount: { anyOf: [{ type: number }, { type: 'null' }] }
+        cycle_started_at_before: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        cycle_ends_at_before: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        cycle_started_at_after: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        cycle_ends_at_after: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+
+    AdminPaymentEventItem:
+      type: object
+      required: [id, payment_id, kind, amount_krw, is_test, occurred_at, original_created_at, plan_id, status, credit_transaction_id, original_amount_krw, refunded_amount_krw, provider]
+      properties:
+        id: { type: string, format: uuid }
+        payment_id: { type: string, format: uuid }
+        kind: { type: string }
+        amount_krw: { type: integer, format: int64 }
+        is_test: { type: boolean }
+        occurred_at: { anyOf: [{ type: string, format: date-time }, { type: 'null' }] }
+        original_created_at: { type: string, format: date-time }
+        plan_id: { type: string }
+        status: { type: string }
+        credit_transaction_id: { anyOf: [{ type: string, format: uuid }, { type: 'null' }] }
+        original_amount_krw: { type: integer, format: int64 }
+        refunded_amount_krw: { type: integer, format: int64 }
+        provider: { type: string }
+
+    AdminMonthlyHistory:
+      type: object
+      required: [workspace_id, year, timezone, items]
+      properties:
+        workspace_id: { type: string, format: uuid }
+        year: { type: integer }
+        timezone: { type: string }
+        items: { type: array, items: { $ref: '#/components/schemas/AdminMonthlySummary' } }
+
+    AdminCreditLedgerPage:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminCreditLedgerItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer }
+
+    AdminPaymentEventPage:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AdminPaymentEventItem' } }
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer }
+
+    AdminSelectedMonth:
+      type: object
+      required: [month, credits, paid_krw, refunded_krw]
+      properties:
+        month: { type: string }
+        credits: { type: number }
+        paid_krw: { type: integer, format: int64 }
+        refunded_krw: { type: integer, format: int64 }
+
     AdminWorkspaceSummary:
       type: object
       required:
@@ -9554,6 +10127,10 @@ components:
          credit_available, month_documents, month_credits, month_cost_usd]
       description: '`GET /admin/workspaces`(목록 항목)·`GET /admin/workspaces/{workspace_id}`(상세의 `summary`) 공용.'
       properties:
+        selected_month:
+          anyOf:
+            - { $ref: '#/components/schemas/AdminSelectedMonth' }
+            - { type: 'null' }
         workspace_id: { type: string, format: uuid }
         name: { type: string }
         owner_email: { type: string }
@@ -9575,6 +10152,8 @@ components:
       type: object
       required: [items, page, size, total]
       properties:
+        timezone: { type: string }
+        current_month: { type: string }
         items:
           type: array
           items: { $ref: '#/components/schemas/AdminWorkspaceSummary' }
@@ -9616,23 +10195,26 @@ components:
 
     AdminCreditAdjustmentRequest:
       type: object
-      required: [credits, reason]
-      description: '`POST /admin/workspaces/{workspace_id}/credits` 요청 본문.'
+      required: [credits, reason, note, operation_id, expected_balance, expected_reserved, expected_revision]
+      description: '현재 월과 무관하게 현재 시각에 기록하는 조정. 같은 operation_id는 같은 요청만 재전송할 수 있다.'
       properties:
         credits:
           type: number
           multipleOf: 0.1
-          description: 0이 될 수 없다. 0 이상이면 부여(grant), 음수면 조정(adjust) — `credit-grant` CLI와 같은 규칙.
+          description: '0이 아닌 수량. 양수는 지급, 음수는 회수. 회수는 사용 가능량을 초과할 수 없다.'
         reason:
           type: string
           enum: [plan_monthly, manual, refund]
-          description: '`credit-grant` CLI가 받는 사유 셋과 같다 — 가입 보너스·문서 변환 전용 사유는 화면에서 만들 수 없다.'
+          description: 'refund는 크레딧 복구이며 양수만 허용한다. 현금 환불은 별도 결제 기능이다.'
         note:
-          x-service-constraint: { max_length: 200, measured_on: raw }
-          description: '선택. `credit_transactions.note`(V15) 상한과 같다 — 200자 초과는 422.'
-          anyOf:
-            - { type: string, maxLength: 200 }
-            - { type: 'null' }
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: '필수 사유 메모. 공백만으로 작성할 수 없다.'
+        operation_id: { type: string, format: uuid }
+        expected_balance: { type: number, multipleOf: 0.1 }
+        expected_reserved: { type: number, multipleOf: 0.1, minimum: 0 }
+        expected_revision: { type: integer, format: int64, minimum: 0 }
 
     AdminFeedbackListResponse:
       type: object
@@ -9982,6 +10564,27 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.50.0"
+    date: "2026-10-06"
+    revision: "START-LIVE-BILLING-OPERATIONS"
+    author: codex
+    change: |
+      테스트·실결제 환경, 신규 구매·자동 청구 통제, 승인 시각과 복구 상태를 구독 조회에 추가한다.
+      카드 교체 purpose와 실결제 동의 버전을 받고 기존 구독을 유지하며 새 카드를 등록한다.
+      관리자 환불을 확인 revision·회수 크레딧·갱신 중단·사유를 갖는 영속 작업으로 확장한다.
+      주문 재조회·갱신 중단·카드 삭제 재처리 및 관리 작업 상태 조회를 추가한다.
+    ground: "Start 실결제 연결과 운영 관리 승인 계획. 실결제 실행과 일반 공개는 별도 출시 조건."
+    compatibility: "환불 응답은 SubscriptionOverview에서 관리 작업으로 변경된다. API와 frontend를 함께 배포한다."
+  - version: "2.49.0"
+    date: "2026-10-06"
+    revision: "ADMIN-MONTHLY-CREDIT-MANAGEMENT"
+    author: codex
+    change: |
+      관리자 월별 결산·연간 비교·거래·결제 이벤트 페이지와 조회 월 선택을 추가한다.
+      현재 보유·확보·사용 가능과 기간 사용량을 구분하고 과거 시각 미상·대사 경고를 공개한다.
+      크레딧 조정에 필수 메모·요청 UUID·확인 잔액·확보·revision과 409 충돌을 추가한다.
+    ground: "관리자 월별 결제·크레딧 관리 개선 요청 및 승인된 구현 계획."
+    compatibility: "조회 API는 추가형이다. 관리자 조정 요청은 프런트와 함께 배포해야 하며 V40이 필요하다."
   - version: "2.47.0"
     date: "2026-09-25"
     revision: "EASY-READ-R7-ILLUSTRATION-SUGGESTIONS"

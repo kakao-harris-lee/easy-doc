@@ -9,6 +9,39 @@ class PaymentConfigurationTest {
     private val configuration = SubscriptionConfiguration()
 
     @Test
+    fun `live requires individual live keys with charging closed by default`() {
+        val properties =
+            PaymentProperties(
+                provider = "toss_live",
+                tossClientKey =
+                    kr.easydoc.core.security
+                        .Secret("live_ck_fixture"),
+                tossSecretKey =
+                    kr.easydoc.core.security
+                        .Secret("live_sk_fixture"),
+            )
+        val environment = MockEnvironment().apply { setActiveProfiles("production") }
+        configuration.paymentGateway(properties, environment)
+        assertThat(properties.purchaseEnabled).isFalse()
+        assertThat(properties.autoChargeEnabled).isFalse()
+        listOf("test_sk_fixture", "live_gsk_fixture", "").forEach { key ->
+            assertThatThrownBy {
+                configuration.paymentGateway(
+                    properties.copy(
+                        tossSecretKey =
+                            kr.easydoc.core.security
+                                .Secret(key),
+                    ),
+                    environment,
+                )
+            }.isInstanceOf(IllegalStateException::class.java)
+        }
+        assertThatThrownBy {
+            configuration.paymentGateway(properties.copy(mockEnabled = true), environment)
+        }.isInstanceOf(IllegalStateException::class.java)
+    }
+
+    @Test
     fun `mock enabled requires local or test and rejects production even with local`() {
         listOf(emptyArray(), arrayOf("production"), arrayOf("local", "prod")).forEach { profiles ->
             val environment = MockEnvironment().apply { setActiveProfiles(*profiles) }

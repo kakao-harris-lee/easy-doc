@@ -1,13 +1,32 @@
-import { requestJson } from './client'
+import { requestJson, requestVoid } from './client'
 
-/** 서버가 현재 테스트 결제에 노출하는 유일한 플랜. */
+/** 현재 판매하는 유일한 월 구독 플랜. */
 export type TestSubscriptionPlanId = 'start'
 
 export interface SubscriptionOverview {
+  billing_environment?: 'stub' | 'toss_test' | 'toss_live'
+  purchase_enabled?: boolean
+  auto_charge_enabled?: boolean
+  current_period_start?: string | null
+  next_billing_at?: string | null
+  card_last_four?: string | null
+  manual_review?: boolean
+  retry_at?: string | null
+  retry_count?: number
+  first_failure_at?: string | null
   mock_enabled: boolean
   toss_enabled?: boolean
   pending?: boolean
-  billing_state?: 'authorizing' | 'issuing' | 'active' | 'revoking' | 'revoked' | null
+  billing_state?:
+    | 'authorizing'
+    | 'issuing'
+    | 'active'
+    | 'revoking'
+    | 'revoked'
+    | 'needs_card'
+    | 'cancel_requested'
+    | 'manual_review'
+    | null
   plans: Array<{ id: string; name: string; allowance: number; monthly_price: number }>
   subscription: {
     plan_id: string
@@ -21,7 +40,9 @@ export interface SubscriptionOverview {
     plan_id: string
     amount: number
     status: 'paid' | 'failed' | 'partially_refunded' | 'refunded'
-    provider?: 'stub' | 'toss_test'
+    provider?: 'stub' | 'toss_test' | 'toss_live'
+    approved_at?: string | null
+    canceled_at?: string | null
     refunded_amount?: number
     created_at: string
   }>
@@ -53,14 +74,20 @@ export function cancelSubscription(workspace: string) {
 }
 
 export interface TossSession {
+  billing_environment?: 'toss_test' | 'toss_live'
   session_id: string
   customer_key: string
   client_key: string
 }
-export function beginTossBilling(workspace: string, plan: TestSubscriptionPlanId) {
+export function beginTossBilling(
+  workspace: string,
+  plan: TestSubscriptionPlanId,
+  purpose: 'purchase' | 'replace_card' = 'purchase',
+  consentVersion?: string,
+) {
   return requestJson<TossSession>(`/workspaces/${workspace}/subscription/billing`, {
     method: 'POST',
-    body: { plan_id: plan },
+    body: { plan_id: plan, purpose, consent_version: consentVersion },
   })
 }
 export function completeTossBilling(
@@ -81,14 +108,66 @@ export function completeTossBilling(
 export function getTossReceipt(workspace: string, id: string) {
   return requestJson<{ receipt_url: string }>(`/workspaces/${workspace}/payments/${id}/receipt`)
 }
+export interface BillingOperation {
+  operation_id: string
+  workspace_id: string
+  payment_id: string
+  amount: number
+  recovery_credits: number
+  stop_renewal: boolean
+  reason: string
+  status: 'pending' | 'completed' | 'failed'
+  created_at: string
+  updated_at: string
+}
+export interface AdminBillingView {
+  actions?: Array<{
+    operation_id: string
+    action: string
+    status: string
+    reason: string
+    created_at: string
+    updated_at: string
+  }>
+  orders: Array<{
+    id: string
+    kind: string
+    status: string
+    amount: number
+    created_at: string
+    environment: string
+    needs_review: boolean
+  }>
+  operations: BillingOperation[]
+}
+export function getAdminBilling(workspace: string, signal?: AbortSignal) {
+  return requestJson<AdminBillingView>(`/admin/workspaces/${workspace}/billing`, { signal })
+}
+export function adminBillingAction(
+  workspace: string,
+  action: string,
+  operation: string,
+  reason: string,
+) {
+  return requestVoid(`/admin/workspaces/${workspace}/billing/${action}`, {
+    method: 'POST',
+    body: { operation_id: operation, reason },
+  })
+}
 export function refundTossPayment(
   workspace: string,
   id: string,
-  operation: string,
-  amount: number,
+  request: {
+    operation_id: string
+    amount: number
+    recovery_credits: number
+    stop_renewal: boolean
+    reason: string
+    expected_revision: number
+  },
 ) {
-  return requestJson<SubscriptionOverview>(`/admin/workspaces/${workspace}/payments/${id}/refund`, {
+  return requestJson<BillingOperation>(`/admin/workspaces/${workspace}/payments/${id}/refund`, {
     method: 'POST',
-    body: { operation_id: operation, amount },
+    body: request,
   })
 }

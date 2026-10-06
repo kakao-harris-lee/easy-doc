@@ -29,6 +29,11 @@ interface AdminWorkspaceQueryRepository {
         size: Int,
     ): AdminWorkspaceSearchResult
 
+    fun selectedMonthTotals(
+        workspaceIds: Collection<UUID>,
+        period: AdminMonthPeriod,
+    ): Map<UUID, AdminSelectedMonth> = emptyMap()
+
     /** 없으면 `null`. */
     fun find(workspaceId: UUID): AdminWorkspaceRow?
 
@@ -85,4 +90,11 @@ data class AdminWorkspaceRow(
 data class AdminWorkspaceSearchResult(
     val items: List<AdminWorkspaceRow>,
     val total: Int,
+)
+
+data class AdminSelectedMonth(
+    val month: String,
+    val credits: BigDecimal,
+    val paidKrw: Long,
+    val refundedKrw: Long,
 )

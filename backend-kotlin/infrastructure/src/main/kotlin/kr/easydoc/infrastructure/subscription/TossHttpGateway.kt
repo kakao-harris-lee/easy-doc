@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.subscription
 
+import kr.easydoc.application.subscription.IssuedBillingCard
 import kr.easydoc.application.subscription.TossDeclined
 import kr.easydoc.application.subscription.TossGateway
 import kr.easydoc.application.subscription.TossPayment
@@ -38,7 +39,13 @@ class TossHttpGateway(
         authKey: Secret,
         customerKey: Secret,
         session: UUID,
-    ): Secret {
+    ): Secret = issueCard(authKey, customerKey, session).key
+
+    override fun issueCard(
+        authKey: Secret,
+        customerKey: Secret,
+        session: UUID,
+    ): IssuedBillingCard {
         val result =
             call(
                 "POST",
@@ -51,7 +58,15 @@ class TossHttpGateway(
             )
                 ?: throw TossUncertain()
         if (result.path("customerKey").asString("") != customerKey.reveal()) throw TossUncertain()
-        return Secret(result.path("billingKey").asString("").also { if (it.isBlank()) throw TossUncertain() })
+        val key = Secret(result.path("billingKey").asString("").also { if (it.isBlank()) throw TossUncertain() })
+        val lastFour =
+            result
+                .path("card")
+                .path("number")
+                .asString("")
+                .takeLast(CARD_SUFFIX_LENGTH)
+                .takeIf { it.matches(Regex("[0-9]{4}")) }
+        return IssuedBillingCard(key, lastFour)
     }
 
     override fun charge(
@@ -170,18 +185,36 @@ class TossHttpGateway(
     ) {
         if (status in SUCCESS_CODES) return
         val temporary = status in RETRYABLE_CODES || status >= SERVER_ERROR
-        if (method == "GET" || temporary || code in CONFIGURATION_ERRORS) {
+        if (method == "GET" || temporary || code in LOOKUP_REQUIRED_ERRORS) {
             throw TossUncertain()
         }
-        throw TossDeclined()
+        throw TossDeclined(requiresCard = code in CARD_REGISTRATION_ERRORS)
     }
 
     private companion object {
         const val NOT_FOUND = 404
         const val SERVER_ERROR = 500
+        const val CARD_SUFFIX_LENGTH = 4
         val SUCCESS_CODES = 200..299
         val RETRYABLE_CODES = setOf(409, 429, 401)
-        val CONFIGURATION_ERRORS = setOf("UNAUTHORIZED_KEY", "INCORRECT_BASIC_AUTH_FORMAT", "NOT_SUPPORTED_METHOD")
+        val LOOKUP_REQUIRED_ERRORS =
+            setOf(
+                "UNAUTHORIZED_KEY",
+                "INCORRECT_BASIC_AUTH_FORMAT",
+                "NOT_SUPPORTED_METHOD",
+                "DUPLICATED_ORDER_ID",
+                "DUPLICATED_REQUEST",
+                "INVALID_API_KEY",
+            )
+        val CARD_REGISTRATION_ERRORS =
+            setOf(
+                "INVALID_STOPPED_CARD",
+                "INVALID_CARD_LOST_OR_STOLEN",
+                "INVALID_CARD_EXPIRATION",
+                "INVALID_CARD_NUMBER",
+                "INVALID_BILL_KEY_REQUEST",
+                "NOT_FOUND_BILLING",
+            )
     }
 
     private fun payment(node: JsonNode): TossPayment {
@@ -205,7 +238,21 @@ class TossHttpGateway(
             node.path("totalAmount").intValue(),
             node.path("balanceAmount").intValue(),
             Secret(node.path("receipt").path("url").asString("")),
+            timestamp(node.path("approvedAt")),
+            node.path("cancels").mapNotNull { timestamp(it.path("canceledAt")) }.maxOrNull(),
         )
+    }
+
+    private fun timestamp(node: JsonNode): java.time.Instant? {
+        val value = node.asString("")
+        if (value.isBlank()) return null
+        return try {
+            java.time.OffsetDateTime
+                .parse(value)
+                .toInstant()
+        } catch (_: java.time.format.DateTimeParseException) {
+            throw TossUncertain()
+        }
     }
 
     private fun encode(value: Secret): String = URLEncoder.encode(value.reveal(), StandardCharsets.UTF_8)

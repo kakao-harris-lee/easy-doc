@@ -2,8 +2,6 @@ package kr.easydoc.api.admin
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.annotation.JsonSetter
-import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.api.invoice.InvoiceRequestResponse
 import kr.easydoc.api.workspace.CreditTransactionResponse
 import kr.easydoc.application.admin.AdminConversionRow
@@ -15,6 +13,7 @@ import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.workspace.Workspace
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 /** `GET /admin/workspaces`·`GET /admin/workspaces/{workspace_id}` 공용 요약. */
 data class AdminWorkspaceSummaryResponse(
@@ -28,6 +27,7 @@ data class AdminWorkspaceSummaryResponse(
     @get:JsonProperty("month_documents") val monthDocuments: Int,
     @get:JsonProperty("month_credits") val monthCredits: BigDecimal,
     @get:JsonProperty("month_cost_usd") val monthCostUsd: String?,
+    @get:JsonProperty("selected_month") val selectedMonth: AdminSelectedMonthResponse? = null,
 ) {
     /** 이름·이메일을 찍지 않는다 — [Workspace.toString]과 같은 규약. */
     override fun toString(): String =
@@ -49,6 +49,10 @@ data class AdminWorkspaceSummaryResponse(
                 monthDocuments = summary.monthDocuments,
                 monthCredits = summary.monthCredits,
                 monthCostUsd = summary.monthCostUsd?.toPlainString(),
+                selectedMonth =
+                    summary.selectedMonth?.let {
+                        AdminSelectedMonthResponse(it.month, it.credits, it.paidKrw, it.refundedKrw)
+                    },
             )
     }
 }
@@ -59,6 +63,8 @@ data class AdminWorkspaceListResponse(
     @get:JsonProperty("page") val page: Int,
     @get:JsonProperty("size") val size: Int,
     @get:JsonProperty("total") val total: Int,
+    @get:JsonProperty("timezone") val timezone: String = "Asia/Seoul",
+    @get:JsonProperty("current_month") val currentMonth: String = "",
 ) {
     companion object {
         fun of(page: AdminWorkspaceListPage): AdminWorkspaceListResponse =
@@ -67,6 +73,8 @@ data class AdminWorkspaceListResponse(
                 page = page.page,
                 size = page.size,
                 total = page.total,
+                timezone = page.timezone,
+                currentMonth = page.currentMonth,
             )
     }
 }
@@ -121,13 +129,20 @@ data class AdminCreditAdjustmentRequest
     constructor(
         @param:JsonProperty("credits") val credits: BigDecimal,
         @param:JsonProperty("reason") val reason: String,
-        // 전역 null 처리는 실패다(`JsonRequestStrictnessConfig`) — 선택 필드는 이 표식으로
-        // 그 기본을 뒤집는다(`DocumentTextRequest.title`과 같은 관행).
-        @param:JsonProperty("note")
-        @param:JsonSetter(nulls = Nulls.SET)
-        val note: String?,
+        @param:JsonProperty(value = "note", required = true) val note: String,
+        @param:JsonProperty("operation_id") val operationId: UUID,
+        @param:JsonProperty("expected_balance") val expectedBalance: BigDecimal,
+        @param:JsonProperty("expected_reserved") val expectedReserved: BigDecimal,
+        @param:JsonProperty(value = "expected_revision", required = true) val expectedRevision: Long,
     ) {
         /** 운영자 메모를 찍지 않는다(인구조사 규약, `CreditGrantArgs`와 같은 판단). */
         override fun toString(): String =
             "AdminCreditAdjustmentRequest(credits=$credits, reason=$reason, note=$CONTENT_MASK)"
     }
+
+data class AdminSelectedMonthResponse(
+    val month: String,
+    val credits: BigDecimal,
+    @get:JsonProperty("paid_krw") val paidKrw: Long,
+    @get:JsonProperty("refunded_krw") val refundedKrw: Long,
+)

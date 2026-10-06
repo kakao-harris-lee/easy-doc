@@ -16,6 +16,10 @@ object AdminOperationCatalog {
 
     private val OPERATIONS: Map<Route, String> =
         mapOf(
+            Route("GET", "/admin/workspaces/{workspace_id}/monthly-summary") to "readAdminMonthlySummary",
+            Route("GET", "/admin/workspaces/{workspace_id}/monthly-history") to "readAdminMonthlyHistory",
+            Route("GET", "/admin/workspaces/{workspace_id}/credit-transactions") to "listAdminCreditTransactions",
+            Route("GET", "/admin/workspaces/{workspace_id}/payments") to "listAdminPaymentEvents",
             Route("GET", "/admin/workspaces") to "listAdminWorkspaces",
             Route("GET", "/admin/workspaces/{workspace_id}") to "readAdminWorkspace",
             Route("POST", "/admin/workspaces/{workspace_id}/credits") to "adjustAdminWorkspaceCredits",
@@ -29,6 +33,10 @@ object AdminOperationCatalog {
             Route("GET", "/admin/feedback") to "listAdminFeedback",
             Route("GET", "/admin/workspaces/{workspace_id}/subscription") to "getAdminWorkspaceSubscription",
             Route("POST", "/admin/workspaces/{workspace_id}/payments/{id}/refund") to "refundTossPayment",
+            Route("GET", "/admin/workspaces/{workspace_id}/billing") to "getAdminBilling",
+            Route("POST", "/admin/workspaces/{workspace_id}/billing/orders/{id}/sync") to "syncAdminBillingOrder",
+            Route("POST", "/admin/workspaces/{workspace_id}/billing/stop-renewal") to "stopAdminBillingRenewal",
+            Route("POST", "/admin/workspaces/{workspace_id}/billing/retry-card-deletion") to "retryAdminCardDeletion",
         )
 
     fun operationIdFor(

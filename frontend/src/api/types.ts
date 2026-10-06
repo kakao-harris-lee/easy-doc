@@ -1081,6 +1081,7 @@ export interface DictionaryLookupResponse {
  * `summary`) 공용. 계약 `components/schemas/AdminWorkspaceSummary`.
  */
 export interface AdminWorkspaceSummary {
+  selected_month?: { month: string; credits: number; paid_krw: number; refunded_krw: number }
   workspace_id: string
   name: string
   owner_email: string
@@ -1100,6 +1101,8 @@ export interface AdminWorkspaceSummary {
 
 /** `GET /admin/workspaces` 응답. 계약 `components/schemas/AdminWorkspaceListResponse`. */
 export interface AdminWorkspaceListResponse {
+  timezone?: string
+  current_month?: string
   items: AdminWorkspaceSummary[]
   page: number
   size: number
@@ -1148,8 +1151,12 @@ export interface AdminCreditAdjustmentRequest {
   /** 0이 될 수 없고 0.1 단위다. 0 이상이면 부여(grant), 음수면 조정(adjust). */
   credits: number
   reason: AdminCreditAdjustmentReason
-  /** 선택, 200자 이내(`credit_transactions.note` 상한과 같다) — 초과는 422. */
-  note?: string | null
+  /** 필수 메모, 공백 제외 1자 이상 · 원문 200자 이하. */
+  note: string
+  operation_id: string
+  expected_balance: number
+  expected_reserved: number
+  expected_revision: number
 }
 
 /**

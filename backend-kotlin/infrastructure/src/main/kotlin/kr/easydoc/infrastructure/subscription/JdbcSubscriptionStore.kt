@@ -63,8 +63,11 @@ class JdbcSubscriptionStore(private val jdbc: JdbcClient) : SubscriptionStore {
     override fun payments(workspaceId: UUID): List<SubscriptionPayment> =
         jdbc
             .sql(
-                "SELECT * FROM subscription_payments WHERE workspace_id = :workspace " +
-                    "ORDER BY created_at DESC, id LIMIT 20",
+                """
+                SELECT p.*, o.approved_at, o.canceled_at FROM subscription_payments p
+                LEFT JOIN toss_billing_orders o ON o.id=p.id AND o.workspace_id=p.workspace_id
+                WHERE p.workspace_id = :workspace ORDER BY p.created_at DESC, p.id LIMIT 20
+                """.trimIndent(),
             ).param("workspace", workspaceId)
             .query { rs, _ -> payment(rs) }
             .list()
@@ -74,8 +77,13 @@ class JdbcSubscriptionStore(private val jdbc: JdbcClient) : SubscriptionStore {
         id: UUID,
     ): SubscriptionPayment? =
         jdbc
-            .sql("SELECT * FROM subscription_payments WHERE workspace_id = :workspace AND id = :id")
-            .param("workspace", workspaceId)
+            .sql(
+                """
+                SELECT p.*, o.approved_at, o.canceled_at FROM subscription_payments p
+                LEFT JOIN toss_billing_orders o ON o.id=p.id AND o.workspace_id=p.workspace_id
+                WHERE p.workspace_id = :workspace AND p.id = :id
+                """.trimIndent(),
+            ).param("workspace", workspaceId)
             .param("id", id)
             .query { rs, _ -> payment(rs) }
             .optional()
@@ -136,5 +144,7 @@ class JdbcSubscriptionStore(private val jdbc: JdbcClient) : SubscriptionStore {
             rs.getBoolean("simulated_failure"),
             rs.getString("provider"),
             rs.getInt("refunded_amount"),
+            rs.getObject("approved_at", OffsetDateTime::class.java)?.toInstant(),
+            rs.getObject("canceled_at", OffsetDateTime::class.java)?.toInstant(),
         )
 }

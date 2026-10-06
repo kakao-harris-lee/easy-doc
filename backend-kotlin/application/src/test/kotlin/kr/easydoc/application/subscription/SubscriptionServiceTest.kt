@@ -31,6 +31,19 @@ class SubscriptionServiceTest {
     private val credits =
         CreditAccountService(
             object : kr.easydoc.application.credit.CreditAccountRepository by NoopCreditAccountRepository {
+                override fun setPaidAllowance(
+                    workspaceId: UUID,
+                    ownerUserId: UUID,
+                    allowance: BigDecimal,
+                    cycleEndsAt: Instant,
+                    reason: CreditReason,
+                    note: String?,
+                    paymentId: UUID,
+                ): BigDecimal {
+                    grants++
+                    return allowance
+                }
+
                 override fun setAllowance(
                     workspaceId: UUID,
                     ownerUserId: UUID,

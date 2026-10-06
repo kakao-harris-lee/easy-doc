@@ -14,6 +14,14 @@ data class BillingSession(
     val billingKey: Secret? = null,
     val state: String = "authorizing",
     val simulateFailure: Boolean = false,
+    val environment: String = "toss_test",
+    val purpose: String = "purchase",
+    val consentVersion: String? = null,
+    val consentAt: Instant? = null,
+    val previousBillingKey: Secret? = null,
+    val previousCustomer: UUID? = null,
+    val cardLastFour: String? = null,
+    val previousCardLastFour: String? = null,
 )
 
 data class BillingOrder(
@@ -29,11 +37,29 @@ data class BillingOrder(
     val status: String = "pending",
     val payment: TossPayment? = null,
     val simulateFailure: Boolean = false,
+    val environment: String = "toss_test",
+    val cycleId: UUID = id,
+    val attempt: Int = 0,
+    val firstFailureAt: Instant? = null,
+    val nextAttemptAt: Instant = createdAt,
 )
 
 /** Mutations occur under SubscriptionStore.lockOwned in a short transaction. */
 @Suppress("TooManyFunctions") // Durable payment and session storage share the workspace transaction boundary.
 interface TossBillingStore {
+    fun stopScheduled(workspace: UUID) = Unit
+
+    fun replacementBlocked(workspace: UUID): Boolean = pending(workspace)
+
+    fun expiredReplacements(now: Instant): List<UUID> = emptyList()
+
+    fun sessionByBillingKey(
+        key: Secret,
+        environment: String,
+    ): BillingSession? = null
+
+    fun latestOrder(workspace: UUID): BillingOrder? = null
+
     fun session(workspace: UUID): BillingSession?
 
     fun saveSession(session: BillingSession)

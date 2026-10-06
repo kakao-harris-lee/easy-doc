@@ -29,8 +29,11 @@ object BillingDeletionGuard {
                         SELECT (SELECT count(*) FROM toss_billing_sessions WHERE workspace_id=:id AND state<>'revoked') +
                             (SELECT count(*) FROM toss_billing_orders WHERE workspace_id=:id AND status IN
                               ('pending','processing','manual_review')) +
-                            (SELECT count(*) FROM workspace_subscriptions WHERE workspace_id=:id AND provider='toss_test'
-                              AND status='active')
+                            (SELECT count(*) FROM workspace_subscriptions WHERE workspace_id=:id
+                              AND provider IN ('toss_test','toss_live') AND status='active') +
+                            (SELECT count(*) FROM subscription_payments WHERE workspace_id=:id AND provider='toss_live') +
+                            (SELECT count(*) FROM admin_billing_operations WHERE workspace_id=:id AND status='pending') +
+                            (SELECT count(*) FROM admin_billing_actions WHERE workspace_id=:id AND status='pending')
                         """.trimIndent(),
                     ).param("id", id)
                     .query(Int::class.java)

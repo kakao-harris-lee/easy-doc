@@ -20,6 +20,7 @@ import java.util.UUID
 
 class TossStoreTest {
     @Test
+    @Suppress("LongMethod") // One rotation scenario checks both encrypted fields and their unchanged leases.
     fun `billing envelopes rotate both fields without changing leases and reject swapped ciphertext`() {
         val db = PostgresTestSupport.createEmptyDatabase("toss_rotation")
         Flyway
@@ -44,6 +45,12 @@ class TossStoreTest {
                 Secret("synthetic-auth-secret"),
                 Secret("synthetic-billing-secret"),
                 "active",
+                environment = "toss_live",
+                purpose = "replace_card",
+                consentVersion = "start-monthly-v1",
+                consentAt = Instant.parse("2026-10-01T00:00:00Z"),
+                previousBillingKey = Secret("old-billing-secret"),
+                previousCustomer = UUID.randomUUID(),
             )
         old.saveSession(session)
         val order = BillingOrder(UUID.randomUUID(), workspace, "start", 1000, Instant.now(), Instant.now())
@@ -64,7 +71,7 @@ class TossStoreTest {
         val rotated = JdbcTossBillingStore(jdbc, AesGcmContentCipher(keys, 2))
         rotated.rotateSecrets()
         val newOnly = JdbcTossBillingStore(jdbc, AesGcmContentCipher(mapOf(2 to keys.getValue(2)), 2))
-        assertThat(newOnly.session(workspace)?.billingKey).isEqualTo(session.billingKey)
+        assertSessionSurvivedRotation(newOnly, workspace, session)
         assertThat(newOnly.order(order.id)?.payment?.key).isEqualTo(Secret("synthetic-payment-secret"))
         assertThat(db.queryInt("SELECT count(*) FROM toss_billing_orders WHERE lease_until IS NOT NULL")).isEqualTo(1)
         assertThat(db.queryInt("SELECT count(*) FROM toss_billing_sessions WHERE key_version=2")).isEqualTo(1)
@@ -76,8 +83,25 @@ class TossStoreTest {
         assertThatThrownBy { newOnly.order(order.id) }.isInstanceOf(DecryptionFailedException::class.java)
     }
 
+    private fun assertSessionSurvivedRotation(
+        newOnly: JdbcTossBillingStore,
+        workspace: UUID,
+        session: BillingSession,
+    ) {
+        assertThat(newOnly.session(workspace)?.billingKey).isEqualTo(session.billingKey)
+        assertThat(newOnly.session(workspace)?.previousBillingKey).isEqualTo(session.previousBillingKey)
+        assertThat(newOnly.session(workspace)?.previousCustomer).isEqualTo(session.previousCustomer)
+        assertThat(newOnly.session(workspace)?.environment).isEqualTo("toss_live")
+        assertThat(newOnly.sessionByBillingKey(requireNotNull(session.billingKey), "toss_live")?.id)
+            .isEqualTo(session.id)
+        assertThat(newOnly.sessionByBillingKey(requireNotNull(session.billingKey), "toss_test")).isNull()
+        assertThat(newOnly.cleanupCandidates()).contains(workspace)
+        newOnly.saveSession(requireNotNull(newOnly.session(workspace)).copy(state = "needs_card"))
+        assertThat(newOnly.cleanupCandidates()).contains(workspace)
+    }
+
     @Test
-    fun `authorization candidates filter expired sessions before the batch limit`() {
+    fun `authorization candidates include stale sessions for manual review in bounded batches`() {
         val db = PostgresTestSupport.createEmptyDatabase("toss_authorization_candidates")
         Flyway
             .configure()
@@ -98,9 +122,12 @@ class TossStoreTest {
 
         val candidates = store.authorizationCandidates(cutoff)
 
-        assertThat(candidates).containsExactly(live)
-        assertThat(candidates).doesNotContainAnyElementsOf(expired + boundary)
-        assertThat(store.session(expired.first())?.state).isEqualTo("issuing")
+        assertThat(candidates).containsExactlyElementsOf(expired.reversed())
+        candidates.forEach { workspace ->
+            store.saveSession(requireNotNull(store.session(workspace)).copy(state = "manual_review"))
+        }
+        assertThat(store.authorizationCandidates(cutoff)).containsExactly(boundary, live)
+        assertThat(store.session(expired.first())?.state).isEqualTo("manual_review")
         assertThat(store.session(expired.first())?.authKey).isEqualTo(Secret("auth-0"))
     }
 

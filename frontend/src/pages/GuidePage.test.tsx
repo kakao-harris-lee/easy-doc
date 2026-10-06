@@ -69,7 +69,7 @@ describe('이용 가이드 화면', () => {
       ).toBeInTheDocument()
     }
 
-    expect(screen.getByText('테스트 결제 가능 · 실제 청구 없음')).toBeInTheDocument()
+    expect(screen.getByText('월 정기결제 · 사용량 화면에서 접수 상태 확인')).toBeInTheDocument()
     expect(screen.getAllByText('결제 준비 중')).toHaveLength(2)
   })
 

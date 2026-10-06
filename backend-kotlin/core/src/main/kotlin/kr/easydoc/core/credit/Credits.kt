@@ -70,13 +70,11 @@ class Credits(amount: BigDecimal) {
  * 크레딧 거래 종류 — `credit_transactions.kind` CHECK 제약과 같은 값 집합(V15,
  * [CYCLE_SET]·[CYCLE_RESET]는 V21).
  *
- * 부호 규약(계획 §2 결정 2): [GRANT]·[RELEASE]는 거래 금액이 항상 양수, [RESERVE]·[CONSUME]·
- * [ADJUST]는 그 작업이 계정 잔액·예약에 미치는 방향대로 부호가 갈린다 — [RESERVE]는 음수,
- * [CONSUME]은 0(예약 단계에서 이미 음수로 반영됐으므로 완료가 추가로 잔액을 또 깎지
- * 않는다 — `credit_transactions` 합계 = `balance − reserved` 불변식이 그것을 강제한다),
- * [ADJUST]는 운영자가 준 부호 그대로. [CYCLE_SET]·[CYCLE_RESET]도 [balanceDelta] 방향
- * 그대로다(설정/초기화 전후 잔액 차, 음수일 수 있다) — 크레딧을 「구독 주기에 포함된
- * 이용량」으로 바꾼 사용자 결정(2026-09-10)의 구현.
+ * [RESERVE]는 잔액을 바꾸지 않고 예약량을 늘린다. [CONSUME]은 잔액과 예약량을
+ * 함께 줄이며, [RELEASE]는 예약량만 줄인다. 실제 사용량은 소비의 잔액 차감량이다.
+ * 원장의 balance_delta 합은 보유 잔액, reserved_delta 합은 처리 중 확보량과 같다.
+ * [CYCLE_SET]·[CYCLE_RESET]의 잔액 증감은 주기 교체 전후 차이다.
+
  */
 enum class CreditTransactionKind(val wireName: String) {
     /** 운영자 수동 부여 — 가입 보너스·월 구독 지급. 항상 양수. */

@@ -1,7 +1,9 @@
 package kr.easydoc.infrastructure.admin
 
 import kr.easydoc.application.admin.AdminCreditBalance
+import kr.easydoc.application.admin.AdminMonthPeriod
 import kr.easydoc.application.admin.AdminMonthUsage
+import kr.easydoc.application.admin.AdminSelectedMonth
 import kr.easydoc.application.admin.AdminWorkspaceQueryRepository
 import kr.easydoc.application.admin.AdminWorkspaceRow
 import kr.easydoc.application.admin.AdminWorkspaceSearchResult
@@ -30,6 +32,7 @@ import java.util.UUID
  * 요약이라 [AdminMonthUsage]에 `failedCalls`를 별도로
  * 내지 않는다(그 값이 필요하면 상세 화면의 `UsageQueryService.usageOf`를 쓴다).
  */
+@Suppress("TooManyFunctions")
 class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWorkspaceQueryRepository {
     override fun search(
         query: String?,
@@ -54,6 +57,39 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
                 .query { rs, _ -> toRow(rs) }
                 .list()
         return AdminWorkspaceSearchResult(items, total)
+    }
+
+    override fun selectedMonthTotals(
+        workspaceIds: Collection<UUID>,
+        period: AdminMonthPeriod,
+    ): Map<UUID, AdminSelectedMonth> {
+        if (workspaceIds.isEmpty()) return emptyMap()
+        val credits = creditTotalsByWorkspace(workspaceIds, period.from, period.until)
+        val payments =
+            jdbc
+                .sql(
+                    """
+            SELECT workspace_id,
+              coalesce(sum(amount_krw) FILTER (WHERE kind='payment'),0) AS paid,
+              coalesce(sum(amount_krw) FILTER (WHERE kind='refund'),0) AS refunded
+            FROM subscription_payment_events WHERE workspace_id IN (:ids) AND NOT is_test
+              AND occurred_at >= :from AND occurred_at < :until GROUP BY workspace_id
+        """,
+                ).param("ids", workspaceIds.toList())
+                .param("from", period.from.toOffsetDateTime())
+                .param("until", period.until.toOffsetDateTime())
+                .query { rs, _ ->
+                    rs.getObject("workspace_id", UUID::class.java) to (rs.getLong("paid") to rs.getLong("refunded"))
+                }.list()
+                .toMap()
+        return workspaceIds.associateWith { id ->
+            AdminSelectedMonth(
+                period.month,
+                credits[id] ?: BigDecimal.ZERO,
+                payments[id]?.first ?: 0L,
+                payments[id]?.second ?: 0L,
+            )
+        }
     }
 
     override fun find(workspaceId: UUID): AdminWorkspaceRow? =
@@ -249,7 +285,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             FROM credit_transactions
             WHERE workspace_id IN (:ids) AND created_at >= :from AND created_at < :toExclusive
               AND kind = 'consume'
-              AND reason IN ('conversion', 'action_guide')
+
             GROUP BY workspace_id
             """.trimIndent()
     }

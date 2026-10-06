@@ -9,6 +9,7 @@ interface TargetPlanCatalogProps {
   workspaceId: string | null
   checkoutEnabled?: boolean
   tossEnabled?: boolean
+  live?: boolean
   pending?: boolean
   busy?: boolean
   activePlanId?: string | null
@@ -20,6 +21,7 @@ export function TargetPlanCatalog({
   workspaceId,
   checkoutEnabled = false,
   tossEnabled = false,
+  live = false,
   pending = false,
   busy = false,
   activePlanId = null,
@@ -28,6 +30,7 @@ export function TargetPlanCatalog({
 }: TargetPlanCatalogProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<TargetPlan['id']>('start')
   const [simulateFailure, setSimulateFailure] = useState(false)
+  const [consent, setConsent] = useState(false)
   const selectedPlanName =
     TARGET_PLANS.find((plan) => plan.id === selectedPlanId)?.name ?? selectedPlanId
   const startCanCheckout =
@@ -35,12 +38,15 @@ export function TargetPlanCatalog({
     workspaceId !== null &&
     checkoutEnabled &&
     activePlanId === null &&
-    !pending
+    !pending &&
+    (!live || consent)
   const buttonLabel =
     selectedPlanId === 'start'
-      ? tossEnabled
-        ? 'Start 토스 테스트 카드 등록'
-        : 'Start 테스트 결제'
+      ? live
+        ? 'Start 월 99,000원 정기결제 시작'
+        : tossEnabled
+          ? 'Start 토스 테스트 카드 등록'
+          : 'Start 테스트 결제'
       : `${selectedPlanName} 결제 준비 중`
 
   return (
@@ -52,7 +58,7 @@ export function TargetPlanCatalog({
         플랜을 선택해 월 제공량과 결제 금액을 확인하세요.
       </p>
       <ul aria-label="월 플랜 선택" className="mt-4 grid gap-3 sm:grid-cols-3">
-        {TARGET_PLANS.map((plan) => {
+        {TARGET_PLANS.filter((plan) => !live || plan.id === 'start').map((plan) => {
           const selected = selectedPlanId === plan.id
           const active = activePlanId === plan.id
           return (
@@ -75,7 +81,9 @@ export function TargetPlanCatalog({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 font-medium">
                     {plan.name}
-                    {plan.id === 'start' && <Badge tone="success">테스트 결제 가능</Badge>}
+                    {plan.id === 'start' && (
+                      <Badge tone="success">{live ? '월 정기결제' : '테스트 결제 가능'}</Badge>
+                    )}
                     {plan.id !== 'start' && <Badge tone="neutral">결제 준비 중</Badge>}
                     {active && <Badge tone="info">이용 중</Badge>}
                   </span>
@@ -98,11 +106,36 @@ export function TargetPlanCatalog({
         })}
       </ul>
       <div className="mt-4 border-t border-border pt-4">
+        {live && (
+          <div className="space-y-2 text-sm">
+            <p>
+              Start는 월 99,000원에 50크레딧을 제공합니다. 실제 승인일부터 한 달 동안 이용하며 매월
+              자동 결제됩니다.
+            </p>
+            <p>
+              갱신 중단 시 이미 결제한 이용 기간은 유지됩니다. 환불은 이용 내역과 적용 약관에 따라
+              고객 지원을 통해 확인합니다.
+            </p>
+            <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
+              이용약관 및 환불 안내
+            </a>
+            <label className="flex items-start gap-2">
+              <input
+                type="checkbox"
+                checked={consent}
+                disabled={busy || pending}
+                onChange={(event) => setConsent(event.target.checked)}
+              />
+              금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.
+            </label>
+          </div>
+        )}
+
         <p className="text-xs text-muted-foreground">
           공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다. 재변환도 대상
           원문 분량만큼 이용량에 포함됩니다. 남은 이용량은 다음 결제 주기로 이월되지 않습니다.
         </p>
-        {selectedPlanId === 'start' && checkoutEnabled && activePlanId === null && (
+        {!live && selectedPlanId === 'start' && checkoutEnabled && activePlanId === null && (
           <label className="mt-3 flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -116,7 +149,7 @@ export function TargetPlanCatalog({
         <Button
           className="mt-3"
           disabled={!startCanCheckout || busy}
-          onClick={() => onCheckout?.(selectedPlanId, simulateFailure)}
+          onClick={() => onCheckout?.(selectedPlanId, live ? false : simulateFailure)}
         >
           {busy ? '처리 중…' : buttonLabel}
         </Button>

@@ -193,6 +193,26 @@ class CreditAccountService(
      * 갱신/종료 갈래를 가른다.
      */
     @Suppress("LongParameterList")
+    fun setPaidAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        reason: CreditReason,
+        note: String?,
+        paymentId: UUID,
+    ): BigDecimal =
+        repository.setPaidAllowance(
+            workspaceId,
+            ownerUserId,
+            normalizeAllowance(BigDecimal.valueOf(allowance.toLong())),
+            cycleEndsAt,
+            reason,
+            note,
+            paymentId,
+        )
+
+    @Suppress("LongParameterList")
     fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,

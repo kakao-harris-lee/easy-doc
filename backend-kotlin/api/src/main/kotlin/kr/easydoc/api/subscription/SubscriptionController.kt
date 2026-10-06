@@ -94,6 +94,8 @@ data class SubscriptionPaymentResponse(
     @get:JsonProperty("created_at") val createdAt: Instant,
     val provider: String = "stub",
     @get:JsonProperty("refunded_amount") val refundedAmount: Int = 0,
+    @get:JsonProperty("approved_at") val approvedAt: Instant? = null,
+    @get:JsonProperty("canceled_at") val canceledAt: Instant? = null,
 )
 
 data class SubscriptionResponse(
@@ -104,6 +106,16 @@ data class SubscriptionResponse(
     @get:JsonProperty("toss_enabled") val tossEnabled: Boolean = false,
     val pending: Boolean = false,
     @get:JsonProperty("billing_state") val billingState: String? = null,
+    @get:JsonProperty("billing_environment") val billingEnvironment: String? = null,
+    @get:JsonProperty("purchase_enabled") val purchaseEnabled: Boolean = false,
+    @get:JsonProperty("auto_charge_enabled") val autoChargeEnabled: Boolean = false,
+    @get:JsonProperty("current_period_start") val currentPeriodStart: Instant? = null,
+    @get:JsonProperty("next_billing_at") val nextBillingAt: Instant? = null,
+    @get:JsonProperty("retry_at") val retryAt: Instant? = null,
+    @get:JsonProperty("retry_count") val retryCount: Int = 0,
+    @get:JsonProperty("first_failure_at") val firstFailureAt: Instant? = null,
+    @get:JsonProperty("manual_review") val manualReview: Boolean = false,
+    @get:JsonProperty("card_last_four") val cardLastFour: String? = null,
 ) {
     companion object {
         fun of(view: SubscriptionOverview) =
@@ -122,11 +134,23 @@ data class SubscriptionResponse(
                         it.createdAt,
                         it.provider,
                         it.refundedAmount,
+                        it.approvedAt,
+                        it.canceledAt,
                     )
                 },
                 view.tossEnabled,
                 view.pending,
                 view.billingState,
+                view.billingEnvironment ?: "stub",
+                view.purchaseEnabled,
+                view.autoChargeEnabled,
+                view.currentPeriodStart,
+                view.nextBillingAt,
+                view.retryAt,
+                view.retryCount,
+                view.firstFailureAt,
+                view.manualReview,
+                view.cardLastFour,
             )
     }
 }

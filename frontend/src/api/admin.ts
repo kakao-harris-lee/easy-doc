@@ -22,10 +22,11 @@ import type {
  * 크기 기본 20·최대 100.
  */
 export function listAdminWorkspaces(
-  params: { q?: string; page?: number; size?: number } = {},
+  params: { q?: string; page?: number; size?: number; month?: string } = {},
   signal?: AbortSignal,
 ): Promise<AdminWorkspaceListResponse> {
   const query = new URLSearchParams()
+  if (params.month) query.set('month', params.month)
   if (params.q !== undefined && params.q !== '') {
     query.set('q', params.q)
   }
@@ -54,9 +55,9 @@ export function readAdminWorkspace(
 
 /**
  * POST /admin/workspaces/{workspace_id}/credits — 워크스페이스 크레딧을 수동으로
- * 조정한다. `credit-grant` 운영 프로필(C2)과 같은 경로를 재사용한다 — `credits`가
- * 0이면 안 되고(0 이상이면 부여, 음수면 조정), `reason`은 `plan_monthly`·`manual`·
- * `refund` 셋만 허용한다. 반영된 거래에 호출한 관리자의 `actor_user_id`가 남는다.
+ * 조정한다. 0이 아닌 0.1 단위, 필수 메모와 operation_id 및 확인한 계정 상태를 보낸다.
+ * 같은 작업 식별자는 같은 요청 재시도에만 사용한다. 현재 상태가 달라지면 409다.
+ * 회수는 가용량을 넘을 수 없고, refund는 양수인 크레딧 복구에만 사용한다.
  */
 export function adjustAdminWorkspaceCredits(
   workspaceId: string,
@@ -172,4 +173,46 @@ export function listAdminFeedback(
     size: String(params.size ?? 20),
   })
   return requestJson('/admin/feedback?' + query.toString(), { signal })
+}
+
+export function readAdminMonthlySummary(workspaceId: string, month: string, signal?: AbortSignal) {
+  return requestJson<import('./adminMonthlyTypes').AdminMonthlySummary>(
+    `/admin/workspaces/${workspaceId}/monthly-summary?${new URLSearchParams({ month })}`,
+    { signal },
+  )
+}
+export function readAdminMonthlyHistory(workspaceId: string, year: number, signal?: AbortSignal) {
+  return requestJson<import('./adminMonthlyTypes').AdminMonthlyHistory>(
+    `/admin/workspaces/${workspaceId}/monthly-history?year=${year}`,
+    { signal },
+  )
+}
+export function listAdminCreditTransactions(
+  workspaceId: string,
+  params: { month: string; page: number; size?: number; kind?: string },
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    month: params.month,
+    page: String(params.page),
+    size: String(params.size ?? 20),
+  })
+  if (params.kind) query.set('kind', params.kind)
+  return requestJson<
+    import('./adminMonthlyTypes').AdminReportPage<import('./adminMonthlyTypes').AdminCreditEvent>
+  >(`/admin/workspaces/${workspaceId}/credit-transactions?${query}`, { signal })
+}
+export function listAdminPayments(
+  workspaceId: string,
+  params: { month: string; page: number; size?: number },
+  signal?: AbortSignal,
+) {
+  const query = new URLSearchParams({
+    month: params.month,
+    page: String(params.page),
+    size: String(params.size ?? 20),
+  })
+  return requestJson<
+    import('./adminMonthlyTypes').AdminReportPage<import('./adminMonthlyTypes').AdminPaymentEvent>
+  >(`/admin/workspaces/${workspaceId}/payments?${query}`, { signal })
 }

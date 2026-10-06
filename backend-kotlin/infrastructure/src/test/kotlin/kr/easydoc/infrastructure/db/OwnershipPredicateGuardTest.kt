@@ -452,12 +452,19 @@ class OwnershipPredicateGuardTest {
                 // 오류 화면(`GET /admin/errors`) 셋 다 아래 미방어 목록에도 있다 — 관리자는
                 // 의도적으로 워크스페이스를 가로지른다(사유는 그쪽에 적었다). `admin`
                 // 패키지가 `auth`보다 알파벳순으로 앞이라 이 목록 맨 앞에 온다.
+                // Administrator-only billing operations and their durable worker replay; no user-facing raw store.
+                "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
+                "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders]",
+                "$ADMIN/JdbcAdminBillingStore.kt | INSERT [toss_billing_sessions]",
+                "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 // 관리자 전용 의견 목록과 전체 건수. AdminReachTest가 권한 경계를 검증한다.
                 "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
                 "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
+                // 관리자 결제 시도 조회도 확인한 작업공간 소유자로 SQL 범위를 고정한다.
+                "$ADMIN/JdbcAdminMonthlyReportRepository.kt | WITH [toss_billing_orders]",
                 // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) —
                 // `conversion_feedback`(V2)은 FK가 없어 CASCADE가 닿지 않아 사용자 삭제
                 // 전에 이 DELETE로 명시로 지운다. 소유 술어(`d.user_id = :userId`)는
@@ -643,6 +650,16 @@ class OwnershipPredicateGuardTest {
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
                 "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                // Subscription reads stay behind lockOwned; joined orders also match workspace_id.
+                "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                // Scheduled cancellation and retry inspection share that workspace lock.
+                // Expiry is a trusted worker scan; deleted-key hints match fingerprint and environment only.
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
                 "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
                 "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_sessions]",
                 "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
@@ -693,6 +710,11 @@ class OwnershipPredicateGuardTest {
                 // 어드민 최소(A1, 2026-09-07) — 위 EXPECTED_STATEMENTS 주석과 같은 사유.
                 // 관리자 전용 조회라 소유 술어가 없다(의도적 설계, 관리자는 워크스페이스를
                 // 가로지른다) — `AdminConversionQueryRepository` KDoc.
+                // Administrator-only billing operations and their durable worker replay; no user-facing raw store.
+                "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
+                "$ADMIN/JdbcAdminBillingStore.kt | SELECT [toss_billing_orders]",
+                "$ADMIN/JdbcAdminBillingStore.kt | INSERT [toss_billing_sessions]",
+                "$ADMIN/JdbcAdminBillingStore.kt | UPDATE [toss_billing_sessions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
@@ -783,6 +805,16 @@ class OwnershipPredicateGuardTest {
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
                 "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                // Subscription reads stay behind lockOwned; joined orders also match workspace_id.
+                "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                // Scheduled cancellation and retry inspection share that workspace lock.
+                // Expiry is a trusted worker scan; deleted-key hints match fingerprint and environment only.
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
                 "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
                 "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_sessions]",
                 "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
@@ -872,6 +904,9 @@ class OwnershipPredicateGuardTest {
         // 잠금·호출 원장·결과 저장/조회)는 소유 매개변수를 SQL 자체에 둬 이 상한을 먹지 않았다.
         // 70 -> 73: analysis snapshot cursor, row lock and re-encryption in rotate-keys only.
         // 73 -> 79: previous-body and draft payload rotation, three exact statements per family.
-        const val MAX_UNGUARDED_STATEMENTS = 79
+        // 79 -> 90: four admin-only audited billing statements and seven additions to the existing
+        // locked billing repository boundary (two joined reads, three retry operations, two worker/webhook scans).
+        // TossReachTest covers non-owner 404, non-admin 403, refund replay and durable recovery.
+        const val MAX_UNGUARDED_STATEMENTS = 90
     }
 }

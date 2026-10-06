@@ -88,7 +88,15 @@ class AdminConfiguration {
     fun adminCreditAdjustmentService(
         repository: CreditAccountRepository,
         service: CreditAccountService,
-    ): AdminCreditAdjustmentService = AdminCreditAdjustmentService(repository, service)
+        jdbcClient: JdbcClient,
+        transaction: kr.easydoc.application.auth.TransactionRunner,
+    ): AdminCreditAdjustmentService =
+        AdminCreditAdjustmentService(
+            repository,
+            service,
+            JdbcAdminCreditAdjustmentStore(jdbcClient, repository),
+            transaction,
+        )
 
     @Bean
     fun announcementRepository(jdbcClient: JdbcClient): AnnouncementRepository = JdbcAnnouncementRepository(jdbcClient)

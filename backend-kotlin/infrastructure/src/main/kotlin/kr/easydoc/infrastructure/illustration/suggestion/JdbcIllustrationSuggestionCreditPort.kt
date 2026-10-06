@@ -146,7 +146,7 @@ class JdbcIllustrationSuggestionCreditPort(
                   SELECT 1 FROM workspaces workspace
                   WHERE workspace.id = account.workspace_id AND workspace.user_id = :ownerId
               )
-              AND (:enforced = false OR balance - reserved >= :amount)
+              AND ((:enforced = false AND refund_reserved = 0) OR balance - reserved >= :amount)
             """.trimIndent()
 
         val SETTLE_SQL =

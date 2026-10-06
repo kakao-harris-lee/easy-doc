@@ -123,6 +123,17 @@ data class CreditConsistencyViolation(
  */
 @Suppress("TooManyFunctions") // 정수 제공량 호출은 소수 정산 메서드로 위임한다.
 interface CreditAccountRepository {
+    @Suppress("LongParameterList")
+    fun setPaidAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: BigDecimal,
+        cycleEndsAt: Instant,
+        reason: CreditReason,
+        note: String?,
+        paymentId: UUID,
+    ): BigDecimal = setAllowance(workspaceId, ownerUserId, allowance, cycleEndsAt, false, reason, note, null)
+
     /** 계정 행이 없으면 0 잔액으로 만든다. 이미 있으면 아무것도 하지 않는다(멱등). */
     fun ensureAccount(workspaceId: UUID)
 

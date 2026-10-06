@@ -20,6 +20,9 @@ data class PaymentProperties(
     val mockEnabled: Boolean = false,
     val tossClientKey: kr.easydoc.core.security.Secret = kr.easydoc.core.security.Secret.EMPTY,
     val tossSecretKey: kr.easydoc.core.security.Secret = kr.easydoc.core.security.Secret.EMPTY,
+    val purchaseEnabled: Boolean = false,
+    val autoChargeEnabled: Boolean = false,
+    val allowedWorkspaces: Set<UUID> = emptySet(),
 )
 
 /** Deterministic stub: the same input always has the same outcome; no network, keys or SDK. */
@@ -38,7 +41,7 @@ class SubscriptionConfiguration {
         properties: PaymentProperties,
         environment: Environment,
     ): PaymentGateway {
-        check(properties.provider in setOf("stub", "toss_test")) { "Only stub and Toss test payments are allowed" }
+        check(properties.provider in setOf("stub", "toss_test", "toss_live")) { "Unknown payment provider" }
         if (properties.provider == "toss_test") {
             check(
                 environment.activeProfiles.any { it in setOf("local", "test") } &&
@@ -48,6 +51,13 @@ class SubscriptionConfiguration {
                 properties.tossClientKey.reveal().startsWith("test_ck_") &&
                     properties.tossSecretKey.reveal().startsWith("test_sk_"),
             ) { "Toss individual test keys are required" }
+        }
+        if (properties.provider == "toss_live") {
+            check(
+                properties.tossClientKey.reveal().startsWith("live_ck_") &&
+                    properties.tossSecretKey.reveal().startsWith("live_sk_"),
+            ) { "Toss individual live keys are required" }
+            check(!properties.mockEnabled) { "Mock payments are forbidden with live billing" }
         }
         check(!properties.mockEnabled || environment.activeProfiles.any { it in setOf("local", "test") }) {
             "Mock payments require the local or test profile"

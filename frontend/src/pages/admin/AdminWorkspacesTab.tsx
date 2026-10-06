@@ -2,34 +2,20 @@ import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { ApiError } from '../../api/client'
-import {
-  adjustAdminWorkspaceCredits,
-  listAdminWorkspaces,
-  readAdminWorkspace,
-} from '../../api/admin'
-import type {
-  AdminCreditAdjustmentReason,
-  AdminWorkspaceDetailResponse,
-  AdminWorkspaceSummary,
-} from '../../api/types'
+import { listAdminWorkspaces, readAdminWorkspace } from '../../api/admin'
+import type { AdminWorkspaceDetailResponse, AdminWorkspaceSummary } from '../../api/types'
+import { AdminPaymentSummary } from './AdminPaymentSummary'
+import { AdminMonthlyPanel } from './AdminMonthlyPanel'
+import { currentMonth, SERVICE_START_MONTH, shiftMonth, validMonth } from './adminMonths'
 import { SubscriptionCard } from '../../components/subscription/SubscriptionCard'
 import { Button } from '../../components/ui/Button'
-import { formatCredits, isCreditAmount } from '../../lib/credits'
+import { formatCredits } from '../../lib/credits'
 
 /** 한 쪽에 담을 개수. 계약 기본값(20)과 같다. */
 const PAGE_SIZE = 20
 
 const LIST_ERROR_MESSAGE = '워크스페이스 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
 const DETAIL_ERROR_MESSAGE = '워크스페이스 상세를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
-const ADJUST_ERROR_MESSAGE = '크레딧을 조정하지 못했습니다. 잠시 후 다시 시도해 주세요.'
-
-function formatCostUsd(value: string | null): string {
-  return value === null ? '모름' : `$${value}`
-}
-
-function formatCount(value: number): string {
-  return value.toLocaleString('ko-KR')
-}
 
 /** 한 계정(소유자 이메일)이 이 쪽에서 가진 작업 공간들. */
 interface OwnerGroup {
@@ -60,17 +46,6 @@ function groupByOwner(items: AdminWorkspaceSummary[]): OwnerGroup[] {
   return groups
 }
 
-/** 크레딧 부여·조정 폼이 관리하는 입력값. */
-interface AdjustFormState {
-  credits: string
-  reason: AdminCreditAdjustmentReason
-  note: string
-}
-
-function defaultAdjustFormState(): AdjustFormState {
-  return { credits: '', reason: 'manual', note: '' }
-}
-
 /**
  * 선택한 워크스페이스의 상세 — 크레딧 요약·부여 폼·최근 거래·세금계산서 요청·최근 변환.
  *
@@ -79,9 +54,13 @@ function defaultAdjustFormState(): AdjustFormState {
  */
 function WorkspaceDetailPanel({
   workspaceId,
+  month,
+  onMonthChange,
   onCreditsAdjusted,
 }: {
   workspaceId: string
+  month: string
+  onMonthChange: (month: string) => void
   onCreditsAdjusted: () => void
 }) {
   const [detail, setDetail] = useState<AdminWorkspaceDetailResponse | null>(null)
@@ -89,16 +68,7 @@ function WorkspaceDetailPanel({
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
 
-  const [form, setForm] = useState<AdjustFormState>(defaultAdjustFormState)
-  const [submitting, setSubmitting] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
-
   const headingId = useId()
-  const creditsId = useId()
-  const reasonId = useId()
-  const noteId = useId()
-
   // 다른 워크스페이스를 선택하면 이전 상세를 그 자리에서 내린다("렌더 중 상태 조정"
   // 패턴, `UsagePage`·`HistoryPage`와 같은 이유).
   const [renderedWorkspaceId, setRenderedWorkspaceId] = useState(workspaceId)
@@ -107,54 +77,28 @@ function WorkspaceDetailPanel({
     setDetail(null)
     setError(null)
     setLoading(true)
-    setForm(defaultAdjustFormState())
-    setFormError(null)
-    setSuccessMessage(null)
   }
 
   useEffect(() => {
     const controller = new AbortController()
     readAdminWorkspace(workspaceId, controller.signal)
       .then((response) => {
+        if (controller.signal.aborted) return
         setDetail(response)
         setError(null)
       })
       .catch((caught: unknown) => {
+        if (controller.signal.aborted) return
         if (caught instanceof DOMException && caught.name === 'AbortError') {
           return
         }
         setError(caught instanceof ApiError ? caught.message : DETAIL_ERROR_MESSAGE)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
     return () => controller.abort()
   }, [workspaceId, reloadToken])
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault()
-    setFormError(null)
-    setSuccessMessage(null)
-    const credits = Number(form.credits)
-    if (!isCreditAmount(credits)) {
-      setFormError('크레딧은 0이 아닌 0.1 단위 숫자여야 합니다.')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await adjustAdminWorkspaceCredits(workspaceId, {
-        credits,
-        reason: form.reason,
-        note: form.note.trim() === '' ? null : form.note,
-      })
-      setSuccessMessage('크레딧을 반영했습니다.')
-      setForm(defaultAdjustFormState())
-      setReloadToken((token) => token + 1)
-      onCreditsAdjusted()
-    } catch (caught) {
-      setFormError(caught instanceof ApiError ? caught.message : ADJUST_ERROR_MESSAGE)
-    } finally {
-      setSubmitting(false)
-    }
-  }
 
   if (loading) {
     return (
@@ -188,131 +132,17 @@ function WorkspaceDetailPanel({
         {detail.summary.owner_email} · {detail.summary.name} 상세
       </h3>
 
-      <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin />
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div>
-          <dt className="text-sm text-muted-foreground">가용</dt>
-          <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCredits(detail.summary.credit_available)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm text-muted-foreground">잔액</dt>
-          <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCredits(detail.summary.credit_balance)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm text-muted-foreground">예약 중</dt>
-          <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCredits(detail.summary.credit_reserved)}
-          </dd>
-        </div>
-      </dl>
-
-      <form
-        className="flex flex-col gap-3 rounded-[10px] border border-border p-4"
-        aria-label="크레딧 부여 및 조정"
-        onSubmit={(event) => void handleSubmit(event)}
-      >
-        <h4 className="text-sm font-semibold text-foreground">크레딧 부여</h4>
-        <p className="text-sm text-muted-foreground">
-          양수는 이 작업 공간에 부여하고, 음수는 회수합니다. 같은 계정의 다른 작업 공간에는 영향이
-          없습니다.
-        </p>
-
-        {formError !== null && (
-          <p className="form-error" role="alert">
-            {formError}
-          </p>
-        )}
-        {successMessage !== null && (
-          <p className="form-success" role="status">
-            {successMessage}
-          </p>
-        )}
-
-        <div className="field">
-          <label htmlFor={creditsId}>부여할 크레딧 (회수는 음수)</label>
-          <input
-            id={creditsId}
-            type="number"
-            step="0.1"
-            required
-            value={form.credits}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, credits: event.target.value }))
-            }
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor={reasonId}>사유</label>
-          <select
-            id={reasonId}
-            value={form.reason}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                reason: event.target.value as AdminCreditAdjustmentReason,
-              }))
-            }
-          >
-            <option value="plan_monthly">월 제공량 수동 보정</option>
-            <option value="manual">수동 부여</option>
-            <option value="refund">환급</option>
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor={noteId}>메모 (선택)</label>
-          <input
-            id={noteId}
-            type="text"
-            maxLength={200}
-            value={form.note}
-            onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))}
-          />
-        </div>
-
-        <Button type="submit" loading={submitting} className="self-start">
-          {submitting ? '반영하는 중…' : '크레딧 반영하기'}
-        </Button>
-      </form>
-
-      <div>
-        <h4 className="mb-2 text-sm font-semibold text-foreground">최근 거래</h4>
-        <table className="usage-table">
-          <caption>최근 크레딧 거래 50건입니다.</caption>
-          <thead>
-            <tr>
-              <th scope="col">종류</th>
-              <th scope="col">크레딧</th>
-              <th scope="col">사유</th>
-              <th scope="col">일시</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.transactions.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="text-muted-foreground">
-                  거래가 없습니다.
-                </td>
-              </tr>
-            ) : (
-              detail.transactions.map((transaction) => (
-                <tr key={transaction.id}>
-                  <th scope="row">{transaction.kind}</th>
-                  <td className="tabular-nums">{formatCredits(transaction.credits)}</td>
-                  <td>{transaction.reason}</td>
-                  <td>{new Date(transaction.created_at).toLocaleString('ko-KR')}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
+      <AdminMonthlyPanel
+        key={`${workspaceId}|${month}`}
+        workspaceId={workspaceId}
+        month={month}
+        onMonthChange={onMonthChange}
+        onChanged={() => {
+          setReloadToken((token) => token + 1)
+          onCreditsAdjusted()
+        }}
+      />
+      <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin hidePayments />
       <div>
         <h4 className="mb-2 text-sm font-semibold text-foreground">세금계산서 요청</h4>
         <table className="usage-table">
@@ -384,14 +214,21 @@ function WorkspaceDetailPanel({
 
 /** 「워크스페이스」 탭 — 사용자 검색·목록·상세·크레딧 부여 (어드민 최소, 계약 2.25.0). */
 export function AdminWorkspacesTab() {
-  const [q, setQ] = useState('')
-  const [appliedQ, setAppliedQ] = useState('')
+  const [initialQuery] = useState(() => new URLSearchParams(window.location.search))
+  const [month, setMonth] = useState(() => validMonth(initialQuery.get('month')) ?? currentMonth())
+  const [timezone, setTimezone] = useState('Asia/Seoul')
+  const [hasChosenMonth, setHasChosenMonth] = useState(
+    Boolean(validMonth(initialQuery.get('month'))),
+  )
+  const maximumMonth = currentMonth(timezone)
+  const [q, setQ] = useState(initialQuery.get('q') ?? '')
+  const [appliedQ, setAppliedQ] = useState(q)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<AdminWorkspaceSummary[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(initialQuery.get('workspace'))
   // 계정별로 「지금 고른 작업 공간」. 목록이 바뀌어 저장해 둔 id가 사라지면 아래에서
   // 그 계정의 첫 작업 공간으로 되돌려 쓴다 — 따로 초기화하지 않아도 된다.
   const [selectedByOwner, setSelectedByOwner] = useState<Record<string, string>>({})
@@ -401,7 +238,7 @@ export function AdminWorkspacesTab() {
 
   // 검색어·쪽·새로고침 신호가 바뀌었는지 렌더 중에 잰다("렌더 중 상태 조정" 패턴) —
   // effect 안에서 곧바로 setLoading(true)를 부르면 안 된다는 규칙을 지킨다.
-  const queryKey = `${appliedQ}|${page}|${reloadToken}`
+  const queryKey = `${appliedQ}|${page}|${reloadToken}|${month}`
   const [renderedQueryKey, setRenderedQueryKey] = useState(queryKey)
   if (renderedQueryKey !== queryKey) {
     setRenderedQueryKey(queryKey)
@@ -411,23 +248,54 @@ export function AdminWorkspacesTab() {
   useEffect(() => {
     const controller = new AbortController()
     listAdminWorkspaces(
-      { q: appliedQ === '' ? undefined : appliedQ, page, size: PAGE_SIZE },
+      {
+        q: appliedQ === '' ? undefined : appliedQ,
+        page,
+        size: PAGE_SIZE,
+        month: hasChosenMonth ? month : undefined,
+      },
       controller.signal,
     )
       .then((response) => {
+        if (controller.signal.aborted) return
+        if (response.timezone) setTimezone(response.timezone)
+        if (response.current_month && (!hasChosenMonth || month > response.current_month)) {
+          setMonth(response.current_month)
+          setHasChosenMonth(true)
+        }
         setItems(response.items)
         setTotal(response.total)
         setError(null)
       })
       .catch((caught: unknown) => {
+        if (controller.signal.aborted) return
         if (caught instanceof DOMException && caught.name === 'AbortError') {
           return
         }
         setError(caught instanceof ApiError ? caught.message : LIST_ERROR_MESSAGE)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
     return () => controller.abort()
-  }, [appliedQ, page, reloadToken])
+  }, [appliedQ, page, reloadToken, month, hasChosenMonth])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('month', month)
+    if (appliedQ) url.searchParams.set('q', appliedQ)
+    else url.searchParams.delete('q')
+    if (selectedId) url.searchParams.set('workspace', selectedId)
+    else url.searchParams.delete('workspace')
+    window.history.replaceState(window.history.state, '', url)
+  }, [month, appliedQ, selectedId])
+  function changeMonth(value: string) {
+    if (validMonth(value, maximumMonth)) {
+      setHasChosenMonth(true)
+      setMonth(value)
+      setPage(1)
+    }
+  }
 
   function handleSearchSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault()
@@ -445,6 +313,28 @@ export function AdminWorkspacesTab() {
         공간을 여러 개 가지면 잔액도 각각 따로입니다. 사용자의 이메일을 검색한 뒤 작업 공간을 고르고
         「관리」를 누르면 크레딧을 부여할 수 있습니다.
       </p>
+      <div className="flex flex-wrap items-end gap-3" aria-label="월 선택">
+        <Button
+          disabled={month <= SERVICE_START_MONTH}
+          onClick={() => changeMonth(shiftMonth(month, -1))}
+        >
+          이전 달
+        </Button>
+        <label className="field">
+          조회 월
+          <input
+            type="month"
+            value={month}
+            min={SERVICE_START_MONTH}
+            max={maximumMonth}
+            onChange={(event) => changeMonth(event.target.value)}
+          />
+        </label>
+        <Button disabled={month >= maximumMonth} onClick={() => changeMonth(shiftMonth(month, 1))}>
+          다음 달
+        </Button>
+        <Button onClick={() => changeMonth(maximumMonth)}>이번 달</Button>
+      </div>
       <form
         className="flex flex-wrap items-end gap-3"
         role="search"
@@ -486,16 +376,15 @@ export function AdminWorkspacesTab() {
               <tr>
                 <th scope="col">소유자 이메일</th>
                 <th scope="col">작업 공간</th>
-                <th scope="col">생성일</th>
-                <th scope="col">가용/잔액/예약</th>
-                <th scope="col">이번 달 문서/크레딧/비용</th>
+                <th scope="col">가용/사용 크레딧</th>
+                <th scope="col">결제액(결제일)/환불액</th>
                 <th scope="col">관리</th>
               </tr>
             </thead>
             <tbody>
               {groups.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-muted-foreground">
+                  <td colSpan={5} className="text-muted-foreground">
                     검색 결과가 없습니다.
                   </td>
                 </tr>
@@ -503,7 +392,9 @@ export function AdminWorkspacesTab() {
                 groups.map((group) => {
                   const selected =
                     group.workspaces.find(
-                      (workspace) => workspace.workspace_id === selectedByOwner[group.ownerEmail],
+                      (workspace) =>
+                        workspace.workspace_id ===
+                        (selectedByOwner[group.ownerEmail] ?? selectedId),
                     ) ?? group.workspaces[0]
                   return (
                     <tr key={group.ownerEmail}>
@@ -541,16 +432,28 @@ export function AdminWorkspacesTab() {
                           </select>
                         )}
                       </td>
-                      <td>{new Date(selected.created_at).toLocaleDateString('ko-KR')}</td>
                       <td className="tabular-nums">
-                        {formatCredits(selected.credit_available)}/
-                        {formatCredits(selected.credit_balance)}/
-                        {formatCredits(selected.credit_reserved)}
+                        {formatCredits(selected.credit_available)} /{' '}
+                        {selected.selected_month
+                          ? formatCredits(selected.selected_month.credits)
+                          : '확인 필요'}
+                        <span className="block text-xs text-muted-foreground">
+                          현재 가용 / {month} 사용
+                        </span>
                       </td>
                       <td className="tabular-nums">
-                        {formatCount(selected.month_documents)}/
-                        {formatCredits(selected.month_credits)}/
-                        {formatCostUsd(selected.month_cost_usd)}
+                        {selected.selected_month ? (
+                          <AdminPaymentSummary
+                            key={`${selected.workspace_id}|${month}|${reloadToken}|${selected.selected_month.paid_krw}|${selected.selected_month.refunded_krw}`}
+                            workspaceId={selected.workspace_id}
+                            month={month}
+                            timezone={timezone}
+                            paid={selected.selected_month.paid_krw}
+                            refunded={selected.selected_month.refunded_krw}
+                          />
+                        ) : (
+                          '확인 필요'
+                        )}
                       </td>
                       <td>
                         <Button
@@ -595,7 +498,10 @@ export function AdminWorkspacesTab() {
 
       {selectedId !== null && (
         <WorkspaceDetailPanel
+          key={selectedId}
           workspaceId={selectedId}
+          month={month}
+          onMonthChange={changeMonth}
           onCreditsAdjusted={() => setReloadToken((token) => token + 1)}
         />
       )}

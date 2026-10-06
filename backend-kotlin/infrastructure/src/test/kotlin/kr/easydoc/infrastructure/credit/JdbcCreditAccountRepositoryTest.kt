@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
 /** `workspace_credit_accounts`·`credit_transactions` — 실제 PostgreSQL 에서만 잴 수 있는 것들. */
+@Suppress("LargeClass") // Repository and transactional accounting regressions share the same database fixture.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcCreditAccountRepositoryTest {
     private lateinit var database: DatabaseHandle
@@ -48,6 +49,244 @@ class JdbcCreditAccountRepositoryTest {
         jdbc = JdbcClient.create(dataSource())
         repository = JdbcCreditAccountRepository(jdbc)
         interference = Executors.newFixedThreadPool(2)
+    }
+
+    @Test
+    fun `cycle metadata records gross grant expiry and debt separately within transaction`() {
+        val (owner, workspace) = newOwnedWorkspace()
+        val source = dataSource()
+        val localJdbc = JdbcClient.create(source)
+        val localRepository = JdbcCreditAccountRepository(localJdbc)
+        val transaction =
+            org.springframework.transaction.support.TransactionTemplate(
+                org.springframework.jdbc.datasource
+                    .DataSourceTransactionManager(source),
+            )
+        val payment = UUID.randomUUID()
+        transaction.executeWithoutResult {
+            localRepository.grant(workspace, owner, 5, CreditReason.MANUAL, null, null)
+            localRepository.setPaidAllowance(
+                workspace,
+                owner,
+                BigDecimal("5"),
+                Instant.now().plusSeconds(86400),
+                CreditReason.PLAN_MONTHLY,
+                null,
+                payment,
+            )
+        }
+        val metadata =
+            localJdbc
+                .sql(
+                    "SELECT granted_amount,expired_amount,adjustment_amount,payment_id FROM credit_transactions " +
+                        "WHERE workspace_id=:workspace AND kind='cycle_set'",
+                ).param("workspace", workspace)
+                .query { rs, _ ->
+                    listOf(
+                        rs.getBigDecimal("granted_amount").toPlainString(),
+                        rs.getBigDecimal("expired_amount").toPlainString(),
+                        rs.getBigDecimal("adjustment_amount").toPlainString(),
+                        rs.getObject("payment_id").toString(),
+                    )
+                }.single()
+        assertThat(BigDecimal(metadata[0])).isEqualByComparingTo("5")
+        assertThat(BigDecimal(metadata[1])).isEqualByComparingTo("5")
+        assertThat(BigDecimal(metadata[2])).isEqualByComparingTo("0")
+        assertThat(metadata[3]).isEqualTo(payment.toString())
+        transaction.executeWithoutResult {
+            localRepository.grant(workspace, owner, -8, CreditReason.MANUAL, null, null)
+            localRepository.setAllowance(workspace, owner, 0, Instant.now(), false, CreditReason.CYCLE_END, null, null)
+        }
+        val debt =
+            localJdbc
+                .sql(
+                    "SELECT adjustment_amount FROM credit_transactions WHERE workspace_id=:workspace " +
+                        "AND kind='cycle_set' AND reason='cycle_end'",
+                ).param("workspace", workspace)
+                .query(BigDecimal::class.java)
+                .single()
+        assertThat(debt).isEqualByComparingTo("3")
+    }
+
+    @Test
+    @Suppress("LongMethod") // One account exercises replay, ABA and reservation protection in sequence.
+    fun `admin adjustment replay is idempotent stale state and over reservation withdrawal conflict`() {
+        val (owner, workspace) = newOwnedWorkspace()
+        val source = dataSource()
+        val localJdbc = JdbcClient.create(source)
+        val localRepository = JdbcCreditAccountRepository(localJdbc)
+        val store =
+            kr.easydoc.infrastructure.admin
+                .JdbcAdminCreditAdjustmentStore(localJdbc, localRepository)
+        val transaction =
+            org.springframework.transaction.support.TransactionTemplate(
+                org.springframework.jdbc.datasource
+                    .DataSourceTransactionManager(source),
+            )
+        val command =
+            kr.easydoc.application.admin.AdminCreditAdjustmentCommand(
+                UUID.randomUUID(),
+                workspace,
+                owner,
+                BigDecimal("10"),
+                CreditReason.MANUAL,
+                "test",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0,
+            )
+        val barrier = CyclicBarrier(2)
+        val attempts =
+            (1..2).map {
+                interference.submit {
+                    barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    transaction.executeWithoutResult { store.apply(command) }
+                }
+            }
+        attempts.forEach { it.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+        transaction.executeWithoutResult { store.apply(command) }
+        assertThat(localRepository.read(owner, workspace)!!.balance).isEqualByComparingTo("10")
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                transaction.executeWithoutResult { store.apply(command.copy(credits = BigDecimal("11"))) }
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                transaction.executeWithoutResult { store.apply(command.copy(operationId = UUID.randomUUID())) }
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        transaction.executeWithoutResult {
+            localRepository.grant(workspace, owner, 1, CreditReason.MANUAL, null, null)
+            localRepository.grant(workspace, owner, -1, CreditReason.MANUAL, null, null)
+        }
+        // Same balance after a round trip still invalidates the previously confirmed revision.
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                transaction.executeWithoutResult {
+                    store.apply(
+                        command.copy(
+                            operationId = UUID.randomUUID(),
+                            expectedBalance = BigDecimal.TEN,
+                            expectedRevision = 1,
+                        ),
+                    )
+                }
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        transaction.executeWithoutResult {
+            localRepository.reserve(owner, workspace, UUID.randomUUID(), Credits(8), true)
+        }
+        val revision =
+            localJdbc
+                .sql("SELECT revision FROM workspace_credit_accounts WHERE workspace_id=:id")
+                .param("id", workspace)
+                .query(Long::class.java)
+                .single()
+        org.assertj.core.api.Assertions
+            .assertThatThrownBy {
+                transaction.executeWithoutResult {
+                    store.apply(
+                        command.copy(
+                            operationId = UUID.randomUUID(),
+                            credits = BigDecimal("-3"),
+                            expectedBalance = BigDecimal.TEN,
+                            expectedReserved = BigDecimal("8"),
+                            expectedRevision = revision,
+                        ),
+                    )
+                }
+            }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+        assertThat(localRepository.read(owner, workspace)!!.balance).isEqualByComparingTo("10")
+    }
+
+    @Test
+    fun `admin adjustment waits for workspace before locking credit account`() {
+        val (owner, workspace) = newOwnedWorkspace()
+        val source = dataSource()
+        val localJdbc = JdbcClient.create(source)
+        val store =
+            kr.easydoc.infrastructure.admin.JdbcAdminCreditAdjustmentStore(
+                localJdbc,
+                JdbcCreditAccountRepository(localJdbc),
+            )
+        val transaction =
+            org.springframework.transaction.support.TransactionTemplate(
+                org.springframework.jdbc.datasource
+                    .DataSourceTransactionManager(source),
+            )
+        val command =
+            kr.easydoc.application.admin.AdminCreditAdjustmentCommand(
+                UUID.randomUUID(),
+                workspace,
+                owner,
+                BigDecimal.ONE,
+                CreditReason.MANUAL,
+                "lock order",
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                0,
+            )
+        source.connection.use { deleting ->
+            deleting.autoCommit = false
+            deleting.createStatement().use { statement ->
+                statement.execute("SELECT id FROM workspaces WHERE id='$workspace' FOR UPDATE")
+            }
+            val adjusting = interference.submit { transaction.executeWithoutResult { store.apply(command) } }
+            org.assertj.core.api.Assertions
+                .assertThatThrownBy {
+                    adjusting.get(200, TimeUnit.MILLISECONDS)
+                }.isInstanceOf(java.util.concurrent.TimeoutException::class.java)
+            deleting.createStatement().use { statement ->
+                // A deletion can still obtain the account while adjustment waits on its workspace.
+                statement.execute(
+                    "SELECT workspace_id FROM workspace_credit_accounts " +
+                        "WHERE workspace_id='$workspace' FOR UPDATE",
+                )
+            }
+            deleting.commit()
+            adjusting.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
+        assertThat(
+            localJdbc
+                .sql("SELECT balance FROM workspace_credit_accounts WHERE workspace_id=:id")
+                .param("id", workspace)
+                .query(BigDecimal::class.java)
+                .single(),
+        ).isEqualByComparingTo("1")
+    }
+
+    @Test
+    fun `stub payment events use confirmation clock and incremental refunds without duplicate events`() {
+        val (_, workspace) = newOwnedWorkspace()
+        val payment = UUID.randomUUID()
+        jdbc
+            .sql(
+                "INSERT INTO subscription_payments(workspace_id,id,plan_id,amount,status,created_at," +
+                    "provider,simulated_failure) " +
+                    "VALUES(:workspace,:id,'test',10000,'paid','2020-01-01'::timestamptz,'stub',false)",
+            ).param("workspace", workspace)
+            .param("id", payment)
+            .update()
+        listOf(2000, 2000, 5000).forEach { refunded ->
+            jdbc
+                .sql(
+                    "UPDATE subscription_payments SET refunded_amount=:amount,status='partially_refunded' " +
+                        "WHERE workspace_id=:workspace AND id=:id",
+                ).param("amount", refunded)
+                .param("workspace", workspace)
+                .param("id", payment)
+                .update()
+        }
+        val events =
+            jdbc
+                .sql(
+                    "SELECT kind,amount_krw,is_test,occurred_at FROM subscription_payment_events " +
+                        "WHERE workspace_id=:workspace ORDER BY amount_krw",
+                ).param("workspace", workspace)
+                .query { rs, _ ->
+                    assertThat(rs.getBoolean("is_test")).isTrue()
+                    assertThat(rs.getObject("occurred_at", OffsetDateTime::class.java).year).isGreaterThan(2020)
+                    rs.getInt("amount_krw")
+                }.list()
+        assertThat(events).containsExactly(2000, 3000, 10000)
     }
 
     @Test

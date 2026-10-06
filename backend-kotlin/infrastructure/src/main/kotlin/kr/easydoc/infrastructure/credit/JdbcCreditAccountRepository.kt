@@ -213,6 +213,17 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
      *
      * 계정 행이 없으면 [NotFoundException] — [grant] 와 같은 규약.
      */
+    override fun setPaidAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: BigDecimal,
+        cycleEndsAt: Instant,
+        reason: CreditReason,
+        note: String?,
+        paymentId: UUID,
+    ): BigDecimal =
+        applyAllowance(workspaceId, ownerUserId, allowance, cycleEndsAt, false, reason, note, null, paymentId)
+
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
@@ -222,7 +233,39 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
+    ): BigDecimal =
+        applyAllowance(workspaceId, ownerUserId, allowance, cycleEndsAt, renews, reason, note, actorUserId, null)
+
+    @Suppress("LongParameterList")
+    private fun applyAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: BigDecimal,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+        paymentId: UUID?,
     ): BigDecimal {
+        // Serialize allowance replacement with refund credit reservation. A pending refund must
+        // finish against the balance confirmed by its administrator, not a later paid cycle.
+        jdbc
+            .sql("SELECT workspace_id FROM workspace_credit_accounts WHERE workspace_id=:id FOR UPDATE")
+            .param("id", workspaceId)
+            .query(UUID::class.java)
+            .optional()
+        val refundPending =
+            jdbc
+                .sql(
+                    "SELECT EXISTS(SELECT 1 FROM admin_billing_operations WHERE workspace_id=:id AND status='pending')",
+                ).param("id", workspaceId)
+                .query(Boolean::class.java)
+                .single()
+        if (refundPending) {
+            throw kr.easydoc.core.exceptions
+                .ConflictException("처리 중인 환불의 크레딧 정산을 먼저 완료하세요")
+        }
         val oldBalance =
             jdbc
                 .sql(SET_ALLOWANCE_SQL)
@@ -243,6 +286,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             reason = reason,
             note = note,
             actorUserId = actorUserId,
+            paymentId = paymentId,
         )
         return allowance
     }
@@ -375,15 +419,16 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
+        paymentId: UUID? = null,
     ) {
         jdbc
             .sql(
                 """
                 INSERT INTO credit_transactions
                     (id, workspace_id, owner_user_id, document_id, kind, balance_delta, reserved_delta, reason, note,
-                     actor_user_id)
+                     actor_user_id, payment_id)
                 VALUES (:id, :workspaceId, :ownerId, :documentId, :kind, :balanceDelta, :reservedDelta, :reason, :note,
-                        :actorUserId)
+                        :actorUserId, :paymentId)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("workspaceId", workspaceId)
@@ -395,6 +440,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             .param("reason", reason.wireName)
             .param("note", note)
             .param("actorUserId", actorUserId)
+            .param("paymentId", paymentId)
             .update()
     }
 
@@ -441,7 +487,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             SET reserved = reserved + :amount, updated_at = now()
             WHERE workspace_id = :workspaceId
               AND EXISTS (SELECT 1 FROM workspaces WHERE id = :workspaceId AND user_id = :ownerId)
-              AND (:enforced = false OR balance - reserved >= :amount)
+              AND ((:enforced = false AND refund_reserved = 0) OR balance - reserved >= :amount)
             RETURNING balance, reserved
             """.trimIndent()
 

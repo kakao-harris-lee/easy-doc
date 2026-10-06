@@ -73,7 +73,38 @@ internal const val ADMIN_CREDIT_NOTE_TOO_LONG_MESSAGE = "note 는 200자를 넘�
 class AdminCreditAdjustmentService(
     private val repository: CreditAccountRepository,
     private val service: CreditAccountService,
+    private val adjustmentStore: AdminCreditAdjustmentStore? = null,
+    private val transaction: kr.easydoc.application.auth.TransactionRunner? = null,
 ) {
+    @Suppress("ThrowsCount") // Each invalid confirmation input has a distinct validation message.
+    fun adjust(command: AdminCreditAdjustmentCommand): CreditAccountView {
+        val normalized = command.copy(credits = requireNonZeroCredits(command.credits))
+        requireValidAdminCreditNote(normalized.note)
+        try {
+            normalized.expectedBalance.setScale(1, RoundingMode.UNNECESSARY)
+            normalized.expectedReserved.setScale(1, RoundingMode.UNNECESSARY)
+        } catch (_: ArithmeticException) {
+            throw InvalidInputException(FRACTIONAL_CREDITS_MESSAGE)
+        }
+        if (normalized.expectedRevision < 0 || normalized.expectedReserved.signum() < 0) {
+            throw InvalidInputException("확인 상태의 예약량과 버전은 음수일 수 없습니다")
+        }
+        if (normalized.note.isBlank()) throw InvalidInputException("조정 사유 메모를 입력하세요")
+        if (normalized.reason !in ADMIN_GRANTABLE_REASONS.values) {
+            throw InvalidInputException("허용되지 않은 크레딧 조정 사유입니다")
+        }
+        if (normalized.reason == CreditReason.REFUND && normalized.credits.signum() < 0) {
+            throw InvalidInputException("크레딧 복구는 양수여야 합니다")
+        }
+        return checkNotNull(transaction).inTransaction {
+            val owner =
+                repository.ownerOf(normalized.workspaceId)
+                    ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
+            checkNotNull(adjustmentStore).apply(normalized)
+            service.read(owner, normalized.workspaceId)
+        }
+    }
+
     fun adjust(
         workspaceId: UUID,
         credits: BigDecimal,
@@ -94,4 +125,24 @@ class AdminCreditAdjustmentService(
         note: String?,
         actorUserId: UUID,
     ): CreditAccountView = adjust(workspaceId, BigDecimal.valueOf(credits.toLong()), reason, note, actorUserId)
+}
+
+/** Identity and optimistic state presented in the administrator's confirmation screen. */
+data class AdminCreditAdjustmentCommand(
+    val operationId: UUID,
+    val workspaceId: UUID,
+    val actorUserId: UUID,
+    val credits: BigDecimal,
+    val reason: CreditReason,
+    val note: String,
+    val expectedBalance: BigDecimal,
+    val expectedReserved: BigDecimal,
+    val expectedRevision: Long,
+) {
+    override fun toString(): String = "AdminCreditAdjustmentCommand(operationId=$operationId, note=[MASKED])"
+}
+
+interface AdminCreditAdjustmentStore {
+    /** Lock account, compare replay before revision, then apply and record in one transaction. */
+    fun apply(command: AdminCreditAdjustmentCommand)
 }

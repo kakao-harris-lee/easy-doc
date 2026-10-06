@@ -31,6 +31,8 @@ import java.util.UUID
     properties = [
         "easydoc.auth.jwt-secret=toss-reach-test-secret-long-enough-for-jwt",
         "easydoc.payment.provider=toss_test",
+        "easydoc.payment.purchase-enabled=true",
+        "easydoc.payment.auto-charge-enabled=true",
         "easydoc.payment.toss-client-key=test_ck_fixture",
         "easydoc.payment.toss-secret-key=test_sk_fixture",
     ],
@@ -42,6 +44,9 @@ class TossReachTest {
     @org.springframework.beans.factory.annotation.Autowired private lateinit var toss: TossBillingService
 
     @org.springframework.beans.factory.annotation.Autowired private lateinit var gateway: TestGateway
+
+    @org.springframework.beans.factory.annotation.Autowired private lateinit var adminBilling:
+        kr.easydoc.application.admin.AdminBillingService
     private val json = ObjectMapper()
     private val client = HttpClient.newHttpClient()
 
@@ -51,7 +56,7 @@ class TossReachTest {
         val workspace = workspace(token)
         val base = "/workspaces/$workspace/subscription"
         val started = send("$base/billing", token, "POST", """{"plan_id":"start"}""")
-        assertThat(started.statusCode()).isEqualTo(200)
+        assertThat(started.statusCode()).withFailMessage(started.body()).isEqualTo(200)
         val session = json.readTree(started.body())
         val id = UUID.fromString(session["session_id"].asString())
         val payload = """{"session_id":"$id",
@@ -81,17 +86,8 @@ class TossReachTest {
         replaceCardPreservingUsage(token, workspace)
         val stranger = account()
         assertThat(send("$base/billing/complete", stranger, "POST", payload).statusCode()).isEqualTo(404)
-        val refund = "/admin/workspaces/$workspace/payments/$id/refund"
-        val operation = UUID.randomUUID()
-        val refundBody = """{"operation_id":"$operation","amount":400}"""
-        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(403)
-        database.execute(
-            "UPDATE users SET is_admin=true WHERE id=(SELECT user_id FROM workspaces WHERE id='$workspace')",
-        )
-        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(200)
-        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(200)
-        assertThat(gateway.refunds[operation]).isEqualTo(1)
-        assertThat(database.queryInt("SELECT refunded_amount FROM subscription_payments WHERE id='$id'")).isEqualTo(400)
+        assertRefundAndReplay(token, workspace, id)
+        refundWithLostResponse(token, workspace, id)
         assertThat(send(base, token, "DELETE").statusCode()).isEqualTo(200)
         assertThat(gateway.revocations).isGreaterThan(0)
         database.execute(
@@ -101,6 +97,65 @@ class TossReachTest {
         assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
             .isZero()
         assertThat(gateway.charges[id]).isEqualTo(1)
+    }
+
+    private fun assertRefundAndReplay(
+        token: String,
+        workspace: String,
+        id: UUID,
+    ) {
+        val refund = "/admin/workspaces/$workspace/payments/$id/refund"
+        val operation = UUID.randomUUID()
+        val revision =
+            database.queryInt(
+                "SELECT revision FROM workspace_credit_accounts WHERE workspace_id='$workspace'",
+            )
+        val refundBody = """{"operation_id":"$operation","amount":400,"recovery_credits":2.5,
+            "stop_renewal":false,"reason":"고객 요청 부분 환불","expected_revision":$revision}"""
+        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(403)
+        assertThat(send("/admin/workspaces/$workspace/billing", token).statusCode()).isEqualTo(403)
+        database.execute(
+            "UPDATE users SET is_admin=true WHERE id=(SELECT user_id FROM workspaces WHERE id='$workspace')",
+        )
+        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(200)
+        assertThat(send(refund, token, "POST", refundBody).statusCode()).isEqualTo(200)
+        assertThat(gateway.refunds[operation]).isEqualTo(1)
+        assertThat(database.queryInt("SELECT refunded_amount FROM subscription_payments WHERE id='$id'")).isEqualTo(400)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("14.5")
+        assertThat(creditValue("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("0")
+        assertThat(send("/admin/workspaces/$workspace/billing", token).statusCode()).isEqualTo(200)
+        val changed = refundBody.replace("2.5", "3.0")
+        assertThat(send(refund, token, "POST", changed).statusCode()).isEqualTo(409)
+    }
+
+    private fun refundWithLostResponse(
+        token: String,
+        workspace: String,
+        payment: UUID,
+    ) {
+        val operation = UUID.randomUUID()
+        gateway.loseRefundResponse.add(operation)
+        val revision =
+            database.queryInt(
+                "SELECT revision FROM workspace_credit_accounts WHERE workspace_id='$workspace'",
+            )
+        val body = """{"operation_id":"$operation","amount":100,"recovery_credits":1,
+            "stop_renewal":true,"reason":"환불 응답 유실 복구","expected_revision":$revision}"""
+        val response = send("/admin/workspaces/$workspace/payments/$payment/refund", token, "POST", body)
+        assertThat(response.statusCode()).isEqualTo(200)
+        assertThat(json.readTree(response.body())["status"].asString()).isEqualTo("pending")
+        assertThat(creditValue("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("1")
+        database.execute("UPDATE toss_billing_orders SET next_attempt_at=now(),lease_until=NULL WHERE id='$operation'")
+        adminBilling.recover()
+        adminBilling.recover()
+        assertThat(gateway.refunds[operation]).isEqualTo(1)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("13.5")
+        assertThat(creditValue("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("0")
     }
 
     @Test
@@ -183,6 +238,9 @@ class TossReachTest {
         val payments = java.util.concurrent.ConcurrentHashMap<UUID, TossPayment>()
         val charges = java.util.concurrent.ConcurrentHashMap<UUID, Int>()
         val refunds = java.util.concurrent.ConcurrentHashMap<UUID, Int>()
+        val loseRefundResponse =
+            java.util.concurrent.ConcurrentHashMap
+                .newKeySet<UUID>()
         val loseResponse =
             java.util.concurrent.ConcurrentHashMap
                 .newKeySet<UUID>()
@@ -242,6 +300,7 @@ class TossReachTest {
                 ).also {
                     payments[entry.key] =
                         it
+                    if (loseRefundResponse.remove(operation)) throw TossUncertain()
                 }
         }
 
@@ -255,9 +314,16 @@ class TossReachTest {
         workspace: String,
     ) {
         val base = "/workspaces/$workspace/subscription"
-        // Replacing a card first revokes the previous key and resumes the same paid period without a new charge.
-        assertThat(send(base, token, "DELETE").statusCode()).isEqualTo(200)
-        val replacement = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"start"}""").body())
+        // A replacement keeps the current paid period and swaps credentials only after authorization succeeds.
+        val replacement =
+            json.readTree(
+                send(
+                    "$base/billing",
+                    token,
+                    "POST",
+                    """{"plan_id":"start","purpose":"replace_card"}""",
+                ).body(),
+            )
         val replacementBody = """{"session_id":"${replacement["session_id"].asString()}",
             "customer_key":"${replacement["customer_key"].asString()}","auth_key":"synthetic-replacement"}"""
         assertThat(send("$base/billing/complete", token, "POST", replacementBody).statusCode()).isEqualTo(200)

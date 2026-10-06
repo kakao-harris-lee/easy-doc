@@ -61,6 +61,9 @@ easydoc:
   payment:
     provider: ${EASYDOC_PAYMENT_PROVIDER:stub}
     mock-enabled: ${EASYDOC_PAYMENT_MOCK_ENABLED:false}
+    purchase-enabled: ${EASYDOC_PAYMENT_PURCHASE_ENABLED:false}
+    auto-charge-enabled: ${EASYDOC_PAYMENT_AUTO_CHARGE_ENABLED:false}
+    allowed-workspaces: ${EASYDOC_PAYMENT_ALLOWED_WORKSPACES:}
     toss-client-key: ${EASYDOC_TOSS_CLIENT_KEY:}
     toss-secret-key: ${EASYDOC_TOSS_SECRET_KEY:}
   # API와 같은 암호화 키 링을 사용한다.

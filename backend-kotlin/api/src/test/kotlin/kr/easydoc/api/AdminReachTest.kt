@@ -484,7 +484,18 @@ class AdminReachTest {
     private fun creditBody(
         credits: Number,
         reason: String,
-    ): String = json.writeValueAsString(mapOf("credits" to credits, "reason" to reason))
+    ): String =
+        json.writeValueAsString(
+            mapOf(
+                "credits" to credits,
+                "reason" to reason,
+                "note" to "관리자 조정 테스트",
+                "operation_id" to UUID.randomUUID(),
+                "expected_balance" to 0,
+                "expected_reserved" to 0,
+                "expected_revision" to 0,
+            ),
+        )
 
     private fun handleBody(status: String): String = json.writeValueAsString(mapOf("status" to status))
 

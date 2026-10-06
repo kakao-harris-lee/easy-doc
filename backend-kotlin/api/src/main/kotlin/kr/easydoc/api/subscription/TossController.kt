@@ -5,13 +5,11 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.api.auth.AuthenticatedUser
-import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.TossBillingService
 import kr.easydoc.application.subscription.TossDeclined
 import kr.easydoc.application.subscription.TossUncertain
 import kr.easydoc.core.exceptions.ConflictException
-import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpStatus
@@ -29,7 +27,6 @@ import java.util.UUID
 class TossController(
     private val toss: TossBillingService,
     private val subscriptions: SubscriptionService,
-    private val accounts: CreditAccountRepository,
 ) {
     @PostMapping("/workspaces/{workspace_id}/subscription/billing", consumes = ["application/json"])
     fun begin(
@@ -37,8 +34,15 @@ class TossController(
         @PathVariable("workspace_id") workspace: UUID,
         @RequestBody request: TossBeginRequest,
     ): TossSessionResponse {
-        val session = toss.begin(user.id, workspace, request.planId)
-        return TossSessionResponse(session.id, session.customer, toss.clientKey.reveal())
+        val session =
+            toss.begin(
+                user.id,
+                workspace,
+                request.planId,
+                request.purpose ?: "purchase",
+                request.consentVersion,
+            )
+        return TossSessionResponse(session.id, session.customer, toss.clientKey.reveal(), session.environment)
     }
 
     @PostMapping("/workspaces/{workspace_id}/subscription/billing/complete", consumes = ["application/json"])
@@ -71,26 +75,22 @@ class TossController(
         @PathVariable id: UUID,
     ): TossReceiptResponse = TossReceiptResponse(toss.receipt(user.id, workspace, id).reveal())
 
-    @PostMapping("/admin/workspaces/{workspace_id}/payments/{id}/refund", consumes = ["application/json"])
-    fun refund(
-        @PathVariable("workspace_id") workspace: UUID,
-        @PathVariable id: UUID,
-        @RequestBody request: TossRefundRequest,
-    ): SubscriptionResponse {
-        val owner = accounts.ownerOf(workspace) ?: throw NotFoundException("작업 공간을 찾을 수 없습니다")
-        toss.refund(owner, workspace, id, request.operationId, request.amount)
-        return SubscriptionResponse.of(subscriptions.read(owner, workspace))
-    }
-
     @PostMapping("/payments/toss/webhook", consumes = ["application/json"])
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun webhook(
         @RequestBody request: JsonNode,
     ) {
-        if (request.path("eventType").asString() !in setOf("PAYMENT_STATUS_CHANGED", "CANCEL_STATUS_CHANGED")) return
-        val order = request.path("data").path("orderId").asString()
-        val id = runCatching { UUID.fromString(order) }.getOrNull() ?: return
-        toss.requestSync(id)
+        when (request.path("eventType").asString()) {
+            "BILLING_DELETED" -> {
+                val key = request.path("data").path("billingKey").asString("")
+                if (key.isNotBlank()) toss.billingDeleted(Secret(key))
+            }
+
+            "PAYMENT_STATUS_CHANGED" -> {
+                val order = request.path("data").path("orderId").asString()
+                runCatching { UUID.fromString(order) }.getOrNull()?.let(toss::requestSync)
+            }
+        }
     }
 }
 
@@ -98,6 +98,8 @@ data class TossBeginRequest
     @JsonCreator
     constructor(
         @param:JsonProperty("plan_id") val planId: String,
+        @param:JsonProperty("purpose") @param:JsonSetter(nulls = Nulls.SET) val purpose: String? = null,
+        @param:JsonProperty("consent_version") @param:JsonSetter(nulls = Nulls.SET) val consentVersion: String? = null,
     )
 
 data class TossCompleteRequest
@@ -113,17 +115,11 @@ data class TossCompleteRequest
         override fun toString(): String = "TossCompleteRequest(sessionId=$sessionId, authKey=[REDACTED])"
     }
 
-data class TossRefundRequest
-    @JsonCreator
-    constructor(
-        @param:JsonProperty("operation_id") val operationId: UUID,
-        @param:JsonProperty("amount") val amount: Int,
-    )
-
 data class TossSessionResponse(
     @get:JsonProperty("session_id") val sessionId: UUID,
     @get:JsonProperty("customer_key") val customerKey: UUID,
     @get:JsonProperty("client_key") val clientKey: String,
+    @get:JsonProperty("billing_environment") val billingEnvironment: String = "toss_test",
 ) {
     override fun toString(): String = "TossSessionResponse(sessionId=$sessionId)"
 }

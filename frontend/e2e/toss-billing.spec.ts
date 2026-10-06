@@ -88,7 +88,7 @@ test.describe('Toss test billing', () => {
       await verification.getByRole('button', { name: '확인', exact: true }).click()
     }
     await expect(page.getByRole('status')).not.toContainText(
-      '카드 등록과 테스트 결제 결과를 확인하고 있습니다',
+      '카드 등록과 결제 결과를 확인하고 있습니다',
       { timeout: 90_000 },
     )
     await expect(page.getByRole('status')).toContainText('테스트 구독이 적용되었습니다', {
@@ -150,7 +150,25 @@ test.describe('Toss test billing', () => {
     for (const payment of renewed.payments as Array<{ id: string }>) {
       const path = `${API_BASE_URL}/admin/workspaces/${workspace}/payments/${payment.id}/refund`
       for (const amount of [40_000, 59_000]) {
-        const data = { operation_id: crypto.randomUUID(), amount }
+        const month = new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'Asia/Seoul',
+          year: 'numeric',
+          month: '2-digit',
+        }).format(new Date())
+        const accountResponse = await request.get(
+          `${API_BASE_URL}/admin/workspaces/${workspace}/monthly-summary?month=${month}`,
+          { headers },
+        )
+        expect(accountResponse.status()).toBe(200)
+        const account = await accountResponse.json()
+        const data = {
+          operation_id: crypto.randomUUID(),
+          amount,
+          recovery_credits: 0,
+          stop_renewal: false,
+          reason: '격리된 Toss 테스트 환불',
+          expected_revision: account.current.revision,
+        }
         expect((await request.post(path, { headers, data })).status()).toBe(200)
         expect((await request.post(path, { headers, data })).status()).toBe(200)
       }

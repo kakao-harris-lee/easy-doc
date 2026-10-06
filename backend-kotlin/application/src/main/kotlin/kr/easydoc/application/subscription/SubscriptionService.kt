@@ -41,6 +41,8 @@ data class SubscriptionPayment(
     val simulatedFailure: Boolean,
     val provider: String = "stub",
     val refundedAmount: Int = 0,
+    val approvedAt: Instant? = null,
+    val canceledAt: Instant? = null,
 )
 
 data class SubscriptionOverview(
@@ -51,6 +53,16 @@ data class SubscriptionOverview(
     val tossEnabled: Boolean = false,
     val pending: Boolean = false,
     val billingState: String? = null,
+    val billingEnvironment: String? = null,
+    val purchaseEnabled: Boolean = false,
+    val autoChargeEnabled: Boolean = false,
+    val currentPeriodStart: Instant? = null,
+    val nextBillingAt: Instant? = null,
+    val retryAt: Instant? = null,
+    val retryCount: Int = 0,
+    val firstFailureAt: Instant? = null,
+    val manualReview: Boolean = false,
+    val cardLastFour: String? = null,
 )
 
 interface PaymentGateway {
@@ -159,7 +171,7 @@ class SubscriptionService(
                         nextMonth(now),
                     )
                 store.save(subscription)
-                applyAllowance(subscription)
+                applyAllowance(subscription, orderId)
             }
             overview(workspaceId)
         }
@@ -212,7 +224,7 @@ class SubscriptionService(
                         // No back charging for missed months; open one new monthly period from processing time.
                         val renewed = current.copy(cycleEndsAt = nextMonth(now))
                         store.save(renewed)
-                        applyAllowance(renewed)
+                        applyAllowance(renewed, id)
                     } else {
                         expire(current, "past_due")
                     }
@@ -237,15 +249,18 @@ class SubscriptionService(
         )
     }
 
-    private fun applyAllowance(subscription: Subscription) {
-        credits.setAllowance(
+    private fun applyAllowance(
+        subscription: Subscription,
+        paymentId: UUID,
+    ) {
+        credits.setPaidAllowance(
             subscription.workspaceId,
             subscription.ownerId,
             subscription.allowance,
             subscription.cycleEndsAt,
-            false,
             CreditReason.PLAN_MONTHLY,
             "mock subscription",
+            paymentId,
         )
     }
 
@@ -264,5 +279,19 @@ class SubscriptionService(
             toss?.enabled == true,
             toss?.pending(workspaceId) == true,
             toss?.state(workspaceId),
+            store.find(workspaceId)?.provider ?: toss?.environment,
+            toss?.let { it.purchaseEnabled || workspaceId in it.allowedWorkspaces } == true,
+            toss?.autoChargeEnabled == true,
+            store.payments(workspaceId).mapNotNull { it.approvedAt }.maxOrNull(),
+            store.find(workspaceId)?.takeIf { it.status == "active" }?.cycleEndsAt,
+            toss
+                ?.latestOrder(
+                    workspaceId,
+                )?.takeIf { it.firstFailureAt != null && it.status == "scheduled" }
+                ?.nextAttemptAt,
+            toss?.latestOrder(workspaceId)?.attempt ?: 0,
+            toss?.latestOrder(workspaceId)?.firstFailureAt,
+            toss?.latestOrder(workspaceId)?.status == "manual_review" || toss?.state(workspaceId) == "manual_review",
+            toss?.cardLastFour(workspaceId),
         )
 }

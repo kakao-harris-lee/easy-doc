@@ -141,7 +141,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 FROM credit_transactions
                 WHERE created_at >= :from AND created_at < :toExclusive
                   AND kind = 'consume'
-                  AND reason IN ('conversion', 'action_guide', 'illustration_suggestion')
+
                 GROUP BY owner_user_id, workspace_id
             )
             SELECT

@@ -7,7 +7,7 @@ import { completeTossBilling } from '../api/subscriptions'
 import { BILLING_CONTEXT } from '../billing/toss'
 import { BillingCallbackPage } from './BillingCallbackPage'
 
-vi.mock('../api/subscriptions', () => ({ completeTossBilling: vi.fn() }))
+vi.mock('../api/subscriptions', () => ({ completeTossBilling: vi.fn(), getSubscription: vi.fn() }))
 afterEach(() => {
   vi.resetAllMocks()
   sessionStorage.clear()

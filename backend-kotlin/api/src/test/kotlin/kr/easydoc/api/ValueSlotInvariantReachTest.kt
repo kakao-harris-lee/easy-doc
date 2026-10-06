@@ -490,7 +490,10 @@ class ValueSlotInvariantReachTest {
                     """{"session_id":"00000000-0000-0000-0000-000000000001",
                 "customer_key":"00000000-0000-0000-0000-000000000002",
                 "auth_key":"test-auth"}""",
-                "TossRefundRequest" to """{"operation_id":"00000000-0000-0000-0000-000000000001","amount":100}""",
+                "TossRefundRequest" to """{"operation_id":"00000000-0000-0000-0000-000000000001","amount":100,
+                    "recovery_credits":0,"stop_renewal":false,"reason":"support","expected_revision":0}""",
+                "AdminBillingActionRequest" to
+                    """{"operation_id":"00000000-0000-0000-0000-000000000001","reason":"support"}""",
                 "SubscriptionCheckoutRequest" to
                     """{"plan_id":"start","order_id":"00000000-0000-0000-0000-000000000001"}""",
                 "WorkspaceNameRequest" to """{"name":"가"}""",
@@ -561,7 +564,10 @@ class ValueSlotInvariantReachTest {
                     """"contact_email":"probe@example.test","period_from":"2026-08-01",""" +
                     """"period_to":"2026-08-31"}""",
                 // 어드민 최소(A1, 2.25.0) — 이 표본들도 경로·쿼리 값 자리 해석 여부만 잰다.
-                "AdminCreditAdjustmentRequest" to """{"credits":1,"reason":"manual"}""",
+                "AdminCreditAdjustmentRequest" to
+                    """{"credits":1,"reason":"manual","note":"test",""" +
+                    """"operation_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"expected_balance":0,"expected_reserved":0,"expected_revision":0}""",
                 "AdminInvoiceRequestHandleRequest" to """{"status":"issued"}""",
                 "AnnouncementCreateRequest" to """{"body":"가"}""",
                 "AnnouncementUpdateRequest" to """{"active":true}""",

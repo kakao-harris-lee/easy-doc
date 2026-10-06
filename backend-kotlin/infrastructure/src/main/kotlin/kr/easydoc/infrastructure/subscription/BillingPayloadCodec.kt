@@ -31,6 +31,10 @@ class BillingPayloadCodec(
                 "auth" to session.authKey?.reveal(),
                 "billing" to session.billingKey?.reveal(),
                 "fail" to session.simulateFailure,
+                "previousBilling" to session.previousBillingKey?.reveal(),
+                "previousCustomer" to session.previousCustomer?.toString(),
+                "cardLastFour" to session.cardLastFour,
+                "previousCardLastFour" to session.previousCardLastFour,
             ),
         )
 
@@ -43,6 +47,10 @@ class BillingPayloadCodec(
             authKey = secret(data, "auth"),
             billingKey = secret(data, "billing"),
             simulateFailure = data.path("fail").asBoolean(false),
+            previousBillingKey = secret(data, "previousBilling"),
+            previousCustomer = secret(data, "previousCustomer")?.reveal()?.let(UUID::fromString),
+            cardLastFour = secret(data, "cardLastFour")?.reveal(),
+            previousCardLastFour = secret(data, "previousCardLastFour")?.reveal(),
         )
     }
 
@@ -58,6 +66,8 @@ class BillingPayloadCodec(
                 "amount" to payment?.amount,
                 "remaining" to payment?.remainingAmount,
                 "receipt" to payment?.receipt?.reveal(),
+                "approvedAt" to payment?.approvedAt?.toString(),
+                "canceledAt" to payment?.canceledAt?.toString(),
             ),
         )
     }
@@ -75,6 +85,8 @@ class BillingPayloadCodec(
                 data.path("amount").intValue(),
                 data.path("remaining").intValue(),
                 secret(data, "receipt") ?: Secret.EMPTY,
+                secret(data, "approvedAt")?.reveal()?.let(java.time.Instant::parse),
+                secret(data, "canceledAt")?.reveal()?.let(java.time.Instant::parse),
             )
         }
     }
@@ -112,4 +124,8 @@ data class BillingSessionPayload(
     val authKey: Secret?,
     val billingKey: Secret?,
     val simulateFailure: Boolean,
+    val previousBillingKey: Secret? = null,
+    val previousCustomer: UUID? = null,
+    val cardLastFour: String? = null,
+    val previousCardLastFour: String? = null,
 )

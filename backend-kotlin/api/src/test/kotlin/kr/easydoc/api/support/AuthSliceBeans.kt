@@ -139,6 +139,10 @@ import java.util.concurrent.ConcurrentHashMap
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
+    fun adminMonthlyReportService(): kr.easydoc.application.admin.AdminMonthlyReportService =
+        org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminMonthlyReportService::class.java)
+
+    @Bean
     fun guideWorkflowQuery(
         analyses: kr.easydoc.application.actionguide.ActionGuideAnalysisService,
         jobs: kr.easydoc.application.actionguide.ActionGuideJobService,
@@ -216,6 +220,10 @@ class AuthSliceBeans {
     @Bean
     fun tossBillingService(): kr.easydoc.application.subscription.TossBillingService =
         org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingService::class.java)
+
+    @Bean
+    fun adminBillingService(): kr.easydoc.application.admin.AdminBillingService =
+        org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminBillingService::class.java)
 
     @Bean
     fun subscriptionService(): kr.easydoc.application.subscription.SubscriptionService =

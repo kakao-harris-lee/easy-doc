@@ -93,11 +93,15 @@ class TossConfiguration {
             credits,
             transaction,
             gateway,
-            properties.provider == "toss_test",
+            properties.provider in setOf("toss_test", "toss_live"),
             Clock.systemUTC(),
             usage.zoneId(),
             properties.tossClientKey,
             users,
             billing.timing(),
+            environment = properties.provider,
+            purchaseEnabled = properties.purchaseEnabled,
+            autoChargeEnabled = properties.autoChargeEnabled,
+            allowedWorkspaces = properties.allowedWorkspaces,
         )
 }

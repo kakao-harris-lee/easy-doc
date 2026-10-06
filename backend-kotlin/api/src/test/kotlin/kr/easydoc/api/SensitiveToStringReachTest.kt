@@ -182,8 +182,9 @@ class SensitiveToStringReachTest {
          * 실제 선언 목록을 확인한 뒤 갱신한다.
          * Workflow DTOs (6), query view (1), billing timing/config/payload (3),
          * analysis accumulator (1), worker lease (1), JDBC ledger mapping (2).
+         * Billing DTOs, durable action models, issued card metadata and notification job (+10 net).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 429
+        const val EXPECTED_SOURCE_DECLARATIONS = 466
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

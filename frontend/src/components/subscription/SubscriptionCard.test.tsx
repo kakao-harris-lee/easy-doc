@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import {
+  cancelSubscription,
   checkoutSubscription,
   getSubscription,
   type SubscriptionOverview,
@@ -97,4 +98,109 @@ it('opens Toss billing for the selected plan when the server enables Toss test m
   await user.click(await screen.findByRole('button', { name: 'Start 토스 테스트 카드 등록' }))
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false)
   expect(checkoutSubscription).not.toHaveBeenCalled()
+})
+
+it('requires explicit live consent, hides other plans and failure simulation', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    purchase_enabled: true,
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="w1" />)
+  const button = await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })
+  expect(button).toBeDisabled()
+  expect(screen.queryByRole('radio', { name: 'Basic' })).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('결제 실패 테스트')).not.toBeInTheDocument()
+  await user.click(
+    screen.getByLabelText(
+      '금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.',
+    ),
+  )
+  await user.click(button)
+  expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'purchase', 'start-monthly-v1')
+})
+it('replaces a card without canceling the active subscription first', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99000,
+      status: 'active',
+      cycle_ends_at: '2026-11-01T00:00:00Z',
+    },
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="w1" />)
+  await user.click(await screen.findByRole('button', { name: '결제 카드 변경' }))
+  expect(cancelSubscription).not.toHaveBeenCalled()
+  expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'replace_card')
+})
+it('blocks new live purchases when manual review is required', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    manual_review: true,
+  })
+  render(<SubscriptionCard workspaceId="w1" />)
+  expect(
+    await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }),
+  ).toBeDisabled()
+  expect(screen.getByText(/결제 결과를 관리자가 확인/)).toBeInTheDocument()
+})
+
+it('allows repair of a known declined renewal while purchases are closed', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    purchase_enabled: false,
+    pending: true,
+    retry_at: '2026-11-01T01:00:00Z',
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99000,
+      status: 'past_due',
+      cycle_ends_at: '2026-11-01T00:00:00Z',
+    },
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="w1" />)
+  await user.click(await screen.findByRole('button', { name: '결제 카드 변경' }))
+  expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'replace_card')
+  expect(cancelSubscription).not.toHaveBeenCalled()
+})
+
+it('immediately explains a needs_card state and offers safe card registration', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    billing_state: 'needs_card',
+    purchase_enabled: false,
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99000,
+      status: 'past_due',
+      cycle_ends_at: '2026-11-01T00:00:00Z',
+    },
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="w1" />)
+  expect(await screen.findByRole('alert')).toHaveTextContent('카드를 다시 등록해 주세요')
+  await user.click(screen.getByRole('button', { name: '결제 카드 변경' }))
+  expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'replace_card')
+  expect(cancelSubscription).not.toHaveBeenCalled()
 })

@@ -45,9 +45,10 @@ class AdminWorkspaceController(
         @Min(1)
         @Max(100)
         size: Int,
+        @RequestParam(name = "month", required = false) month: String? = null,
     ): ResponseEntity<AdminWorkspaceListResponse> {
         AdminActionLog.record(ACTION_WORKSPACE_LIST, user.id)
-        val result = queryService.listWorkspaces(q, page, size)
+        val result = queryService.listWorkspaces(q, page, size, month)
         return adminResponse(HttpStatus.OK).body(AdminWorkspaceListResponse.of(result))
     }
 
@@ -75,7 +76,21 @@ class AdminWorkspaceController(
         val credits = requireNonZeroCredits(request.credits)
         val reason = requireAdminCreditReason(request.reason)
         val note = requireValidAdminCreditNote(request.note)
-        val view = creditAdjustmentService.adjust(workspaceId, credits, reason, note, user.id)
+        val view =
+            creditAdjustmentService.adjust(
+                kr.easydoc.application.admin.AdminCreditAdjustmentCommand(
+                    request.operationId,
+                    workspaceId,
+                    user.id,
+                    credits,
+                    reason,
+                    note ?: throw kr.easydoc.core.exceptions
+                        .InvalidInputException("조정 사유 메모를 입력하세요"),
+                    request.expectedBalance,
+                    request.expectedReserved,
+                    request.expectedRevision,
+                ),
+            )
         AdminActionLog.record(ACTION_CREDIT_ADJUST, user.id, workspaceId)
         return adminResponse(HttpStatus.OK).body(WorkspaceCreditsResponse.of(view))
     }
