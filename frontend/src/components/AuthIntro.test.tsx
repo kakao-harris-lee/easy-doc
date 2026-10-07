@@ -33,10 +33,8 @@ describe('AuthIntro', () => {
   it('두 번째 단계로 담당자가 초안을 고치는 일을 적는다', () => {
     renderAuthIntro()
 
-    expect(screen.getByText('2. 초안 확인·수정')).toBeInTheDocument()
-    expect(
-      screen.getByText('쉬운 글 초안을 원문과 나란히 놓고 담당자가 직접 고칩니다.'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('2. 내용 확인·수정')).toBeInTheDocument()
+    expect(screen.getByText('쉬운 글을 원문과 나란히 놓고 직접 고칩니다.')).toBeInTheDocument()
   })
 
   it('고지의 안내 링크가 이용 가이드로 걸린다', () => {

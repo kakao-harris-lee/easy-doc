@@ -43,7 +43,7 @@ test.describe('R7 그림 목록', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
     expect(created.status()).toBe(ROUTES.documentCreate.accepted)
 

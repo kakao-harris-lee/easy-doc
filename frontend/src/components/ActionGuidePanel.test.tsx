@@ -286,11 +286,11 @@ describe('행동 안내 화면', () => {
       content,
       mark_reviewed: false,
     })
-    expect(await screen.findByRole('button', { name: '담당자 확인 저장' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: '내용 확인 저장' })).toBeDisabled()
     await user.click(
       screen.getByRole('checkbox', { name: '원문과 비교하여 이 안내문의 내용을 확인했습니다.' }),
     )
-    expect(screen.getByRole('button', { name: '담당자 확인 저장' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '내용 확인 저장' })).toBeEnabled()
   })
 
   it('행동 하나의 주의사항과 모든 원문 근거를 적용 전에 보여주고 적용 후에도 보존한다', async () => {
@@ -436,7 +436,7 @@ describe('행동 안내 화면', () => {
     })
     vi.mocked(saveActionGuide).mockResolvedValue({ ...resource, status: 'draft', guide })
     show()
-    expect(await screen.findByRole('button', { name: '담당자 확인 저장' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: '내용 확인 저장' })).toBeDisabled()
     await user.type(screen.getByRole('textbox', { name: '신청할 수 있는 사람 1번 내용' }), ' 지금')
     await user.click(screen.getByRole('button', { name: '안내문 저장' }))
     expect(saveActionGuide).toHaveBeenCalledWith(
@@ -445,7 +445,7 @@ describe('행동 안내 화면', () => {
     )
   })
 
-  it('편집 후 초안을 먼저 저장하고 담당자 확인을 별도로 저장한다', async () => {
+  it('편집 후 초안을 먼저 저장하고 내용 확인을 별도로 저장한다', async () => {
     const user = userEvent.setup()
     const onDirtyChange = vi.fn()
     const editedContent: ActionGuideContent = {
@@ -497,7 +497,7 @@ describe('행동 안내 화면', () => {
       'available',
     )
     expect(onDirtyChange).toHaveBeenCalledWith(true)
-    expect(screen.getByRole('button', { name: '담당자 확인 저장' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '내용 확인 저장' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: '안내문 저장' }))
     await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(false))
     expect(saveActionGuide).toHaveBeenCalledTimes(1)
@@ -505,7 +505,7 @@ describe('행동 안내 화면', () => {
     await user.click(
       screen.getByRole('checkbox', { name: '원문과 비교하여 이 안내문의 내용을 확인했습니다.' }),
     )
-    await user.click(screen.getByRole('button', { name: '담당자 확인 저장' }))
+    await user.click(screen.getByRole('button', { name: '내용 확인 저장' }))
     expect(saveActionGuide).toHaveBeenCalledWith(
       'conversion-1',
       expect.objectContaining({ expected_guide_revision: 2, mark_reviewed: true }),

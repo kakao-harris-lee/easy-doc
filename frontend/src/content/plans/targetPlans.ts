@@ -26,7 +26,7 @@ export const TARGET_PLANS: TargetPlan[] = [
   {
     id: 'start',
     name: 'Start',
-    audience: '소규모 팀의 월간 문서 변환',
+    audience: '가끔 글을 바꿀 때',
     monthlyCredits: 50,
     pageEquivalent: '약 25페이지 상당',
     monthlyPriceWon: 99_000,
@@ -36,7 +36,7 @@ export const TARGET_PLANS: TargetPlan[] = [
   {
     id: 'basic',
     name: 'Basic',
-    audience: '복지관·학교·실무 부서',
+    audience: '꾸준히 글을 바꿀 때',
     monthlyCredits: 200,
     pageEquivalent: '약 100페이지 상당',
     monthlyPriceWon: 190_000,
@@ -46,7 +46,7 @@ export const TARGET_PLANS: TargetPlan[] = [
   {
     id: 'pro',
     name: 'Pro',
-    audience: '기관 단위의 상시 문서 변환',
+    audience: '많은 글을 자주 바꿀 때',
     monthlyCredits: 1_000,
     pageEquivalent: '약 500페이지 상당',
     monthlyPriceWon: 599_000,

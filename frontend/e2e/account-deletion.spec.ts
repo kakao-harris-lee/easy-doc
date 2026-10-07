@@ -36,7 +36,7 @@ test.describe('회원 탈퇴', () => {
 
     await page.getByLabel('문서 제목').fill('E2E 탈퇴 확인용 문서')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
-    await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
+    await page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click()
 
     // worker가 fake LLM으로 끝낼 때까지 기다린다 — "문서 1건 변환"의 정본 신호다.
     await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({

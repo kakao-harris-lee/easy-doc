@@ -70,7 +70,7 @@ test.describe('사전 팝업 조회 흐름', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
 
     // worker 가 fake LLM 으로 끝낼 때까지 기다린다 — E13 과 같은 대기다.

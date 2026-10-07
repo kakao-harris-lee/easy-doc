@@ -102,7 +102,7 @@ const GUIDE_STEPS = [
     title: '쉬운 글 초안 생성',
     detail: '원문에 있는 내용만 짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.',
   },
-  { title: '담당자 직접 검수', detail: '원문과 나란히 놓고 고쳐 저장합니다.' },
+  { title: '내용 확인·수정', detail: '원문과 나란히 놓고 고쳐 저장합니다.' },
 ] as const
 
 /** 입력 방식·형식에 따른 차이를 업로드 전에 알리는 고정 문구. */
@@ -778,7 +778,7 @@ export function UploadPage() {
                 type="text"
                 value={title}
                 maxLength={MAX_TITLE_LENGTH}
-                placeholder="예: 2024년 청년 월세 특별지원 안내문"
+                placeholder="예: 가을 행사 신청 안내"
                 onChange={(event) => setTitle(event.target.value)}
               />
               {/* aria-invalid를 길이로 걸지 않는다 — 상한을 넘긴 제목도 거절이 아니라 잘림이라
@@ -966,7 +966,7 @@ export function UploadPage() {
                 className="h-12 w-full sm:h-auto sm:w-fit"
               >
                 <Wand2 className="size-[18px]" aria-hidden="true" />
-                {submitting ? '올리는 중…' : '쉬운 글 초안 만들기'}
+                {submitting ? '올리는 중…' : '쉬운 글로 바꾸기'}
               </Button>
             </div>
           </div>

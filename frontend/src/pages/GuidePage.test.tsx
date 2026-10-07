@@ -11,14 +11,16 @@ describe('이용 가이드 화면', () => {
     expect(screen.getByRole('heading', { name: '이용 가이드', level: 1 })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '세 단계로 이용하세요' })).toBeInTheDocument()
     expect(
-      screen.getByText(/결과는 초안입니다.*개인정보가 담긴 문서는 올리지 마세요/),
+      screen.getByText(/AI가 다시 쓴 글은 초안입니다.*개인정보가 담긴 문서는 올리지 마세요/),
     ).toBeInTheDocument()
   })
 
   it('사용 흐름보다 먼저 서비스 정의와 대상 문서를 밝힌다', () => {
     render(<GuidePage />)
 
-    expect(screen.getByText(/마무리는 담당자가 합니다/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/내가 읽을 때도, 다른 사람에게 전할 때도 활용하세요/),
+    ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이 서비스는', level: 2 })).toBeInTheDocument()
     expect(screen.getByText('누구를 위해', { exact: true })).toBeInTheDocument()
     expect(screen.getByText('무엇을 넣나', { exact: true })).toBeInTheDocument()

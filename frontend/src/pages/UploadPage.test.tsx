@@ -211,7 +211,7 @@ describe('업로드 화면', () => {
         expect(
           screen.getByText('좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)'),
         ).toBeInTheDocument()
-        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
         expect(createDocumentFromText).toHaveBeenCalledWith(
           text,
           'w1',
@@ -242,7 +242,7 @@ describe('업로드 화면', () => {
         await user.type(screen.getByLabelText('문서 제목'), '개인정보 안내')
         await user.type(screen.getByLabelText('바꿀 글'), '주민번호 내용을 확인해 주세요')
         await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
-        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
         await user.click(await screen.findByRole('button', { name: '이대로 진행' }))
 
         expect(createDocumentFromText).toHaveBeenLastCalledWith(
@@ -273,7 +273,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
       '신청 방법을 자세히 안내합니다',
@@ -293,7 +293,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '민원 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
       '신청 방법을 자세히 안내합니다',
@@ -309,7 +309,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '기본 작업 공간 문서')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     // null이면 서버가 기본 작업 공간에 담는다 — 업로드를 막지 않는다.
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
@@ -327,7 +327,7 @@ describe('업로드 화면', () => {
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste('가'.repeat(20001))
     await user.type(screen.getByLabelText('문서 제목'), '긴 원문')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('20,000자 이내로 줄여 주세요')
     // 글자 수 안내는 같은 사실을 두 번 알리지 않는다(라이브 영역이 아니다).
@@ -353,7 +353,7 @@ describe('업로드 화면', () => {
     expect(screen.getByText('20,000 / 20,000자')).toBeInTheDocument()
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')
 
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(emoji20000, 'w1', '이모지 문서')
   })
@@ -365,7 +365,7 @@ describe('업로드 화면', () => {
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste('😀'.repeat(20001))
     await user.type(screen.getByLabelText('문서 제목'), '이모지 문서')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('20,000자 이내로 줄여 주세요')
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'true')
@@ -377,7 +377,7 @@ describe('업로드 화면', () => {
     renderPage()
 
     await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('문서 제목을 입력해 주세요.')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
@@ -389,7 +389,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '짧은 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청하세요 지금 바로')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('4단어 이상인 문장을 입력해 주세요.')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
@@ -404,7 +404,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '긴 문서')
     await user.type(screen.getByLabelText('바꿀 글'), '긴 문서를 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('변환할 수 있는 길이를 넘었습니다')
     expect(screen.queryByRole('heading', { name: '변환 화면' })).not.toBeInTheDocument()
@@ -442,7 +442,7 @@ describe('업로드 화면', () => {
     expect(screen.getByText('TXT · 2KB')).toBeInTheDocument()
 
     await user.type(screen.getByLabelText('문서 제목'), '안내문')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(vi.mocked(createDocumentFromFile)).toHaveBeenCalledWith(
       expect.objectContaining({ name: '안내문.txt' }),
@@ -522,7 +522,7 @@ describe('업로드 화면', () => {
     await user.upload(input, docxFile())
     await user.click(screen.getByRole('button', { name: '안내문.docx 파일 제거' }))
     await user.type(screen.getByLabelText('문서 제목'), '안내문')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('변환할 파일을 선택해 주세요.')
     expect(vi.mocked(createDocumentFromFile)).not.toHaveBeenCalled()
@@ -667,7 +667,7 @@ describe('업로드 화면', () => {
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
       await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
         '크레딧이 부족합니다. 상위 플랜을 선택해 주세요. 필요 2 · 가용 1',
@@ -685,7 +685,7 @@ describe('업로드 화면', () => {
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
       await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
     })
@@ -717,7 +717,7 @@ describe('업로드 화면', () => {
         screen.getByLabelText('바꿀 글'),
         '주민등록번호는 900101-1234568 입니다 확인해 주세요',
       )
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       const warning = await screen.findByRole('alert')
       const proceed = within(warning).getByRole('button', { name: '이대로 진행' })
@@ -750,7 +750,7 @@ describe('업로드 화면', () => {
       const input = await chooseFileMode(user)
       await user.upload(input, docxFile())
       await user.type(screen.getByLabelText('문서 제목'), '카드번호 안내')
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       const warning = await screen.findByRole('alert')
       await user.click(within(warning).getByRole('button', { name: '이대로 진행' }))
@@ -774,7 +774,7 @@ describe('업로드 화면', () => {
 
       await user.type(screen.getByLabelText('문서 제목'), '안내문')
       await user.type(screen.getByLabelText('바꿀 글'), '충분한 단어가 있는 본문')
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent('지원 형식: docx, pdf, hwpx, txt')
       expect(screen.queryByRole('button', { name: '이대로 진행' })).not.toBeInTheDocument()
@@ -790,7 +790,7 @@ describe('업로드 화면', () => {
         screen.getByLabelText('바꿀 글'),
         '주민등록번호는 900101-1234568 입니다 확인해 주세요',
       )
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
       await screen.findByRole('alert')
 
       await user.type(screen.getByLabelText('바꿀 글'), ' 추가 입력')
@@ -813,7 +813,7 @@ describe('업로드 화면', () => {
           screen.getByLabelText('바꿀 글'),
           '주민등록번호는 900101-1234568 입니다 확인해 주세요',
         )
-        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
         await screen.findByRole('alert')
 
         // 제목은 본문·파일·모드가 아니므로 바꿔도 경고가 남아 있다 — "이대로 진행"이
@@ -882,7 +882,7 @@ describe('업로드 화면', () => {
     )
 
     // 대표 행동은 여전히 제출 버튼 하나뿐이다(§5.3, §14) — 제안은 링크로만 나타난다.
-    expect(screen.getAllByRole('button', { name: '쉬운 글 초안 만들기' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '쉬운 글로 바꾸기' })).toHaveLength(1)
     expect(within(suggestion).queryByRole('button')).not.toBeInTheDocument()
   })
 
@@ -922,7 +922,7 @@ describe('업로드 화면', () => {
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
     // 보조 제안이 실패한 것을 오류로 알리지 않는다 — 핵심 흐름을 가리는 소음이다.
@@ -933,7 +933,7 @@ describe('업로드 화면', () => {
   it('이 화면이 곧 새 변환이므로 문서가 없으면 아무것도 제안하지 않는다', async () => {
     renderPage()
 
-    expect(await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: '쉬운 글로 바꾸기' })).toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
   })
 
@@ -943,7 +943,7 @@ describe('업로드 화면', () => {
       currentId: 'w2',
     })
 
-    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+    await screen.findByRole('button', { name: '쉬운 글로 바꾸기' })
     expect(vi.mocked(listDocuments)).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: 'w2' }),
       expect.anything(),
@@ -959,7 +959,7 @@ describe('업로드 화면', () => {
     renderPage({ workspaces: [], currentId: null })
 
     // 화면이 다 그려지고 effect가 돌 기회를 준 뒤에 본다.
-    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+    await screen.findByRole('button', { name: '쉬운 글로 바꾸기' })
 
     // 재는 것은 「제안이 안 보인다」가 아니라 **호출 자체가 없다**는 사실이다.
     // 작업 공간을 아직 모르는 채로 조회하면 요청에 workspace_id가 빠지고 서버는 기본
@@ -984,7 +984,7 @@ describe('업로드 화면', () => {
       ]),
     )
     const { rerender } = render(page({ workspaces: [], currentId: null }))
-    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+    await screen.findByRole('button', { name: '쉬운 글로 바꾸기' })
     expect(vi.mocked(listDocuments)).not.toHaveBeenCalled()
 
     // 목록이 도착했다. 미룬 조회는 여기서 나가야 한다 — 안 부르는 것이 아니라 늦게
@@ -1104,7 +1104,7 @@ describe('업로드 화면', () => {
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
       await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
-      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
       expect(
         await screen.findByText('이메일 인증 후 문서를 변환할 수 있습니다.'),

@@ -406,7 +406,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     await page.setViewportSize({ width: 320, height: 900 })
 
     const publicPages = [
-      { path: '/', heading: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로' },
+      { path: '/', heading: '어려운 글을 누구나 읽기 쉬운 글로' },
       { path: '/login', heading: '로그인' },
       { path: '/guide' },
       { path: '/terms' },
@@ -538,7 +538,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
       await expectThemeSettled(
         authenticatedPage,
         theme,
-        authenticatedPage.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }),
+        authenticatedPage.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }),
       )
       await authenticatedPage.screenshot({
         path: testInfo.outputPath(`upload-${theme}-320.png`),

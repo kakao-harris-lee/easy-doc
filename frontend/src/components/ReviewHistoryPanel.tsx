@@ -61,7 +61,7 @@ function HistoryEventCard({
           <dd className="inline">{formatDate(event.created_at)}</dd>
         </div>
         <div>
-          <dt className="inline font-semibold text-foreground">담당자: </dt>
+          <dt className="inline font-semibold text-foreground">확인한 사람: </dt>
           <dd className="inline">{event.actor_user_id}</dd>
         </div>
         <div>

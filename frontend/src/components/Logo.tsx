@@ -33,7 +33,7 @@ export function Logo({ compact = false }: { compact?: boolean }) {
               : 'mt-1 text-xs font-semibold tracking-tight text-foreground/75'
           }
         >
-          쉬운 글 초안 도구
+          쉬운 글로 다시 쓰는 도구
         </small>
       </span>
     </span>
