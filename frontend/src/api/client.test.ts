@@ -186,29 +186,35 @@ describe('document reading level API', () => {
     reserved_credits: 0.2,
   }
 
-  it('JSON 문서 요청에 선택 수준을 보낸다', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(202, created))
+  it.each(['middle_school', 'grade_5_6', 'grade_3_4'] as const)(
+    'JSON 요청에 %s 수준을 보낸다',
+    async (level) => {
+      fetchMock.mockResolvedValue(jsonResponse(202, { ...created, reading_level: level }))
 
-    await createDocumentFromText('본문', null, '제목', false, 'grade_3_4')
+      await createDocumentFromText('본문', null, '제목', false, level)
 
-    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
-    expect(body.reading_level).toBe('grade_3_4')
-  })
+      const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
+      expect(body.reading_level).toBe(level)
+    },
+  )
 
-  it('multipart 문서 요청에도 같은 선택 수준 문자열을 보낸다', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(202, created))
+  it.each(['middle_school', 'grade_5_6', 'grade_3_4'] as const)(
+    'multipart 요청에 %s 수준을 보낸다',
+    async (level) => {
+      fetchMock.mockResolvedValue(jsonResponse(202, { ...created, reading_level: level }))
 
-    await createDocumentFromFile(
-      new File(['본문'], '안내.txt', { type: 'text/plain' }),
-      null,
-      '제목',
-      false,
-      'grade_3_4',
-    )
+      await createDocumentFromFile(
+        new File(['본문'], '안내.txt', { type: 'text/plain' }),
+        null,
+        '제목',
+        false,
+        level,
+      )
 
-    const form = fetchMock.mock.calls[0]?.[1]?.body as FormData
-    expect(form.get('reading_level')).toBe('grade_3_4')
-  })
+      const form = fetchMock.mock.calls[0]?.[1]?.body as FormData
+      expect(form.get('reading_level')).toBe(level)
+    },
+  )
 })
 
 describe('review history API', () => {

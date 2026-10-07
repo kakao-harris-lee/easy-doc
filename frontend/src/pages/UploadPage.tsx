@@ -32,11 +32,9 @@ import {
   type HomeNoticeState,
   type SourceTextState,
 } from '../routes/paths'
-import { SERVICE_DEFINITION } from '../content/identity'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
-import { PageHeader } from '../components/PageHeader'
 
 /**
  * `createDocument`가 이메일 미인증일 때 주는 고정 문구(계약 `x-input-limits` 403
@@ -122,22 +120,24 @@ const SEGMENT_OFF = 'text-muted-foreground'
 
 const READING_LEVEL_OPTIONS = [
   {
+    value: 'middle_school',
+    name: '레벨 1',
+    grade: '중등',
+  },
+  {
     value: 'grade_5_6',
-    name: '기본',
+    name: '레벨 2',
     grade: '초등 5~6학년',
-    description: '짧은 문장과 쉬운 표현으로 바꿔요.',
   },
   {
     value: 'grade_3_4',
-    name: '더 쉽게',
+    name: '레벨 3',
     grade: '초등 3~4학년',
-    description: '좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)',
   },
 ] as const satisfies readonly {
   value: ReadingLevel
   name: string
   grade: string
-  description: string
 }[]
 
 type InputMode = 'text' | 'file'
@@ -268,7 +268,7 @@ export function UploadPage() {
   )
   // 지금 고른 작업 공간에 담는다. 아직 목록을 못 받았으면(null) 서버가 기본 작업
   // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
-  const { workspaces, currentId: workspaceId } = useWorkspace()
+  const { currentId: workspaceId } = useWorkspace()
   const textareaId = useId()
   const titleFieldId = useId()
   const fileId = useId()
@@ -353,8 +353,6 @@ export function UploadPage() {
 
   // 헤더 맥락 라벨은 "어느 작업 공간에서 무엇을 하는가"다. 목록을 아직 못
   // 받았으면 작업 공간 이름 없이 화면 이름만 남긴다.
-  const workspaceName = workspaces.find((workspace) => workspace.id === workspaceId)?.name
-  const headerContext = workspaceName === undefined ? '새 변환' : `${workspaceName} · 새 변환`
 
   // 작업 공간이 바뀌면 이전 작업 공간의 제안을 그 자리에서 내린다. 새 응답이 올 때까지
   // 남겨 두면 방금 옮겨 온 작업 공간에 없는 문서를 이어서 하라고 권하게 된다. 렌더 중에
@@ -675,12 +673,12 @@ export function UploadPage() {
 
   return (
     <section aria-labelledby="upload-heading">
-      <PageHeader
-        context={headerContext}
-        title="문서 변환하기"
-        titleId="upload-heading"
-        description={SERVICE_DEFINITION}
-      />
+      <h1
+        id="upload-heading"
+        className="mb-6 text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
+      >
+        문서 변환하기
+      </h1>
 
       {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내. 상태를
       토스트로 흘려보내지 않고 화면에 남긴다). */}
@@ -733,12 +731,6 @@ export function UploadPage() {
           onSubmit={(event) => void handleSubmit(event)}
           noValidate
         >
-          <div className="border-b border-border px-5 py-4 sm:px-6">
-            <h2 className="text-[17px] font-bold leading-6 text-foreground">원문 입력</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              가능하면 문서의 글을 복사해 붙여넣어 주세요. 파일도 올릴 수 있습니다.
-            </p>
-          </div>
           <div className="flex flex-col gap-5 px-4 py-5 sm:px-6">
             {error !== null && (
               <p className="form-error" role="alert">
@@ -789,10 +781,7 @@ export function UploadPage() {
             </div>
 
             {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
-            <fieldset>
-              <legend className="mb-2 text-[15px] font-semibold">
-                변환할 내용을 어떻게 넣을까요?
-              </legend>
+            <fieldset aria-label="입력 방식">
               <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
                 <label className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}>
                   <input
@@ -823,32 +812,43 @@ export function UploadPage() {
               </div>
             </fieldset>
 
-            <fieldset aria-describedby={readingLevelHintId}>
-              <legend className="mb-2 text-[15px] font-semibold">어느 정도로 쉽게 바꿀까요?</legend>
-              <div className={`grid gap-2 ${extraEasyEnabled() ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                {READING_LEVEL_OPTIONS.filter(
-                  (option) => option.value === 'grade_5_6' || extraEasyEnabled(),
-                ).map((option) => (
+            <fieldset
+              className="rounded-xl border border-border p-3 sm:p-4"
+              aria-describedby={readingLevel === 'grade_3_4' ? readingLevelHintId : undefined}
+            >
+              <legend className="px-1 text-[15px] font-semibold">어느 정도로 쉽게 바꿀까요?</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {READING_LEVEL_OPTIONS.map((option) => (
                   <label
                     key={option.value}
-                    className={`relative flex min-h-16 cursor-pointer flex-col items-start justify-center rounded-[10px] border px-4 py-2 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+                    className={`flex min-h-24 flex-col items-start gap-2 rounded-lg border p-2 sm:p-3 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${option.value === 'grade_3_4' && !extraEasyEnabled() ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
                   >
-                    <input
-                      className={RADIO_OVERLAY_CLASS}
-                      type="radio"
-                      name="reading-level"
-                      value={option.value}
-                      checked={readingLevel === option.value}
-                      onChange={() => setReadingLevel(option.value)}
-                    />
-                    <span className="font-bold">{option.name}</span>
-                    <span className="text-sm text-muted-foreground">{option.grade}</span>
+                    <span className="flex items-center gap-1 sm:gap-1.5">
+                      <input
+                        className="size-3.5 shrink-0 accent-primary sm:size-4"
+                        type="radio"
+                        name="reading-level"
+                        value={option.value}
+                        checked={readingLevel === option.value}
+                        disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
+                        onChange={() => setReadingLevel(option.value)}
+                      />
+                      <span className="whitespace-nowrap text-xs font-bold sm:text-[15px]">
+                        {option.name}
+                      </span>
+                    </span>
+                    <span className="text-xs text-muted-foreground sm:text-sm">{option.grade}</span>
+                    {option.value === 'grade_3_4' && !extraEasyEnabled() && (
+                      <span className="text-xs text-muted-foreground">준비 중</span>
+                    )}
                   </label>
                 ))}
               </div>
-              <p id={readingLevelHintId} className="field-hint mt-2">
-                {READING_LEVEL_OPTIONS.find((option) => option.value === readingLevel)?.description}
-              </p>
+              {readingLevel === 'grade_3_4' && (
+                <p id={readingLevelHintId} className="field-hint mt-2">
+                  좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)
+                </p>
+              )}
             </fieldset>
 
             {mode === 'text' ? (

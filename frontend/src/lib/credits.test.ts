@@ -27,6 +27,7 @@ describe('fractional credit policy', () => {
 
   it('rounds the extra-easy 1.2 multiplier up to the next tenth of a credit', () => {
     expect(creditsForReadingLevel(0.1, 'grade_5_6')).toBe(0.1)
+    expect(creditsForReadingLevel(0.1, 'middle_school')).toBe(0.1)
     expect(creditsForReadingLevel(0.1, 'grade_3_4')).toBe(0.2)
     expect(creditsForReadingLevel(1.1, 'grade_3_4')).toBe(1.4)
   })

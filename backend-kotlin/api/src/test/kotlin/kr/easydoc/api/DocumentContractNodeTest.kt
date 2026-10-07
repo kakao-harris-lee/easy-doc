@@ -16,6 +16,7 @@ import kr.easydoc.application.document.MISSING_FILE_PART_MESSAGE
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
+import kr.easydoc.core.document.ReadingLevel
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -24,6 +25,20 @@ import kotlin.reflect.full.primaryConstructor
 
 /** 문서 오퍼레이션이 기대는 계약 노드를 계약 파일에서 읽는다 — Spring 없이 돈다. */
 class DocumentContractNodeTest {
+    @Test
+    fun `문서 수준 계약과 DTO가 세 수준 및 기존 기본값을 지원한다`() {
+        val levels = ReadingLevel.entries.map { it.wireName }.toSet()
+        assertThat(ContractSpec.schemaEnum("ReadingLevel"))
+            .containsExactlyInAnyOrderElementsOf(levels)
+        assertThat(ContractSpec.schemaPropertyEnum("DocumentFileRequest", "reading_level"))
+            .containsExactlyInAnyOrderElementsOf(levels)
+        levels.forEach {
+            assertThat(DocumentTextRequest("본문", null, null, readingLevelRaw = it).readingLevel.wireName)
+                .isEqualTo(it)
+        }
+        assertThat(DocumentTextRequest("본문", null, null).readingLevel).isEqualTo(ReadingLevel.GRADE_5_6)
+    }
+
     @Test
     @DisplayName("P-24 업로드 바이트 상한이 계약과 코드에서 같다 (DC-12·DC-13 의 경계 출처)")
     fun `업로드 상한이 계약에서 온다`() {

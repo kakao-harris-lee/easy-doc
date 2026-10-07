@@ -154,17 +154,39 @@ beforeEach(() => {
 
 describe('업로드 화면', () => {
   describe('읽기 수준 선택', () => {
-    it('기능 플래그가 없으면 기본 수준만 보인다', () => {
+    it('중등 수준은 기본 크레딧으로 접수하며 선택을 요청에 보낸다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockResolvedValue(
+        documentCreationResult({ reading_level: 'middle_school', reserved_credits: 0.2 }),
+      )
+      renderPage()
+      const text = '하나 둘 셋 넷 '.padEnd(101, '가')
+      await user.type(screen.getByLabelText('문서 제목'), '중등 수준 글')
+      fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
+      await user.click(screen.getByRole('radio', { name: /레벨 1.*중등/ }))
+      expect(screen.getByText('필요 크레딧 0.2')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
+      expect(createDocumentFromText).toHaveBeenCalledWith(
+        text,
+        'w1',
+        '중등 수준 글',
+        false,
+        'middle_school',
+      )
+    })
+
+    it('레벨 2가 기본이며 기능 플래그가 없으면 레벨 3은 비활성화한다', () => {
       renderPage()
 
-      expect(screen.getByRole('radio', { name: /기본.*초등 5~6학년/ })).toBeChecked()
-      expect(screen.queryByRole('radio', { name: /더 쉽게/ })).not.toBeInTheDocument()
+      expect(screen.getByRole('radio', { name: /레벨 2.*초등 5~6학년/ })).toBeChecked()
+      expect(screen.getByRole('radio', { name: /레벨 1.*중등/ })).toBeEnabled()
+      expect(screen.getByRole('radio', { name: /레벨 3/ })).toBeDisabled()
     })
 
     it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {
       renderPage()
 
-      for (const name of [/글 붙여넣기/, '파일 올리기', /기본.*초등 5~6학년/]) {
+      for (const name of [/글 붙여넣기/, '파일 올리기']) {
         const radio = screen.getByRole('radio', { name })
         expect(radio).not.toHaveClass('sr-only')
         expect(radio).toHaveClass('absolute', 'inset-0', 'size-full', 'opacity-0')
@@ -178,10 +200,10 @@ describe('업로드 화면', () => {
         const user = userEvent.setup()
         renderPage()
 
-        expect(screen.getByText('짧은 문장과 쉬운 표현으로 바꿔요.')).toBeInTheDocument()
+        expect(screen.queryByText('짧은 문장과 쉬운 표현으로 바꿔요.')).not.toBeInTheDocument()
         expect(screen.queryByText(/최소 1.2배의 크레딧/)).not.toBeInTheDocument()
 
-        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
+        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
 
         expect(screen.getByText(/최소 1.2배의 크레딧/)).toBeInTheDocument()
         expect(screen.queryByText('짧은 문장과 쉬운 표현으로 바꿔요.')).not.toBeInTheDocument()
@@ -205,7 +227,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '더 쉬운 안내')
         fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
-        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
+        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
 
         expect(screen.getByText('필요 크레딧 0.3')).toBeInTheDocument()
         expect(
@@ -241,7 +263,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '개인정보 안내')
         await user.type(screen.getByLabelText('바꿀 글'), '주민번호 내용을 확인해 주세요')
-        await user.click(screen.getByRole('radio', { name: /더 쉽게.*초등 3~4학년/ }))
+        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
         await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
         await user.click(await screen.findByRole('button', { name: '이대로 진행' }))
 
@@ -262,7 +284,9 @@ describe('업로드 화면', () => {
     renderPage()
 
     expect(screen.getByRole('radio', { name: /글 붙여넣기.*권장/ })).toBeChecked()
-    expect(screen.getByText(/가능하면 문서의 글을 복사해 붙여넣어 주세요/)).toBeInTheDocument()
+    expect(
+      screen.queryByText(/가능하면 문서의 글을 복사해 붙여넣어 주세요/),
+    ).not.toBeInTheDocument()
     expect(screen.getByText(/파일 구조의 영향을 받지 않아 가장 안정적입니다/)).toBeInTheDocument()
   })
 
@@ -410,10 +434,10 @@ describe('업로드 화면', () => {
     expect(screen.queryByRole('heading', { name: '변환 화면' })).not.toBeInTheDocument()
   })
 
-  it('현재 작업 공간을 헤더 맥락 라벨에 보여준다', () => {
+  it('현재 작업 공간 맥락 라벨을 반복하지 않는다', () => {
     renderPage({ workspaces: [workspaceItem({ id: 'w1', name: '복지정책팀' })], currentId: 'w1' })
 
-    expect(screen.getByText('복지정책팀 · 새 변환')).toBeInTheDocument()
+    expect(screen.queryByText('복지정책팀 · 새 변환')).not.toBeInTheDocument()
   })
 
   it('파일을 고르면 파일명·크기·형식을 카드로 보여준다', async () => {
@@ -846,10 +870,16 @@ describe('업로드 화면', () => {
     ).toBeInTheDocument()
   })
 
-  it('머리말이 서비스 정의 한 문장을 그대로 보여 준다', () => {
+  it('머리말과 입력 영역에서 중복 안내를 제거한다', () => {
     renderPage()
 
-    expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
+    expect(screen.queryByText(SERVICE_DEFINITION)).not.toBeInTheDocument()
+    expect(screen.queryByText(/· 새 변환/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '원문 입력' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('가능하면 문서의 글을 복사해 붙여넣어 주세요. 파일도 올릴 수 있습니다.'),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('변환할 내용을 어떻게 넣을까요?')).not.toBeInTheDocument()
     expect(
       screen.getByText('원문에 있는 내용만 짧은 문장과 쉬운 표현으로 바꾼 초안을 만듭니다.'),
     ).toBeInTheDocument()

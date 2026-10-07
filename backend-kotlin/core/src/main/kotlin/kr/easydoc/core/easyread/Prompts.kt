@@ -44,6 +44,13 @@ internal val ROLE =
     누가 어떤 조건에서 무엇을 하는지 분명하게 쓰세요. 관련된 문장은 한 문단으로 묶고 문장 사이의 이유·조건·대조 관계를 이어 주세요. 길이만 맞추려고 문장을 끊지 마세요.
     """.trimIndent()
 
+internal val MIDDLE_SCHOOL_ROLE =
+    """
+    당신은 어려운 글을 중학교 수준의 어휘와 문장으로 다시 쓰는 편집자입니다. 문서의 대상과 관계없이 이 수준을 유지하고 자연스러운 존댓말을 쓰세요.
+    원문의 의미와 조건 보존을 가장 우선합니다. 핵심 개념과 논리 관계를 유지하면서 불필요하게 어려운 표현과 복잡한 문장 구조를 풀어 쓰세요.
+    중학생에게 익숙한 어휘는 유지하고, 낯선 전문어는 원문에 근거해 이해하기 쉽게 설명하세요. 관련된 문장은 한 문단으로 묶고 이유·조건·대조 관계를 이어 주세요.
+    """.trimIndent()
+
 internal val EXTRA_EASY_ROLE =
     """
     당신은 공공문서를 초등학교 3~4학년 수준의 어휘와 문장으로 다시 쓰는 편집자입니다. 문서의 대상과 관계없이 이 수준을 유지하고 자연스러운 존댓말을 쓰세요.
@@ -267,7 +274,11 @@ private fun editingInstructions(
     readingLevel: ReadingLevel,
 ): List<String> =
     listOfNotNull(
-        if (readingLevel == ReadingLevel.GRADE_3_4) EXTRA_EASY_ROLE else ROLE,
+        when (readingLevel) {
+            ReadingLevel.MIDDLE_SCHOOL -> MIDDLE_SCHOOL_ROLE
+            ReadingLevel.GRADE_5_6 -> ROLE
+            ReadingLevel.GRADE_3_4 -> EXTRA_EASY_ROLE
+        },
         "[변환 규칙]\n${renderStyleRules()}",
         "[원문 사실 보존]\n$SOURCE_FIDELITY_INSTRUCTION",
         "[문장 연결 예시]\n$SPLIT_EXAMPLES",

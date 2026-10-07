@@ -35,7 +35,7 @@ class ProvenanceCreationSitesTest {
                         "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt" to 2,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 8,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 2,
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 13,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 14,
                         // Action-guide and grade 3~4 repair assertions each create a review-only draft.
                         "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 5,
                     ),

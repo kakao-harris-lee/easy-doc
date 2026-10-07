@@ -142,7 +142,7 @@ class LlmPrompt private constructor(
                     Classify suitability: GUIDE, NON_GUIDE, MIXED, UNCERTAIN; actionPresence: FOUND, NONE, UNCERTAIN.
                     Past dates remain historical facts, never turn them into a current deadline. A contact invitation can be one action
                     with multiple eligible groups; do not invent sequential steps. Infer neither absent contact details nor deadlines.
-                    Target reading level: $readingLevel (grade_3_4: 초등학교 3~4학년, grade_5_6: 초등학교 5~6학년).
+                    Target reading level: $readingLevel (middle_school: 중학교, grade_3_4: 초등학교 3~4학년, grade_5_6: 초등학교 5~6학년).
                     Use short clear Korean instructions while retaining exact factual scope.
                     JSON fields: suitability, actionPresence, reason, evidence, actions, coverage.
                     evidence is an array of {sourceUnitIndexes:[0],quote:"verbatim source excerpt"}.

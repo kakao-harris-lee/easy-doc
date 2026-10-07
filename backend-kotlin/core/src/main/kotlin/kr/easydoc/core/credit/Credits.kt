@@ -58,7 +58,7 @@ class Credits(amount: BigDecimal) {
             readingLevel: ReadingLevel,
         ): Credits {
             val base = requiredFor(charCount)
-            if (readingLevel == ReadingLevel.GRADE_5_6) return base
+            if (readingLevel != ReadingLevel.GRADE_3_4) return base
             val baseUnits = base.amount.movePointRight(1)
             val chargedUnits = baseUnits.multiply(BigDecimal("1.2")).setScale(0, RoundingMode.CEILING)
             return Credits(chargedUnits.movePointLeft(1))

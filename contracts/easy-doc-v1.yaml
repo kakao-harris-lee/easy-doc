@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.50.0"
+  version: "2.52.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -7064,9 +7064,9 @@ components:
 
     ReadingLevel:
       type: string
-      enum: [grade_5_6, grade_3_4]
+      enum: [middle_school, grade_5_6, grade_3_4]
       description: |
-        쉬운 글의 목표 표현 수준. 생략한 문서 접수와 기존 행은 `grade_5_6`이다.
+        레벨 1은 middle_school(중등), 레벨 2는 grade_5_6(초등 5~6학년), 레벨 3은 grade_3_4(초등 3~4학년)이다. 중등 수준은 레벨 2와 같은 기본 크레딧을 사용한다. 생략한 문서 접수와 기존 행은 `grade_5_6`이다.
         교육 평가나 특정 독자의 실제 이해를 보증하는 값이 아니다.
 
     ExportFormat:
@@ -7590,7 +7590,7 @@ components:
             경고용 검출 계획 §2.2)이며 두 팔이 같은 검출·확인 처분을 탄다.
         reading_level:
           type: string
-          enum: [grade_5_6, grade_3_4]
+          enum: [middle_school, grade_5_6, grade_3_4]
           default: grade_5_6
           description: JSON 요청과 같은 enum·생략 기본값·기능 OFF 422 규칙을 쓰는 문자열 파트.
 
@@ -8220,7 +8220,7 @@ components:
         based_on_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
         state: { type: string, enum: [current, stale] }
         provenance: { type: string, enum: [fake, provider] }
-        reading_level: { type: string, enum: [grade_5_6, grade_3_4] }
+        reading_level: { type: string, enum: [middle_school, grade_5_6, grade_3_4] }
         suitability: { type: string, enum: [guide, non_guide, mixed, uncertain] }
         action_presence: { type: string, enum: [found, none, uncertain] }
         reason: { type: string, minLength: 1 }
@@ -10564,6 +10564,16 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.52.0"
+    date: "2026-10-07"
+    revision: "THREE-READING-LEVELS"
+    author: codex
+    change: |
+      JSON·multipart 문서 접수와 변환 조회의 reading_level에 middle_school(레벨 1)을 추가한다.
+      grade_5_6은 레벨 2이자 생략 시 기본값이며, grade_3_4는 레벨 3이다.
+      중등 수준은 기본 크레딧을 사용하고, 레벨 3의 기능 토글과 최소 1.2배 정책은 유지한다.
+    ground: "변환 화면 단순화와 중등·초등 5~6학년·초등 3~4학년의 세 수준 선택 요청."
+    compatibility: "기존 기본값과 저장 행은 유지한다. DB 제약 확장과 서버를 먼저 적용한 뒤 새 프런트엔드를 배포한다."
   - version: "2.50.0"
     date: "2026-10-06"
     revision: "START-LIVE-BILLING-OPERATIONS"

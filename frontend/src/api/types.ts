@@ -4,7 +4,7 @@
 export type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
 
 /** 사용자가 요청한 쉬운 글 표현 수준. 생략한 요청은 서버가 grade_5_6으로 해석한다. */
-export type ReadingLevel = 'grade_5_6' | 'grade_3_4'
+export type ReadingLevel = 'middle_school' | 'grade_5_6' | 'grade_3_4'
 
 /**
  * 내보내기 형식. 계약 `components/schemas/ExportFormat`.

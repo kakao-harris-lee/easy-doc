@@ -14,6 +14,20 @@ class PromptsTest {
     private fun systemPromptOf(text: String): String = buildSystemPrompt(text)
 
     @Test
+    fun `중등 수준을 변환과 보정 모두에 적용한다`() {
+        val level = ReadingLevel.ofWireName("middle_school")
+        val prompts =
+            listOf(
+                buildSystemPrompt("본문", readingLevel = level),
+                buildRepairPrompt(ModelDraft("초안"), emptyList(), readingLevel = level).system,
+            )
+        prompts.forEach {
+            assertThat(it).contains("중학교", "원문의 의미와 조건 보존")
+            assertThat(it).doesNotContain("초등학교")
+        }
+    }
+
+    @Test
     fun `기본 수준 프롬프트는 그대로이고 더 쉬운 수준만 별도 지시를 쓴다`() {
         val baseline = buildSystemPrompt("본문")
         val explicitBaseline = buildSystemPrompt("본문", readingLevel = ReadingLevel.GRADE_5_6)
