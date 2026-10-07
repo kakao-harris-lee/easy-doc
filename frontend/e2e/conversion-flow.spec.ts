@@ -211,7 +211,7 @@ test.describe('변환 수직 흐름', () => {
       expect(historyResponse.status()).toBe(200)
       await expect(page.getByText('검수 항목 확인', { exact: true })).toBeVisible()
       await expect(page.getByText('현재 본문과 다름', { exact: true }).first()).toBeVisible()
-      await expect(page.getByText('담당자:').first()).toBeVisible()
+      await expect(page.getByText('확인한 사람:').first()).toBeVisible()
 
       const historyExportPath = `${historyPath}/export`
       const historyDownloadPromise = page.waitForEvent('download')
