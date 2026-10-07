@@ -59,7 +59,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
         (async () => {
           await page.getByLabel('문서 제목').fill(title)
           await page.getByLabel('바꿀 글').fill(text)
-          await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
+          await page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click()
         })(),
       ])
     }
@@ -165,7 +165,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
     expect(firstResponse.status()).toBe(ROUTES.documentCreate.accepted)
     expect(Number(firstResponse.headers()['x-credit-balance'])).toBe(40)

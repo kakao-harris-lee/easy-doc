@@ -326,7 +326,7 @@ test.describe('접근성 — 키보드', () => {
     // 홈에서 로그아웃하면 공개 랜딩으로 돌아간다. 마우스를 쓰지 않고 머리말의 로그인
     // 링크까지 이동해 자격증명 화면으로 들어간다.
     await expect(
-      page.getByRole('heading', { name: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로' }),
+      page.getByRole('heading', { name: '어려운 글을 누구나 읽기 쉬운 글로' }),
     ).toBeVisible()
     await restartTabbing(page)
     await tabTo(page, '로그인')
@@ -349,7 +349,7 @@ test.describe('접근성 — 키보드', () => {
     await page.keyboard.type('키보드 전용 경로 확인')
     await tabTo(page, '바꿀 글')
     await page.keyboard.type(SOURCE_TEXT)
-    await tabTo(page, '쉬운 글 초안 만들기')
+    await tabTo(page, '쉬운 글로 바꾸기')
 
     // 포커스 링은 제거되지 않고 §11 이 요구한 3px 로 보인다.
     expect(await focusedOutlineWidth(page)).toBe(`${FOCUS_RING_PX}px`)
@@ -556,7 +556,7 @@ test.describe('접근성 — 320px', () => {
     await forceFirstConversionReadToProcessing(page)
     await page.getByLabel('문서 제목').fill('320px 확인')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
-    await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
+    await page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click()
     await expect(page.getByRole('heading', { name: '쉬운 글로 바꾸는 중' })).toBeVisible()
     overflow = await horizontalOverflow(page)
     expect(overflow.culprits.join('\n'), '변환 진행이 가로로 넘친다').toBe('')
@@ -610,7 +610,7 @@ test.describe('접근성 — 모션', () => {
     await forceFirstConversionReadToProcessing(page)
     await page.getByLabel('문서 제목').fill('모션 확인')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
-    await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
+    await page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click()
     // 기본 타임아웃(10초)이면 충분하다 — status 강제가 진행 화면을 결정적으로 붙잡아
     // 두므로(위 KDoc), f50ac643이 두던 POLL_DELAY_MS 여유는 더 이상 필요 없다.
     await expect(page.getByRole('heading', { name: '쉬운 글로 바꾸는 중' })).toBeVisible()

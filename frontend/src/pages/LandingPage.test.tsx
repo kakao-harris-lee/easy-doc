@@ -19,7 +19,7 @@ describe('랜딩 화면', () => {
 
     expect(
       screen.getByRole('heading', {
-        name: '다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로',
+        name: '어려운 글을 누구나 읽기 쉬운 글로',
         level: 1,
       }),
     ).toBeInTheDocument()
@@ -42,16 +42,14 @@ describe('랜딩 화면', () => {
   it('어떤 문서를 넣고 넣지 않는지 칩으로 보여 준다', () => {
     renderLanding()
 
-    expect(
-      screen.getByRole('heading', { name: '다양한 안내·설명문을 쉬운 글 초안으로' }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '일상부터 학습과 업무까지' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서에 맞습니다' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '이런 문서는 넣지 마세요' })).toBeInTheDocument()
 
-    expect(screen.getByText('복지 서비스 신청 안내')).toBeInTheDocument()
-    expect(screen.getByText('공지문')).toBeInTheDocument()
-    expect(screen.getByText('지원금·제도 안내')).toBeInTheDocument()
-    expect(screen.getByText('개인정보가 든 민원 서류')).toBeInTheDocument()
+    expect(screen.getByText('학교 가정통신문')).toBeInTheDocument()
+    expect(screen.getByText('서비스 이용 안내')).toBeInTheDocument()
+    expect(screen.getByText('제품 설명')).toBeInTheDocument()
+    expect(screen.getByText('개인정보가 담긴 글')).toBeInTheDocument()
     expect(screen.queryByText('원문 없이 새로 쓸 글')).not.toBeInTheDocument()
     expect(screen.getByText('외부에 공개하지 않는 내부 문서')).toBeInTheDocument()
 
@@ -64,9 +62,9 @@ describe('랜딩 화면', () => {
     renderLanding()
 
     expect(screen.getByRole('heading', { name: '뜻은 그대로, 문장은 쉽게' })).toBeInTheDocument()
-    expect(screen.getByText(/신청 기한 내에 구비서류를 완비하여/)).toBeInTheDocument()
-    expect(screen.getByText(/기간 안에 서류를 모두 챙겨/)).toBeInTheDocument()
-    expect(screen.getByText(/담당자가 고칠 수 있습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/행사 참여를 희망하는 경우/)).toBeInTheDocument()
+    expect(screen.getByText(/행사에 참여하려면 신청 기간 안에/)).toBeInTheDocument()
+    expect(screen.getByText(/결과는 직접 확인하고 고칠 수 있습니다/)).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '원문을 넣어요' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '문단별 다시 쓰기' })).not.toBeInTheDocument()
   })

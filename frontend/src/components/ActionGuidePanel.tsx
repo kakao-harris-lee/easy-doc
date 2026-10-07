@@ -526,7 +526,7 @@ export function ActionGuidePanel({
       return
     }
     if (markReviewed && dirtyRef.current) {
-      setError('먼저 안내문 초안을 저장한 뒤 담당자 확인을 저장해 주세요.')
+      setError('먼저 안내문 초안을 저장한 뒤 내용 확인을 저장해 주세요.')
       return
     }
     if (markReviewed && hasUnresolved(content, source)) {
@@ -562,7 +562,7 @@ export function ActionGuidePanel({
       setGuideConflict(false)
       setReviewChecked(false)
       if (candidateId !== null && job !== null) setDismissedJobId(job.job_id)
-      setNotice(markReviewed ? '담당자 확인을 저장했습니다.' : '안내문 초안을 저장했습니다.')
+      setNotice(markReviewed ? '내용 확인을 저장했습니다.' : '안내문 초안을 저장했습니다.')
       if (markReviewed) onReviewed?.()
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) setGuideConflict(true)
@@ -951,7 +951,7 @@ export function ActionGuidePanel({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm">
               {guide.status === 'reviewed' && !dirty
-                ? '담당자 확인 완료'
+                ? '내용 확인 완료'
                 : 'AI 초안 · 원문과 비교해 확인해 주세요.'}
             </p>
             <div className="flex flex-wrap gap-2">
@@ -979,7 +979,7 @@ export function ActionGuidePanel({
                   void persist(true)
                 }}
               >
-                담당자 확인 저장
+                내용 확인 저장
               </Button>
               <Button
                 type="button"

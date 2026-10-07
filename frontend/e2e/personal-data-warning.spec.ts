@@ -32,7 +32,7 @@ test.describe('개인정보 경고용 검출', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
 
     expect(rejected.status()).toBe(422)
@@ -80,7 +80,7 @@ test.describe('개인정보 경고용 검출', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
 
     expect(rejected.status()).toBe(422)

@@ -12,6 +12,14 @@ import java.math.BigDecimal
 
 class CreditsTest {
     @Test
+    fun `중등 수준에는 추가 배율을 적용하지 않는다`() {
+        val level = ReadingLevel.ofWireName("middle_school")
+        listOf(0, 1, 100, 101, 1001).forEach {
+            assertThat(Credits.requiredFor(it, level)).isEqualTo(Credits.requiredFor(it))
+        }
+    }
+
+    @Test
     @DisplayName("음수 크레딧은 만들 수 없다")
     fun `음수는 거절된다`() {
         assertThatThrownBy { Credits(-1) }.isInstanceOf(InvalidInputException::class.java)

@@ -96,7 +96,7 @@ test.describe('변환 수직 흐름', () => {
       ),
       // 대표 버튼은 AI가 아니라 결과와 작업을 말한다(DESIGN.md §6.2) — `쉬운 글로 바꾸기`에서
       // 바뀐 문구다. 이 화면의 제출 버튼은 하나뿐이라 `exact`로 좁혀 둔다.
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
     expect(createdResponse.status()).toBe(ROUTES.documentCreate.accepted)
 
@@ -211,7 +211,7 @@ test.describe('변환 수직 흐름', () => {
       expect(historyResponse.status()).toBe(200)
       await expect(page.getByText('검수 항목 확인', { exact: true })).toBeVisible()
       await expect(page.getByText('현재 본문과 다름', { exact: true }).first()).toBeVisible()
-      await expect(page.getByText('담당자:').first()).toBeVisible()
+      await expect(page.getByText('확인한 사람:').first()).toBeVisible()
 
       const historyExportPath = `${historyPath}/export`
       const historyDownloadPromise = page.waitForEvent('download')

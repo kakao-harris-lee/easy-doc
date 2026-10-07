@@ -10,6 +10,7 @@ import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.application.illustration.IllustrationPlacementRepository
 import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.FakeLlmProvider
@@ -71,6 +72,33 @@ class DocumentStorageContextTest {
         // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않는다.
         users.markEmailVerified(owner)
         workspace = JdbcWorkspaceRepository(jdbc).create(owner, "기본").id
+    }
+
+    @Test
+    fun `중등 수준이 실제 변환 행에 저장된다`() {
+        runner(keys = listOf(entryFor(1, KEY_GEN_1)), writeKeyVersion = 1)
+            .run(
+                ContextConsumer { context: AssertableApplicationContext ->
+                    assertThat(context).hasNotFailed()
+                    val service = context.getBean(DocumentService::class.java)
+                    val accepted =
+                        service.createFromText(
+                            owner,
+                            PROBE_BODY,
+                            null,
+                            workspace.toString(),
+                            readingLevel = ReadingLevel.MIDDLE_SCHOOL,
+                        )
+                    val stored =
+                        JdbcClient
+                            .create(dataSource())
+                            .sql("SELECT reading_level FROM conversions WHERE id = :id")
+                            .param("id", accepted.conversionId)
+                            .query(String::class.java)
+                            .single()
+                    assertThat(stored).isEqualTo("middle_school")
+                },
+            )
     }
 
     @Test

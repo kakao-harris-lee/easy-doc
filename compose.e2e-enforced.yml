@@ -9,3 +9,5 @@ services:
       EASYDOC_CREDITS_SIGNUP_GRANT: "1"
       EASYDOC_PAYMENT_PROVIDER: stub
       EASYDOC_PAYMENT_MOCK_ENABLED: "true"
+      # E23 purchases a stub subscription; the production-safe default is false.
+      EASYDOC_PAYMENT_PURCHASE_ENABLED: "true"

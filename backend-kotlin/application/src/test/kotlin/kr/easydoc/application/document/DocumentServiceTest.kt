@@ -46,6 +46,22 @@ import java.util.UUID
 /** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
     @Test
+    fun `중등 수준은 별도 토글 없이 기본 예약액과 함께 저장한다`() {
+        val world = World(extraEasyEnabled = false)
+        val accepted =
+            world.service.createFromText(
+                OWNER,
+                "충분한 단어가 있는 본문",
+                null,
+                null,
+                readingLevel = ReadingLevel.MIDDLE_SCHOOL,
+            )
+        assertThat(world.conversions.insertedReadingLevels).containsExactly(ReadingLevel.MIDDLE_SCHOOL)
+        assertThat(accepted.readingLevel).isEqualTo(ReadingLevel.MIDDLE_SCHOOL)
+        assertThat(accepted.reservedCredits).isEqualByComparingTo("0.1")
+    }
+
+    @Test
     fun `더 쉬운 수준은 기능이 꺼져 있으면 거절한다`() {
         val world = World(extraEasyEnabled = false)
 

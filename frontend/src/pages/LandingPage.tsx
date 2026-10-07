@@ -20,7 +20,7 @@ interface FitGroup {
 /**
  * 어떤 문서를 넣는 도구인지 보여 주는 입력 예시.
  *
- * 문단을 늘리지 않고 칩으로만 적는다 — 담당자는 랜딩을 훑어 읽는다. 구현된 범위만
+ * 문단을 늘리지 않고 칩으로만 적는다 — 사용자는 랜딩을 훑어 읽는다. 구현된 범위만
  * 적는다(DESIGN.md §2): 원문을 쉬운 글 초안으로 바꾸는 것이 전부라, 원문이 없는 글
  * 쓰기나 개인정보가 든 서류는 넣지 않는 쪽에 둔다.
  */
@@ -28,12 +28,12 @@ const FIT_GROUPS: readonly FitGroup[] = [
   {
     title: '이런 문서에 맞습니다',
     tone: 'primary',
-    items: ['복지 서비스 신청 안내', '공지문', '지원금·제도 안내'],
+    items: ['학교 가정통신문', '서비스 이용 안내', '제품 설명', '행사 공지'],
   },
   {
     title: '이런 문서는 넣지 마세요',
     tone: 'neutral',
-    items: ['개인정보가 든 민원 서류', '외부에 공개하지 않는 내부 문서'],
+    items: ['개인정보가 담긴 글', '외부에 공개하지 않는 내부 문서'],
   },
 ]
 
@@ -41,7 +41,7 @@ const FIT_GROUPS: readonly FitGroup[] = [
  * 로그인 전 첫 화면.
  *
  * 기능 목록보다 정체성이 먼저다 — 독자(누구를 위한 글인가) · 입력(어떤 문서를 넣는가) ·
- * 초안(무엇이 나오는가) 세 가지 사실을 먼저 읽게 하고, 실제 변환 예시 한 쌍으로 끝낸다.
+ * 초안(무엇이 나오는가) 세 가지 사실을 먼저 읽게 하고, 재작성 예시 한 쌍으로 끝낸다.
  * 자세한 사용법은 가이드로 보낸다.
  */
 export function LandingPage() {
@@ -51,15 +51,15 @@ export function LandingPage() {
         <div>
           <p className="inline-flex items-center gap-2 rounded-full bg-brand-surface px-3 py-1.5 text-sm font-semibold text-brand-foreground">
             <FileCheck2 className="size-4" aria-hidden="true" />
-            공공기관 담당자용 · 쉬운 글 초안 도구
+            쉬운 글로 다시 쓰는 도구
           </p>
           <h1
-            aria-label="다양한 안내·설명문을 누구나 읽을 수 있는 쉬운 글로"
+            aria-label="어려운 글을 누구나 읽기 쉬운 글로"
             className="mt-5 max-w-xl text-[36px] font-extrabold leading-[1.18] tracking-[-0.035em] text-foreground md:text-5xl md:leading-[1.16]"
           >
-            다양한 안내·설명문을
+            어려운 글을
             <br />
-            <span className="text-primary">누구나 읽을 수 있는 쉬운 글</span>로
+            <span className="text-primary">누구나 읽기 쉬운 글</span>로
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-7 text-muted-foreground md:text-lg md:leading-8">
             {SERVICE_DEFINITION}
@@ -119,7 +119,7 @@ export function LandingPage() {
           id="landing-fit-heading"
           className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
         >
-          다양한 안내·설명문을 쉬운 글 초안으로
+          일상부터 학습과 업무까지
         </h2>
         <div className="mt-6 grid gap-6 md:grid-cols-2">
           {FIT_GROUPS.map((group) => (
@@ -147,7 +147,7 @@ export function LandingPage() {
         className="overflow-hidden rounded-[20px] border border-border bg-card shadow-card"
       >
         <div className="border-b border-border px-6 py-6 md:px-8">
-          <p className="text-sm font-semibold text-primary">변환 예시</p>
+          <p className="text-sm font-semibold text-primary">재작성 예시</p>
           <h2
             id="landing-example-heading"
             className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
@@ -155,7 +155,7 @@ export function LandingPage() {
             뜻은 그대로, 문장은 쉽게
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            AI가 만든 초안 그대로입니다. 담당자가 고칠 수 있습니다.
+            어려운 표현을 쉽게 풀어 쓴 예시입니다. 결과는 직접 확인하고 고칠 수 있습니다.
           </p>
         </div>
         <div className="grid md:grid-cols-2">
@@ -165,7 +165,7 @@ export function LandingPage() {
               바꾸기 전
             </figcaption>
             <p className="mt-4 text-[16px] leading-7 text-foreground">
-              신청 기한 내에 구비서류를 완비하여 관할 주민센터에 방문·접수하여야 합니다.
+              행사 참여를 희망하는 경우 신청 기한 내에 온라인 신청서를 제출하여야 합니다.
             </p>
           </figure>
           <figure className="bg-brand-surface/70 p-6 md:p-8">
@@ -179,7 +179,7 @@ export function LandingPage() {
               쉬운 글 초안
             </figcaption>
             <p className="mt-4 text-[16px] font-medium leading-7 text-foreground">
-              기간 안에 서류를 모두 챙겨 주민센터에 가서 신청하세요.
+              행사에 참여하려면 신청 기간 안에 온라인 신청서를 보내세요.
             </p>
           </figure>
         </div>

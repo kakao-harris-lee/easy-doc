@@ -39,7 +39,7 @@ async function openConvertedDocument(page: Page): Promise<string> {
         candidate.url() === api(ROUTES.documentCreate.path) &&
         candidate.request().method() === ROUTES.documentCreate.method,
     ),
-    page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+    page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
   ])
   expect(response.status()).toBe(ROUTES.documentCreate.accepted)
   const { conversion_id: conversionId } = (await response.json()) as CreatedDocument

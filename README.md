@@ -1,6 +1,6 @@
 # Easy-Read AI
 
-공공기관의 행정·복지 문서를 발달장애인 등 정보소외계층을 위한 '쉬운 글'로 자동 변환하고, 담당자가 최종 검수하는 Human-in-the-Loop(HITL) SaaS.
+어려운 글을 누구나 읽기 쉬운 글로 다시 쓰는 도구. 내가 읽을 때도, 다른 사람에게 전할 때도 활용하며, AI가 다시 쓴 결과는 원문과 비교해 확인하고 수정할 수 있습니다.
 
 현재 단계는 **Lean MVP**다. 전체 기획·정책·우선순위의 단일 기준 문서는 [`docs/master-plan.md`](docs/master-plan.md)이며, 기능 작업 전에 해당 문서의 우선순위(4장)와 정책 결정(3장)을 확인한다. 외부 HTTP 계약의 기준은 [`contracts/easy-doc-v1.yaml`](contracts/easy-doc-v1.yaml)이고, 지금 구현된 기능과 남은 backlog는 [`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md)에 있다.
 

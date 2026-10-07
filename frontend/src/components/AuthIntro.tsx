@@ -26,8 +26,8 @@ const STEPS: readonly Step[] = [
   },
   {
     icon: PencilLine,
-    title: '초안 확인·수정',
-    detail: '쉬운 글 초안을 원문과 나란히 놓고 담당자가 직접 고칩니다.',
+    title: '내용 확인·수정',
+    detail: '쉬운 글을 원문과 나란히 놓고 직접 고칩니다.',
   },
   {
     icon: Download,

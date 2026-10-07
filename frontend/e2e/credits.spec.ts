@@ -52,7 +52,7 @@ test.describe('크레딧 계정', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
+      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
     ])
     expect(createdResponse.status()).toBe(ROUTES.documentCreate.accepted)
     // 짧은 원문은 0.1크레딧을 예약한다. 집행 스위치와 무관하게 202에 실린다.
