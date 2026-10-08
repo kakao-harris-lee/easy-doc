@@ -4,7 +4,7 @@
 
 ## 선택한 템플릿
 
-[AdminCN Free](https://shadcnstudio.com/templates/admin-dashboard/admincn-free)의 카드·폼 구성을 Easy-Doc의 첫 화면과 새 변환 화면에 적용한다. Next.js 런타임, 데모 데이터, 관리자 메뉴는 가져오지 않고 기존 React/Vite 화면과 API 흐름에 필요한 컴포넌트만 이식한다.
+[AdminCN Free](https://shadcnstudio.com/templates/admin-dashboard/admincn-free)의 shadcn/ui 컴포넌트를 기존 React/Vite 화면에 이식한다. 화면 배치는 기존 Easy-Doc 형태를 사용한다. 첫 화면은 소개와 일러스트 뒤에 문서 적합성·재작성 예시를 각각 전체 너비로 배치하고, 새 변환 화면은 1280px 이상에서만 입력 폼과 안내를 3:2로 나눈다. Next.js 런타임, 데모 데이터, 관리자 메뉴는 가져오지 않는다.
 
 원본: https://github.com/shadcnstudio/shadcn-nextjs-admincn-admin-template-free
 

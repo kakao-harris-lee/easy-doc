@@ -33,14 +33,6 @@ import {
   type SourceTextState,
 } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '../components/shadcn/card'
 import { Input } from '../components/shadcn/input'
 import { Textarea } from '../components/shadcn/textarea'
 import { Badge } from '../components/ui/Badge'
@@ -212,40 +204,41 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
   const headingId = useId()
   const nameId = useId()
   return (
-    <div ref={cardRef} tabIndex={-1} role="group" aria-labelledby={`${headingId} ${nameId}`}>
-      <Card
-        size="sm"
-        className="gap-1.5 rounded-[10px] border border-input bg-card p-3 shadow-none ring-0"
-      >
-        <p id={headingId} className="text-[15px] font-semibold text-foreground">
-          선택한 파일
-        </p>
-        <div className="flex items-center gap-3">
-          <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground"
-            aria-hidden="true"
-          >
-            <FileText className="size-[18px]" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p id={nameId} className="truncate font-semibold text-foreground">
-              {file.name}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {formatOf(file.name)} · {formatBytes(file.size)}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={onRemove}
-            aria-label={`${file.name} 파일 제거`}
-            className="size-11 shrink-0 px-0"
-          >
-            <X className="size-[18px]" aria-hidden="true" />
-          </Button>
+    <div
+      ref={cardRef}
+      tabIndex={-1}
+      role="group"
+      aria-labelledby={`${headingId} ${nameId}`}
+      className="flex flex-col gap-1.5"
+    >
+      <p id={headingId} className="text-[15px] font-semibold text-foreground">
+        선택한 파일
+      </p>
+      <div className="flex items-center gap-3 rounded-[10px] border border-input bg-card p-3">
+        <span
+          className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground"
+          aria-hidden="true"
+        >
+          <FileText className="size-[18px]" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p id={nameId} className="truncate font-semibold text-foreground">
+            {file.name}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {formatOf(file.name)} · {formatBytes(file.size)}
+          </p>
         </div>
-      </Card>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onRemove}
+          aria-label={`${file.name} 파일 제거`}
+          className="size-11 shrink-0 px-0"
+        >
+          <X className="size-[18px]" aria-hidden="true" />
+        </Button>
+      </div>
     </div>
   )
 }
@@ -681,34 +674,20 @@ export function UploadPage() {
   }
 
   return (
-    <section aria-labelledby="upload-heading" className="space-y-6">
-      <header className="flex flex-col gap-3 border-b border-border pb-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-primary">
-            문서 변환 워크플로
-          </p>
-          <h1
-            id="upload-heading"
-            className="text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
-          >
-            문서 변환하기
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            원문을 준비하고 읽기 수준을 고르면 검토할 수 있는 쉬운 글 초안을 만듭니다.
-          </p>
-        </div>
-        <Badge tone="primary" withIcon={false} className="w-fit">
-          <Wand2 className="size-3.5" aria-hidden="true" />
-          초안 생성 후 직접 검토
-        </Badge>
-      </header>
+    <section aria-labelledby="upload-heading">
+      <h1
+        id="upload-heading"
+        className="mb-6 text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
+      >
+        문서 변환하기
+      </h1>
 
       {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내. 상태를
       토스트로 흘려보내지 않고 화면에 남긴다). */}
       {homeNotice !== null &&
         (homeNoticeTone === 'warning' ? (
           <p
-            className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+            className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
             role="status"
           >
             <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
@@ -716,7 +695,7 @@ export function UploadPage() {
           </p>
         ) : (
           <p
-            className="flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
+            className="mb-6 flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
             role="status"
           >
             <CircleCheck className="size-5 shrink-0" aria-hidden="true" />
@@ -729,7 +708,7 @@ export function UploadPage() {
       읽힌다. */}
       {emailVerificationRequired && (
         <p
-          className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+          className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
           role="status"
         >
           <MailWarning className="size-5 shrink-0" aria-hidden="true" />
@@ -746,314 +725,229 @@ export function UploadPage() {
         </p>
       )}
 
-      {/* AdminCN의 카드형 폼 레이아웃을 적용한다. 작은 화면에서는 입력 순서를 유지한
-      한 열로 접히고, 넓은 화면에서는 안내 카드가 입력 옆에 놓인다. */}
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.85fr)] xl:gap-6">
-        <Card className="min-w-0 overflow-visible">
-          <form className="flex flex-col" onSubmit={(event) => void handleSubmit(event)} noValidate>
-            <CardHeader className="border-b border-border bg-muted/20 px-4 py-5 sm:px-6">
-              <div className="flex items-start gap-3">
-                <span
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
-                  aria-hidden="true"
-                >
-                  1
-                </span>
-                <div className="min-w-0">
-                  <CardTitle className="text-base sm:text-lg">새 쉬운 글 만들기</CardTitle>
-                  <CardDescription className="mt-1 leading-6">
-                    문서 정보와 입력 방식을 정한 뒤 변환 수준을 선택합니다.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-6 px-4 py-5 sm:px-6">
-              {error !== null && (
-                <p className="form-error" role="alert">
-                  {error}
-                </p>
-              )}
+      {/* 1280px 이상에서만 3:2로 나눈다. 그 아래에서는 한 열로 접히고, 안내 카드는
+      DOM 순서 그대로 폼 **뒤에** 놓여 입력과 대표 버튼 사이에 끼지 않는다. */}
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)]">
+        <form
+          className="rounded-2xl border border-border bg-card shadow-card"
+          onSubmit={(event) => void handleSubmit(event)}
+          noValidate
+        >
+          <div className="flex flex-col gap-5 px-4 py-5 sm:px-6">
+            {error !== null && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
 
-              {/* 개인정보 경고용 검출(422) — 검출됐을 때만 말한다. 통과했을 때는 아무
+            {/* 개인정보 경고용 검출(422) — 검출됐을 때만 말한다. 통과했을 때는 아무
             말도 하지 않는다(이름·주소는 잡지 못하므로 "안전합니다"류는 보증처럼
             읽힌다). "이대로 진행"을 누르면 같은 요청을 확인 플래그만 참으로 바꿔
             다시 보낸다 — 값 자체는 바꾸지 않는다(자동 마스킹이 아니다). */}
-              {personalDataWarning !== null && (
-                <div
-                  className="flex flex-col items-start gap-3 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
-                  role="alert"
+            {personalDataWarning !== null && (
+              <div
+                className="flex flex-col items-start gap-3 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                role="alert"
+              >
+                <p className="m-0 flex items-center gap-2 font-semibold text-warning">
+                  <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
+                  {personalDataWarning}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  loading={submitting}
+                  onClick={() => void handleProceedWithPersonalData()}
                 >
-                  <p className="m-0 flex items-center gap-2 font-semibold text-warning">
-                    <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
-                    {personalDataWarning}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    loading={submitting}
-                    onClick={() => void handleProceedWithPersonalData()}
-                  >
-                    이대로 진행
-                  </Button>
-                </div>
-              )}
+                  이대로 진행
+                </Button>
+              </div>
+            )}
 
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
-                    aria-hidden="true"
-                  >
-                    2
-                  </span>
-                  <div>
-                    <h2 className="text-[15px] font-semibold text-foreground">문서 정보</h2>
-                    <p className="text-sm text-muted-foreground">
-                      변환 기록에서 문서를 구분할 제목을 입력하세요.
-                    </p>
-                  </div>
-                </div>
-                <div className="field">
-                  <label htmlFor={titleFieldId}>문서 제목</label>
-                  <Input
-                    id={titleFieldId}
-                    type="text"
-                    value={title}
-                    maxLength={MAX_TITLE_LENGTH}
-                    placeholder="예: 가을 행사 신청 안내"
-                    onChange={(event) => setTitle(event.target.value)}
+            <div className="field">
+              <label htmlFor={titleFieldId}>문서 제목</label>
+              <Input
+                id={titleFieldId}
+                type="text"
+                className="px-3.5"
+                value={title}
+                maxLength={MAX_TITLE_LENGTH}
+                placeholder="예: 가을 행사 신청 안내"
+                onChange={(event) => setTitle(event.target.value)}
+              />
+              {/* aria-invalid를 길이로 걸지 않는다 — 상한을 넘긴 제목도 거절이 아니라 잘림이라
+              「잘못된 값」이라는 안내가 실제 처분과 어긋난다. maxLength가 입력을 돕는다. */}
+              <p className="field-hint">
+                변환 기록에서 문서를 구분하는 이름입니다. {MAX_TITLE_LENGTH}자 이내.
+              </p>
+            </div>
+
+            {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
+            <fieldset aria-label="입력 방식">
+              <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
+                <label className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}>
+                  <input
+                    className={RADIO_OVERLAY_CLASS}
+                    type="radio"
+                    name="input-mode"
+                    value="text"
+                    checked={mode === 'text'}
+                    onChange={() => selectMode('text')}
                   />
-                  {/* aria-invalid를 길이로 걸지 않는다 — 상한을 넘긴 제목도 거절이 아니라 잘림이라
-                「잘못된 값」이라는 안내가 실제 처분과 어긋난다. 입력 칸의 maxLength가 입력을 돕는다. */}
-                  <p className="field-hint">
-                    변환 기록에서 문서를 구분하는 이름입니다. {MAX_TITLE_LENGTH}자 이내.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
-                    aria-hidden="true"
-                  >
-                    3
+                  <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기
+                  <span className="rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
+                    권장
                   </span>
-                  <div>
-                    <h2 className="text-[15px] font-semibold text-foreground">원문 입력 방식</h2>
-                    <p className="text-sm text-muted-foreground">
-                      가장 안정적인 붙여넣기 또는 파일을 선택하세요.
-                    </p>
-                  </div>
-                </div>
-                {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
-                <fieldset aria-label="입력 방식">
-                  <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
-                    <label
-                      className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}
-                    >
+                </label>
+                <label className={`${SEGMENT_CLASS} ${mode === 'file' ? SEGMENT_ON : SEGMENT_OFF}`}>
+                  <input
+                    className={RADIO_OVERLAY_CLASS}
+                    type="radio"
+                    name="input-mode"
+                    value="file"
+                    checked={mode === 'file'}
+                    onChange={() => selectMode('file')}
+                  />
+                  <Upload className="size-[18px]" aria-hidden="true" />
+                  파일 올리기
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset
+              className="rounded-xl border border-border p-3 sm:p-4"
+              aria-describedby={readingLevel === 'grade_3_4' ? readingLevelHintId : undefined}
+            >
+              <legend className="px-1 text-[15px] font-semibold">어느 정도로 쉽게 바꿀까요?</legend>
+              <div className="grid grid-cols-3 gap-2">
+                {READING_LEVEL_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex min-h-24 flex-col items-start gap-2 rounded-lg border p-2 sm:p-3 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${option.value === 'grade_3_4' && !extraEasyEnabled() ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
+                  >
+                    <span className="flex items-center gap-1 sm:gap-1.5">
                       <input
-                        className={RADIO_OVERLAY_CLASS}
+                        className="size-3.5 shrink-0 accent-primary sm:size-4"
                         type="radio"
-                        name="input-mode"
-                        value="text"
-                        checked={mode === 'text'}
-                        onChange={() => selectMode('text')}
+                        name="reading-level"
+                        value={option.value}
+                        checked={readingLevel === option.value}
+                        disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
+                        onChange={() => setReadingLevel(option.value)}
                       />
-                      <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기
-                      <span className="rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
-                        권장
+                      <span className="whitespace-nowrap text-xs font-bold sm:text-[15px]">
+                        {option.name}
                       </span>
-                    </label>
-                    <label
-                      className={`${SEGMENT_CLASS} ${mode === 'file' ? SEGMENT_ON : SEGMENT_OFF}`}
-                    >
-                      <input
-                        className={RADIO_OVERLAY_CLASS}
-                        type="radio"
-                        name="input-mode"
-                        value="file"
-                        checked={mode === 'file'}
-                        onChange={() => selectMode('file')}
-                      />
-                      <Upload className="size-[18px]" aria-hidden="true" />
-                      파일 올리기
-                    </label>
-                  </div>
-                </fieldset>
+                    </span>
+                    <span className="text-xs text-muted-foreground sm:text-sm">{option.grade}</span>
+                    {option.value === 'grade_3_4' && !extraEasyEnabled() && (
+                      <span className="text-xs text-muted-foreground">준비 중</span>
+                    )}
+                  </label>
+                ))}
               </div>
+              {readingLevel === 'grade_3_4' && (
+                <p id={readingLevelHintId} className="field-hint mt-2">
+                  좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)
+                </p>
+              )}
+            </fieldset>
 
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
-                    aria-hidden="true"
-                  >
-                    4
-                  </span>
-                  <div>
-                    <h2 className="text-[15px] font-semibold text-foreground">변환 수준</h2>
-                    <p className="text-sm text-muted-foreground">
-                      읽는 사람에게 맞는 쉬운 정도를 선택하세요.
-                    </p>
-                  </div>
-                </div>
-                <fieldset
-                  className="rounded-xl border border-border p-3 sm:p-4"
-                  aria-describedby={readingLevel === 'grade_3_4' ? readingLevelHintId : undefined}
-                >
-                  <legend className="px-1 text-[15px] font-semibold">
-                    어느 정도로 쉽게 바꿀까요?
-                  </legend>
-                  <div className="grid grid-cols-3 gap-2">
-                    {READING_LEVEL_OPTIONS.map((option) => (
-                      <label
-                        key={option.value}
-                        className={`flex min-h-24 flex-col items-start gap-2 rounded-lg border p-2 sm:p-3 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring ${option.value === 'grade_3_4' && !extraEasyEnabled() ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'} ${readingLevel === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
-                      >
-                        <span className="flex items-center gap-1 sm:gap-1.5">
-                          <input
-                            className="size-3.5 shrink-0 accent-primary sm:size-4"
-                            type="radio"
-                            name="reading-level"
-                            value={option.value}
-                            checked={readingLevel === option.value}
-                            disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
-                            onChange={() => setReadingLevel(option.value)}
-                          />
-                          <span className="whitespace-nowrap text-xs font-bold sm:text-[15px]">
-                            {option.name}
-                          </span>
-                        </span>
-                        <span className="text-xs text-muted-foreground sm:text-sm">
-                          {option.grade}
-                        </span>
-                        {option.value === 'grade_3_4' && !extraEasyEnabled() && (
-                          <span className="text-xs text-muted-foreground">준비 중</span>
-                        )}
-                      </label>
-                    ))}
-                  </div>
-                  {readingLevel === 'grade_3_4' && (
-                    <p id={readingLevelHintId} className="field-hint mt-2">
-                      좀 더 긴 문장으로 바뀔 수 있어요(최소 1.2배의 크레딧 소요)
-                    </p>
-                  )}
-                </fieldset>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
-                    aria-hidden="true"
-                  >
-                    5
-                  </span>
-                  <div>
-                    <h2 className="text-[15px] font-semibold text-foreground">원문 내용</h2>
-                    <p className="text-sm text-muted-foreground">
-                      변환할 글을 붙여넣거나 선택한 파일을 확인하세요.
-                    </p>
-                  </div>
-                </div>
-                {mode === 'text' ? (
-                  <div className="field">
-                    <label htmlFor={textareaId}>바꿀 글</label>
-                    <Textarea
-                      id={textareaId}
-                      className="upload-textarea min-h-52 sm:min-h-80"
-                      value={text}
-                      rows={14}
-                      aria-describedby={
-                        tooLong || tooShort
-                          ? `${textInputGuideId} ${tooLong ? overflowId : shortTextId} ${counterId}`
-                          : `${textInputGuideId} ${counterId}`
-                      }
-                      aria-invalid={tooLong || tooShort}
-                      onChange={handleTextChange}
-                    />
-                    <p id={textInputGuideId} className="field-hint">
-                      {TEXT_INPUT_RECOMMENDATION}
-                    </p>
-                    {/* 글자 수 안내를 라이브 영역으로 두지 않는다 — 한 글자마다 낭독기가 숫자를
+            {mode === 'text' ? (
+              <div className="field">
+                <label htmlFor={textareaId}>바꿀 글</label>
+                <Textarea
+                  id={textareaId}
+                  className="upload-textarea field-sizing-fixed px-3.5 py-3 leading-relaxed min-h-52 sm:min-h-80"
+                  value={text}
+                  rows={14}
+                  aria-describedby={
+                    tooLong || tooShort
+                      ? `${textInputGuideId} ${tooLong ? overflowId : shortTextId} ${counterId}`
+                      : `${textInputGuideId} ${counterId}`
+                  }
+                  aria-invalid={tooLong || tooShort}
+                  onChange={handleTextChange}
+                />
+                <p id={textInputGuideId} className="field-hint">
+                  {TEXT_INPUT_RECOMMENDATION}
+                </p>
+                {/* 글자 수 안내를 라이브 영역으로 두지 않는다 — 한 글자마다 낭독기가 숫자를
                 읽고, 상한을 넘으면 제출 오류와 같은 말을 두 번 알리게 된다. 입력 칸이
                 aria-describedby로 이 문단을 가리키고, 넘긴 사실은 aria-invalid와 제출
                 시점의 오류(role="alert")가 알린다. */}
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      {tooLong && (
-                        <p id={overflowId} className="field-error">
-                          상한을 넘었습니다. 문서를 나눠 변환해 주세요.
-                        </p>
-                      )}
-                      {tooShort && (
-                        <p id={shortTextId} className="field-error">
-                          {MIN_WORDS}단어 이상인 문장을 입력해 주세요.
-                        </p>
-                      )}
-                      {isLongText && (
-                        <p className="m-0 text-sm text-warning">
-                          긴 문서입니다. 변환에 시간이 더 걸릴 수 있으니 필요 크레딧을 확인해
-                          주세요.
-                        </p>
-                      )}
-                      {isVeryLongText && (
-                        <p className="m-0 text-sm text-warning">
-                          긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.
-                        </p>
-                      )}
-                      {/* 필요 크레딧은 언제나 보여준다(N). 가용(M)은 조회가 끝났을 때만
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  {tooLong && (
+                    <p id={overflowId} className="field-error">
+                      상한을 넘었습니다. 문서를 나눠 변환해 주세요.
+                    </p>
+                  )}
+                  {tooShort && (
+                    <p id={shortTextId} className="field-error">
+                      {MIN_WORDS}단어 이상인 문장을 입력해 주세요.
+                    </p>
+                  )}
+                  {isLongText && (
+                    <p className="m-0 text-sm text-warning">
+                      긴 문서입니다. 변환에 시간이 더 걸릴 수 있으니 필요 크레딧을 확인해 주세요.
+                    </p>
+                  )}
+                  {isVeryLongText && (
+                    <p className="m-0 text-sm text-warning">
+                      긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.
+                    </p>
+                  )}
+                  {/* 필요 크레딧은 언제나 보여준다(N). 가용(M)은 조회가 끝났을 때만
                   덧붙인다 — 조회 전이거나 실패하면 필요 크레딧만 보여준다(C2). 집행이
                   꺼져 있으면(조회로 확인된 경우만) 그 사실도 함께 알린다 — `/usage`
                   크레딧 카드와 같은 문구다. */}
-                      <p className="m-0 text-sm text-muted-foreground">
-                        필요 크레딧 {formatCredits(neededCredits)}
-                        {availableCredits !== null && ` / 가용 ${formatCredits(availableCredits)}`}
-                        {creditsEnforced === false && ' (지금은 집행되지 않습니다)'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* 파일을 고르면 이 묶음을 화면에서 내리되 DOM에는 남긴다 — 같은 파일을
-                다시 고를 수 있게 하려면 removeFile이 이 입력의 value를 비워야 한다. */}
-                    <div className={file === null ? 'field' : 'hidden'}>
-                      <label htmlFor={fileId}>바꿀 파일</label>
-                      <input
-                        id={fileId}
-                        ref={fileInputRef}
-                        type="file"
-                        accept={ACCEPTED_EXTENSIONS}
-                        aria-describedby={`${fileId}-hint`}
-                        onChange={handleFileChange}
-                      />
-                      <p className="field-hint" id={`${fileId}-hint`}>
-                        {SUPPORTED_FORMAT_LABEL} 파일, {formatBytes(MAX_UPLOAD_BYTES)} 이내.
-                        파일에서 뽑은 글자 수가 {chars(MAX_CHARS)}자를 넘으면 변환할 수 없습니다.
-                        필요 크레딧은 파일에서 추출한 글자 수를 기준으로 계산합니다.
-                      </p>
-                    </div>
-                    {file !== null && (
-                      <SelectedFileCard file={file} onRemove={removeFile} cardRef={fileCardRef} />
-                    )}
-                    <section
-                      className="rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
-                      aria-labelledby={fileFormatGuideId}
-                    >
-                      <h3 id={fileFormatGuideId} className="text-sm font-semibold text-foreground">
-                        파일 형식별 안내
-                      </h3>
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-[22px] text-muted-foreground">
-                        <li>{DOCX_HWPX_STRUCTURE_NOTICE}</li>
-                        <li>{PDF_EXTRACTION_NOTICE}</li>
-                      </ul>
-                    </section>
-                  </>
-                )}
+                  <p className="m-0 text-sm text-muted-foreground">
+                    필요 크레딧 {formatCredits(neededCredits)}
+                    {availableCredits !== null && ` / 가용 ${formatCredits(availableCredits)}`}
+                    {creditsEnforced === false && ' (지금은 집행되지 않습니다)'}
+                  </p>
+                </div>
               </div>
-            </CardContent>
-            <CardFooter className="sticky bottom-0 flex flex-col items-stretch gap-2 rounded-none border-t border-border bg-card/95 px-4 pt-3 backdrop-blur [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:px-6 sm:py-0 sm:backdrop-blur-none">
+            ) : (
+              <>
+                {/* 파일을 고르면 이 묶음을 화면에서 내리되 DOM에는 남긴다 — 같은 파일을
+                다시 고를 수 있게 하려면 removeFile이 이 입력의 value를 비워야 한다. */}
+                <div className={file === null ? 'field' : 'hidden'}>
+                  <label htmlFor={fileId}>바꿀 파일</label>
+                  <input
+                    id={fileId}
+                    ref={fileInputRef}
+                    type="file"
+                    accept={ACCEPTED_EXTENSIONS}
+                    aria-describedby={`${fileId}-hint`}
+                    onChange={handleFileChange}
+                  />
+                  <p className="field-hint" id={`${fileId}-hint`}>
+                    {SUPPORTED_FORMAT_LABEL} 파일, {formatBytes(MAX_UPLOAD_BYTES)} 이내. 파일에서
+                    뽑은 글자 수가 {chars(MAX_CHARS)}자를 넘으면 변환할 수 없습니다. 필요 크레딧은
+                    파일에서 추출한 글자 수를 기준으로 계산합니다.
+                  </p>
+                </div>
+                {file !== null && (
+                  <SelectedFileCard file={file} onRemove={removeFile} cardRef={fileCardRef} />
+                )}
+                <section
+                  className="rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                  aria-labelledby={fileFormatGuideId}
+                >
+                  <h3 id={fileFormatGuideId} className="text-sm font-semibold text-foreground">
+                    파일 형식별 안내
+                  </h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-[22px] text-muted-foreground">
+                    <li>{DOCX_HWPX_STRUCTURE_NOTICE}</li>
+                    <li>{PDF_EXTRACTION_NOTICE}</li>
+                  </ul>
+                </section>
+              </>
+            )}
+
+            <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t border-border bg-card/95 px-4 pt-3 backdrop-blur [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               {mode === 'text' && (
                 <p
                   id={counterId}
@@ -1077,99 +971,63 @@ export function UploadPage() {
                 <Wand2 className="size-[18px]" aria-hidden="true" />
                 {submitting ? '올리는 중…' : '쉬운 글로 바꾸기'}
               </Button>
-            </CardFooter>
-          </form>
-        </Card>
+            </div>
+          </div>
+        </form>
 
-        <aside className="flex flex-col gap-5">
-          <Card role="region" aria-labelledby={guideId}>
-            <CardHeader className="px-5 pb-4 sm:px-6">
-              {/* 대표 행동은 폼의 제출 버튼 하나뿐이다. 헤더 대신 이 카드가 AI 초안
-              이라는 사실을 알린다 — 안내 카드가 그 사실이 필요한 자리다. */}
-              <Badge tone="primary" withIcon={false} className="w-fit">
-                <FileCheck2 className="size-4" aria-hidden="true" />
-                AI 초안 · 사람 검토 필수
-              </Badge>
-              <CardTitle id={guideId} className="mt-2 text-[17px] leading-6">
-                이 작업에서 일어나는 일
-              </CardTitle>
-              <CardDescription className="leading-6">
-                초안 생성 뒤 원문과 결과를 확인할 수 있습니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 sm:px-6">
-              <ol className="flex flex-col gap-4">
-                {GUIDE_STEPS.map((step, index) => (
-                  <li key={step.title} className="flex items-start gap-3">
-                    <span
-                      className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
-                      aria-hidden="true"
-                    >
-                      {index + 1}
-                    </span>
-                    <div className="flex flex-col">
-                      <strong className="text-[15px] font-semibold text-foreground">
-                        {step.title}
-                      </strong>
-                      <small className="text-sm leading-[22px] text-muted-foreground">
-                        {step.detail}
-                      </small>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              {/* 지원 형식·크기는 코드 상수에서 만든다 — 안내 문구와 실제 상한이 갈리면
-              사용자는 화면을 믿고 거절당한다. */}
-              <dl className="mt-5 flex flex-col gap-2 border-t border-border pt-4 text-sm">
-                <div className="flex gap-3">
-                  <dt className="w-[4.5rem] shrink-0 text-muted-foreground">지원 형식</dt>
-                  <dd className="font-medium text-foreground">{SUPPORTED_FORMAT_LABEL}</dd>
-                </div>
-                <div className="flex gap-3">
-                  <dt className="w-[4.5rem] shrink-0 text-muted-foreground">파일 크기</dt>
-                  <dd className="font-medium text-foreground">
-                    {formatBytes(MAX_UPLOAD_BYTES)} 이내
-                  </dd>
-                </div>
-                <div className="flex gap-3">
-                  <dt className="w-[4.5rem] shrink-0 text-muted-foreground">글자 수</dt>
-                  <dd className="font-medium text-foreground">한 번에 {chars(MAX_CHARS)}자까지</dd>
-                </div>
-              </dl>
-            </CardContent>
-            <CardFooter className="border-t border-border px-5 py-4 sm:px-6">
-              <p className="m-0 text-sm leading-6 text-muted-foreground">
-                생성된 글은 제출 후 검수 화면에서 직접 확인하고 수정합니다.
-              </p>
-            </CardFooter>
-          </Card>
-
-          <Card role="region" aria-labelledby={`${guideId}-support`} size="sm">
-            <CardHeader className="px-5 pb-3 sm:px-6">
-              <CardTitle id={`${guideId}-support`} className="text-base">
-                업로드 전 확인
-              </CardTitle>
-              <CardDescription className="leading-6">
-                입력 전에 아래 기준을 확인하면 변환 흐름이 더 매끄럽습니다.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 sm:px-6">
-              <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
-                <li className="flex items-start gap-2">
-                  <CircleCheck className="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  글을 붙여넣으면 파일 구조의 영향을 덜 받습니다.
+        <aside>
+          <section
+            className="rounded-2xl border border-border bg-card p-5 sm:p-6"
+            aria-labelledby={guideId}
+          >
+            {/* 대표 행동은 폼의 제출 버튼 하나뿐이다. 헤더 대신 이 카드가 AI 초안
+            이라는 사실을 알린다 — 안내 카드가 그 사실이 필요한 자리다. */}
+            <Badge tone="primary" withIcon={false}>
+              <FileCheck2 className="size-4" aria-hidden="true" />
+              AI 초안 · 사람 검토 필수
+            </Badge>
+            <h2 id={guideId} className="mt-4 text-[17px] font-bold leading-6 text-foreground">
+              이 작업에서 일어나는 일
+            </h2>
+            <ol className="mt-4 flex flex-col gap-4">
+              {GUIDE_STEPS.map((step, index) => (
+                <li key={step.title} className="flex items-start gap-3">
+                  <span
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
+                    aria-hidden="true"
+                  >
+                    {index + 1}
+                  </span>
+                  <div className="flex flex-col">
+                    <strong className="text-[15px] font-semibold text-foreground">
+                      {step.title}
+                    </strong>
+                    <small className="text-sm leading-[22px] text-muted-foreground">
+                      {step.detail}
+                    </small>
+                  </div>
                 </li>
-                <li className="flex items-start gap-2">
-                  <CircleCheck className="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  {SUPPORTED_FORMAT_LABEL} 형식과 {formatBytes(MAX_UPLOAD_BYTES)} 제한을 확인하세요.
-                </li>
-                <li className="flex items-start gap-2">
-                  <CircleCheck className="mt-1 size-4 shrink-0 text-primary" aria-hidden="true" />
-                  개인정보가 포함된 원문은 제출 전에 내용을 다시 확인하세요.
-                </li>
-              </ul>
-            </CardContent>
-          </Card>
+              ))}
+            </ol>
+            {/* 지원 형식·크기는 코드 상수에서 만든다 — 안내 문구와 실제 상한이 갈리면
+            사용자는 화면을 믿고 거절당한다. */}
+            <dl className="mt-5 flex flex-col gap-2 border-t border-border pt-4 text-sm">
+              <div className="flex gap-3">
+                <dt className="w-[4.5rem] shrink-0 text-muted-foreground">지원 형식</dt>
+                <dd className="font-medium text-foreground">{SUPPORTED_FORMAT_LABEL}</dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-[4.5rem] shrink-0 text-muted-foreground">파일 크기</dt>
+                <dd className="font-medium text-foreground">
+                  {formatBytes(MAX_UPLOAD_BYTES)} 이내
+                </dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-[4.5rem] shrink-0 text-muted-foreground">글자 수</dt>
+                <dd className="font-medium text-foreground">한 번에 {chars(MAX_CHARS)}자까지</dd>
+              </div>
+            </dl>
+          </section>
         </aside>
       </div>
 
