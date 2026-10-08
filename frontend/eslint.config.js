@@ -33,6 +33,16 @@ export default tseslint.config(
     files: ['**/*.test.{ts,tsx}', 'src/test/**/*.ts', 'e2e/**/*.ts', 'playwright*.config.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+  // shadcn/ui의 링크 스타일 API는 Button과 buttonVariants를 함께 내보낸다.
+  {
+    files: ['src/components/shadcn/button.tsx'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true, allowExportNames: ['buttonVariants'] },
+      ],
+    },
+  },
   // 프리렌더 엔트리는 빌드 때 Node에서만 돌고 클라이언트 번들에 들어가지 않는다 —
   // Fast Refresh 규칙(컴포넌트만 내보내라)이 적용될 파일이 아니다.
   {

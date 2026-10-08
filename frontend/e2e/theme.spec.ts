@@ -480,6 +480,89 @@ test.describe('테마 디자인 브라우저 검증', () => {
     expect(documentPosts).toEqual([])
   })
 
+  test('모바일 업로드 제출 버튼은 긴 폼을 스크롤해도 하단에 고정되고 포커스 링이 잘리지 않는다', async ({
+    page,
+  }, testInfo) => {
+    await mockApi(page)
+    await seedAuthenticatedTheme(page, 'dark')
+
+    const longText = Array.from(
+      { length: 24 },
+      (_, index) => `${index + 1}번째 문장은 모바일 폼의 스크롤 위치를 확인하기 위한 내용입니다.`,
+    ).join('\n')
+
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/')
+      await expect(page.getByRole('heading', { name: '문서 변환하기', exact: true })).toBeVisible()
+
+      const source = page.getByLabel('바꿀 글')
+      const submit = page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true })
+      await source.fill(longText)
+      await source.evaluate((element) => {
+        element.scrollIntoView({ block: 'center', inline: 'nearest' })
+      })
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0)
+
+      const scrollYBeforeFocus = await page.evaluate(() => window.scrollY)
+      const boundsBeforeFocus = await submit.boundingBox()
+      expect(boundsBeforeFocus).not.toBeNull()
+      expect(boundsBeforeFocus?.x ?? 0).toBeGreaterThan(0)
+      expect((boundsBeforeFocus?.x ?? 0) + (boundsBeforeFocus?.width ?? 0)).toBeLessThanOrEqual(
+        width,
+      )
+      expect(boundsBeforeFocus?.y ?? 0).toBeGreaterThanOrEqual(900 - 180)
+      expect((boundsBeforeFocus?.y ?? 0) + (boundsBeforeFocus?.height ?? 0)).toBeLessThanOrEqual(
+        900,
+      )
+
+      await submit.evaluate((element) => element.focus({ preventScroll: true }))
+      await expect(submit).toBeFocused()
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(scrollYBeforeFocus)
+
+      const boundsAfterFocus = await submit.boundingBox()
+      expect(boundsAfterFocus).not.toBeNull()
+      expect(boundsAfterFocus?.x ?? 0).toBeGreaterThan(0)
+      expect((boundsAfterFocus?.x ?? 0) + (boundsAfterFocus?.width ?? 0)).toBeLessThanOrEqual(width)
+      expect(boundsAfterFocus?.y ?? 0).toBeGreaterThanOrEqual(900 - 180)
+      expect((boundsAfterFocus?.y ?? 0) + (boundsAfterFocus?.height ?? 0)).toBeLessThanOrEqual(900)
+
+      const focusAudit = await submit.evaluate((element) => {
+        const style = getComputedStyle(element)
+        const clippingAncestors: Array<{ tag: string; className: string; overflow: string }> = []
+        let ancestor = element.parentElement
+        while (ancestor !== null && ancestor !== document.body) {
+          const ancestorStyle = getComputedStyle(ancestor)
+          if (
+            ancestorStyle.overflowX === 'hidden' ||
+            ancestorStyle.overflowX === 'clip' ||
+            ancestorStyle.overflowY === 'hidden' ||
+            ancestorStyle.overflowY === 'clip'
+          ) {
+            clippingAncestors.push({
+              tag: ancestor.tagName,
+              className: ancestor.className,
+              overflow: `${ancestorStyle.overflowX}/${ancestorStyle.overflowY}`,
+            })
+          }
+          ancestor = ancestor.parentElement
+        }
+        return {
+          outlineStyle: style.outlineStyle,
+          outlineWidth: style.outlineWidth,
+          clippingAncestors,
+        }
+      })
+      expect(focusAudit.outlineStyle).toBe('solid')
+      expect(focusAudit.outlineWidth).toBe('3px')
+      expect(focusAudit.clippingAncestors).toEqual([])
+
+      await page.screenshot({
+        path: testInfo.outputPath(`upload-sticky-${width}.png`),
+      })
+    }
+  })
+
   test('모바일 메뉴와 작업 공간 대화상자가 화면 안에 남는다', async ({ page }) => {
     await mockApi(page)
     await seedAuthenticatedTheme(page, 'dark')
