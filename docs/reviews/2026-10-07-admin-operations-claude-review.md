@@ -1,5 +1,8 @@
 # 관리자 운영 개선 검증·Claude 리뷰
 
+> 2026-10-08 통합 상태: 아래는 최초 브랜치의 계획·검증 기록이다. 현재 main 통합에서는
+> 관리자 마이그레이션을 V47로 옮겼으며, 최신 검증은 [통합 기록](../reviews/2026-10-08-admin-operations-integration.md)을 따른다.
+
 ## 범위
 
 - 구현 브랜치: `feat/admin-operations-20261007`

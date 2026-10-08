@@ -72,3 +72,41 @@ it('does not invent elapsed time for legacy card deletion without a recorded tra
     '/admin?tab=workspaces&workspace=w1',
   )
 })
+
+it('keeps a manual-review refund visible through its state filter and links to billing', async () => {
+  vi.mocked(listAdminOperations).mockResolvedValue({
+    items: [
+      {
+        id: 'refund-uncertain',
+        kind: 'refund',
+        state: 'manual_review',
+        environment: 'toss_test',
+        workspace_id: 'w1',
+        workspace_name: '환불 고객',
+        created_at: '2026-10-08T00:00:00Z',
+        severity: 2,
+        next_action: '환불 결과 재조회·확인',
+      },
+    ],
+    total: 1,
+    page: 1,
+    size: 20,
+    counts: { refund: 1 },
+  })
+  render(<AdminOperationsTab />)
+  expect(await screen.findByText(/확인 필요 · refund · manual_review/)).toBeVisible()
+  expect(screen.getByText('다음 조치: 환불 결과 재조회·확인')).toBeVisible()
+  const user = userEvent.setup()
+  await user.type(screen.getByLabelText('작업 상태'), 'manual_review')
+  await user.tab()
+  await waitFor(() =>
+    expect(listAdminOperations).toHaveBeenLastCalledWith(
+      expect.objectContaining({ state: 'manual_review', page: 1 }),
+      expect.anything(),
+    ),
+  )
+  expect(await screen.findByRole('link', { name: '상세 확인' })).toHaveAttribute(
+    'href',
+    '/admin?tab=workspaces&workspace=w1',
+  )
+})

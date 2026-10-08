@@ -119,6 +119,55 @@ class BillingNotificationEnvironmentMigrationTest {
             .isZero()
     }
 
+    @Test
+    fun `admin recovery upgrades V46 without inventing notification history or removing reading levels`() {
+        val db = PostgresTestSupport.createEmptyDatabase("admin_recovery_upgrade")
+        Flyway
+            .configure()
+            .dataSource(db.jdbcUrl, db.username, db.password)
+            .target("46")
+            .load()
+            .migrate()
+        val workspace = workspace(db)
+        db.execute(
+            """
+            INSERT INTO billing_notifications(workspace_id,event_key,event_type,state,created_at)
+            VALUES ('$workspace','legacy-recovery','upcoming','manual_review','2026-10-01T00:00:00Z')
+            """.trimIndent(),
+        )
+        val flyway = Flyway.configure().dataSource(db.jdbcUrl, db.username, db.password).load()
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1)
+        flyway.validate()
+        assertThat(
+            flyway
+                .info()
+                .current()
+                .version.version,
+        ).isEqualTo("47")
+        assertThat(
+            db.queryInt(
+                """
+                SELECT count(*) FROM billing_notifications WHERE event_key='legacy-recovery'
+                    AND state='manual_review' AND environment IS NULL AND revision=0 AND resolution IS NULL
+                    AND attempted_at IS NULL AND sent_at IS NULL AND created_at='2026-10-01T00:00:00Z'
+                """.trimIndent(),
+            ),
+        ).isEqualTo(1)
+        assertThat(db.queryInt("SELECT count(*) FROM billing_notification_attempts")).isZero()
+        assertThat(db.queryInt("SELECT count(*) FROM admin_notification_actions")).isZero()
+        assertThat(
+            db.queryInt(
+                """
+                SELECT count(*) FROM pg_constraint WHERE
+                    conname IN ('ck_conversions_reading_level','ck_llm_calls_reading_level')
+                    AND pg_get_constraintdef(oid) LIKE '%middle_school%'
+                    AND pg_get_constraintdef(oid) LIKE '%grade_5_6%'
+                    AND pg_get_constraintdef(oid) LIKE '%grade_3_4%'
+                """.trimIndent(),
+            ),
+        ).isEqualTo(2)
+    }
+
     private fun workspace(db: DatabaseHandle): UUID {
         val owner = UUID.randomUUID()
         val workspace = UUID.randomUUID()

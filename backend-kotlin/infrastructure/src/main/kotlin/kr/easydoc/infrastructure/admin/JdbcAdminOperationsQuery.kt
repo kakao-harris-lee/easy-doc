@@ -440,7 +440,11 @@ open class JdbcAdminOperationsQuery(
             SELECT id::text,'payment'::text AS kind,status AS state,environment,workspace_id,created_at,
                 2 AS severity,'결제 재조회'::text AS next_action FROM toss_billing_orders
                 WHERE kind<>'refund' AND status IN ('pending','processing','manual_review','suspend_pending') AND created_at<now()-interval '1 hour'
-            UNION ALL SELECT operation_id::text,'refund',a.status,o.environment,a.workspace_id,a.created_at,1,'환불 처리 확인'
+            UNION ALL SELECT operation_id::text,'refund',
+                CASE WHEN o.status='manual_review' THEN 'manual_review' ELSE a.status END,
+                o.environment,a.workspace_id,a.created_at,
+                CASE WHEN o.status='manual_review' THEN 2 ELSE 1 END,
+                CASE WHEN o.status='manual_review' THEN '환불 결과 재조회·확인' ELSE '환불 처리 확인' END
                 FROM admin_billing_operations a LEFT JOIN toss_billing_orders o ON o.id=a.operation_id WHERE a.status='pending'
             UNION ALL SELECT workspace_id::text,'card_deletion',state,environment,workspace_id,deletion_pending_since,1,'카드 삭제 재처리'
                 FROM toss_billing_sessions WHERE state='revoking' OR cleanup_pending

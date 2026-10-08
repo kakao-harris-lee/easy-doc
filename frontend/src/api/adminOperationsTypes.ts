@@ -9,6 +9,7 @@ export interface AdminPageResult<T> {
 export interface AdminOperationItem {
   id: string
   kind: string
+  /** Uncertain pending refunds are projected as manual_review (severity 2). */
   state: string
   environment: string | null
   workspace_id: string | null

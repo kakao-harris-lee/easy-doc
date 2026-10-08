@@ -410,6 +410,69 @@ class JdbcAdminBillingStoreTest {
         assertThat(pendingSince()).isAfter(before)
     }
 
+    @Test
+    @Suppress("LongMethod") // Queue classification, filters and pagination share the same refund fixtures.
+    fun `refund queue promotes uncertain outcomes and excludes completed or failed operations`() {
+        val requests =
+            listOf("pending", "manual_review", "paid", "failed").associateWith { state ->
+                val input = command()
+                transaction.executeWithoutResult { store.reserve(input) }
+                jdbc
+                    .sql(
+                        """
+                        INSERT INTO toss_billing_orders(id,workspace_id,plan_id,amount,created_at,cycle_ends_at,kind,status,
+                            payload_encrypted,encryption_scheme,key_version,cycle_id,environment)
+                        VALUES (:id,:workspace,'start',1000,now(),now()+interval '1 month','refund',:state,
+                            decode('01','hex'),'aes256gcm-v1',1,:id,'toss_test')
+                        """.trimIndent(),
+                    ).param("id", input.operationId)
+                    .param("workspace", input.workspaceId)
+                    .param("state", state)
+                    .update()
+                if (state in setOf("paid", "failed")) {
+                    jdbc
+                        .sql("UPDATE admin_billing_operations SET status=:state WHERE operation_id=:id")
+                        .param("state", if (state == "paid") "completed" else "failed")
+                        .param("id", input.operationId)
+                        .update()
+                }
+                input
+            }
+        val query =
+            JdbcAdminOperationsQuery(
+                jdbc,
+                kr.easydoc.infrastructure.subscription
+                    .PaymentProperties(),
+            )
+        val filters = mapOf("kind" to "refund", "environment" to "toss_test")
+        val first = query.operations(filters, 1, 1)
+        assertThat(first["total"]).isEqualTo(2L)
+        assertThat(first["counts"]).isEqualTo(mapOf("refund" to 2L))
+        val uncertain = (first["items"] as List<*>).single() as Map<*, *>
+        assertThat(uncertain["id"]).isEqualTo(requests.getValue("manual_review").operationId.toString())
+        assertThat(uncertain["state"]).isEqualTo("manual_review")
+        assertThat(uncertain["severity"]).isEqualTo(2)
+        assertThat(uncertain["next_action"]).isEqualTo("환불 결과 재조회·확인")
+        val pending = (query.operations(filters, 2, 1)["items"] as List<*>).single() as Map<*, *>
+        assertThat(pending["id"]).isEqualTo(requests.getValue("pending").operationId.toString())
+        assertThat(pending["state"]).isEqualTo("pending")
+        assertThat(pending["severity"]).isEqualTo(1)
+        for (state in listOf("manual_review", "pending")) {
+            val filtered = query.operations(filters + ("state" to state), 1, 20)
+            assertThat(filtered["total"]).isEqualTo(1L)
+            assertThat(filtered["counts"]).isEqualTo(mapOf("refund" to 1L))
+            assertThat((filtered["items"] as List<*>).single()).isEqualTo(
+                if (state ==
+                    "pending"
+                ) {
+                    pending
+                } else {
+                    uncertain
+                },
+            )
+        }
+    }
+
     private fun command(): AdminRefundCommand {
         val owner = UUID.randomUUID()
         val workspace = UUID.randomUUID()
