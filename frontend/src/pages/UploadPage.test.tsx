@@ -179,8 +179,13 @@ describe('업로드 화면', () => {
       renderPage()
 
       expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveValue('grade_5_6')
-      expect(screen.getByRole('option', { name: /레벨 1.*중등/ })).toBeEnabled()
-      expect(screen.getByRole('option', { name: /레벨 3/ })).toBeDisabled()
+      expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+        '레벨 1',
+        '레벨 2',
+        '레벨 3',
+      ])
+      expect(screen.getByRole('option', { name: '레벨 1' })).toBeEnabled()
+      expect(screen.getByRole('option', { name: '레벨 3' })).toBeDisabled()
     })
 
     it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {

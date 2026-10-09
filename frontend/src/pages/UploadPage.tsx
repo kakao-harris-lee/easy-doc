@@ -124,25 +124,21 @@ const READING_LEVEL_OPTIONS = [
   {
     value: 'middle_school',
     name: '레벨 1',
-    grade: '중등',
     description: '익숙한 표현으로 핵심 내용을 쉽게 풀어 써요.',
   },
   {
     value: 'grade_5_6',
     name: '레벨 2',
-    grade: '초등 5~6학년',
     description: '어려운 말을 줄이고 문장을 짧게 나눠요.',
   },
   {
     value: 'grade_3_4',
     name: '레벨 3',
-    grade: '초등 3~4학년',
     description: '아주 쉬운 말로 풀고 필요한 설명을 덧붙여요.',
   },
 ] as const satisfies readonly {
   value: ReadingLevel
   name: string
-  grade: string
   description: string
 }[]
 
@@ -854,8 +850,7 @@ export function UploadPage() {
                         value={option.value}
                         disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
                       >
-                        {option.name} · {option.grade}
-                        {option.value === 'grade_3_4' && !extraEasyEnabled() ? ' (준비 중)' : ''}
+                        {option.name}
                       </option>
                     ))}
                   </select>
