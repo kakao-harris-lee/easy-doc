@@ -163,7 +163,7 @@ describe('업로드 화면', () => {
       const text = '하나 둘 셋 넷 '.padEnd(101, '가')
       await user.type(screen.getByLabelText('문서 제목'), '중등 수준 글')
       fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
-      await user.click(screen.getByRole('radio', { name: /레벨 1.*중등/ }))
+      await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'middle_school')
       expect(screen.getByText('필요 크레딧 0.2')).toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
       expect(createDocumentFromText).toHaveBeenCalledWith(
@@ -178,9 +178,9 @@ describe('업로드 화면', () => {
     it('레벨 2가 기본이며 기능 플래그가 없으면 레벨 3은 비활성화한다', () => {
       renderPage()
 
-      expect(screen.getByRole('radio', { name: /레벨 2.*초등 5~6학년/ })).toBeChecked()
-      expect(screen.getByRole('radio', { name: /레벨 1.*중등/ })).toBeEnabled()
-      expect(screen.getByRole('radio', { name: /레벨 3/ })).toBeDisabled()
+      expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveValue('grade_5_6')
+      expect(screen.getByRole('option', { name: /레벨 1.*중등/ })).toBeEnabled()
+      expect(screen.getByRole('option', { name: /레벨 3/ })).toBeDisabled()
     })
 
     it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {
@@ -200,16 +200,25 @@ describe('업로드 화면', () => {
         const user = userEvent.setup()
         renderPage()
 
-        expect(screen.queryByText('짧은 문장과 쉬운 표현으로 바꿔요.')).not.toBeInTheDocument()
+        const level = screen.getByRole('combobox', { name: '변환 레벨' })
+        const editor = screen.getByRole('region', { name: '변환 입력' })
+        expect(editor).toContainElement(level)
+        expect(editor).toContainElement(screen.getByLabelText('바꿀 글'))
+        expect(level).toHaveAccessibleDescription('어려운 말을 줄이고 문장을 짧게 나눠요.')
+        await user.selectOptions(level, 'middle_school')
+        expect(level).toHaveAccessibleDescription('익숙한 표현으로 핵심 내용을 쉽게 풀어 써요.')
+        expect(screen.queryByText('어려운 말을 줄이고 문장을 짧게 나눠요.')).not.toBeInTheDocument()
         expect(screen.queryByText(/최소 1.2배의 크레딧/)).not.toBeInTheDocument()
 
-        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
+        await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'grade_3_4')
 
+        expect(screen.getByText('아주 쉬운 말로 풀고 필요한 설명을 덧붙여요.')).toBeVisible()
         expect(screen.getByText(/최소 1.2배의 크레딧/)).toBeInTheDocument()
-        expect(screen.queryByText('짧은 문장과 쉬운 표현으로 바꿔요.')).not.toBeInTheDocument()
-        expect(
-          screen.getByRole('group', { name: '어느 정도로 쉽게 바꿀까요?' }),
-        ).toHaveAccessibleDescription(/최소 1.2배의 크레딧/)
+        await user.click(screen.getByRole('radio', { name: '파일 올리기' }))
+        expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveValue('grade_3_4')
+        expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveAccessibleDescription(
+          /최소 1.2배의 크레딧/,
+        )
       } finally {
         vi.unstubAllEnvs()
       }
@@ -227,7 +236,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '더 쉬운 안내')
         fireEvent.change(screen.getByLabelText('바꿀 글'), { target: { value: text } })
-        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
+        await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'grade_3_4')
 
         expect(screen.getByText('필요 크레딧 0.3')).toBeInTheDocument()
         expect(
@@ -263,7 +272,7 @@ describe('업로드 화면', () => {
 
         await user.type(screen.getByLabelText('문서 제목'), '개인정보 안내')
         await user.type(screen.getByLabelText('바꿀 글'), '주민번호 내용을 확인해 주세요')
-        await user.click(screen.getByRole('radio', { name: /레벨 3.*초등 3~4학년/ }))
+        await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'grade_3_4')
         await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
         await user.click(await screen.findByRole('button', { name: '이대로 진행' }))
 

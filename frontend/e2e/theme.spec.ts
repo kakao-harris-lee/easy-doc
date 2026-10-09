@@ -479,8 +479,17 @@ test.describe('테마 디자인 브라우저 검증', () => {
     const source = page.getByLabel('바꿀 글')
     const text = '테마를 바꿔도 작성 중인 문장은 그대로 남아야 합니다.'
     await source.fill(text)
+    const level = page.getByRole('combobox', { name: '변환 레벨' })
+    await expect(
+      page.getByRole('region', { name: '변환 입력' }).getByRole('combobox', { name: '변환 레벨' }),
+    ).toBeVisible()
+    await level.selectOption('middle_school')
+    await expect(level).toHaveAccessibleDescription('익숙한 표현으로 핵심 내용을 쉽게 풀어 써요.')
+    await expectNoHorizontalOverflow(page)
     await selectTheme(page, 'dark')
     await expect(source).toHaveValue(text)
+    await expect(level).toHaveValue('middle_school')
+    await expectNoHorizontalOverflow(page)
     expect(documentPosts).toEqual([])
   })
 
