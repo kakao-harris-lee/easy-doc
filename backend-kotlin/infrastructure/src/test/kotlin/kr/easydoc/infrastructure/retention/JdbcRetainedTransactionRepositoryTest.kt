@@ -107,6 +107,69 @@ class JdbcRetainedTransactionRepositoryTest {
     }
 
     @Test
+    fun `failed card registration without a paid order does not create consent backfill`() {
+        val db = database("retained_failed_registration")
+        val (user, _, _) = owner(db)
+        val repository = repository(db, 1)
+
+        repository.archiveForUser(user)
+
+        assertThat(
+            db.queryInt("SELECT count(*) FROM retained_transaction_records WHERE record_type='consent'"),
+        ).isZero()
+    }
+
+    @Test
+    fun `card replacement reuses verified consent from the original paid checkout`() {
+        val db = database("retained_card_replacement")
+        val (user, workspace, session) = owner(db)
+        val repository = repository(db, 1)
+        val originalConsent = sessionModel(workspace, session, user)
+        val payment = paymentIds(db, workspace, "start", 1000, 0)
+        repository.archivePayment(payment.order, payment.payment, 0, null, originalConsent)
+
+        val replacement = UUID.randomUUID()
+        db.execute(
+            """
+            UPDATE toss_billing_sessions SET id='$replacement', purpose='replace_card'
+            WHERE workspace_id='$workspace'
+            """.trimIndent(),
+        )
+
+        repository.archiveForUser(user)
+
+        assertThat(
+            db.queryInt("SELECT count(*) FROM retained_transaction_records WHERE record_type='consent'"),
+        ).isEqualTo(1)
+        assertThat(
+            db.queryInt(
+                "SELECT count(*) FROM retained_transaction_records WHERE record_type='consent' AND manual_review=true",
+            ),
+        ).isZero()
+        assertThat(
+            db.queryInt(
+                "SELECT count(*) FROM retained_transaction_records WHERE record_type='consent' AND source_id='$replacement'",
+            ),
+        ).isZero()
+    }
+
+    @Test
+    fun `paid order without verified consent remains quarantined`() {
+        val db = database("retained_missing_consent")
+        val (user, workspace, _) = owner(db)
+        paymentIds(db, workspace, "start", 1000, 0)
+        val repository = repository(db, 1)
+
+        assertThatThrownBy { repository.archiveForUser(user) }
+            .isInstanceOf(ConflictException::class.java)
+        assertThat(
+            db.queryInt(
+                "SELECT count(*) FROM retained_transaction_records WHERE record_type='consent' AND manual_review=true",
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
     @Suppress("LongMethod") // Exercise encrypted reason, replay and independent expiry on the same durable record.
     fun `decision reasons are encrypted and refund complaint retention periods are independent`() {
         val db = database("retained_decisions")
@@ -137,11 +200,12 @@ class JdbcRetainedTransactionRepositoryTest {
                     refundReceived,
                 ),
             )
+        val complaintOperation = UUID.randomUUID()
         val complaint =
             repository.complaintDecision(
                 fixture.order.id,
                 actor,
-                ComplaintDecisionCommand(UUID.randomUUID(), "resolved", "complaint reason", refundReceived),
+                ComplaintDecisionCommand(complaintOperation, "resolved", "complaint reason", refundReceived),
             )
         assertThat(refund.decisions).hasSize(1)
         assertThat(refund.decisions.single().reason).isEqualTo("refund reason")
@@ -158,7 +222,13 @@ class JdbcRetainedTransactionRepositoryTest {
             db.queryInt(
                 "SELECT count(*) FROM retained_transaction_decisions WHERE retained_until<'2026-10-11T00:00:00Z'",
             ),
-        ).isEqualTo(2)
+        ).isEqualTo(1)
+        assertThat(
+            db.queryInt(
+                "SELECT count(*) FROM retained_transaction_decisions WHERE operation_id='$complaintOperation' " +
+                    "AND retained_until='2029-10-11T00:00:00Z'",
+            ),
+        ).isEqualTo(1)
 
         val same =
             repository.refundDecision(
@@ -191,11 +261,12 @@ class JdbcRetainedTransactionRepositoryTest {
             )
         }.isInstanceOf(ConflictException::class.java)
 
-        assertThat(repository.purge(now, 100, dryRun = true)).isEqualTo(2)
+        assertThat(repository.purge(now, 100, dryRun = true)).isEqualTo(1)
         assertThat(db.queryInt("SELECT count(*) FROM retained_transaction_records")).isEqualTo(3)
-        assertThat(repository.purge(now, 100, dryRun = false)).isEqualTo(2)
+        assertThat(repository.purge(now, 100, dryRun = false)).isEqualTo(1)
         // The five-year payment record is retained even though its child decisions expired.
         assertThat(db.queryInt("SELECT count(*) FROM retained_transaction_records")).isEqualTo(3)
+        assertThat(db.queryInt("SELECT count(*) FROM retained_transaction_decisions")).isEqualTo(1)
     }
 
     @Test

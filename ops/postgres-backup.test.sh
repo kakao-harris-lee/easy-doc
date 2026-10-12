@@ -132,6 +132,10 @@ case "$service:$action" in
         *) shift ;;
       esac
     done
+    if printf '%s' "$query" | grep -q 'Size' && [ -n "${AWS_STUB_LISTING_SIZES:-}" ]; then
+      printf '%s\n' "$AWS_STUB_LISTING_SIZES"
+      exit 0
+    fi
     find "$root/$prefix" -type f -print 2>/dev/null | while IFS= read -r path; do
       key=${path#"$root/"}
       if printf '%s' "$query" | grep -q 'Size'; then
@@ -233,6 +237,23 @@ printf '100\n' >"$fail_file"
 [ -L "$backup_dir/latest.dump" ] || fail "local latest dump disappeared after remote outage"
 grep -q 'attempt 3/3' "$work_dir/outage.log" || fail "remote outage did not reach the retry boundary"
 : >"$fail_file"
+
+# Large bucket totals must remain decimal integers for the shell's capacity
+# arithmetic. Simulate two 5 GiB objects without allocating large local files.
+export AWS_STUB_LISTING_SIZES='5368709120 5368709120'
+export POSTGRES_BACKUP_REMOTE_CAPACITY_BYTES=21474836480
+"$script_dir/postgres-backup.sh" once >/dev/null 2>"$work_dir/large-capacity.log" || fail "large bucket total stopped local scheduling"
+grep -q 'remote PostgreSQL backup verified' "$work_dir/large-capacity.log" || fail "large bucket total prevented dump upload"
+grep -q 'remote deletion export verified' "$work_dir/large-capacity.log" || fail "large bucket total prevented deletion export"
+if grep -q 'remote backup skipped\|Illegal number\|syntax error' "$work_dir/large-capacity.log"; then
+  fail "large bucket total prevented remote backup"
+fi
+export POSTGRES_BACKUP_REMOTE_CAPACITY_BYTES=9663676416
+"$script_dir/postgres-backup.sh" once >/dev/null 2>"$work_dir/over-capacity.log" || fail "capacity rejection stopped local scheduling"
+grep -q 'below required 107374' "$work_dir/over-capacity.log" || fail "large capacity overflow was not rejected with a decimal total"
+[ -L "$backup_dir/latest.dump" ] || fail "capacity rejection removed the local dump"
+unset AWS_STUB_LISTING_SIZES
+export POSTGRES_BACKUP_REMOTE_CAPACITY_BYTES=1000000
 
 # Retention deletes only managed key shapes below the configured prefix.
 mkdir -p "$remote_dir/postgres"

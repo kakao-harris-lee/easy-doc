@@ -139,7 +139,8 @@ class JdbcRetainedTransactionRepository(
                 .list()
         val email = userEmail(userId)
         workspaces.forEach { workspace ->
-            liveOrders(workspace).forEach { row ->
+            val orders = liveOrders(workspace)
+            orders.forEach { row ->
                 val paymentId = row.orderId
                 val approvedAt = row.approvedAt
                 val missingEvidence = approvedAt == null
@@ -237,16 +238,18 @@ class JdbcRetainedTransactionRepository(
                     throw ConflictException("환불 증빙을 확인할 수 없어 탈퇴할 수 없습니다")
                 }
             }
-            val latestApproval = liveOrders(workspace).mapNotNull { recordRow(it.orderId)?.occurredAt }.maxOrNull()
-            liveConsent(workspace)?.let {
-                archiveConsent(
-                    it,
-                    workspace,
-                    null,
-                    email,
-                    snapshotEligible = false,
-                    retentionReference = latestApproval,
-                )
+            val latestApproval = orders.mapNotNull { recordRow(it.orderId)?.occurredAt }.maxOrNull()
+            if (latestApproval != null) {
+                liveConsent(workspace)?.let {
+                    archiveConsent(
+                        it,
+                        workspace,
+                        null,
+                        email,
+                        snapshotEligible = false,
+                        retentionReference = latestApproval,
+                    )
+                }
             }
         }
         verifyComplete(userId)
@@ -350,7 +353,7 @@ class JdbcRetainedTransactionRepository(
             reason = command.reason,
             stopRenewal = null,
             receivedAt = command.receivedAt,
-            retention = retentionUntil(command.receivedAt, COMPLAINT_RETENTION_YEARS),
+            retention = retentionUntil(clock.instant(), COMPLAINT_RETENTION_YEARS),
         )
     }
 
@@ -584,21 +587,11 @@ class JdbcRetainedTransactionRepository(
         if (session == null || session.environment != LIVE_ENVIRONMENT || session.consentVersion == null) return
         val id = consentId(session.id)
         recordRow(id)?.takeIf { it.type == RetainedRecordType.CONSENT && !it.manualReview }?.let {
-            if (retentionReference != null) {
-                jdbc
-                    .sql(
-                        """
-                        UPDATE retained_transaction_records SET
-                        retained_until=GREATEST(retained_until,:until) WHERE id=:id
-                        """.trimIndent(),
-                    ).param(
-                        "id",
-                        id,
-                    ).param(
-                        "until",
-                        retentionUntil(retentionReference, TRANSACTION_RETENTION_YEARS).atOffset(ZoneOffset.UTC),
-                    ).update()
-            }
+            extendRetention(it.id, retentionReference)
+            return
+        }
+        verifiedConsent(workspaceId, session)?.let {
+            extendRetention(it.id, retentionReference)
             return
         }
         val occurredAt = session.consentAt
@@ -628,6 +621,49 @@ class JdbcRetainedTransactionRepository(
                         if (current) legalResource("legal/privacy-$LEGAL_SNAPSHOT_VERSION.md") else null,
                 ),
         )
+    }
+
+    private fun extendRetention(
+        id: UUID,
+        retentionReference: Instant?,
+    ) {
+        if (retentionReference == null) return
+        jdbc
+            .sql(
+                """
+                UPDATE retained_transaction_records SET
+                retained_until=GREATEST(retained_until,:until) WHERE id=:id
+                """.trimIndent(),
+            ).param("id", id)
+            .param(
+                "until",
+                retentionUntil(retentionReference, TRANSACTION_RETENTION_YEARS).atOffset(ZoneOffset.UTC),
+            ).update()
+    }
+
+    private fun verifiedConsent(
+        workspaceId: UUID,
+        session: BillingSession,
+    ): RecordRow? {
+        val consentVersion = session.consentVersion ?: return null
+        val consentAt = session.consentAt ?: return null
+        return jdbc
+            .sql(
+                """
+                SELECT * FROM retained_transaction_records
+                WHERE record_type='consent' AND workspace_id=:workspace AND environment=:environment
+                  AND manual_review=false
+                ORDER BY created_at,id
+                """.trimIndent(),
+            ).param("workspace", workspaceId)
+            .param("environment", LIVE_ENVIRONMENT)
+            .query { rs, _ -> record(rs) }
+            .list()
+            .firstOrNull { row ->
+                val payload = codec.decodeRecord(row.id, row.payload)
+                payload.path("consent_version").asString() == consentVersion &&
+                    payload.path("consent_at").asString() == consentAt.toString()
+            }
     }
 
     private fun detail(row: RecordRow): RetainedTransactionDetail {

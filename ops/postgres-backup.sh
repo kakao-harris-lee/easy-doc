@@ -237,7 +237,7 @@ remote_managed_bytes() {
     --output text 2>/dev/null) || return 1
   printf '%s\n' "$managed_listing" | awk '
       { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+$/) total += $i }
-      END { print total + 0 }
+      END { printf "%.0f\n", total + 0 }
     '
 }
 

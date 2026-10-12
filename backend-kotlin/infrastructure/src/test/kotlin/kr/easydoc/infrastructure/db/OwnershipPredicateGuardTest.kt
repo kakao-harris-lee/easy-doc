@@ -672,6 +672,7 @@ class OwnershipPredicateGuardTest {
                     "SELECT [retained_transaction_records, toss_billing_orders]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_records]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
@@ -873,6 +874,7 @@ class OwnershipPredicateGuardTest {
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_decisions]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_records]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
                 "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
@@ -1007,7 +1009,8 @@ class OwnershipPredicateGuardTest {
         // 95 -> 124: retained transaction archive/admin/worker SQL adds 21 owner-less statements;
         // callback staging/session binding/cleanup/scrub/rotation adds 8. The user/workspace
         // selection and completion checks in the archive path retain explicit user_id predicates.
-        // 124 -> 125: BillingDeletionGuard separately counts paid live charge/renewal orders.
-        const val MAX_UNGUARDED_STATEMENTS = 125
+        // 124 -> 126: retained consent provenance lookup and BillingDeletionGuard separately counts
+        // paid live charge/renewal orders.
+        const val MAX_UNGUARDED_STATEMENTS = 126
     }
 }
