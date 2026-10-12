@@ -238,19 +238,7 @@ class JdbcRetainedTransactionRepository(
                     throw ConflictException("환불 증빙을 확인할 수 없어 탈퇴할 수 없습니다")
                 }
             }
-            val latestApproval = orders.mapNotNull { recordRow(it.orderId)?.occurredAt }.maxOrNull()
-            if (latestApproval != null) {
-                liveConsent(workspace)?.let {
-                    archiveConsent(
-                        it,
-                        workspace,
-                        null,
-                        email,
-                        snapshotEligible = false,
-                        retentionReference = latestApproval,
-                    )
-                }
-            }
+            archiveConsentForLatestApproval(workspace, orders, email)
         }
         verifyComplete(userId)
     }
@@ -586,11 +574,10 @@ class JdbcRetainedTransactionRepository(
     ) {
         if (session == null || session.environment != LIVE_ENVIRONMENT || session.consentVersion == null) return
         val id = consentId(session.id)
-        recordRow(id)?.takeIf { it.type == RetainedRecordType.CONSENT && !it.manualReview }?.let {
-            extendRetention(it.id, retentionReference)
-            return
-        }
-        verifiedConsent(workspaceId, session)?.let {
+        val existingConsent =
+            recordRow(id)?.takeIf { it.type == RetainedRecordType.CONSENT && !it.manualReview }
+                ?: verifiedConsent(workspaceId, session)
+        existingConsent?.let {
             extendRetention(it.id, retentionReference)
             return
         }
@@ -623,6 +610,24 @@ class JdbcRetainedTransactionRepository(
         )
     }
 
+    private fun archiveConsentForLatestApproval(
+        workspaceId: UUID,
+        orders: List<OrderRow>,
+        email: String?,
+    ) {
+        val latestApproval = orders.mapNotNull { recordRow(it.orderId)?.occurredAt }.maxOrNull() ?: return
+        liveConsent(workspaceId)?.let {
+            archiveConsent(
+                it,
+                workspaceId,
+                null,
+                email,
+                snapshotEligible = false,
+                retentionReference = latestApproval,
+            )
+        }
+    }
+
     private fun extendRetention(
         id: UUID,
         retentionReference: Instant?,
@@ -645,8 +650,9 @@ class JdbcRetainedTransactionRepository(
         workspaceId: UUID,
         session: BillingSession,
     ): RecordRow? {
-        val consentVersion = session.consentVersion ?: return null
-        val consentAt = session.consentAt ?: return null
+        val consentVersion = session.consentVersion
+        val consentAt = session.consentAt
+        if (consentVersion == null || consentAt == null) return null
         return jdbc
             .sql(
                 """

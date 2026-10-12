@@ -148,7 +148,8 @@ class JdbcRetainedTransactionRepositoryTest {
         ).isZero()
         assertThat(
             db.queryInt(
-                "SELECT count(*) FROM retained_transaction_records WHERE record_type='consent' AND source_id='$replacement'",
+                "SELECT count(*) FROM retained_transaction_records WHERE record_type='consent' " +
+                    "AND source_id='$replacement'",
             ),
         ).isZero()
     }
