@@ -80,6 +80,8 @@ export interface TossSession {
   session_id: string
   customer_key: string
   client_key: string
+  /** New server-owned callback. Old responses omit this and use the legacy complete flow. */
+  callback_url?: string | null
 }
 export function beginTossBilling(
   workspace: string,
@@ -92,6 +94,28 @@ export function beginTossBilling(
     body: { plan_id: plan, purpose, consent_version: consentVersion },
   })
 }
+
+export interface TossBillingResumeResponse {
+  workspace_id: string
+  session_id: string
+  purpose: 'purchase' | 'replace_card'
+  overview: SubscriptionOverview
+}
+
+/**
+ * POST /payments/toss/billing/resume — server-owned billing callback recovery.
+ *
+ * The resume id is intentionally the only client-supplied value. The server binds it to
+ * the authenticated owner and returns the current subscription view after applying the
+ * provider callback at most once.
+ */
+export function resumeTossBilling(resumeId: string): Promise<TossBillingResumeResponse> {
+  return requestJson<TossBillingResumeResponse>('/payments/toss/billing/resume', {
+    method: 'POST',
+    body: { resume_id: resumeId },
+  })
+}
+
 export function completeTossBilling(
   workspace: string,
   session: string,

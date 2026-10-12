@@ -92,6 +92,7 @@ class DocumentService(
      */
     private val credits: CreditAccountService,
     private val extraEasyEnabled: Boolean = false,
+    private val middleSchoolEnabled: Boolean = true,
 ) {
     private val log = LoggerFactory.getLogger(DocumentService::class.java)
 
@@ -350,6 +351,9 @@ class DocumentService(
     }
 
     private fun requireEnabled(readingLevel: ReadingLevel) {
+        if (readingLevel == ReadingLevel.MIDDLE_SCHOOL && !middleSchoolEnabled) {
+            throw InvalidInputException("중등 수준 변환은 준비 중입니다. 기본 변환 레벨을 선택하세요")
+        }
         if (readingLevel == ReadingLevel.GRADE_3_4 && !extraEasyEnabled) {
             throw InvalidInputException(EXTRA_EASY_DISABLED_MESSAGE)
         }

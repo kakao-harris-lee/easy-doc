@@ -7,10 +7,11 @@ import { useAuth } from '../auth/context'
 import {
   isOAuthProvider,
   oauthRedirectUriStorageKey,
+  oauthReturnToStorageKey,
   oauthStateStorageKey,
   PROVIDER_DISPLAY_NAME,
 } from '../auth/socialLogin'
-import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
+import { EMAIL_VERIFICATION_PATH, LOGIN_PATH, sanitizeReturnPath } from '../routes/paths'
 import { NotFoundPage } from './NotFoundPage'
 
 /** `state`가 없거나, 저장해 둔 값과 다르거나, 시작하지 않고 이 화면에 들어온 경우. */
@@ -27,7 +28,7 @@ type ViewState =
 type ParsedCallback =
   | { kind: 'cancelled' }
   | { kind: 'invalid' }
-  | { kind: 'ready'; code: string; state: string; redirectUri: string }
+  | { kind: 'ready'; code: string; state: string; redirectUri: string; returnTo: string }
 
 /**
  * 주소의 쿼리와 저장해 둔 세션 값을 맞춰 본다. 이 화면은 세션 값을 한 번만 소비하고
@@ -38,11 +39,14 @@ function parseCallback(search: string, provider: OAuthProvider): ParsedCallback 
 
   let storedState: string | null = null
   let storedRedirectUri: string | null = null
+  let storedReturnTo: string | undefined
   try {
     storedState = window.sessionStorage.getItem(oauthStateStorageKey(provider))
     storedRedirectUri = window.sessionStorage.getItem(oauthRedirectUriStorageKey(provider))
+    storedReturnTo = window.sessionStorage.getItem(oauthReturnToStorageKey(provider)) ?? undefined
     window.sessionStorage.removeItem(oauthStateStorageKey(provider))
     window.sessionStorage.removeItem(oauthRedirectUriStorageKey(provider))
+    window.sessionStorage.removeItem(oauthReturnToStorageKey(provider))
   } catch {
     // 세션 저장소를 못 쓰면(사생활 보호 모드 등) storedState가 null로 남아 아래에서
     // "만료되었거나 이미 사용되었습니다"로 처리된다.
@@ -65,7 +69,13 @@ function parseCallback(search: string, provider: OAuthProvider): ParsedCallback 
     return { kind: 'invalid' }
   }
 
-  return { kind: 'ready', code, state: returnedState, redirectUri: storedRedirectUri }
+  return {
+    kind: 'ready',
+    code,
+    state: returnedState,
+    redirectUri: storedRedirectUri,
+    returnTo: sanitizeReturnPath(storedReturnTo),
+  }
 }
 
 /**
@@ -120,7 +130,7 @@ export function OAuthCallbackPage() {
         // 미검증 이메일 제공자는 미인증 채로 가입할 수 있다 —
         // 이메일·비밀번호 가입(`SignupPage`)과 같은 이유로 곧장 홈이 아니라 인증
         // 화면으로 보낸다.
-        navigate(me.email_verified === false ? EMAIL_VERIFICATION_PATH : HOME_PATH, {
+        navigate(me.email_verified === false ? EMAIL_VERIFICATION_PATH : parsed.returnTo, {
           replace: true,
         })
       })
@@ -160,7 +170,12 @@ export function OAuthCallbackPage() {
         <h1 id="oauth-callback-heading">이미 가입된 이메일입니다</h1>
         <p role="alert">{view.message}</p>
         <p>
-          <Link to={`${LOGIN_PATH}?link=${provider}`}>기존 계정으로 로그인하기</Link>
+          <Link
+            to={`${LOGIN_PATH}?link=${provider}`}
+            state={parsed.kind === 'ready' ? { from: parsed.returnTo } : undefined}
+          >
+            기존 계정으로 로그인하기
+          </Link>
         </p>
       </section>
     )

@@ -12,6 +12,7 @@ import { AdminWorkspacesTab } from './admin/AdminWorkspacesTab'
 import { useAdminQuery } from './admin/useAdminQuery'
 import { AdminOperationsTab } from './admin/AdminOperationsTab'
 import { AdminNotificationsTab } from './admin/AdminNotificationsTab'
+import { AdminRetainedTransactionsTab } from './admin/AdminRetainedTransactionsTab'
 
 type TabKey =
   | 'operations'
@@ -19,6 +20,7 @@ type TabKey =
   | 'workspaces'
   | 'feedback'
   | 'invoices'
+  | 'retained-transactions'
   | 'errors'
   | 'announcements'
 
@@ -28,6 +30,7 @@ const TABS: readonly { key: TabKey; label: string }[] = [
   { key: 'workspaces', label: '워크스페이스' },
   { key: 'feedback', label: '사용자 의견' },
   { key: 'invoices', label: '세금계산서' },
+  { key: 'retained-transactions', label: '보존 거래' },
   { key: 'errors', label: '오류' },
   { key: 'announcements', label: '공지' },
 ]
@@ -110,6 +113,14 @@ export function AdminPage() {
         ))}
       </div>
 
+      <div
+        role="tabpanel"
+        id={`${panelBaseId}-retained-transactions-panel`}
+        aria-labelledby={`${panelBaseId}-retained-transactions-tab`}
+        hidden={activeTab !== 'retained-transactions'}
+      >
+        {activeTab === 'retained-transactions' && <AdminRetainedTransactionsTab />}
+      </div>
       <div
         role="tabpanel"
         id={`${panelBaseId}-operations-panel`}

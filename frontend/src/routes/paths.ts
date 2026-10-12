@@ -33,6 +33,36 @@ export interface FromLocationState {
   from?: string
 }
 
+/**
+ * 로그인 전 복귀할 내부 경로를 만든다.
+ *
+ * 결제 콜백의 새 흐름은 `resume` 식별자를 쿼리에 남겨야 하지만, 기존 토스
+ * 콜백의 `authKey`·`customerKey`는 로그인 화면이나 히스토리로 전달하면 안 된다.
+ * 외부 URL도 상태 값에 들어오지 않도록 origin을 현재 앱으로 고정한다.
+ */
+export function safeReturnPath(location: Pick<Location, 'pathname' | 'search' | 'hash'>): string {
+  const params = new URLSearchParams(location.search)
+  params.delete('authKey')
+  params.delete('customerKey')
+  params.delete('billingKey')
+  const search = params.toString()
+  return `${location.pathname}${search === '' ? '' : `?${search}`}${location.hash}`
+}
+
+/** 상태로 건너온 복귀 경로도 내부 경로와 안전한 결제 쿼리만 허용한다. */
+export function sanitizeReturnPath(value: string | undefined): string {
+  if (value === undefined || value === '') return HOME_PATH
+  try {
+    const url = new URL(value, window.location.origin)
+    if (url.origin !== window.location.origin || !url.pathname.startsWith('/')) {
+      return HOME_PATH
+    }
+    return safeReturnPath(url)
+  } catch {
+    return HOME_PATH
+  }
+}
+
 export interface HomeNoticeState {
   notice?: string
   noticeTone?: 'success' | 'warning'

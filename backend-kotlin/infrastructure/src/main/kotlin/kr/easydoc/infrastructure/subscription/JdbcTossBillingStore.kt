@@ -1,12 +1,14 @@
 package kr.easydoc.infrastructure.subscription
 
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.retention.RetainedTransactionArchiver
 import kr.easydoc.application.subscription.BillingOrder
 import kr.easydoc.application.subscription.BillingSession
 import kr.easydoc.application.subscription.TossBillingStore
 import kr.easydoc.application.subscription.TossPayment
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.infrastructure.retention.NoopRetainedTransactionArchiver
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
 import java.time.Instant
@@ -18,7 +20,16 @@ import java.util.UUID
 class JdbcTossBillingStore(
     private val jdbc: JdbcClient,
     private val cipher: ContentCipher,
+    private val retainedTransactionArchiver: RetainedTransactionArchiver,
 ) : TossBillingStore {
+    /**
+     * Isolated legacy fixtures do not create the legal archive.  The production bean is wired
+     * through [TossConfiguration] with the real JDBC archiver; keeping this constructor only
+     * preserves the small store encryption fixtures that exercise this adapter in isolation.
+     */
+    constructor(jdbc: JdbcClient, cipher: ContentCipher) :
+        this(jdbc, cipher, NoopRetainedTransactionArchiver())
+
     private val codec = BillingPayloadCodec(cipher)
 
     override fun stopScheduled(workspace: UUID) {
@@ -305,6 +316,26 @@ class JdbcTossBillingStore(
                 payment.remainingAmount < payment.amount -> "partially_refunded"
                 else -> "paid"
             }
+        // The legal record must be durable in the same transaction as the live payment row.
+        // Read the old refund total before the upsert so a replay archives only the new refund
+        // delta.  If archiving fails, this method throws before subscription_payments is written.
+        val previousRefundedAmount =
+            jdbc
+                .sql(
+                    "SELECT refunded_amount FROM subscription_payments " +
+                        "WHERE workspace_id=:workspace AND id=:id",
+                ).param("workspace", order.workspaceId)
+                .param("id", order.id)
+                .query { rs, _ -> rs.getInt("refunded_amount") }
+                .optional()
+                .orElse(0)
+        retainedTransactionArchiver.archivePayment(
+            order = order,
+            payment = payment,
+            previousRefundedAmount = previousRefundedAmount,
+            customerEmail = null,
+            consent = null,
+        )
         jdbc
             .sql(
                 """

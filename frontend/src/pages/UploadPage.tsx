@@ -149,6 +149,11 @@ function extraEasyEnabled(): boolean {
   return import.meta.env.VITE_EASYDOC_EXTRA_EASY_ENABLED === 'true'
 }
 
+/** 중등 수준은 품질 검증을 마친 배포에서만 선택하게 한다. 기본값은 기존 호환을 위해 켠다. */
+function middleSchoolEnabled(): boolean {
+  return import.meta.env.VITE_EASYDOC_MIDDLE_SCHOOL_ENABLED !== 'false'
+}
+
 /** 상한을 사람이 읽는 표기로. */
 function chars(count: number): string {
   return count.toLocaleString('ko-KR')
@@ -844,15 +849,18 @@ export function UploadPage() {
                     }
                     onChange={(event) => setReadingLevel(event.target.value as ReadingLevel)}
                   >
-                    {READING_LEVEL_OPTIONS.map((option) => (
-                      <option
-                        key={option.value}
-                        value={option.value}
-                        disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
-                      >
-                        {option.name}
-                      </option>
-                    ))}
+                    {READING_LEVEL_OPTIONS.map((option) => {
+                      if (option.value === 'middle_school' && !middleSchoolEnabled()) return null
+                      return (
+                        <option
+                          key={option.value}
+                          value={option.value}
+                          disabled={option.value === 'grade_3_4' && !extraEasyEnabled()}
+                        >
+                          {option.name}
+                        </option>
+                      )
+                    })}
                   </select>
                 </div>
               </div>

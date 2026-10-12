@@ -212,7 +212,8 @@ export function AccountSettingsPage() {
           회원 탈퇴
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          계정과 문서, 변환 기록을 포함한 모든 개인정보를 즉시 파기합니다. 되돌릴 수 없습니다.
+          계정과 문서, 변환 기록을 파기합니다. 법령상 보존하는 결제·거래 기록은 계정과 분리해 남을
+          수 있습니다. 되돌릴 수 없습니다.
         </p>
 
         {!confirming && (
@@ -231,7 +232,8 @@ export function AccountSettingsPage() {
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <p className="m-0">
                 <strong>이 작업은 되돌릴 수 없습니다.</strong> 계정을 지우면 모든 작업
-                공간·문서·변환 결과가 즉시 사라지고 복구할 수 없습니다.
+                공간·문서·변환 결과가 즉시 사라지고 복구할 수 없습니다. 법령상 보존하는 결제·거래
+                기록은 계정과 분리해 남을 수 있습니다.
               </p>
             </div>
 

@@ -295,7 +295,15 @@ class ValueSlotInvariantReachTest {
             "${slot.label}: 경로에 채우지 못한 변수가 남았다($path) — 그 자리를 채울 자원 fixture 가 필요하다. " +
                 "이 케이스를 건너뛰지 않는다."
         }
-        val url = if (rawQuery == null) path else "$path?$rawQuery"
+        // The public provider return requires its state even when another query slot is
+        // under test. Supply that companion so validation can reach the targeted field.
+        val query =
+            if (slot.path == "/payments/toss/billing/callback" && slot.name != "state") {
+                listOfNotNull(rawQuery, "state=${"a".repeat(CALLBACK_STATE_LENGTH)}").joinToString("&")
+            } else {
+                rawQuery
+            }
+        val url = if (query == null) path else "$path?$query"
         val request = jsonRequest(url, token)
         val body = requestBodyFor(slot.path, method)
         val publisher =
@@ -484,12 +492,20 @@ class ValueSlotInvariantReachTest {
     private fun Map<*, *>.required(key: String): Any = this[key] ?: error("응답에 $key 가 없다")
 
     companion object {
+        private const val CALLBACK_STATE_LENGTH = 43
         private const val DOCUMENTS_PATH = "/documents"
         private const val GET = "get"
 
         /** 오퍼레이션이 요청 본문을 요구할 때 쓰는 최소 유효 본문 — 스키마 이름별. */
         private val MINIMAL_BODIES =
             mapOf(
+                "RetainedRefundDecisionRequest" to
+                    """{"operation_id":"00000000-0000-0000-0000-000000000001","status":"approved","amount":100,
+                    "recovery_credits":0,"stop_renewal":false,"reason":"support",
+                    "received_at":"2026-10-10T00:00:00Z"}""",
+                "RetainedComplaintDecisionRequest" to
+                    """{"operation_id":"00000000-0000-0000-0000-000000000001","status":"resolved",
+                    "reason":"support","received_at":"2026-10-10T00:00:00Z"}""",
                 "TossBeginRequest" to """{"plan_id":"start"}""",
                 "TossCompleteRequest" to
                     """{"session_id":"00000000-0000-0000-0000-000000000001",

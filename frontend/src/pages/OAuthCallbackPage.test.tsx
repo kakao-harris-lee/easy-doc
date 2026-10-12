@@ -1,20 +1,25 @@
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchMe, oauthCallback } from '../api/auth'
+import { fetchMe, login, oauthCallback, oauthLinkStart } from '../api/auth'
 import { ApiError, listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
+import { oauthLinkReturnToStorageKey, oauthReturnToStorageKey } from '../auth/socialLogin'
 import { AppLayout } from '../components/AppLayout'
 import { AppRoutes } from '../routes/AppRoutes'
 import { workspaceContext, workspaceCredits } from '../test/factories'
+import { mockLocationAssign } from '../test/location'
 import { WorkspaceContext } from '../workspace/context'
 
 const STATE_KEY = 'easydoc.oauth.google.state'
 const REDIRECT_URI_KEY = 'easydoc.oauth.google.redirect_uri'
+const RETURN_TO_KEY = oauthReturnToStorageKey('google')
+const LINK_RETURN_TO_KEY = oauthLinkReturnToStorageKey('google')
 const STORED_REDIRECT_URI = 'http://localhost:5173/auth/google/callback'
 
 vi.mock('../api/auth', () => ({
@@ -23,6 +28,7 @@ vi.mock('../api/auth', () => ({
   fetchMe: vi.fn(),
   oauthStart: vi.fn(),
   oauthCallback: vi.fn(),
+  oauthLinkStart: vi.fn(),
 }))
 
 vi.mock('../api/client', async (importOriginal) => ({
@@ -64,13 +70,16 @@ function seedStartedSession(state = 'state-xyz') {
 function expectSessionCleared() {
   expect(window.sessionStorage.getItem(STATE_KEY)).toBeNull()
   expect(window.sessionStorage.getItem(REDIRECT_URI_KEY)).toBeNull()
+  expect(window.sessionStorage.getItem(RETURN_TO_KEY)).toBeNull()
 }
 
 beforeEach(() => {
   window.localStorage.clear()
   window.sessionStorage.clear()
   vi.mocked(fetchMe).mockReset()
+  vi.mocked(login).mockReset()
   vi.mocked(oauthCallback).mockReset()
+  vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
   vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
   vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
@@ -165,6 +174,51 @@ describe('구글 로그인 콜백', () => {
     // LoginPage가 로그인 성공 직후 연결을 이어서 시작할 수 있도록 표시를 싣는다.
     expect(link).toHaveAttribute('href', '/login?link=google')
     expectSessionCleared()
+  })
+
+  it('409 뒤 비밀번호 로그인과 계정 연결을 거쳐 원래 결제 복귀 경로를 보존한다', async () => {
+    seedStartedSession('state-xyz')
+    window.sessionStorage.setItem(
+      RETURN_TO_KEY,
+      '/billing/callback?resume=resume-1&authKey=must-not-be-forwarded',
+    )
+    vi.mocked(oauthCallback).mockRejectedValue(
+      new ApiError(
+        409,
+        '이미 같은 이메일로 가입된 계정이 있습니다. 이메일로 로그인한 뒤 연결해 주세요.',
+      ),
+    )
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      phone_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: false,
+    })
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    const user = userEvent.setup()
+    renderAt('/auth/google/callback?code=auth-code&state=state-xyz')
+
+    await user.click(await screen.findByRole('link', { name: '기존 계정으로 로그인하기' }))
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(window.sessionStorage.getItem(LINK_RETURN_TO_KEY)).toBe(
+      '/billing/callback?resume=resume-1',
+    )
   })
 
   it('제공자에 닿지 못하면(502) 오류를 보여준다', async () => {

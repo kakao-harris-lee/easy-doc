@@ -652,13 +652,57 @@ class OwnershipPredicateGuardTest {
                     "INSERT [conversions, documents, illustration_suggestion_results]",
                 "$SUGGESTION/JdbcIllustrationSuggestionResultRepository.kt | " +
                     "SELECT [conversions, documents, illustration_suggestion_results]",
+                // 법정 거래 원장은 사용자 탈퇴 이후에도 남는 계정 독립 원장이다. 조회·파기·회전은
+                // 관리자/worker 경로이고, 탈퇴 archive는 이미 owner-checked 서비스 경계에서
+                // 호출된다. `archiveForUser`의 workspace/user 확인 두 문장은 위 소유 술어
+                // 목록에 남고, 여기에는 원장 자체를 다루는 문장만 핀한다.
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | " +
+                    "SELECT [retained_transaction_decisions, retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | DELETE [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | " +
+                    "DELETE [retained_transaction_decisions, retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | " +
+                    "SELECT [retained_transaction_records, toss_billing_orders]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_sessions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_orders]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_orders]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_decisions]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
                 "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                // The paid charge/renewal archive check is a separate orders-only subquery.
+                "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders]",
                 // Subscription reads stay behind lockOwned; joined orders also match workspace_id.
                 "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
                 "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                // Public callback state/resume reads are bearer-hash lookups. `capture` additionally
+                // verifies environment, customer and the bound billing session; `resume` verifies
+                // the authenticated workspace owner before the provider completion path. Cleanup,
+                // scrub and key rotation are worker-only operations.
+                "$BILLING/JdbcTossBillingCallbackStore.kt | INSERT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | DELETE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | UPDATE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | UPDATE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
                 // Scheduled cancellation and retry inspection share that workspace lock.
                 // Expiry is a trusted worker scan; deleted-key hints match fingerprint and environment only.
                 "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
@@ -813,13 +857,52 @@ class OwnershipPredicateGuardTest {
                     "SELECT [illustration_suggestion_results]",
                 "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
                     "UPDATE [illustration_suggestion_results]",
+                // 보존 원장 조회·파기·회전은 관리자/worker 경로이고, 탈퇴 archive의 user/workspace
+                // 선택과 완료 검사는 소유 술어가 있는 별도 문장이다. 원장 자체에는 살아 있는
+                // 사용자 요청 owner를 넣을 수 없으며 계정 FK도 의도적으로 없다.
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | " +
+                    "SELECT [retained_transaction_decisions, retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | DELETE [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | " +
+                    "DELETE [retained_transaction_decisions, retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | INSERT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_sessions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_orders]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [toss_billing_orders]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_records]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | SELECT [retained_transaction_decisions]",
+                "$MAIN/retention/JdbcRetainedTransactionRepository.kt | UPDATE [retained_transaction_decisions]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
                 "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                // The paid charge/renewal archive check is an unguarded deletion-safety count.
+                "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders]",
                 // Subscription reads stay behind lockOwned; joined orders also match workspace_id.
                 "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
                 "$BILLING/JdbcSubscriptionStore.kt | SELECT [toss_billing_orders]",
+                // Callback bearer-hash lookup, cleanup, credential scrub and key rotation are
+                // public-staging/worker internals; the public capture service binds session,
+                // customer and environment, while resume checks the authenticated owner.
+                "$BILLING/JdbcTossBillingCallbackStore.kt | INSERT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | DELETE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | UPDATE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | UPDATE [toss_billing_callbacks]",
+                "$BILLING/JdbcTossBillingCallbackStore.kt | SELECT [toss_billing_callbacks]",
                 // Scheduled cancellation and retry inspection share that workspace lock.
                 // Expiry is a trusted worker scan; deleted-key hints match fingerprint and environment only.
                 "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
@@ -921,6 +1004,10 @@ class OwnershipPredicateGuardTest {
         // TossReachTest covers non-owner 404, non-admin 403, refund replay and durable recovery.
         // 90 -> 95: admin operations queue, billing revision/state, and two error-page metadata reads.
         // AdminMonthlyReachTest verifies admin authorization; audit and error payloads exclude source content.
-        const val MAX_UNGUARDED_STATEMENTS = 95
+        // 95 -> 124: retained transaction archive/admin/worker SQL adds 21 owner-less statements;
+        // callback staging/session binding/cleanup/scrub/rotation adds 8. The user/workspace
+        // selection and completion checks in the archive path retain explicit user_id predicates.
+        // 124 -> 125: BillingDeletionGuard separately counts paid live charge/renewal orders.
+        const val MAX_UNGUARDED_STATEMENTS = 125
     }
 }

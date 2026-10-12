@@ -90,6 +90,7 @@ object AuthenticatedEndpoints {
             "/workspaces/{workspace_id}/subscription/checkout",
             "/workspaces/{workspace_id}/subscription/billing",
             "/workspaces/{workspace_id}/subscription/billing/complete",
+            "/payments/toss/billing/resume",
             "/workspaces/{workspace_id}/payments/{id}/receipt",
             // 세금계산서 요청 기록도 같은 사유로 **따로** 넣는다.
             "/workspaces/{workspace_id}/invoice-requests",

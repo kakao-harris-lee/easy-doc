@@ -2,8 +2,10 @@ package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.account.AccountDeletionRepository
 import kr.easydoc.application.account.LockedAccount
+import kr.easydoc.application.retention.RetainedTransactionArchiver
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.document.DocumentJobLocks
+import kr.easydoc.infrastructure.retention.NoopRetainedTransactionArchiver
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
 import java.util.UUID
@@ -15,6 +17,7 @@ import java.util.UUID
 class JdbcAccountDeletionRepository(
     private val jdbc: JdbcClient,
     private val jobLocks: DocumentJobLocks,
+    private val retainedTransactionArchiver: RetainedTransactionArchiver = NoopRetainedTransactionArchiver(),
 ) : AccountDeletionRepository {
     /** `SELECT … FOR UPDATE` — `JdbcUserRepository.lockForUpdate`와 같은 규약. */
     override fun lockForDeletion(userId: UUID): LockedAccount? =
@@ -78,6 +81,15 @@ class JdbcAccountDeletionRepository(
     override fun deleteUser(userId: UUID) {
         kr.easydoc.infrastructure.subscription.BillingDeletionGuard
             .check(jdbc, userId)
+        // Keep the legal archive and deletion marker in the caller's transaction.  The real
+        // application bean receives a JDBC archiver; the default exists only for old isolated
+        // repository fixtures that intentionally do not migrate the archive tables.
+        retainedTransactionArchiver.archiveForUser(userId)
+        jdbc
+            .sql("INSERT INTO account_deletion_tombstones (id,user_id) VALUES (:id,:user)")
+            .param("id", UUID.randomUUID())
+            .param("user", userId)
+            .update()
         jobLocks.lockActiveJobs(documentIdsOf(userId))
         jdbc
             .sql("DELETE FROM documents WHERE user_id = :userId")

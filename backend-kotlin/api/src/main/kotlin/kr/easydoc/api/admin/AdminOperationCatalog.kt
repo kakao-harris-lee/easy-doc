@@ -16,6 +16,10 @@ object AdminOperationCatalog {
 
     private val OPERATIONS: Map<Route, String> =
         mapOf(
+            Route("GET", "/admin/retained-transactions") to "listRetainedTransactions",
+            Route("GET", "/admin/retained-transactions/{id}") to "getRetainedTransaction",
+            Route("POST", "/admin/retained-transactions/{id}/refund-decision") to "recordRefundDecision",
+            Route("POST", "/admin/retained-transactions/{id}/complaint-decision") to "recordComplaintDecision",
             Route("GET", "/admin/operations") to "listAdminOperations",
             Route("GET", "/admin/notifications") to "listAdminNotifications",
             Route("POST", "/admin/notifications/{id}/resolve") to "resolveAdminNotification",

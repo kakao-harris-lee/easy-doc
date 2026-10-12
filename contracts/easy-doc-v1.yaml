@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.53.0"
+  version: "2.54.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -1957,6 +1957,144 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { description: 이메일 또는 휴대폰 인증 미완료 }
         '404': { description: 리소스 없음 }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/retained-transactions:
+    get:
+      operationId: listRetainedTransactions
+      x-admin-only: true
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      summary: 보존 중인 거래·심사 증빙 목록
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: 최소 메타데이터 목록. 본문·비밀값 없음.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetainedTransactionPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 관리자 권한 필요 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/retained-transactions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      operationId: getRetainedTransaction
+      x-admin-only: true
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      summary: 분리 보존된 금융·동의·심사 증빙 조회
+      description: 관리자 조회를 감사 기록에 남긴다. 문서 본문·카드 원문·빌링키는 포함하지 않는다.
+      responses:
+        '200':
+          description: 증빙 상세
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetainedTransactionDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 관리자 권한 필요 }
+        '404': { description: 증빙 없음 또는 보존 만료 }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/retained-transactions/{id}/refund-decision:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: recordRefundDecision
+      x-admin-only: true
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      summary: 환불 심사 결과 기록
+      description: 심사 증빙만 기록한다. 실제 환불은 기존 관리자 환불 API에서 별도로 실행한다. 동일 UUID·내용은 같은 결과, 다른 내용은 409다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetainedRefundDecisionRequest' }
+      responses:
+        '200':
+          description: 기록한 심사 증빙
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetainedTransactionDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 관리자 권한 필요 }
+        '404': { description: 대상 증빙 없음 }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /admin/retained-transactions/{id}/complaint-decision:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      operationId: recordComplaintDecision
+      x-admin-only: true
+      tags: [Admin]
+      security: [{ HTTPBearer: [] }]
+      summary: 불만·분쟁 처리 결과 기록
+      description: 동일 UUID·내용은 같은 결과, 다른 내용은 409다. 처리 완료일부터 3년 보존한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RetainedComplaintDecisionRequest' }
+      responses:
+        '200':
+          description: 기록한 처리 증빙
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetainedTransactionDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 관리자 권한 필요 }
+        '404': { description: 대상 증빙 없음 }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+  /payments/toss/billing/callback:
+    get:
+      operationId: captureTossBillingCallback
+      tags: [subscriptions]
+      security: []
+      summary: 카드 등록 인증값을 짧게 암호화 보관
+      description: 결제 시작 시 발급한 토큰에 결속된 세션만 처리한다. 공개 요청에서는 카드 발급이나 청구를 실행하지 않는다. 원본 인증값은 응답·로그에 포함하지 않는다.
+      parameters:
+        - { name: state, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: authKey, in: query, schema: { type: string, minLength: 1, maxLength: 300 } }
+        - { name: customerKey, in: query, schema: { type: string, format: uuid } }
+        - { name: code, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '303':
+          description: 비밀값이 없는 복구 화면 또는 허용된 실패 안내로 이동
+          headers:
+            Location: { schema: { type: string }, description: 같은 공개 출처의 /billing/callback 경로 }
+        '404': { description: 세션 또는 토큰이 없거나 일치하지 않음 }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '429': { description: 요청 제한 }
+  /payments/toss/billing/resume:
+    post:
+      operationId: resumeTossBilling
+      tags: [subscriptions]
+      security: [{ HTTPBearer: [] }]
+      summary: 로그인 후 원래 카드 등록과 결제 세션 완료
+      description: 사용자·작업공간·결제 환경을 검사한다. 인증값은 10분 동안 유효하며 완료 시 즉시 제거하고 만료 자료는 1분 주기 정리로 제거한다. 완료된 복구 식별자는 24시간 동안 같은 소유자의 결과 재조회에만 사용한다. 재요청은 새 주문을 만들지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TossResumeRequest' }
+      responses:
+        '200':
+          description: 기존 결제 세션 처리 결과
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TossResumeResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 권한 없음 }
+        '404': { description: 복구 자료가 없거나 다른 사용자 소유 }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
   /workspaces/{workspace_id}/subscription/billing/complete:
@@ -7358,6 +7496,86 @@ components:
         customer_key: { type: string, format: uuid }
         client_key: { type: string }
         billing_environment: { type: string, enum: [toss_test, toss_live] }
+        callback_url: { type: string, format: uri, description: 같은 공개 출처의 서버 카드 등록 콜백. 신규 클라이언트는 성공과 실패 URL에 이 값을 사용한다. }
+    RetainedTransactionSummary:
+      type: object
+      required: [id, type, occurred_at, retained_until, payment_id, environment]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        occurred_at: { type: [string, 'null'], format: date-time, description: 이전 기록의 시각을 확인할 수 없으면 null. 현재 시각으로 대체하지 않는다. }
+        retained_until: { type: string, format: date-time }
+        payment_id: { type: [string, 'null'], format: uuid }
+        environment: { type: [string, 'null'], enum: [toss_live, null] }
+        manual_review: { type: boolean, description: 증빙 부족으로 수동 확인이 필요한 기록. }
+    RetainedTransactionDetail:
+      allOf:
+        - { $ref: '#/components/schemas/RetainedTransactionSummary' }
+        - type: object
+          required: [payload]
+          properties:
+            payload: { type: object, additionalProperties: true, description: 허용된 거래·동의·심사 증빙. 문서 본문·카드 원문·빌링키 제외. }
+            decisions:
+              type: array
+              items: { $ref: '#/components/schemas/RetainedTransactionDecision' }
+    RetainedTransactionDecision:
+      type: object
+      required: [operation_id, type, status, reason, received_at, created_at, updated_at]
+      properties:
+        operation_id: { type: string, format: uuid }
+        type: { type: string, enum: [refund, complaint] }
+        actor_user_id: { type: [string, 'null'], format: uuid }
+        status: { type: string, enum: [approved, rejected, resolved] }
+        amount: { type: [integer, 'null'], minimum: 0 }
+        recovery_credits: { type: [number, 'null'], minimum: 0, multipleOf: 0.1 }
+        reason: { type: string }
+        stop_renewal: { type: [boolean, 'null'] }
+        received_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RetainedTransactionPage:
+      type: object
+      required: [items, total, page, size]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/RetainedTransactionSummary' } }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 0 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+    RetainedRefundDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, status, amount, recovery_credits, reason, stop_renewal, received_at]
+      properties:
+        operation_id: { type: string, format: uuid }
+        status: { type: string, enum: [approved, rejected] }
+        amount: { type: integer, minimum: 0, description: 승인 시 양수, 거절 시 0 }
+        recovery_credits: { type: number, minimum: 0, multipleOf: 0.1 }
+        reason: { type: string, minLength: 1, maxLength: 200 }
+        stop_renewal: { type: boolean }
+        received_at: { type: string, format: date-time, description: 접수 시각. 미래 시각 거절. }
+    RetainedComplaintDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, status, reason, received_at]
+      properties:
+        operation_id: { type: string, format: uuid }
+        status: { type: string, enum: [resolved, rejected] }
+        reason: { type: string, minLength: 1, maxLength: 200 }
+        received_at: { type: string, format: date-time, description: 접수 시각. 미래 시각 거절. }
+    TossResumeRequest:
+      type: object
+      additionalProperties: false
+      required: [resume_id]
+      properties:
+        resume_id: { type: string, minLength: 1, maxLength: 128 }
+    TossResumeResponse:
+      type: object
+      required: [workspace_id, session_id, purpose, overview]
+      properties:
+        workspace_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        purpose: { type: string, enum: [purchase, replace_card] }
+        overview: { $ref: '#/components/schemas/SubscriptionOverview' }
     TossReceipt:
       type: object
       required: [receipt_url]
@@ -11006,6 +11224,15 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.54.0"
+    date: "2026-10-11"
+    revision: "LIVE-RELEASE-READINESS"
+    author: codex
+    change: |
+      서버 암호화 카드 등록 콜백과 인증된 결제 세션 복구를 추가한다.
+      거래 증빙 분리 보존과 탈퇴·기간 만료 파기, 관리자 보존 자료·심사 기록을 추가한다.
+    ground: "2026-10-11 유료 출시 준비 계획 및 구현 요청."
+    compatibility: "기존 카드 등록 완료 API는 유지하며 Kotlin·React·계약을 함께 검증한다."
   - version: "2.53.0"
     date: "2026-10-08"
     revision: "ADMIN-OPERATIONS-RECOVERY"

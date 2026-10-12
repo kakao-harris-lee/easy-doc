@@ -104,6 +104,9 @@ class EncryptedContent(
 enum class EncryptedField(val wireName: String) {
     BILLING_SESSION("toss_billing_sessions.payload_encrypted"),
     BILLING_ORDER("toss_billing_orders.payload_encrypted"),
+    BILLING_CALLBACK("toss_billing_callbacks.payload_encrypted"),
+    RETAINED_TRANSACTION("retained_transaction_records.payload_encrypted"),
+    RETAINED_DECISION("retained_transaction_decisions.payload_encrypted"),
 
     /** 업로드 원문. `documents.source_text_encrypted` (V1 baseline). */
     DOCUMENT_SOURCE_TEXT("documents.source_text_encrypted"),

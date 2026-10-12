@@ -384,6 +384,10 @@ class EnvelopeRotationTest {
                     setOf(
                         EncryptedField.BILLING_SESSION,
                         EncryptedField.BILLING_ORDER,
+                        // Callback and retained-record envelopes use their own JDBC CAS runners.
+                        EncryptedField.BILLING_CALLBACK,
+                        EncryptedField.RETAINED_TRANSACTION,
+                        EncryptedField.RETAINED_DECISION,
                         EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
                         EncryptedField.ACTION_GUIDE_PAYLOAD,
                         EncryptedField.ACTION_GUIDE_ANALYSIS_PAYLOAD,
@@ -416,6 +420,11 @@ class EnvelopeRotationTest {
         val outcome =
             when (field) {
                 EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER -> error("결제 회전은 TossStoreTest에서 검증한다")
+
+                EncryptedField.BILLING_CALLBACK,
+                EncryptedField.RETAINED_TRANSACTION,
+                EncryptedField.RETAINED_DECISION,
+                -> error("콜백과 보존 거래 회전은 해당 JDBC 저장소 테스트에서 검증한다")
 
                 EncryptedField.DOCUMENT_SOURCE_TEXT -> world.rotation.rotateDocument(DOCUMENT)
 

@@ -43,6 +43,78 @@ class AdminReachTest {
     private lateinit var cipher: kr.easydoc.application.crypto.ContentCipher
 
     @Test
+    fun `retained transactions enforce private admin responses and decision replay`() {
+        val admin = newVerifiedAdminAccount()
+        val ordinary = newVerifiedAccount()
+        val id = seedRetainedPayment()
+        val path = "/admin/retained-transactions/$id"
+        assertThat(get(ordinary, path).statusCode()).isEqualTo(403)
+        val detail = get(admin, path)
+        assertThat(detail.statusCode()).isEqualTo(200)
+        assertThat(detail.headers().firstValue("Cache-Control").orElse("")).contains("no-store")
+        assertThat(bodyOf(detail).keys.map { it.toString() }).containsAll(
+            ContractSpec.schemaRequiredComposed("RetainedTransactionDetail"),
+        )
+        assertThat((bodyOf(detail)["payload"] as Map<*, *>)["amount"]).isEqualTo(1000)
+        val operation = UUID.randomUUID()
+        val request =
+            """
+            {"operation_id":"$operation","status":"approved","amount":100,
+             "recovery_credits":1.00,"reason":"individual review","stop_renewal":true,
+             "received_at":"2026-10-10T00:00:00Z"}
+            """.trimIndent()
+        val result = postJson(admin, "$path/refund-decision", request)
+        assertThat(result.statusCode()).isEqualTo(200)
+        val decision = (bodyOf(result)["decisions"] as List<*>).single() as Map<*, *>
+        assertThat(decision["actor_user_id"]).isEqualTo(subjectOf(admin))
+        assertThat(decision["operation_id"]).isEqualTo(operation.toString())
+        assertThat(decision["reason"]).isEqualTo("individual review")
+        assertThat(postJson(admin, "$path/refund-decision", request).statusCode()).isEqualTo(200)
+        assertThat(
+            database.queryInt("SELECT count(*) FROM retained_transaction_decisions WHERE operation_id='$operation'"),
+        ).isEqualTo(1)
+        assertThat(
+            postJson(admin, "$path/refund-decision", request.replace("individual review", "different")).statusCode(),
+        ).isEqualTo(409)
+    }
+
+    @Test
+    fun `retained transaction filters reject invalid input and preserve snake case`() {
+        val admin = newVerifiedAdminAccount()
+        seedRetainedPayment()
+        val response = get(admin, "/admin/retained-transactions?type=payment&size=100")
+        assertThat(response.statusCode()).isEqualTo(200)
+        val items = bodyOf(response)["items"] as List<*>
+        assertThat(items).isNotEmpty()
+        assertThat((items.first() as Map<*, *>).keys.map { it.toString() }).containsAll(
+            ContractSpec.schemaRequired("RetainedTransactionSummary"),
+        )
+        listOf("type=unknown", "page=-1", "size=101", "from=2026-10-11T00:00:00Z&to=2026-10-10T00:00:00Z")
+            .forEach { assertThat(get(admin, "/admin/retained-transactions?$it").statusCode()).isEqualTo(422) }
+    }
+
+    private fun seedRetainedPayment(): UUID {
+        val id = UUID.randomUUID()
+        val sealed =
+            cipher.encrypt(
+                kr.easydoc.core.crypto
+                    .PlainBody("""{"amount":1000,"customer_email":"buyer@example.test"}"""),
+                id,
+                kr.easydoc.core.crypto.EncryptedField.RETAINED_TRANSACTION,
+            )
+        val hex = sealed.bytes.joinToString("") { "%02x".format(it) }
+        database.execute(
+            """
+            INSERT INTO retained_transaction_records(id,record_type,source_id,payment_id,environment,occurred_at,
+              retained_until,payload_encrypted,encryption_scheme,key_version)
+            VALUES ('$id','payment','$id','$id','toss_live','2026-10-10T00:00:00Z','2031-10-10T00:00:00Z',
+              decode('$hex','hex'),'${sealed.scheme}',${sealed.keyVersion})
+            """.trimIndent(),
+        )
+        return id
+    }
+
+    @Test
     fun `관리자는 삭제된 변환의 의견도 복호화해 페이지로 읽는다`() {
         val admin = newVerifiedAdminAccount()
         val owner = newVerifiedAccount()

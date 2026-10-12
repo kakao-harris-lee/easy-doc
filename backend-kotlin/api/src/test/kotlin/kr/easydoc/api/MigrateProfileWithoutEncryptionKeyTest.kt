@@ -5,6 +5,7 @@ import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.MigrationCatalog
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -47,6 +48,14 @@ class MigrateProfileWithoutEncryptionKeyTest {
         assertThat(context.getBeanNamesForType(ContentCipher::class.java))
             .describedAs("스키마만 옮기는 실행이 본문 암호화 키를 쥐고 있다 — 최소 권한에 어긋난다")
             .isEmpty()
+    }
+
+    @Test
+    fun `schema only execution refuses legal archive mutations`() {
+        val archiver = context.getBean(kr.easydoc.application.retention.RetainedTransactionArchiver::class.java)
+        assertThatThrownBy { archiver.archiveForUser(java.util.UUID.randomUUID()) }
+            .isInstanceOf(IllegalStateException::class.java)
+        assertThat(database.queryInt("SELECT count(*) FROM retained_transaction_records")).isZero()
     }
 
     companion object {

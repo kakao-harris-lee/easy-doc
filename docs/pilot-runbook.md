@@ -175,9 +175,49 @@ docker compose -f compose.yml -f compose.pilot.yml logs --tail=20 postgres-backu
 
 백업에는 개인정보가 포함될 수 있으므로 디렉터리는 700, 파일은 600 권한으로 유지한다.
 기본 백업 경로와 DB volume은 같은 서버 디스크에 있으므로 사용자 실수·논리 손상 복구에는
-도움이 되지만 서버 디스크 고장까지 막지는 못한다. `POSTGRES_BACKUP_DIR`을 별도 마운트로
-바꾸거나 최신 dump와 checksum을 암호화된 외부 저장소로 복제해야 한다. 본문 복호화에 필요한
-`.env`의 암호화 키도 dump와 **분리된** 비밀 저장소에 보관한다.
+도움이 되지만 서버 디스크 고장까지 막지는 못한다. 외부 복제는 선택 기능이며
+`POSTGRES_BACKUP_REMOTE_ENABLED=true`일 때만 켠다. 복제 대상은 비공개
+`easy-doc-backups` 버킷의 `postgres/` 관리 prefix다. Supabase 프로젝트 S3 access key는
+프로젝트 전체 Storage 권한을 가질 수 있으므로 이 키는 백업 컨테이너의 비밀 환경변수로만
+주입하고 프런트엔드에는 전달하지 않는다. `POSTGRES_BACKUP_S3_ENDPOINT`·region·access key,
+`POSTGRES_BACKUP_AGE_PUBLIC_KEY`는 `.env` 또는 관리형 secret 주입 경로에 두며 로그·문서에
+실제 값을 적지 않는다. HTTP(S) proxy가 관리 환경에서 주입되면 AWS CLI가 그대로 사용한다.
+
+원격에 올라가는 dump와 삭제 마커는 `age` 공개키로 먼저 암호화된다. 개인키/identity 파일은
+이 이미지에 복사하지 않고, 별도 복구용 비밀 저장소에서 복구 작업 때만 읽는다. 원격 전송은
+암호화 파일 upload → 같은 object download → SHA-256 대조 → manifest upload → latest pointer
+upload 순서다. manifest와 pointer가 마지막에 검증되기 전에는 원격 성공으로 간주하지 않는다.
+각 네트워크 작업은 5초 연결·30초 읽기 제한과 AWS SDK 1회, 셸 3회 재시도를 사용한다.
+따라서 원격 장애 때 한 번의 시도가 수 분 걸릴 수 있지만, 로컬 6시간 dump 일정은 계속된다.
+
+Supabase 계정의 실제 quota는 자동으로 조회하거나 유료로 늘리지 않는다. `POSTGRES_BACKUP_REMOTE_MAX_FILE_BYTES`
+기본값은 Free 파일당 50MB 기준이고, `POSTGRES_BACKUP_REMOTE_CAPACITY_BYTES`는 다른 Storage
+객체를 포함한 전체 계정 quota가 아니라 운영자가 백업 전용으로 배정해 확인한 예산이다.
+두 값의 preflight를 통과하지 못하면 원격 작업만 명확한 오류로 건너뛰고 로컬 dump는 남긴다.
+암호화 파일을 쪼개서 제한을 우회하지 않는다. 예산은 7일 dump, manifest, latest pointer와
+분 단위 삭제 export(최대 약 3분 freshness)의 누적 object 수를 감당하도록 정한다.
+
+`account_deletion_tombstones`와 `document_deletion_tombstones`의 유효한(`expires_at` 이후가
+아닌) marker는 별도 JSON으로 읽어 매분 age 암호화해 export한다. dump와 삭제 export는 서로
+원자적인 하나의 DB snapshot이 아니므로 삭제 직후 다음 export 전에는 짧은 lag가 있을 수 있다.
+remote health는 dump가 8시간보다 오래되거나 삭제 export가 3분보다 오래되거나
+`available=false`이면 fail-closed로 unhealthy가 된다. remote를 끈 경우에만 health가
+`remote=disabled`를 명시하고 성공한다.
+
+원격 설정과 상태는 다음처럼 확인한다.
+
+```bash
+docker compose -f compose.yml -f compose.pilot.yml config --quiet
+docker compose -f compose.yml -f compose.pilot.yml ps postgres-backup
+docker compose -f compose.yml -f compose.pilot.yml logs --tail=30 postgres-backup
+docker compose -f compose.yml -f compose.pilot.yml exec postgres-backup \
+  /bin/sh /usr/local/bin/easydoc-postgres-backup health
+```
+
+원격 retention은 매시간보다 자주 실행하지 않으며, `postgres/` 아래의 이름 규칙을 정확히
+맞춘 Easy-Doc object만 7일 경과 후 삭제한다. `latest.json`, `deletions-latest.json`, 외부
+제품 이름과 다른 prefix는 삭제하지 않는다. remote outage·quota 초과·파일 제한은 로컬
+`latest.dump` 생성과 다음 예약 실행을 막지 않는다.
 
 복구 리허설은 운영 DB를 건드리지 않는 임시 DB에서 수행한다.
 
@@ -190,6 +230,97 @@ docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
 docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
   'psql -U "$POSTGRES_USER" -d easydoc_restore_check -c "select count(*) as flyway_migrations from flyway_schema_history"; dropdb -U "$POSTGRES_USER" easydoc_restore_check'
 ```
+
+외부 복구는 먼저 원격 pointer와 manifest를 확인하고, 삭제 marker가 최신인지 검증한 뒤
+격리 DB에만 적용한다. 복구용 host에는 `aws`, `age`, `jq`, `sha256sum`, `pg_restore`, `psql`을
+준비하고 개인키는 `/secure/backup/easydoc.agekey`처럼 저장소 밖에 둔다.
+
+```bash
+set -eu
+umask 077
+trap 'rm -f -- /tmp/easydoc.dump /tmp/easydoc-deletions.json' EXIT
+export POSTGRES_BACKUP_AGE_IDENTITY_FILE=/secure/backup/easydoc.agekey
+chmod 600 "$POSTGRES_BACKUP_AGE_IDENTITY_FILE"
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$POSTGRES_BACKUP_S3_PREFIX/latest.json" /tmp/easydoc-latest.json
+DUMP_EPOCH=$(jq -er '.backup_epoch' /tmp/easydoc-latest.json)
+DUMP_AGE=$(( $(date +%s) - DUMP_EPOCH ))
+test "$DUMP_AGE" -ge 0
+test "$DUMP_AGE" -le "${POSTGRES_BACKUP_REMOTE_MAX_AGE_SECONDS:-28800}"
+DUMP_KEY=$(jq -er '.object_key' /tmp/easydoc-latest.json)
+DUMP_SHA=$(jq -er '.encrypted_sha256' /tmp/easydoc-latest.json)
+MANIFEST_KEY=$(jq -er '.manifest_key' /tmp/easydoc-latest.json)
+case "$DUMP_KEY" in "$POSTGRES_BACKUP_S3_PREFIX"/easydoc-*.dump.age) ;; *) exit 1 ;; esac
+case "$MANIFEST_KEY" in "$POSTGRES_BACKUP_S3_PREFIX"/easydoc-*.manifest.json) ;; *) exit 1 ;; esac
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$DUMP_KEY" /tmp/easydoc.dump.age
+printf '%s  %s\n' "$DUMP_SHA" /tmp/easydoc.dump.age | sha256sum -c -
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$MANIFEST_KEY" /tmp/easydoc.manifest.json
+MANIFEST_DUMP_SHA=$(jq -er '.encrypted_sha256' /tmp/easydoc.manifest.json)
+test "$MANIFEST_DUMP_SHA" = "$DUMP_SHA"
+age -d -i "$POSTGRES_BACKUP_AGE_IDENTITY_FILE" -o /tmp/easydoc.dump /tmp/easydoc.dump.age
+PLAIN_DUMP_SHA=$(jq -er '.plain_sha256' /tmp/easydoc.manifest.json)
+printf '%s  %s\n' "$PLAIN_DUMP_SHA" /tmp/easydoc.dump | sha256sum -c -
+```
+
+`latest.json`의 `backup_epoch`가 현재 시각에서 8시간 이내인지, object key가
+`$POSTGRES_BACKUP_S3_PREFIX/easydoc-*.dump.age`인지 확인한다. 이어서
+`deletions-latest.json`의 `captured_epoch`가 3분 이내이고 `available=true`인지 확인한다.
+조건 하나라도 맞지 않으면 복구를 중단하고 더 최신 export가 생길 때까지 기다린다. 삭제
+pointer의 object도 위와 같이 SHA-256을 대조한 뒤 개인키로 복호화한다.
+
+```bash
+set -eu
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$POSTGRES_BACKUP_S3_PREFIX/deletions-latest.json" /tmp/easydoc-deletions-latest.json
+DELETION_EPOCH=$(jq -er '.captured_epoch' /tmp/easydoc-deletions-latest.json)
+DELETION_AVAILABLE=$(jq -er '.available' /tmp/easydoc-deletions-latest.json)
+test "$DELETION_AVAILABLE" = true
+DELETION_AGE=$(( $(date +%s) - DELETION_EPOCH ))
+test "$DELETION_AGE" -ge 0
+test "$DELETION_AGE" -le "${POSTGRES_BACKUP_DELETION_MAX_AGE_SECONDS:-180}"
+DELETION_KEY=$(jq -er '.object_key' /tmp/easydoc-deletions-latest.json)
+DELETION_SHA=$(jq -er '.encrypted_sha256' /tmp/easydoc-deletions-latest.json)
+DELETION_MANIFEST_KEY=$(jq -er '.manifest_key' /tmp/easydoc-deletions-latest.json)
+case "$DELETION_KEY" in "$POSTGRES_BACKUP_S3_PREFIX"/easydoc-deletions-*.json.age) ;; *) exit 1 ;; esac
+case "$DELETION_MANIFEST_KEY" in "$POSTGRES_BACKUP_S3_PREFIX"/easydoc-deletions-*.manifest.json) ;; *) exit 1 ;; esac
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$DELETION_KEY" /tmp/easydoc-deletions.json.age
+printf '%s  %s\n' "$DELETION_SHA" /tmp/easydoc-deletions.json.age | sha256sum -c -
+aws --endpoint-url "$POSTGRES_BACKUP_S3_ENDPOINT" --region "$POSTGRES_BACKUP_S3_REGION" \
+  s3 cp "s3://$POSTGRES_BACKUP_S3_BUCKET/$DELETION_MANIFEST_KEY" /tmp/easydoc-deletions.manifest.json
+test "$(jq -er '.encrypted_sha256' /tmp/easydoc-deletions.manifest.json)" = "$DELETION_SHA"
+age -d -i "$POSTGRES_BACKUP_AGE_IDENTITY_FILE" -o /tmp/easydoc-deletions.json /tmp/easydoc-deletions.json.age
+```
+
+복호화한 dump는 기존 운영 DB가 아닌 격리 DB에 복원한다.
+
+```bash
+docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
+  'dropdb --if-exists -U "$POSTGRES_USER" easydoc_restore_check; createdb -U "$POSTGRES_USER" easydoc_restore_check'
+docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
+  'pg_restore -U "$POSTGRES_USER" -d easydoc_restore_check --no-owner --no-privileges' \
+  < /tmp/easydoc.dump
+```
+
+복원 시간이 180초를 넘었다면 최신 삭제 export를 다시 다운로드·검증·복호화한다.
+다음 명령은 `easydoc_restore_` 접두사의 격리 DB만 허용한다. 표시를 staging table로 읽고
+배열 건수를 대조한 뒤, 표시 저장과 실제 문서·계정 삭제를 한 트랜잭션으로 적용한다.
+`available=false`, 오래된 export, 누락 입력 또는 삭제 대상이 남는 경우 커밋하지 않는다.
+
+```bash
+docker compose -f compose.yml -f compose.pilot.yml run --rm -T \
+  -e PGDATABASE=easydoc_restore_check \
+  -v /tmp/easydoc-deletions.json:/restore/deletions.json:ro \
+  --entrypoint /usr/local/bin/easydoc-reapply-deletions \
+  postgres-backup /restore/deletions.json --apply
+rm -f -- /tmp/easydoc.dump /tmp/easydoc-deletions.json
+```
+
+표시를 넣는 것만으로는 복구 DB의 삭제 대상이 제거되지 않는다. 적용 성공 후 남은 대상이
+0건인지 확인하고 나서 서비스 연결을 판단한다. 이 절차의 세 코드 블록은 같은 셸에서
+실행하여 `umask`와 종료 시 평문 정리 설정을 유지한다.
 
 실제 운영 DB 복구는 쓰기를 중단하고 별도 보존본을 만든 뒤 수행해야 하는 파괴적 절차다.
 복구 시점과 대상 dump를 확정하지 않은 상태에서는 실행하지 않는다. 특히

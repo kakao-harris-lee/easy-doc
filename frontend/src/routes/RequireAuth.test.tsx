@@ -12,9 +12,11 @@ import {
   listAdminErrorEvents,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
+  listAdminRetainedTransactions,
   listAdminWorkspaces,
   readAdminErrors,
 } from '../api/admin'
+import { resumeTossBilling } from '../api/subscriptions'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
@@ -53,6 +55,15 @@ vi.mock('../api/admin', () => ({
   listAdminOperations: vi.fn(),
   listAdminErrorEvents: vi.fn(),
   listAdminAnnouncements: vi.fn(),
+  listAdminRetainedTransactions: vi.fn(),
+  getAdminRetainedTransaction: vi.fn(),
+  postAdminRefundDecision: vi.fn(),
+  postAdminComplaintDecision: vi.fn(),
+}))
+
+vi.mock('../api/subscriptions', () => ({
+  resumeTossBilling: vi.fn(),
+  getSubscription: vi.fn(),
 }))
 
 function renderAt(path: string) {
@@ -93,6 +104,13 @@ beforeEach(() => {
   vi.mocked(listAdminInvoiceRequests).mockReset()
   vi.mocked(readAdminErrors).mockReset()
   vi.mocked(listAdminAnnouncements).mockReset()
+  vi.mocked(listAdminRetainedTransactions).mockReset().mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 0,
+    size: 20,
+  })
+  vi.mocked(resumeTossBilling).mockReset()
 })
 
 describe('인증 가드', () => {
@@ -122,6 +140,49 @@ describe('인증 가드', () => {
     renderAt('/history')
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+  })
+
+  it('결제 복구 중 토큰이 만료되면 다시 로그인한 뒤 같은 resume으로 이어간다', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem('easydoc.access_token', 'expired-token')
+    vi.mocked(fetchMe).mockRejectedValueOnce(new Error('unauthorized')).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      phone_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: false,
+    })
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'fresh-token',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(resumeTossBilling).mockResolvedValue({
+      workspace_id: 'workspace',
+      session_id: 'session',
+      purpose: 'purchase',
+      overview: {
+        mock_enabled: false,
+        toss_enabled: true,
+        pending: false,
+        plans: [],
+        subscription: null,
+        payments: [],
+      },
+    })
+    window.history.replaceState({}, '', '/billing/callback?resume=resume-after-expiry')
+
+    renderAt('/billing/callback?resume=resume-after-expiry')
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByText(/테스트 구독이 적용/)).toBeInTheDocument()
+    expect(resumeTossBilling).toHaveBeenCalledWith('resume-after-expiry')
   })
 
   it('토큰이 유효하면 보호 화면을 보여준다', async () => {

@@ -8,10 +8,11 @@ import { useAuth } from '../auth/context'
 import {
   isOAuthProvider,
   oauthLinkRedirectUriStorageKey,
+  oauthLinkReturnToStorageKey,
   oauthLinkStateStorageKey,
   PROVIDER_DISPLAY_NAME,
 } from '../auth/socialLogin'
-import { HOME_PATH, type HomeNoticeState } from '../routes/paths'
+import { HOME_PATH, sanitizeReturnPath, type HomeNoticeState } from '../routes/paths'
 import { NotFoundPage } from './NotFoundPage'
 
 /** `state`가 없거나, 저장해 둔 값과 다르거나, 시작하지 않고 이 화면에 들어온 경우. */
@@ -25,7 +26,7 @@ type ViewState = { kind: 'processing' } | { kind: 'error'; message: string }
 type ParsedCallback =
   | { kind: 'cancelled' }
   | { kind: 'invalid' }
-  | { kind: 'ready'; code: string; state: string; redirectUri: string }
+  | { kind: 'ready'; code: string; state: string; redirectUri: string; returnTo: string }
 
 /**
  * 주소의 쿼리와 저장해 둔 세션 값을 맞춰 본다. `OAuthCallbackPage.parseCallback`과 같은
@@ -38,11 +39,15 @@ function parseCallback(search: string, provider: OAuthProvider): ParsedCallback 
 
   let storedState: string | null = null
   let storedRedirectUri: string | null = null
+  let storedReturnTo: string | undefined
   try {
     storedState = window.sessionStorage.getItem(oauthLinkStateStorageKey(provider))
     storedRedirectUri = window.sessionStorage.getItem(oauthLinkRedirectUriStorageKey(provider))
+    storedReturnTo =
+      window.sessionStorage.getItem(oauthLinkReturnToStorageKey(provider)) ?? undefined
     window.sessionStorage.removeItem(oauthLinkStateStorageKey(provider))
     window.sessionStorage.removeItem(oauthLinkRedirectUriStorageKey(provider))
+    window.sessionStorage.removeItem(oauthLinkReturnToStorageKey(provider))
   } catch {
     // 세션 저장소를 못 쓰면(사생활 보호 모드 등) storedState가 null로 남아 아래에서
     // "만료되었거나 이미 사용되었습니다"로 처리된다.
@@ -65,7 +70,13 @@ function parseCallback(search: string, provider: OAuthProvider): ParsedCallback 
     return { kind: 'invalid' }
   }
 
-  return { kind: 'ready', code, state: returnedState, redirectUri: storedRedirectUri }
+  return {
+    kind: 'ready',
+    code,
+    state: returnedState,
+    redirectUri: storedRedirectUri,
+    returnTo: sanitizeReturnPath(storedReturnTo),
+  }
 }
 
 /**
@@ -125,7 +136,10 @@ export function OAuthLinkCallbackPage() {
       .then(() => refreshMe())
       .then(() => {
         const state: HomeNoticeState = { notice: `${providerName} 계정을 연결했습니다` }
-        navigate(HOME_PATH, { replace: true, state })
+        navigate(parsed.kind === 'ready' ? parsed.returnTo : HOME_PATH, {
+          replace: true,
+          state,
+        })
       })
       .catch((caught: unknown) => {
         setView({
@@ -152,7 +166,7 @@ export function OAuthLinkCallbackPage() {
       <h1 id="oauth-link-callback-heading">{providerName} 계정을 연결하지 못했습니다</h1>
       <p role="alert">{view.message}</p>
       <p>
-        <Link to={HOME_PATH}>홈으로 돌아가기</Link>
+        <Link to={parsed.kind === 'ready' ? parsed.returnTo : HOME_PATH}>홈으로 돌아가기</Link>
       </p>
     </section>
   )

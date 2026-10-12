@@ -11,6 +11,7 @@ import {
   HOME_PATH,
   RESET_PASSWORD_PATH,
   SIGNUP_PATH,
+  sanitizeReturnPath,
   type FromLocationState,
 } from '../routes/paths'
 
@@ -30,7 +31,7 @@ export function LoginPage() {
   const location = useLocation()
 
   // 가드가 보내온 원래 목적지가 있으면 로그인 후 그리로 돌아간다.
-  const from = (location.state as FromLocationState | null)?.from ?? HOME_PATH
+  const from = sanitizeReturnPath((location.state as FromLocationState | null)?.from ?? HOME_PATH)
 
   // `OAuthCallbackPage`가 409(이미 같은 이메일로 가입됨)에서 이리로 보낼 때 싣는
   // 표시다 — 이 주소로 온 경우에만 로그인 성공 직후 그 제공자 계정 연결을 이어서
@@ -70,7 +71,7 @@ export function LoginPage() {
                 try {
                   // 성공하면 이 함수가 곧장 제공자 인가 화면으로 이동시킨다 — 이어지는
                   // navigate는 실행되지 않는다.
-                  await startSocialLink(providerToLink)
+                  await startSocialLink(providerToLink, from)
                   return
                 } catch {
                   // 연결 시작 실패(네트워크 등)는 로그인 자체의 실패가 아니다 —
@@ -88,9 +89,9 @@ export function LoginPage() {
             <span className="text-xs text-muted-foreground">또는</span>
             <span className="h-px flex-1 bg-border" />
           </div>
-          <SocialLoginButton provider="google" />
-          <SocialLoginButton provider="kakao" />
-          <SocialLoginButton provider="naver" />
+          <SocialLoginButton provider="google" returnTo={from} />
+          <SocialLoginButton provider="kakao" returnTo={from} />
+          <SocialLoginButton provider="naver" returnTo={from} />
           <section aria-labelledby="login-signup-cta" className="mt-6 border-t border-border pt-5">
             <p id="login-signup-cta" className="text-center text-sm text-muted-foreground">
               아직 계정이 없으신가요?

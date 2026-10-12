@@ -37,6 +37,9 @@ class EncryptionSchemeSchemaTest {
             // R7 ER-17 결과(V35). 새 봉인 표가 방식 이름을 자기 CHECK 로 고정하는지 함께 본다
             // (명세 §7) — 이름만 `EncryptedField` 에 올리고 표 제약을 빠뜨리면 이 대조가 잡는다.
             "ck_illustration_suggestion_results_scheme",
+            "retained_transaction_records_encryption_scheme_check",
+            "retained_transaction_decisions_encryption_scheme_check",
+            "toss_billing_callbacks_encryption_scheme_check",
         ).forEach { name ->
             val definition = constraintDefinition(name)
 

@@ -135,7 +135,12 @@ class BillingNotificationEnvironmentMigrationTest {
             VALUES ('$workspace','legacy-recovery','upcoming','manual_review','2026-10-01T00:00:00Z')
             """.trimIndent(),
         )
-        val flyway = Flyway.configure().dataSource(db.jdbcUrl, db.username, db.password).load()
+        val flyway =
+            Flyway
+                .configure()
+                .dataSource(db.jdbcUrl, db.username, db.password)
+                .target("47")
+                .load()
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1)
         flyway.validate()
         assertThat(

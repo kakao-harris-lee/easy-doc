@@ -125,6 +125,7 @@ else
   export SPRING_DATASOURCE_USERNAME=postgres
   export SPRING_DATASOURCE_PASSWORD=postgres
   export SERVER_PORT="$API_PORT"
+  export EASYDOC_APP_PUBLIC_BASE_URL="$FRONTEND_ORIGIN"
   export EASYDOC_AUTH_JWT_SECRET="$jwt_secret"
 
   # 저장 암호화 키도 매 실행 새로 만든다 (게이트 28 C-3). `CryptoConfiguration` 의 기동

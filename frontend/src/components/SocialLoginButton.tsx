@@ -8,6 +8,7 @@ import { Button } from './ui/Button'
 
 interface SocialLoginButtonProps {
   provider: OAuthProvider
+  returnTo?: string
 }
 
 /** 시작 요청 자체가 실패했을 때(네트워크 등) 보여줄 문구. 서버 문구가 있으면 그것을 우선한다. */
@@ -43,7 +44,7 @@ const NAVER_BUTTON_CLASSNAME =
  * 시작 요청이 422(제공자 미설정 등)로 실패해도 이메일 폼은 그대로 써야 하므로, 이 버튼
  * 아래에만 오류를 남기고 `CredentialsForm`의 오류 상태는 건드리지 않는다.
  */
-export function SocialLoginButton({ provider }: SocialLoginButtonProps) {
+export function SocialLoginButton({ provider, returnTo }: SocialLoginButtonProps) {
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
 
@@ -51,7 +52,7 @@ export function SocialLoginButton({ provider }: SocialLoginButtonProps) {
     setError(null)
     setStarting(true)
     try {
-      await startSocialLogin(provider)
+      await startSocialLogin(provider, returnTo)
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : GENERIC_START_ERROR_MESSAGE[provider])
       setStarting(false)

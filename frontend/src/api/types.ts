@@ -1323,6 +1323,61 @@ export interface AdminFeedbackListResponse {
   total: number
 }
 
+/** 보존 거래 목록의 안전한 메타데이터. 원문 결제 비밀값은 계약에 포함하지 않는다. */
+export interface AdminRetainedTransaction {
+  id: string
+  type: string
+  occurred_at: string | null
+  retained_until: string
+  payment_id: string | null
+  environment: string | null
+  manual_review?: boolean
+}
+
+export interface AdminRetainedTransactionDecision {
+  operation_id: string
+  type: 'refund' | 'complaint'
+  actor_user_id?: string | null
+  status: 'approved' | 'rejected' | 'resolved'
+  amount?: number | null
+  recovery_credits?: number | null
+  reason: string
+  stop_renewal?: boolean | null
+  received_at: string
+  created_at: string
+  updated_at: string
+}
+
+/** 보존 거래 상세. payload는 서버가 공개 대상으로 선별한 기록만 담는다. */
+export interface AdminRetainedTransactionDetail extends AdminRetainedTransaction {
+  payload: Record<string, unknown>
+  decisions?: AdminRetainedTransactionDecision[]
+}
+
+export interface AdminRetainedTransactionListResponse {
+  items: AdminRetainedTransaction[]
+  page: number
+  size: number
+  total: number
+}
+
+export interface AdminRefundDecisionRequest {
+  operation_id: string
+  status: 'approved' | 'rejected'
+  amount: number
+  recovery_credits: number
+  reason: string
+  stop_renewal: boolean
+  received_at: string
+}
+
+export interface AdminComplaintDecisionRequest {
+  operation_id: string
+  status: 'resolved' | 'rejected'
+  reason: string
+  received_at: string
+}
+
 /** ER-28 local/test fake analysis only. Eligibility does not enable generation. */
 export type GuideOutputMode = 'additional_guide' | 'full_document'
 export interface GuideInformation {

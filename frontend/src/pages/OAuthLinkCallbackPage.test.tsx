@@ -1,6 +1,7 @@
 import { ThemeProvider } from '../theme/ThemeProvider'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe, oauthLinkCallback } from '../api/auth'
@@ -8,13 +9,17 @@ import { ApiError, listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
+import { oauthLinkReturnToStorageKey } from '../auth/socialLogin'
 import { AppLayout } from '../components/AppLayout'
+import { OAuthLinkCallbackPage } from './OAuthLinkCallbackPage'
 import { AppRoutes } from '../routes/AppRoutes'
+import { RequireAuth } from '../routes/RequireAuth'
 import { userResponse, workspaceContext, workspaceCredits } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 
 const STATE_KEY = 'easydoc.oauth.google.link.state'
 const REDIRECT_URI_KEY = 'easydoc.oauth.google.link.redirect_uri'
+const RETURN_TO_KEY = oauthLinkReturnToStorageKey('google')
 const STORED_REDIRECT_URI = 'http://localhost:5173/auth/google/link/callback'
 
 vi.mock('../api/auth', () => ({
@@ -57,16 +62,52 @@ function renderAt(path: string) {
   )
 }
 
+function LocationProbe() {
+  const location = useLocation()
+  return (
+    <output data-testid="location">
+      {location.pathname}
+      {location.search}
+    </output>
+  )
+}
+
+function renderCallbackAt(path: string) {
+  return render(
+    <AuthProvider>
+      <WorkspaceContext.Provider value={workspaceContext()}>
+        <MemoryRouter initialEntries={[path]}>
+          <ThemeProvider>
+            <Routes>
+              <Route
+                path="/auth/:provider/link/callback"
+                element={
+                  <RequireAuth>
+                    <OAuthLinkCallbackPage />
+                  </RequireAuth>
+                }
+              />
+              <Route path="*" element={<LocationProbe />} />
+            </Routes>
+          </ThemeProvider>
+        </MemoryRouter>
+      </WorkspaceContext.Provider>
+    </AuthProvider>,
+  )
+}
+
 /** 정상적으로 연결 버튼을 거쳐 들어온 것처럼 세션 저장소와 로그인 상태를 채운다. */
-function seedStartedSession(state = 'link-state-xyz') {
+function seedStartedSession(state = 'link-state-xyz', returnTo?: string) {
   window.localStorage.setItem('easydoc.access_token', 'valid-token')
   window.sessionStorage.setItem(STATE_KEY, state)
   window.sessionStorage.setItem(REDIRECT_URI_KEY, STORED_REDIRECT_URI)
+  if (returnTo !== undefined) window.sessionStorage.setItem(RETURN_TO_KEY, returnTo)
 }
 
 function expectSessionCleared() {
   expect(window.sessionStorage.getItem(STATE_KEY)).toBeNull()
   expect(window.sessionStorage.getItem(REDIRECT_URI_KEY)).toBeNull()
+  expect(window.sessionStorage.getItem(RETURN_TO_KEY)).toBeNull()
 }
 
 beforeEach(() => {
@@ -102,6 +143,24 @@ describe('구글 계정 연결 콜백', () => {
     // refreshMe로 다시 읽은 사용자를 반영한다 — fetchMe가 두 번째로 부른 결과다.
     expect(vi.mocked(fetchMe)).toHaveBeenCalledTimes(2)
     expect(await screen.findByText('구글 계정을 연결했습니다')).toBeInTheDocument()
+    expectSessionCleared()
+  })
+
+  it('완료 후 저장된 복귀 경로로 이동하고 인증값은 복귀 경로에서 제거한다', async () => {
+    seedStartedSession(
+      'link-state-xyz',
+      '/billing/callback?resume=resume-1&authKey=must-not-be-forwarded',
+    )
+    vi.mocked(fetchMe)
+      .mockResolvedValueOnce(userResponse({ identities: [] }))
+      .mockResolvedValueOnce(userResponse({ identities: [{ provider: 'google' }] }))
+    vi.mocked(oauthLinkCallback).mockResolvedValue(undefined)
+
+    renderCallbackAt('/auth/google/link/callback?code=auth-code&state=link-state-xyz')
+
+    expect(await screen.findByTestId('location')).toHaveTextContent(
+      '/billing/callback?resume=resume-1',
+    )
     expectSessionCleared()
   })
 
