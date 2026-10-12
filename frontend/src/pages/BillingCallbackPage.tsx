@@ -3,19 +3,54 @@ import { Link } from 'react-router-dom'
 import {
   completeTossBilling,
   getSubscription,
+  resumeTossBilling,
   type SubscriptionOverview,
 } from '../api/subscriptions'
 import { ApiError } from '../api/client'
 import { BILLING_CONTEXT } from '../billing/toss'
 import { Button } from '../components/ui/Button'
 
+interface LegacyBillingContext {
+  workspace: string
+  session: string
+  fail: boolean
+  purpose?: string
+}
+
+function readLegacyBillingContext(): LegacyBillingContext | null {
+  try {
+    const parsed: unknown = JSON.parse(sessionStorage.getItem(BILLING_CONTEXT) ?? 'null')
+    if (parsed === null || typeof parsed !== 'object') return null
+    const value = parsed as Partial<LegacyBillingContext>
+    if (
+      typeof value.workspace !== 'string' ||
+      typeof value.session !== 'string' ||
+      typeof value.fail !== 'boolean'
+    ) {
+      return null
+    }
+    return value as LegacyBillingContext
+  } catch {
+    return null
+  }
+}
+
 export function BillingCallbackPage() {
-  // Keep the one-use credential only in memory. Remove it from browser history before other interactions.
+  type Callback =
+    | { kind: 'resume'; resumeId: string }
+    | { kind: 'legacy'; auth: string | null; customer: string | null; code: string | null }
+
+  // Keep the one-use legacy credential only in memory. The new callback has no credential;
+  // it carries an opaque server-owned resume id instead.
   const [callback] = useState(() => {
     const query = new URLSearchParams(location.search)
+    const resumeId = query.get('resume')
+    if (resumeId !== null && resumeId !== '') {
+      return { kind: 'resume', resumeId } satisfies Callback
+    }
     const auth = query.get('authKey')
     const customer = query.get('customerKey')
-    return { auth, customer, code: query.get('code') }
+    return { kind: 'legacy', auth, customer, code: query.get('code') } satisfies Callback
   })
   const started = useRef(false)
   const [busy, setBusy] = useState(true)
@@ -41,12 +76,25 @@ export function BillingCallbackPage() {
     setBusy(true)
     setRetry(false)
     try {
-      const context = JSON.parse(sessionStorage.getItem(BILLING_CONTEXT) ?? 'null') as {
-        workspace: string
-        session: string
-        fail: boolean
-        purpose?: string
-      } | null
+      if (callback.kind === 'resume') {
+        const resumed = await resumeTossBilling(callback.resumeId)
+        const result = resumed.overview
+        setMessage(describe(result, resumed.session_id, resumed.purpose === 'replace_card'))
+        if (result.pending && !result.manual_review) {
+          setPollContext({
+            workspace: resumed.workspace_id,
+            session: resumed.session_id,
+            replacement: resumed.purpose === 'replace_card',
+          })
+        } else {
+          history.replaceState(history.state, '', '/billing/callback')
+        }
+        // Resume ids are safe to keep while the provider result is pending. A refresh can
+        // then call the same idempotent operation again and recover polling after login.
+        return
+      }
+
+      const context = readLegacyBillingContext()
       if (!context || !callback.auth || !callback.customer) {
         setMessage(
           callback.code === 'NOT_SUPPORTED_CARD_TYPE'
@@ -72,26 +120,39 @@ export function BillingCallbackPage() {
           replacement: context.purpose === 'replace_card',
         })
       sessionStorage.removeItem(BILLING_CONTEXT)
+      history.replaceState(history.state, '', '/billing/callback')
     } catch (cause) {
       setMessage(
         cause instanceof ApiError
           ? cause.message
           : '결과를 확인하지 못했습니다. 다시 확인해 주세요.',
       )
-      setRetry(true)
+      const terminalResumeError =
+        callback.kind === 'resume' &&
+        cause instanceof ApiError &&
+        (cause.status === 403 || cause.status === 404)
+      if (terminalResumeError) {
+        // Expired or another owner's resume id is terminal. It is opaque, but retaining a
+        // known-invalid id in browser history only invites a misleading repeat attempt.
+        history.replaceState(history.state, '', '/billing/callback')
+      }
+      setRetry(!terminalResumeError)
     } finally {
       setBusy(false)
     }
   }
   useEffect(() => {
-    history.replaceState(history.state, '', '/billing/callback')
+    // Legacy authKey/customerKey values must leave the URL before the user can interact.
+    // A new resume id is kept until its first successful server call so an expired session
+    // can return through RequireAuth and retry without browser storage.
+    if (callback.kind === 'legacy') history.replaceState(history.state, '', '/billing/callback')
     if (!started.current) {
       started.current = true
       void finish()
     }
     // Retry uses the same in-memory callback; rerenders must not issue a second request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [callback.kind])
   useEffect(() => {
     if (!pollContext) return
     const controller = new AbortController()
@@ -100,7 +161,11 @@ export function BillingCallbackPage() {
         .then((result) => {
           if (controller.signal.aborted) return
           setMessage(describe(result, pollContext.session, pollContext.replacement))
-          if (!result.pending || result.manual_review) setPollContext(null)
+          if (!result.pending || result.manual_review) {
+            setPollContext(null)
+            if (callback.kind === 'resume')
+              history.replaceState(history.state, '', '/billing/callback')
+          }
         })
         .catch(() => {
           /* Keep the pending result; do not create a new order. */
@@ -110,7 +175,7 @@ export function BillingCallbackPage() {
       controller.abort()
       window.clearInterval(timer)
     }
-  }, [pollContext])
+  }, [pollContext, callback.kind])
   return (
     <section className="mx-auto max-w-xl space-y-4 p-6">
       <h1 className="text-xl font-semibold">카드 등록 및 결제 확인</h1>

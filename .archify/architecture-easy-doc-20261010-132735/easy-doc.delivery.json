@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "e75d0a6c-37ea-46c1-bbe8-00ad17ff9c42",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/candidate.json",
+  "output": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/easy-doc.html",
+  "specification": {
+    "sha256": "cbac6b0abee0fba2bd758e4ee44903a8e1c3c645e698454566099097aec841a1",
+    "bytes": 12229
+  },
+  "artifact": {
+    "sha256": "3fd3dcc3aeadc8efef9749943f84262e67f88534b20ff4ec4dcee2a8bf6bf31c",
+    "bytes": 775189
+  }
+}

@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.subscription
 
+import kr.easydoc.application.retention.RetainedTransactionArchiver
 import kr.easydoc.application.subscription.BillingOrder
 import kr.easydoc.application.subscription.BillingSession
 import kr.easydoc.application.subscription.TossPayment
@@ -19,6 +20,45 @@ import java.util.Base64
 import java.util.UUID
 
 class TossStoreTest {
+    @Test
+    fun `savePayment archives before writing the live payment row and passes the prior refund total`() {
+        val db = PostgresTestSupport.createEmptyDatabase("toss_retention_hook")
+        Flyway
+            .configure()
+            .dataSource(db.jdbcUrl, db.username, db.password)
+            .load()
+            .migrate()
+        val jdbc = JdbcClient.create(DriverManagerDataSource(db.jdbcUrl, db.username, db.password))
+        val owner = UUID.randomUUID()
+        val workspace = UUID.randomUUID()
+        val orderId = UUID.randomUUID()
+        db.execute("INSERT INTO users(id,email,password_hash) VALUES ('$owner','hook@example.test','test')")
+        db.execute("INSERT INTO workspaces(id,user_id,name) VALUES ('$workspace','$owner','hook')")
+        val archiver = RecordingArchiver(jdbc, workspace, orderId)
+        val store = JdbcTossBillingStore(jdbc, AesGcmContentCipher(mapOf(1 to key(1)), 1), archiver)
+        val order =
+            BillingOrder(
+                orderId,
+                workspace,
+                "start",
+                1000,
+                Instant.parse("2026-10-11T00:00:00Z"),
+                Instant.parse("2026-11-11T00:00:00Z"),
+                environment = "toss_live",
+                status = "paid",
+            )
+        val first = TossPayment(Secret("payment"), orderId, "DONE", 1000, 1000, Secret("receipt"), order.createdAt)
+        val partial = first.copy(remainingAmount = 400)
+
+        store.savePayment(order, first)
+        store.savePayment(order, partial)
+        store.savePayment(order, partial)
+
+        assertThat(archiver.previousRefundedAmounts).containsExactly(0, 0, 600)
+        assertThat(archiver.paymentRowsAtCall).containsExactly(0, 1, 1)
+        assertThat(db.queryInt("SELECT refunded_amount FROM subscription_payments WHERE id='$orderId'")).isEqualTo(600)
+    }
+
     @Test
     @Suppress("LongMethod") // One rotation scenario checks both encrypted fields and their unchanged leases.
     fun `billing envelopes rotate both fields without changing leases and reject swapped ciphertext`() {
@@ -156,4 +196,33 @@ class TossStoreTest {
     }
 
     private fun key(value: Byte) = Secret(Base64.getEncoder().encodeToString(ByteArray(32) { value }))
+
+    private class RecordingArchiver(
+        private val jdbc: JdbcClient,
+        private val workspace: UUID,
+        private val order: UUID,
+    ) : RetainedTransactionArchiver {
+        val previousRefundedAmounts = mutableListOf<Int>()
+        val paymentRowsAtCall = mutableListOf<Int>()
+
+        override fun archiveForUser(userId: UUID) = Unit
+
+        override fun archivePayment(
+            order: BillingOrder,
+            payment: TossPayment,
+            previousRefundedAmount: Int,
+            customerEmail: String?,
+            consent: BillingSession?,
+        ) {
+            check(order.workspaceId == workspace && order.id == this.order)
+            previousRefundedAmounts += previousRefundedAmount
+            paymentRowsAtCall +=
+                jdbc
+                    .sql("SELECT count(*) FROM subscription_payments WHERE workspace_id=:workspace AND id=:id")
+                    .param("workspace", workspace)
+                    .param("id", this.order)
+                    .query(Int::class.java)
+                    .single()
+        }
+    }
 }

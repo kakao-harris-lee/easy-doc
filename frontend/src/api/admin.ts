@@ -1,9 +1,13 @@
 import { requestJson } from './client'
 import type {
+  AdminComplaintDecisionRequest,
   AdminCreditAdjustmentRequest,
   AdminErrorsResponse,
   AdminInvoiceRequestHandleRequest,
   AdminInvoiceRequestListResponse,
+  AdminRefundDecisionRequest,
+  AdminRetainedTransactionDetail,
+  AdminRetainedTransactionListResponse,
   AdminWorkspaceDetailResponse,
   AdminWorkspaceListResponse,
   AnnouncementCreateRequest,
@@ -13,6 +17,15 @@ import type {
   InvoiceRequestResponse,
   InvoiceRequestStatus,
   WorkspaceCreditsResponse,
+} from './types'
+
+export type {
+  AdminComplaintDecisionRequest,
+  AdminRefundDecisionRequest,
+  AdminRetainedTransactionDecision,
+  AdminRetainedTransaction,
+  AdminRetainedTransactionDetail,
+  AdminRetainedTransactionListResponse,
 } from './types'
 
 /**
@@ -38,6 +51,61 @@ export function listAdminWorkspaces(
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
   return requestJson<AdminWorkspaceListResponse>(`/admin/workspaces${suffix}`, { signal })
+}
+
+/** 보존 거래의 안전한 메타데이터를 기간·종류별로 조회한다. */
+export function listAdminRetainedTransactions(
+  params: {
+    page?: number
+    size?: number
+    type?: string
+    from?: string
+    to?: string
+  } = {},
+  signal?: AbortSignal,
+): Promise<AdminRetainedTransactionListResponse> {
+  const query = new URLSearchParams()
+  query.set('page', String(params.page ?? 0))
+  query.set('size', String(params.size ?? 20))
+  if (params.type) query.set('type', params.type)
+  if (params.from) query.set('from', params.from)
+  if (params.to) query.set('to', params.to)
+  return requestJson<AdminRetainedTransactionListResponse>(
+    `/admin/retained-transactions?${query.toString()}`,
+    { signal },
+  )
+}
+
+/** 보존 거래 한 건의 선별된 payload를 읽는다. 카드 원문·인증값은 서버가 반환하지 않는다. */
+export function getAdminRetainedTransaction(
+  id: string,
+  signal?: AbortSignal,
+): Promise<AdminRetainedTransactionDetail> {
+  return requestJson<AdminRetainedTransactionDetail>(`/admin/retained-transactions/${id}`, {
+    signal,
+  })
+}
+
+/** 환불 판단을 기록한다. 실제 결제 환불은 기존 billing refund API가 별도로 담당한다. */
+export function postAdminRefundDecision(
+  id: string,
+  request: AdminRefundDecisionRequest,
+): Promise<AdminRetainedTransactionDetail> {
+  return requestJson<AdminRetainedTransactionDetail>(
+    `/admin/retained-transactions/${id}/refund-decision`,
+    { method: 'POST', body: request },
+  )
+}
+
+/** 소비자 불만 판단을 기록한다. 이 API는 외부 결제·계정 상태를 변경하지 않는다. */
+export function postAdminComplaintDecision(
+  id: string,
+  request: AdminComplaintDecisionRequest,
+): Promise<AdminRetainedTransactionDetail> {
+  return requestJson<AdminRetainedTransactionDetail>(
+    `/admin/retained-transactions/${id}/complaint-decision`,
+    { method: 'POST', body: request },
+  )
 }
 
 /**

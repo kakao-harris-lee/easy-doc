@@ -8,6 +8,7 @@
 
 import { oauthLinkStart, oauthStart } from '../api/auth'
 import type { OAuthProvider } from '../api/types'
+import { sanitizeReturnPath } from '../routes/paths'
 
 /** 화면에 보여줄 제공자 이름. */
 export const PROVIDER_DISPLAY_NAME: Record<OAuthProvider, string> = {
@@ -42,6 +43,9 @@ export function oauthStateStorageKey(provider: OAuthProvider): string {
 export function oauthRedirectUriStorageKey(provider: OAuthProvider): string {
   return `easydoc.oauth.${provider}.redirect_uri`
 }
+export function oauthReturnToStorageKey(provider: OAuthProvider): string {
+  return `easydoc.oauth.${provider}.return_to`
+}
 
 /**
  * 명시적 계정 연결(backlog §1.4) 시작 `sessionStorage` 키. 로그인 흐름과 접두사를
@@ -54,6 +58,9 @@ export function oauthLinkStateStorageKey(provider: OAuthProvider): string {
 }
 export function oauthLinkRedirectUriStorageKey(provider: OAuthProvider): string {
   return `easydoc.oauth.${provider}.link.redirect_uri`
+}
+export function oauthLinkReturnToStorageKey(provider: OAuthProvider): string {
+  return `easydoc.oauth.${provider}.link.return_to`
 }
 
 /** 로그인 콜백에서 되돌아올 SPA 라우트. */
@@ -76,12 +83,17 @@ function absoluteRedirectUri(path: string): string {
  * 실패하면(네트워크·422 등) ApiError를 그대로 올린다 — 호출한 쪽(`SocialLoginButton`)이
  * 문구를 보여준다.
  */
-export async function startSocialLogin(provider: OAuthProvider): Promise<void> {
+export async function startSocialLogin(provider: OAuthProvider, returnTo?: string): Promise<void> {
   const redirectUri = absoluteRedirectUri(oauthCallbackPath(provider))
   const { authorization_url: authorizationUrl, state } = await oauthStart(provider, redirectUri)
   try {
     window.sessionStorage.setItem(oauthStateStorageKey(provider), state)
     window.sessionStorage.setItem(oauthRedirectUriStorageKey(provider), redirectUri)
+    if (returnTo !== undefined) {
+      window.sessionStorage.setItem(oauthReturnToStorageKey(provider), sanitizeReturnPath(returnTo))
+    } else {
+      window.sessionStorage.removeItem(oauthReturnToStorageKey(provider))
+    }
   } catch {
     // 세션 저장소를 쓸 수 없으면(사생활 보호 모드 등) 콜백에서 state 비교가 실패해
     // 안내가 뜬다 — 여기서 시작 자체를 막을 이유는 아니다.
@@ -95,12 +107,20 @@ export async function startSocialLogin(provider: OAuthProvider): Promise<void> {
  * 실패하면(네트워크·422 등) ApiError를 그대로 올린다 — 호출한 쪽(`SocialLinkStatus`,
  * `LoginPage`)이 문구를 보여준다.
  */
-export async function startSocialLink(provider: OAuthProvider): Promise<void> {
+export async function startSocialLink(provider: OAuthProvider, returnTo?: string): Promise<void> {
   const redirectUri = absoluteRedirectUri(oauthLinkCallbackPath(provider))
   const { authorization_url: authorizationUrl, state } = await oauthLinkStart(provider, redirectUri)
   try {
     window.sessionStorage.setItem(oauthLinkStateStorageKey(provider), state)
     window.sessionStorage.setItem(oauthLinkRedirectUriStorageKey(provider), redirectUri)
+    if (returnTo === undefined) {
+      window.sessionStorage.removeItem(oauthLinkReturnToStorageKey(provider))
+    } else {
+      window.sessionStorage.setItem(
+        oauthLinkReturnToStorageKey(provider),
+        sanitizeReturnPath(returnTo),
+      )
+    }
   } catch {
     // 세션 저장소를 못 쓰면(사생활 보호 모드 등) 콜백에서 state 비교가 실패해
     // 안내가 뜬다 — 여기서 시작 자체를 막을 이유는 아니다.

@@ -538,7 +538,9 @@ class AuthConfiguration {
     fun accountDeletionRepository(
         jdbcClient: JdbcClient,
         documentJobLocks: DocumentJobLocks,
-    ): AccountDeletionRepository = JdbcAccountDeletionRepository(jdbcClient, documentJobLocks)
+        retainedTransactionArchiver: kr.easydoc.application.retention.RetainedTransactionArchiver,
+    ): AccountDeletionRepository =
+        JdbcAccountDeletionRepository(jdbcClient, documentJobLocks, retainedTransactionArchiver)
 
     /** 세금계산서 처리 대기 알림도 같은 운영자 주소를 쓴다(`InvoiceRequestConfiguration`과 같은 설정). */
     @Bean

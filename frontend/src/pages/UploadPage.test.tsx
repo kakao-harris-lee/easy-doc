@@ -188,6 +188,20 @@ describe('업로드 화면', () => {
       expect(screen.getByRole('option', { name: '레벨 3' })).toBeDisabled()
     })
 
+    it('중등 수준 플래그가 false면 레벨 1을 선택지에서 숨긴다', () => {
+      vi.stubEnv('VITE_EASYDOC_MIDDLE_SCHOOL_ENABLED', 'false')
+      try {
+        renderPage()
+
+        const level = screen.getByRole('combobox', { name: '변환 레벨' })
+        expect(level).toHaveValue('grade_5_6')
+        expect(screen.queryByRole('option', { name: '레벨 1' })).not.toBeInTheDocument()
+        expect(screen.getByRole('option', { name: '레벨 2' })).toBeEnabled()
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    })
+
     it('라디오는 sr-only가 아니라 선택지 전체를 덮어 실제로 클릭된다', () => {
       renderPage()
 

@@ -9,6 +9,10 @@ package kr.easydoc.api.admin
 object AdminEndpoints {
     val ADMIN_ONLY_PATH_PATTERNS: List<String> =
         listOf(
+            "/admin/retained-transactions",
+            "/admin/retained-transactions/{id}",
+            "/admin/retained-transactions/{id}/refund-decision",
+            "/admin/retained-transactions/{id}/complaint-decision",
             "/admin/operations",
             "/admin/notifications",
             "/admin/notifications/{id}/resolve",

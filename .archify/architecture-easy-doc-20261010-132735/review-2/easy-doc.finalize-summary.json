@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/candidate.json",
+    "sha256": "8bc35ba596187fcd186fb84a3916211bafa49fe0182c6698efa70e2c2d67c58f",
+    "bytes": 12233
+  },
+  "artifact": {
+    "path": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/easy-doc.html",
+    "sha256": "ace9d8233992903fd7a8edb799c62340a9c807238da74de2aa842b323f377fb3",
+    "bytes": 775216
+  },
+  "gates": {
+    "validate": "fail",
+    "deliver": "not-run",
+    "check": "not-run",
+    "browser-check": "not-run"
+  },
+  "failedStage": "validate",
+  "diagnostics": [
+    {
+      "code": "composition/label-gap",
+      "severity": "error",
+      "message": "Label \"Upload / poll\" has only 65px between \"browser\" and \"web\"; it needs at least 89px to stay beside its route — increase that clear gap or place the connected nodes on another readable row, preserving the label.",
+      "subject": {
+        "diagramType": "architecture",
+        "collection": "connections",
+        "id": "upload-request",
+        "from": "browser",
+        "to": "web"
+      },
+      "evidence": {
+        "clearGapPx": 65,
+        "minimumGapPx": 89,
+        "labelWidthPx": 72.4,
+        "obstacles": [
+          "browser",
+          "web"
+        ]
+      },
+      "supportedFixes": [
+        "increase the clear gap between the connected nodes to at least 89px",
+        "reposition the connected nodes together while preserving the full relationship label"
+      ]
+    },
+    {
+      "code": "composition/label-gap",
+      "severity": "error",
+      "message": "Label \"HTTPS document text\" has only 65px between \"engine\" and \"llm\"; it needs at least 118px to stay beside its route — increase that clear gap or place the connected nodes on another readable row, preserving the label.",
+      "subject": {
+        "diagramType": "architecture",
+        "collection": "connections",
+        "id": "vendor-processing",
+        "from": "engine",
+        "to": "llm"
+      },
+      "evidence": {
+        "clearGapPx": 65,
+        "minimumGapPx": 118,
+        "labelWidthPx": 101.2,
+        "obstacles": [
+          "engine",
+          "llm"
+        ]
+      },
+      "supportedFixes": [
+        "increase the clear gap between the connected nodes to at least 118px",
+        "reposition the connected nodes together while preserving the full relationship label"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 2,
+    "shown": 2,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/review-2/easy-doc.finalize.json",
+    "summaryReceipt": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/review-2/easy-doc.finalize-summary.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-10T04:29:20.675Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 265,
+  "nextAction": {
+    "action": "edit-in-place",
+    "candidate": "/Users/harris/Development/private/easy-doc/.archify/architecture-easy-doc-20261010-132735/candidate.json",
+    "constraint": "Preserve all semantics and user-fixed geometry. Use references/architecture-layout-repair.md to choose a local repair or connected-scene reflow; edit the existing candidate.",
+    "then": "finalize-once"
+  }
+}

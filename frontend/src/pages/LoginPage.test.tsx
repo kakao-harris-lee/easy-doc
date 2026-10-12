@@ -9,6 +9,7 @@ import { ApiError, listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
+import { oauthLinkReturnToStorageKey } from '../auth/socialLogin'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext, workspaceCredits } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
@@ -43,13 +44,16 @@ vi.mock('../api/announcements', () => ({
   listActiveAnnouncements: vi.fn(),
 }))
 
-function renderAt(path: string) {
+function renderAt(path: string, state?: { from?: string }) {
+  const url = new URL(path, window.location.origin)
+  const initialEntry =
+    state === undefined ? path : { pathname: url.pathname, search: url.search, state }
   return render(
     <AuthProvider>
       {/* 머리말의 작업 공간 메뉴가 이 컨텍스트를 읽는다 — 여기서는 관심사가 아니라
           고정된 값을 꽂는다(요청은 WorkspaceProvider 테스트가 본다). */}
       <WorkspaceContext.Provider value={workspaceContext()}>
-        <MemoryRouter initialEntries={[path]}>
+        <MemoryRouter initialEntries={[initialEntry]}>
           <ThemeProvider>
             <AppLayout>
               <AppRoutes />
@@ -349,6 +353,41 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
     )
     expect(assign).toHaveBeenCalledWith(
       'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+    )
+  })
+
+  it('비밀번호 로그인 뒤 연결을 이어갈 때 복귀 경로를 안전하게 보존한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      phone_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: false,
+    })
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    renderAt('/login?link=google', {
+      from: '/billing/callback?resume=resume-1&authKey=must-not-be-forwarded',
+    })
+
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(window.sessionStorage.getItem(oauthLinkReturnToStorageKey('google'))).toBe(
+      '/billing/callback?resume=resume-1',
     )
   })
 

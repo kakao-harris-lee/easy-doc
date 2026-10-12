@@ -59,7 +59,8 @@ class TossConfiguration {
     fun tossStore(
         jdbc: JdbcClient,
         cipher: ContentCipher,
-    ): TossBillingStore = JdbcTossBillingStore(jdbc, cipher)
+        retainedTransactionArchiver: kr.easydoc.infrastructure.retention.JdbcRetainedTransactionRepository,
+    ): TossBillingStore = JdbcTossBillingStore(jdbc, cipher, retainedTransactionArchiver)
 
     @Bean
     fun tossGateway(

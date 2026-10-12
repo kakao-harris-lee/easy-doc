@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 
 import { useAuth } from '../auth/context'
-import { LOGIN_PATH, type FromLocationState } from './paths'
+import { LOGIN_PATH, safeReturnPath, type FromLocationState } from './paths'
 
 /**
  * 로그인한 사용자에게만 자식 화면을 보여준다.
@@ -23,7 +23,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   }
 
   if (status === 'anonymous') {
-    const state: FromLocationState = { from: location.pathname }
+    const state: FromLocationState = { from: safeReturnPath(location) }
     return <Navigate to={LOGIN_PATH} replace state={state} />
   }
 

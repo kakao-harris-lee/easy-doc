@@ -463,6 +463,13 @@ class EnvelopeColumnWriteGuardTest {
                 // 이 조사에 잡히지 않는다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/suggestion/" +
                     "IllustrationSuggestionResultKeyRotation.kt",
+                // 법정 거래 원장 보존 upsert와 consent 보존기간 갱신·두 원장 봉투 회전은
+                // payload_encrypted와 encryption_scheme/key_version을 한 문장에서 함께 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/retention/" +
+                    "JdbcRetainedTransactionRepository.kt",
+                // 공개 callback hand-off도 저장·auth scrub·키 회전 모두 봉투 세 값을 함께 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/" +
+                    "JdbcTossBillingCallbackStore.kt",
                 // 정기결제 세션·주문 upsert 둘 — `saveSession`(toss_billing_sessions)·
                 // `saveOrder`(toss_billing_orders) 모두 `ON CONFLICT ... DO UPDATE SET`으로
                 // payload_encrypted와 봉투 두 값을 같은 문장에서 쓴다(코드 리뷰 MEDIUM 지적으로
@@ -548,7 +555,12 @@ class EnvelopeColumnWriteGuardTest {
          * 같은 문장에서 쓴다.
          * 39 -> 40: ER-28 analysis key rotation writes payload and both envelope columns together.
          * 40 -> 46: two rotations, analysis/draft review, full apply and large-body fixture.
+         *
+         * 46 -> 52: 법정 거래 원장의 upsert와 record/decision 회전 세 문장, callback
+         * hand-off의 저장·auth scrub·회전 세 문장이다. 모두 암호문과 두 봉투 열을 같은
+         * 문장에서 쓴다. consent retention 갱신은 암호문을 쓰지 않아 이 가드의 분모에는
+         * 들어오지 않는다.
          */
-        const val EXPECTED_STATEMENTS = 46
+        const val EXPECTED_STATEMENTS = 52
     }
 }

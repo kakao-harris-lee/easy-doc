@@ -9,6 +9,7 @@ import {
   listAdminFeedback,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
+  listAdminRetainedTransactions,
   listAdminWorkspaces,
   readAdminErrors,
 } from '../api/admin'
@@ -24,6 +25,10 @@ vi.mock('../api/admin', () => ({
   readAdminWorkspace: vi.fn(),
   adjustAdminWorkspaceCredits: vi.fn(),
   listAdminInvoiceRequests: vi.fn(),
+  listAdminRetainedTransactions: vi.fn(),
+  getAdminRetainedTransaction: vi.fn(),
+  postAdminRefundDecision: vi.fn(),
+  postAdminComplaintDecision: vi.fn(),
   handleAdminInvoiceRequest: vi.fn(),
   readAdminErrors: vi.fn(),
   listAdminAnnouncements: vi.fn(),
@@ -50,6 +55,12 @@ beforeEach(() => {
     size: 20,
     total: 0,
   })
+  vi.mocked(listAdminRetainedTransactions).mockResolvedValue({
+    items: [],
+    page: 1,
+    size: 20,
+    total: 0,
+  })
   vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [], provider_failures: [] })
   vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
 })
@@ -69,6 +80,7 @@ describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
       '워크스페이스',
       '사용자 의견',
       '세금계산서',
+      '보존 거래',
       '오류',
       '공지',
     ])
@@ -85,6 +97,16 @@ describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
 
     expect(screen.getByRole('tab', { name: '세금계산서' })).toHaveAttribute('aria-selected', 'true')
     await waitFor(() => expect(vi.mocked(listAdminInvoiceRequests)).toHaveBeenCalled())
+  })
+
+  it('보존 거래 탭은 목록을 조회한다', async () => {
+    const user = userEvent.setup()
+    render(<AdminPage />)
+    await screen.findAllByRole('tab')
+
+    await user.click(screen.getByRole('tab', { name: '보존 거래' }))
+
+    await waitFor(() => expect(vi.mocked(listAdminRetainedTransactions)).toHaveBeenCalled())
   })
 
   it('화살표 오른쪽으로 다음 탭에 초점이 가고 선택도 옮겨간다', async () => {

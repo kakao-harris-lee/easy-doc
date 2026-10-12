@@ -1,0 +1,434 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Easy-Doc Runtime Architecture",
+    "locale": "en",
+    "output": ".archify/architecture-easy-doc-20261010-132735/easy-doc.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/kakao-harris-lee/easy-doc.git",
+      "revision": "34622c1a32500e9e37b901d633480014e20d04fa",
+      "provider": "github",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Browser application",
+      "sublabel": "React + TypeScript",
+      "pos": [
+        30,
+        230
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "frontend/src/api/client.ts",
+          "line": 164,
+          "end_line": 185,
+          "label": "Bearer API requests"
+        },
+        {
+          "path": "frontend/src/conversion/useConversionPolling.ts",
+          "line": 86,
+          "end_line": 96,
+          "label": "Poll result until terminal"
+        }
+      ],
+      "tag": "User device"
+    },
+    {
+      "id": "web",
+      "type": "cloud",
+      "label": "Web gateway",
+      "sublabel": "nginx / static SPA",
+      "pos": [
+        335,
+        230
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "frontend/nginx.conf",
+          "line": 9,
+          "end_line": 23,
+          "label": "Static files and API proxy"
+        },
+        {
+          "path": "frontend/Dockerfile",
+          "line": 19,
+          "end_line": 21,
+          "label": "nginx runtime"
+        }
+      ]
+    },
+    {
+      "id": "http-api",
+      "type": "backend",
+      "label": "HTTP API",
+      "sublabel": "Spring Boot / api profile",
+      "pos": [
+        640,
+        230
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/api/src/main/kotlin/kr/easydoc/api/document/DocumentController.kt",
+          "line": 44,
+          "end_line": 83,
+          "label": "Authenticated document intake"
+        },
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/document/DocumentService.kt",
+          "line": 244,
+          "end_line": 321,
+          "label": "PII gate, credits, writes"
+        },
+        {
+          "path": "backend-kotlin/api/src/main/kotlin/kr/easydoc/api/auth/AuthenticationInterceptor.kt",
+          "line": 35,
+          "end_line": 43,
+          "label": "Bearer validation"
+        }
+      ],
+      "tag": "Auth + PII acknowledgment"
+    },
+    {
+      "id": "state",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "Documents, jobs, credits",
+      "pos": [
+        945,
+        230
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "compose.yml",
+          "line": 29,
+          "end_line": 39,
+          "label": "Database and volume"
+        },
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/queue/JdbcConversionQueue.kt",
+          "line": 16,
+          "end_line": 52,
+          "label": "Durable queue and lease"
+        }
+      ],
+      "tag": "Durable state"
+    },
+    {
+      "id": "worker",
+      "type": "backend",
+      "label": "Conversion worker",
+      "sublabel": "Spring Boot / worker profile",
+      "pos": [
+        945,
+        505
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/worker/src/main/kotlin/kr/easydoc/worker/ConversionJobPoller.kt",
+          "line": 10,
+          "end_line": 21,
+          "label": "Scheduled job polling"
+        },
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ProcessConversionJob.kt",
+          "line": 139,
+          "end_line": 153,
+          "label": "Decrypt and execute"
+        },
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ProcessConversionJob.kt",
+          "line": 218,
+          "end_line": 245,
+          "label": "Lease-guarded result commit"
+        }
+      ],
+      "tag": "Lease owner"
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Conversion engine",
+      "sublabel": "Prompt, dictionary, checks",
+      "pos": [
+        640,
+        505
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt",
+          "line": 192,
+          "end_line": 216,
+          "label": "Build prompt and convert"
+        },
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt",
+          "line": 235,
+          "end_line": 260,
+          "label": "Quality checks and repair"
+        },
+        {
+          "path": "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt",
+          "line": 306,
+          "end_line": 326,
+          "label": "Provider call"
+        }
+      ],
+      "tag": "Inside worker"
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "LLM provider",
+      "sublabel": "OpenAI or Anthropic",
+      "pos": [
+        30,
+        505
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/LlmProviderConfiguration.kt",
+          "line": 204,
+          "end_line": 230,
+          "label": "Configured provider selection"
+        },
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt",
+          "line": 118,
+          "end_line": 142,
+          "label": "OpenAI HTTPS request"
+        },
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/AnthropicProvider.kt",
+          "line": 145,
+          "end_line": 169,
+          "label": "Anthropic HTTPS request"
+        }
+      ],
+      "tag": "External document processing"
+    },
+    {
+      "id": "identity",
+      "type": "external",
+      "label": "Identity providers",
+      "sublabel": "Google / Kakao / Naver",
+      "pos": [
+        640,
+        20
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/auth/AuthConfiguration.kt",
+          "line": 452,
+          "end_line": 502,
+          "label": "Register configured providers"
+        },
+        {
+          "path": "backend-kotlin/api/src/main/kotlin/kr/easydoc/api/auth/OAuthController.kt",
+          "line": 31,
+          "end_line": 44,
+          "label": "Authorization code callback"
+        }
+      ],
+      "tag": "When configured"
+    },
+    {
+      "id": "payments",
+      "type": "external",
+      "label": "Toss Payments",
+      "sublabel": "Billing keys / charges",
+      "pos": [
+        945,
+        20
+      ],
+      "size": [
+        205,
+        80
+      ],
+      "sources": [
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/TossHttpGateway.kt",
+          "line": 24,
+          "end_line": 36,
+          "label": "HTTPS host"
+        },
+        {
+          "path": "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/TossHttpGateway.kt",
+          "line": 118,
+          "end_line": 149,
+          "label": "HTTP calls and idempotency"
+        }
+      ],
+      "tag": "Billing path"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "User-controlled device",
+      "wraps": [
+        "browser"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Easy-Doc ownership / Compose application network",
+      "wraps": [
+        "web",
+        "http-api",
+        "state",
+        "worker",
+        "engine"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "security-group",
+      "label": "Worker process / engine is an in-process role",
+      "wraps": [
+        "worker",
+        "engine"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "upload-request",
+      "from": "browser",
+      "to": "web",
+      "label": "Upload / poll",
+      "variant": "emphasis"
+    },
+    {
+      "id": "proxy-request",
+      "from": "web",
+      "to": "http-api",
+      "label": "HTTP /api",
+      "variant": "emphasis"
+    },
+    {
+      "id": "enqueue-state",
+      "from": "http-api",
+      "to": "state",
+      "label": "Gate + enqueue",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lease-and-save",
+      "from": "worker",
+      "to": "state",
+      "label": "Lease / save",
+      "variant": "emphasis"
+    },
+    {
+      "id": "run-conversion",
+      "from": "worker",
+      "to": "engine",
+      "label": "Convert text",
+      "variant": "emphasis"
+    },
+    {
+      "id": "vendor-processing",
+      "from": "engine",
+      "to": "llm",
+      "label": "HTTPS document text",
+      "variant": "security"
+    },
+    {
+      "id": "oauth-callback",
+      "from": "http-api",
+      "to": "identity",
+      "label": "OAuth code",
+      "variant": "dashed"
+    },
+    {
+      "id": "billing-requests",
+      "from": "http-api",
+      "to": "payments",
+      "label": "Billing HTTPS",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Primary path: upload to reviewed result",
+      "items": [
+        "1. Browser uploads text or a file through nginx; API validates identity, input, workspace ownership and credits.",
+        "2. API commits the document, pending conversion and durable job together; returns an accepted response.",
+        "3. Worker polls PostgreSQL, acquires a lease, decrypts the source and calls the conversion engine.",
+        "4. Engine calls the configured LLM; worker commits the encrypted result and usage under the held lease.",
+        "5. Browser polls the API every 2 seconds until done or failed, then supports human review and export."
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust and document handling",
+      "items": [
+        "Detected personal data requires explicit acknowledgment at intake; the runtime prompt receives document text. Do not infer automatic redaction from the Compose masking comment.",
+        "Document source, original file bytes and converted text are encrypted at application storage boundaries.",
+        "Bearer authentication and ownership checks protect document access. nginx enforces a 10 MB upload limit.",
+        "External LLMs process document content; OAuth and payment providers serve separate identity and billing paths."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Execution and persistence",
+      "items": [
+        "PostgreSQL holds durable conversion jobs and results; a separate broker is not required by this path.",
+        "API and worker are separate processes. The conversion engine is a logical role inside the worker, not another service.",
+        "The engine adds dictionary context, checks style and fact preservation, and may run one repair pass.",
+        "Result, usage ledger and credit settlement commit together only while the worker still holds its lease."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Supporting integrations and scope",
+      "items": [
+        "Configured OAuth providers: Google, Kakao and Naver. Toss handles billing-key issuance, charges and refunds.",
+        "NAVER Cloud SENS sends phone OTPs; SMTP can deliver verification and completion mail. These supporting paths remain in cards.",
+        "Supporting adapters: SensSmsSender.send (lines 54–83) and SmtpMailSender.send (31–40) in backend-kotlin/infrastructure.",
+        "Scope: committed source at 34622c1 plus compose.yml. Local ports bind to loopback; production ingress and active vendor settings are not established here."
+      ]
+    }
+  ]
+}

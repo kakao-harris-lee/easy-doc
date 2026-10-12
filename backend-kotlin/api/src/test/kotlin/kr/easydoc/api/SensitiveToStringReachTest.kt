@@ -184,8 +184,9 @@ class SensitiveToStringReachTest {
          * analysis accumulator (1), worker lease (1), JDBC ledger mapping (2).
          * Billing DTOs, durable action models, issued card metadata and notification job (+10 net).
          * Admin notification request/command, feedback filters and recent payment event/domain DTO (+5).
+         * Callback recovery (8), retained transaction domain/API/adapter models (17).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 471
+        const val EXPECTED_SOURCE_DECLARATIONS = 496
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

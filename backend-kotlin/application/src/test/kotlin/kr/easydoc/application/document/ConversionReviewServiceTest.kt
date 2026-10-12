@@ -480,11 +480,17 @@ class ConversionReviewServiceTest {
         }
 
         /** 그 열에 실제로 쓴 **평문** — 대역이라도 봉인을 거쳐 되읽는다. */
+        @Suppress("CyclomaticComplexMethod") // Exhaustive field selection proves review writes stay in their domain.
         fun savedPlaintext(field: EncryptedField): String? {
             val call = conversions.savedReviews.single()
             val column =
                 when (field) {
                     EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER -> error("검수는 결제 열을 쓰지 않는다")
+
+                    EncryptedField.BILLING_CALLBACK,
+                    EncryptedField.RETAINED_TRANSACTION,
+                    EncryptedField.RETAINED_DECISION,
+                    -> error("검수는 콜백과 보존 거래 열을 쓰지 않는다")
 
                     EncryptedField.CONVERSION_EASY_TEXT -> call.updated.ciphertexts.easyText
 

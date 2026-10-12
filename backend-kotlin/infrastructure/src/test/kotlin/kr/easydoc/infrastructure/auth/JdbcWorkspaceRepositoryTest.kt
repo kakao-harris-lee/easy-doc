@@ -176,6 +176,54 @@ class JdbcWorkspaceRepositoryTest {
     }
 
     @Test
+    @DisplayName("과거 live 결제가 있는 작업 공간은 원장 보존 없이 직접 삭제할 수 없다")
+    fun `과거 live 결제가 있는 작업 공간 삭제를 막는다`() {
+        val owner = newUser()
+        val target = workspaces.create(owner, "결제 기록")
+        val payment = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO subscription_payments
+                    (workspace_id,id,plan_id,amount,status,created_at,simulated_failure,provider)
+                VALUES (:workspace,:id,'start',99000,'paid',now(),false,'toss_live')
+                """.trimIndent(),
+            ).param("workspace", target.id)
+            .param("id", payment)
+            .update()
+
+        assertThatThrownBy { workspaces.delete(owner, target.id) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessageContaining("법정 결제 기록")
+        assertThat(workspaces.listOwned(owner).map { it.workspace.id }).contains(target.id)
+    }
+
+    @Test
+    @DisplayName("과거 live charge/renewal 주문도 원장 보존 없이 직접 삭제할 수 없다")
+    fun `과거 live 갱신 주문이 있는 작업 공간 삭제를 막는다`() {
+        val owner = newUser()
+        val target = workspaces.create(owner, "갱신 주문 기록")
+        val order = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO toss_billing_orders
+                    (id,workspace_id,plan_id,amount,created_at,cycle_ends_at,kind,status,
+                     payload_encrypted,encryption_scheme,key_version,environment,cycle_id)
+                VALUES (:id,:workspace,'pro',99000,now(),now(),'renewal','paid',
+                        decode('00','hex'),'aes256gcm-v1',1,'toss_live',:id)
+                """.trimIndent(),
+            ).param("id", order)
+            .param("workspace", target.id)
+            .update()
+
+        assertThatThrownBy { workspaces.delete(owner, target.id) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessageContaining("법정 결제 기록")
+        assertThat(workspaces.listOwned(owner).map { it.workspace.id }).contains(target.id)
+    }
+
+    @Test
     @DisplayName("마지막 하나는 지워지지 않는다 — 삭제 판정이 집합에 걸린다")
     fun `마지막 하나는 지워지지 않는다`() {
         val owner = newUser()

@@ -51,6 +51,45 @@ class TossReachTest {
     private val client = HttpClient.newHttpClient()
 
     @Test
+    fun `server callback stages once and authenticated resume replays without another charge`() {
+        val token = account()
+        val workspace = workspace(token)
+        val base = "/workspaces/$workspace/subscription"
+        val issuedBeforeCallback = gateway.issueIds.size
+        val started = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"start"}""").body())
+        val sessionId = started["session_id"].asString()
+        val customer = started["customer_key"].asString()
+        val callback = URI.create(started["callback_url"].asString())
+        assertThat(callback.path).isEqualTo("/api/payments/toss/billing/callback")
+        val state = queryValue(callback, "state")
+        val callbackResponse =
+            send(
+                "/payments/toss/billing/callback?state=$state&authKey=synthetic-auth&customerKey=$customer",
+                null,
+                "GET",
+            )
+        assertThat(callbackResponse.statusCode()).isEqualTo(303)
+        assertThat(callbackResponse.headers().firstValue("Referrer-Policy").orElse(null)).isEqualTo("no-referrer")
+        assertThat(gateway.issueIds).hasSize(issuedBeforeCallback)
+
+        val redirect = URI.create(callbackResponse.headers().firstValue("Location").orElseThrow())
+        val resume = queryValue(redirect, "resume")
+        val resumePath = "/payments/toss/billing/resume"
+        assertThat(send(resumePath, null, "POST", """{"resume_id":"$resume"}""").statusCode()).isEqualTo(401)
+        val completed = send(resumePath, token, "POST", """{"resume_id":"$resume"}""")
+        assertThat(completed.statusCode()).isEqualTo(200)
+        assertThat(json.readTree(completed.body())["workspace_id"].asString()).isEqualTo(workspace)
+        assertThat(json.readTree(completed.body())["session_id"].asString()).isEqualTo(sessionId)
+        assertThat(json.readTree(completed.body())["purpose"].asString()).isEqualTo("purchase")
+        assertThat(gateway.issueIds.count { it.toString() == sessionId }).isEqualTo(1)
+
+        val replay = send(resumePath, token, "POST", """{"resume_id":"$resume"}""")
+        assertThat(replay.statusCode()).isEqualTo(200)
+        assertThat(gateway.issueIds.count { it.toString() == sessionId }).isEqualTo(1)
+        assertThat(gateway.charges[UUID.fromString(sessionId)]).isEqualTo(1)
+    }
+
+    @Test
     fun `lost approval response recovers once through lookup then refund and cancellation stay idempotent`() {
         val token = account()
         val workspace = workspace(token)
@@ -344,6 +383,16 @@ class TossReachTest {
     }
 
     private fun creditValue(sql: String): BigDecimal = BigDecimal(database.queryFirstColumn(sql).single())
+
+    private fun queryValue(
+        uri: URI,
+        name: String,
+    ): String =
+        uri.rawQuery
+            .orEmpty()
+            .split('&')
+            .mapNotNull { part -> part.split('=', limit = 2).takeIf { it.size == 2 } }
+            .first { it[0] == name }[1]
 
     private fun workspace(token: String): String =
         json.readTree(send("/workspaces", token).body())["items"][0]["id"].asString()

@@ -2,7 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
+import { COMPANY_INFO } from '../config/company'
 import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
+import { TARGET_PLANS } from '../content/plans/targetPlans'
 import { LandingPage } from './LandingPage'
 
 function renderLanding() {
@@ -77,6 +79,30 @@ describe('랜딩 화면', () => {
       '/signup',
     )
     expect(screen.getByRole('link', { name: '이용 가이드 보기' })).toHaveAttribute('href', '/guide')
+  })
+
+  it('공개 Start 상품 안내가 실제 가격표와 이용 조건을 보여 준다', () => {
+    renderLanding()
+
+    const startPlan = TARGET_PLANS.find((plan) => plan.id === 'start')
+    expect(startPlan).toBeDefined()
+    if (startPlan === undefined) return
+
+    const card = screen.getByRole('region', { name: 'Start 월 정기결제' })
+    expect(card).toHaveTextContent(startPlan.monthlyPriceLabel)
+    expect(card).toHaveTextContent(`월 ${startPlan.monthlyCredits.toLocaleString('ko-KR')}크레딧`)
+    startPlan.features.forEach((feature) => {
+      expect(card).toHaveTextContent(feature.label)
+    })
+    expect(card).toHaveTextContent('결제 승인일부터 한 달')
+    expect(card).toHaveTextContent('매월 자동 결제')
+    expect(card).toHaveTextContent('사용량 화면에서 구독 갱신 중단')
+    expect(screen.getByRole('link', { name: COMPANY_INFO.supportEmail })).toHaveAttribute(
+      'href',
+      `mailto:${COMPANY_INFO.supportEmail}`,
+    )
+    expect(screen.getByRole('link', { name: '이용약관' })).toHaveAttribute('href', '/terms')
+    expect(screen.getByRole('link', { name: 'Start 구독 안내' })).toHaveAttribute('href', '/usage')
   })
 
   it('경쟁 제품 이름이나 과장된 약속을 적지 않는다', () => {

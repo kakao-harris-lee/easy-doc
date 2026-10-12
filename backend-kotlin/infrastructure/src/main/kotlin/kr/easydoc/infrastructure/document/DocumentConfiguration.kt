@@ -128,6 +128,7 @@ class DocumentConfiguration {
         users: UserRepository,
         credits: CreditAccountService,
         @Value("\${easydoc.reading-level.extra-easy-enabled:false}") extraEasyEnabled: Boolean,
+        @Value("\${easydoc.reading-level.middle-school-enabled:true}") middleSchoolEnabled: Boolean,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -138,6 +139,7 @@ class DocumentConfiguration {
             users = users,
             credits = credits,
             extraEasyEnabled = extraEasyEnabled,
+            middleSchoolEnabled = middleSchoolEnabled,
         )
 
     /**

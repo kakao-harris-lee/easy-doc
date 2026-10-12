@@ -2,8 +2,10 @@ import { ArrowRight, FileCheck2, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Badge } from '../components/ui/Badge'
+import { COMPANY_INFO } from '../config/company'
 import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
-import { GUIDE_PATH, SIGNUP_PATH } from '../routes/paths'
+import { TARGET_PLANS } from '../content/plans/targetPlans'
+import { GUIDE_PATH, SIGNUP_PATH, TERMS_PATH, USAGE_PATH } from '../routes/paths'
 
 const PRIMARY_LINK =
   'inline-flex min-h-12 items-center justify-center gap-2 rounded-[10px] bg-primary px-5 text-[15px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover'
@@ -36,6 +38,8 @@ const FIT_GROUPS: readonly FitGroup[] = [
     items: ['개인정보가 담긴 글', '외부에 공개하지 않는 내부 문서'],
   },
 ]
+
+const START_PLAN = TARGET_PLANS.find((plan) => plan.id === 'start')
 
 /**
  * 로그인 전 첫 화면.
@@ -184,6 +188,92 @@ export function LandingPage() {
           </figure>
         </div>
       </section>
+
+      {START_PLAN !== undefined && (
+        <section
+          aria-labelledby="landing-start-plan-heading"
+          className="rounded-[20px] border border-primary/30 bg-card p-6 shadow-card md:p-8"
+        >
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-primary">월 정기결제 상품 안내</p>
+              <h2
+                id="landing-start-plan-heading"
+                className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
+              >
+                {START_PLAN.name} 월 정기결제
+              </h2>
+              <p className="mt-2 text-sm text-muted-foreground">{START_PLAN.audience}</p>
+            </div>
+            <div className="rounded-[12px] bg-brand-surface px-4 py-3 md:text-right">
+              <p className="text-2xl font-extrabold tabular-nums text-foreground">
+                {START_PLAN.monthlyPriceLabel}
+                <span className="ml-1 text-sm font-semibold text-muted-foreground">/월</span>
+              </p>
+              <p className="mt-1 text-sm font-semibold text-brand-foreground">
+                월 {START_PLAN.monthlyCredits.toLocaleString('ko-KR')}크레딧 ·{' '}
+                {START_PLAN.pageEquivalent}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div>
+              <h3 className="text-[15px] font-semibold text-foreground">제공 기능</h3>
+              <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+                {START_PLAN.features.map((feature) => (
+                  <li key={feature.label} className="flex items-start gap-2">
+                    <span
+                      className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
+                      aria-hidden="true"
+                    />
+                    <span>{feature.label}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-foreground">이용 조건</h3>
+              <ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">
+                <li>결제 승인일부터 한 달 동안 이용합니다.</li>
+                <li>등록한 카드로 매월 자동 결제합니다.</li>
+                <li>사용량 화면에서 구독 갱신 중단을 선택할 수 있습니다.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div className="mt-6 border-t border-border pt-4 text-sm leading-6 text-muted-foreground">
+            <p>
+              환불 문의:{' '}
+              <a
+                href={`mailto:${COMPANY_INFO.supportEmail}`}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                {COMPANY_INFO.supportEmail}
+              </a>
+              <span className="mx-2" aria-hidden="true">
+                ·
+              </span>
+              <Link
+                to={TERMS_PATH}
+                className="font-medium text-foreground underline underline-offset-2"
+              >
+                이용약관
+              </Link>
+              에서 환불 조건을 확인하세요.
+            </p>
+            <p className="mt-1 text-xs">결제 가능 여부와 이용 시작은 사용량 화면에서 확인하세요.</p>
+          </div>
+
+          <div className="mt-5 flex flex-col items-start gap-2 sm:flex-row sm:items-center">
+            <Link to={USAGE_PATH} className={PRIMARY_LINK}>
+              Start 구독 안내
+              <ArrowRight className="size-[18px]" aria-hidden="true" />
+            </Link>
+            <p className="text-xs text-muted-foreground">로그인 후 확인할 수 있습니다.</p>
+          </div>
+        </section>
+      )}
     </article>
   )
 }

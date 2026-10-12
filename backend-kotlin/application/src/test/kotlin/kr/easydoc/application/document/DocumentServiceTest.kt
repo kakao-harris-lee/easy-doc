@@ -46,6 +46,22 @@ import java.util.UUID
 /** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
     @Test
+    fun `출시 설정으로 중등 접수를 끄면 추출과 예약 전에 거절한다`() {
+        val world = World(middleSchoolEnabled = false)
+        assertThatThrownBy {
+            world.service.createFromText(
+                OWNER,
+                "충분한 단어가 있는 본문",
+                null,
+                null,
+                readingLevel = ReadingLevel.MIDDLE_SCHOOL,
+            )
+        }.isInstanceOf(InvalidInputException::class.java)
+        assertThat(world.conversions.insertedReadingLevels).isEmpty()
+        assertThat(world.extractorCalls).isZero()
+    }
+
+    @Test
     fun `중등 수준은 별도 토글 없이 기본 예약액과 함께 저장한다`() {
         val world = World(extraEasyEnabled = false)
         val accepted =
@@ -821,6 +837,7 @@ class DocumentServiceTest {
         extractedStructure: SourceStructure? = null,
         tableStructures: DocumentTableStructureRepository? = null,
         extraEasyEnabled: Boolean = false,
+        middleSchoolEnabled: Boolean = true,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
@@ -856,6 +873,7 @@ class DocumentServiceTest {
                 users = users,
                 credits = credits,
                 extraEasyEnabled = extraEasyEnabled,
+                middleSchoolEnabled = middleSchoolEnabled,
             )
     }
 

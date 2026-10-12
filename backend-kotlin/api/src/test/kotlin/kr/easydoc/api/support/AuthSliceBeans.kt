@@ -222,6 +222,14 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingService::class.java)
 
     @Bean
+    fun tossBillingCallbackService(): kr.easydoc.application.subscription.TossBillingCallbackService =
+        org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingCallbackService::class.java)
+
+    @Bean
+    fun retainedTransactionAdminService(): kr.easydoc.application.retention.RetainedTransactionAdminService =
+        org.mockito.Mockito.mock(kr.easydoc.application.retention.RetainedTransactionAdminService::class.java)
+
+    @Bean
     fun adminBillingService(): kr.easydoc.application.admin.AdminBillingService =
         org.mockito.Mockito.mock(kr.easydoc.application.admin.AdminBillingService::class.java)
 
