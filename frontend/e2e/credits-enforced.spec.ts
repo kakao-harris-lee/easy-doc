@@ -122,7 +122,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     await page.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작', exact: true }).click()
     const subscription = page.getByRole('region', { name: '월 구독 플랜' })
     await expect(subscription.getByRole('status')).toHaveText(
-      '테스트 구독이 적용되었습니다. 실제로 청구되지 않습니다.',
+      '구독이 적용되었습니다. 실제 금액은 청구되지 않았습니다.',
     )
     await expect(subscription.getByText('Start', { exact: true })).toBeVisible()
     await expect(subscription.getByText('월 99,000원 · 50크레딧', { exact: true })).toBeVisible()

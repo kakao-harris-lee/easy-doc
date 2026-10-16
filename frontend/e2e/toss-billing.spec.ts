@@ -97,7 +97,7 @@ test.describe('Toss test billing', () => {
       '카드 등록과 결제 결과를 확인하고 있습니다',
       { timeout: 90_000 },
     )
-    await expect(page.getByRole('status')).toContainText('테스트 구독이 적용되었습니다', {
+    await expect(page.getByRole('status')).toContainText('구독이 적용되었습니다', {
       timeout: 90_000,
     })
     expect(new URL(page.url()).search).toBe('')
