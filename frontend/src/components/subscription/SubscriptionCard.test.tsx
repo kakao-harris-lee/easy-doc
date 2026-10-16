@@ -223,6 +223,8 @@ it('labels review transactions without implying a real charge or tax receipt', a
     mock_enabled: false,
     toss_enabled: true,
     billing_environment: 'toss_test',
+    auto_charge_enabled: false,
+    next_billing_at: '2026-11-16T00:00:00Z',
     subscription: {
       plan_id: 'start',
       allowance: 50,
@@ -245,6 +247,7 @@ it('labels review transactions without implying a real charge or tax receipt', a
   render(<SubscriptionCard workspaceId="review" />)
   await user.click(await screen.findByText('결제 내역', { selector: 'summary' }))
   expect(screen.queryByText('테스트 결제 내역')).not.toBeInTheDocument()
+  expect(screen.queryByText(/다음 청구 예정:/)).not.toBeInTheDocument()
   expect(screen.getByText(/실제 청구가 없는 결제 연동 확인 기록/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '결제 기록 확인' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()

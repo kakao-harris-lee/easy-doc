@@ -178,7 +178,7 @@ export function SubscriptionCard({
                   {date(current.cycle_ends_at)}{' '}
                   {current.status === 'canceling'
                     ? '구독 종료 예정'
-                    : live
+                    : live && view.auto_charge_enabled !== false
                       ? '이용 기간 종료 / 다음 결제 예정'
                       : '이용 기간 종료'}
                 </p>
@@ -190,7 +190,7 @@ export function SubscriptionCard({
             {view.current_period_start && (
               <p className="mt-2 text-sm">이용 시작일: {date(view.current_period_start)}</p>
             )}
-            {view.next_billing_at && (
+            {view.next_billing_at && view.auto_charge_enabled !== false && (
               <p className="mt-1 text-sm">다음 청구 예정: {date(view.next_billing_at)}</p>
             )}
             {view.billing_state && (
