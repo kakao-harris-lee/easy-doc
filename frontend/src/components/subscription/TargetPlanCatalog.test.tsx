@@ -30,7 +30,7 @@ it('실제 월 플랜 가격과 제공량을 표시한다', () => {
   expect(screen.getByText(/재변환도 대상 원문 분량만큼 이용량에 포함/)).toBeInTheDocument()
 })
 
-it('모든 플랜을 선택할 수 있지만 Start만 테스트 결제를 연다', async () => {
+it('모든 플랜을 선택할 수 있지만 Start만 구독을 시작한다', async () => {
   const user = userEvent.setup()
   const checkout = vi.fn()
   render(
@@ -50,6 +50,6 @@ it('모든 플랜을 선택할 수 있지만 Start만 테스트 결제를 연다
   await user.click(screen.getByRole('radio', { name: 'Pro' }))
   expect(screen.getByRole('button', { name: 'Pro 결제 준비 중' })).toBeDisabled()
   await user.click(screen.getByRole('radio', { name: 'Start' }))
-  await user.click(screen.getByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   expect(checkout).toHaveBeenCalledOnce()
 })

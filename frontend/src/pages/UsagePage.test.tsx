@@ -70,7 +70,7 @@ describe('플랜과 사용량', () => {
     expect(createInvoiceRequest).not.toHaveBeenCalled()
   })
 
-  it('실제 목표 플랜 가격과 Start 테스트 결제 상태를 보여준다', async () => {
+  it('월 플랜 가격과 구독 접수 준비 상태를 보여준다', async () => {
     render(page())
     expect(await screen.findByText('구독 서비스 준비 중')).toBeInTheDocument()
     expect(screen.queryByText('목표 플랜 구성')).not.toBeInTheDocument()
@@ -82,7 +82,7 @@ describe('플랜과 사용량', () => {
     expect(within(targetCatalog).getByText(/200크레딧/)).toBeInTheDocument()
     expect(within(targetCatalog).getByText('Pro')).toBeInTheDocument()
     expect(within(targetCatalog).getByText('599,000원')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start 테스트 결제' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByText(/토큰|예상 비용|LLM 호출/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '세금계산서 요청' })).not.toBeInTheDocument()

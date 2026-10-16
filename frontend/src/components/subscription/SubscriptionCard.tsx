@@ -167,9 +167,7 @@ export function SubscriptionCard({
                   : '구독 서비스 준비 중'}
             </p>
             {(view.mock_enabled || view.toss_enabled || current) && (
-              <p className="mt-2 text-sm font-medium text-primary">
-                {live ? '실제 카드 결제 · 매월 자동결제' : '테스트 결제 · 실제 청구 없음'}
-              </p>
+              <p className="mt-2 text-sm font-medium text-primary">신용·체크카드 · 월 정기결제</p>
             )}
             {active && (
               <>
@@ -182,7 +180,7 @@ export function SubscriptionCard({
                     ? '구독 종료 예정'
                     : live
                       ? '이용 기간 종료 / 다음 결제 예정'
-                      : '다음 테스트 결제'}
+                      : '이용 기간 종료'}
                 </p>
               </>
             )}

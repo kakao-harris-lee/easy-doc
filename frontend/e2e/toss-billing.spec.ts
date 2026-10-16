@@ -27,10 +27,13 @@ test.describe('Toss test billing', () => {
     await expect(page.getByRole('heading', { name: '문서 변환하기' })).toBeVisible()
     await verifyEmail(page, account)
     // Toss 카드 등록(`TossBillingService.beginBilling`)도 계약 2.37.0 부터 휴대폰 인증을
-    // 전제한다 — 인증 없이는 아래 "Start 토스 테스트 카드 등록" 클릭이 403 으로 막힌다.
+    // 전제한다 — 인증 없이는 아래 "Start 월 99,000원 정기결제 시작" 클릭이 403 으로 막힌다.
     await verifyPhone(page, account)
     await page.goto('/usage')
-    await page.getByRole('button', { name: 'Start 토스 테스트 카드 등록', exact: true }).click()
+    await page
+      .getByLabel('금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.')
+      .check()
+    await page.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작', exact: true }).click()
     await expect.poll(() => page.frames().length).toBeGreaterThan(1)
     // The hosted provider UI must load; synthetic-card interactions are added from observed labels.
     await expect
