@@ -63,7 +63,7 @@ it('uses the server plan and applies mock checkout before refreshing usage', asy
     },
   })
   render(<SubscriptionCard workspaceId="w1" onChanged={changed} />)
-  await user.click(await screen.findByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   expect(checkoutSubscription).toHaveBeenCalledWith('w1', 'start', expect.any(String), false)
   expect(changed).toHaveBeenCalledOnce()
   expect(await screen.findByRole('button', { name: '구독 갱신 중단' })).toBeInTheDocument()
@@ -72,9 +72,9 @@ it('retries an uncertain payment with the same order id', async () => {
   const user = userEvent.setup()
   vi.mocked(checkoutSubscription).mockRejectedValue(new Error('network'))
   render(<SubscriptionCard workspaceId="w1" />)
-  await user.click(await screen.findByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   await screen.findByRole('alert')
-  await user.click(screen.getByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   expect(vi.mocked(checkoutSubscription).mock.calls[0]?.[2]).toBe(
     vi.mocked(checkoutSubscription).mock.calls[1]?.[2],
   )
@@ -95,7 +95,19 @@ it('opens Toss billing for the selected plan when the server enables Toss test m
   vi.mocked(openTossBilling).mockResolvedValue()
   const user = userEvent.setup()
   render(<SubscriptionCard workspaceId="w1" />)
-  await user.click(await screen.findByRole('button', { name: 'Start 토스 테스트 카드 등록' }))
+  const button = await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })
+  expect(button).toBeDisabled()
+  expect(screen.queryByLabelText('결제 실패 테스트')).not.toBeInTheDocument()
+  expect(screen.queryByText('테스트 결제 · 실제 청구 없음')).not.toBeInTheDocument()
+  expect(
+    screen.getByText('결제 연동 확인 중이며 실제 금액은 청구되지 않습니다.'),
+  ).toBeInTheDocument()
+  await user.click(
+    screen.getByLabelText(
+      '금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.',
+    ),
+  )
+  await user.click(button)
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false)
   expect(checkoutSubscription).not.toHaveBeenCalled()
 })
