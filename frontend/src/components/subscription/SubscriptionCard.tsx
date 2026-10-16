@@ -98,8 +98,8 @@ export function SubscriptionCard({
         cancel
           ? '현재 이용 기간이 끝나면 구독이 종료됩니다.'
           : declined
-            ? '테스트 결제가 거절되었습니다. 이용량은 그대로입니다.'
-            : '테스트 구독이 적용되었습니다. 실제로 청구되지 않습니다.',
+            ? '결제가 거절되었습니다. 이용량은 그대로입니다.'
+            : '구독이 적용되었습니다. 실제 금액은 청구되지 않았습니다.',
       )
       order.current = null
       onChanged?.()
@@ -290,12 +290,12 @@ export function SubscriptionCard({
             {!hidePayments && view.payments.length > 0 && (
               <details className="mt-4 border-t border-border pt-3 text-sm">
                 <summary className="cursor-pointer">
-                  {live ? '결제 내역' : '테스트 결제 내역'}
+                  {admin && !live ? '테스트 결제 내역' : '결제 내역'}
                 </summary>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {live
                     ? '승인된 카드 결제와 환불 내역입니다.'
-                    : '테스트 기록이며 카드 영수증이나 세무 증빙이 아닙니다.'}
+                    : '실제 청구가 없는 결제 연동 확인 기록입니다. 카드 영수증이나 세무 증빙으로 사용할 수 없습니다.'}
                 </p>
                 <ul className="mt-2 space-y-2">
                   {view.payments.map((payment) => (

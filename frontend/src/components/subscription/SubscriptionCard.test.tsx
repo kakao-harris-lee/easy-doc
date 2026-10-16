@@ -216,3 +216,36 @@ it('immediately explains a needs_card state and offers safe card registration', 
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'replace_card')
   expect(cancelSubscription).not.toHaveBeenCalled()
 })
+
+it('labels review transactions without implying a real charge or tax receipt', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_test',
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99_000,
+      status: 'active',
+      cycle_ends_at: '2026-11-16T00:00:00Z',
+    },
+    payments: [
+      {
+        id: 'review-payment',
+        plan_id: 'start',
+        amount: 99_000,
+        status: 'paid',
+        created_at: '2026-10-16T00:00:00Z',
+        provider: 'toss_test',
+      },
+    ],
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="review" />)
+  await user.click(await screen.findByText('결제 내역', { selector: 'summary' }))
+  expect(screen.queryByText('테스트 결제 내역')).not.toBeInTheDocument()
+  expect(screen.getByText(/실제 청구가 없는 결제 연동 확인 기록/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '결제 기록 확인' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
+})

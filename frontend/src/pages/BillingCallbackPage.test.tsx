@@ -65,7 +65,7 @@ it('retries uncertain callback with the same credential and correlation identifi
   setup()
   const user = userEvent.setup()
   await user.click(await screen.findByRole('button', { name: '결과 다시 확인' }))
-  expect(await screen.findByText(/테스트 구독이 적용/)).toBeInTheDocument()
+  expect(await screen.findByText(/구독이 적용/)).toBeInTheDocument()
   expect(vi.mocked(completeTossBilling).mock.calls[1]).toEqual(
     vi.mocked(completeTossBilling).mock.calls[0],
   )
@@ -102,7 +102,7 @@ it('resumes a server-owned callback without session storage or credentials', asy
   sessionStorage.setItem('easydoc.billing.context', 'must-not-be-used')
   setupResume()
 
-  expect(await screen.findByText(/테스트 구독이 적용/)).toBeInTheDocument()
+  expect(await screen.findByText(/구독이 적용/)).toBeInTheDocument()
   expect(resumeTossBilling).toHaveBeenCalledTimes(1)
   expect(resumeTossBilling).toHaveBeenCalledWith('resume-1')
   expect(sessionStorage.getItem('easydoc.billing.context')).toBe('must-not-be-used')

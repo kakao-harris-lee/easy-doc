@@ -69,7 +69,7 @@ export function BillingCallbackPage() {
     if (replacement) return '카드가 변경되었습니다. 기존 이용 기간과 크레딧은 유지됩니다.'
     return result.billing_environment === 'toss_live'
       ? '정기결제가 승인되었습니다. 사용량 화면에서 이용 기간과 크레딧을 확인하세요.'
-      : '테스트 구독이 적용되었습니다. 실제 청구는 없습니다.'
+      : '구독이 적용되었습니다. 실제 금액은 청구되지 않았습니다.'
   }
   const [retry, setRetry] = useState(false)
   async function finish() {
