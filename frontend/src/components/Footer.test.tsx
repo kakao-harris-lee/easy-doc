@@ -28,7 +28,7 @@ describe('Footer', () => {
       mailOrderRegistrationNumber: '2026-제주이도-0001',
     })
 
-    expect(screen.getByText('전화 064-000-0000')).toBeInTheDocument()
+    expect(screen.getByText('전화 : 064-000-0000')).toBeInTheDocument()
     expect(screen.getByText('통신판매업 신고번호 2026-제주이도-0001')).toBeInTheDocument()
   })
 
@@ -53,7 +53,9 @@ describe('Footer', () => {
   it('고객지원 이메일이 mailto 링크로 걸린다', () => {
     renderFooter()
 
-    const emailLink = screen.getByRole('link', { name: `고객지원 ${COMPANY_INFO.supportEmail}` })
+    const emailLink = screen.getByRole('link', {
+      name: `고객지원 e-mail : ${COMPANY_INFO.supportEmail}`,
+    })
     expect(emailLink).toHaveAttribute('href', `mailto:${COMPANY_INFO.supportEmail}`)
   })
 
