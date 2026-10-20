@@ -107,7 +107,7 @@ export function LandingPage() {
           <div className="absolute -right-3 bottom-8 size-32 rounded-full bg-accent blur-2xl" />
           <img
             src="/landing-document-flow.svg"
-            alt=""
+            alt="복잡한 문서가 짧고 읽기 쉬운 문장으로 바뀌는 모습"
             width={800}
             height={640}
             className="landing-flow-image landing-flow-image-light relative w-full"
@@ -115,7 +115,7 @@ export function LandingPage() {
           />
           <img
             src="/landing-document-flow-dark.svg"
-            alt=""
+            alt="복잡한 문서가 짧고 읽기 쉬운 문장으로 바뀌는 모습"
             width={800}
             height={640}
             className="landing-flow-image landing-flow-image-dark relative w-full"

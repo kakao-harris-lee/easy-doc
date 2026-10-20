@@ -82,7 +82,9 @@ describe('플랜과 사용량', () => {
     expect(within(targetCatalog).getByText(/200크레딧/)).toBeInTheDocument()
     expect(within(targetCatalog).getByText('Pro')).toBeInTheDocument()
     expect(within(targetCatalog).getByText('599,000원')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByText(/토큰|예상 비용|LLM 호출/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '세금계산서 요청' })).not.toBeInTheDocument()
