@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { COMPANY_INFO } from '../config/company'
-import { SERVICE_DEFINITION } from '../content/identity'
+import { GUIDE_PAGE_TITLE, SERVICE_DEFINITION, SERVICE_PAGE_TITLE } from '../content/identity'
 import { buildLandingArtifacts } from './landing-entry'
 
 /** Vite가 내보내는 `dist/index.html`의 모양을 줄인 템플릿. */
@@ -16,6 +16,9 @@ const TEMPLATE = `<!doctype html>
     />
     <meta property="og:description" content="셸 기본 설명" />
     <meta name="twitter:description" content="셸 기본 설명" />
+    <meta property="og:title" content="셸 제목" />
+    <meta name="twitter:title" content="셸 제목" />
+    <meta property="og:url" content="https://easydoc.kr/" />
     <title>EASY-DOC AI</title>
     <script type="module" crossorigin src="/assets/index-abc123.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/vendor-abc123.js">
@@ -60,5 +63,26 @@ describe('buildLandingArtifacts', () => {
   it('sitemap의 lastmod는 주어진 시각의 서울 날짜다', () => {
     expect(countOf(artifacts.sitemapXml, '<loc>https://easydoc.kr/</loc>')).toBe(1)
     expect(artifacts.sitemapXml).toContain('<lastmod>2026-10-03</lastmod>')
+  })
+
+  it('가이드는 고유 제목·대표 주소와 실제 본문을 가진 검색 가능 페이지다', () => {
+    expect(artifacts.landingHtml).toContain(`<title>${SERVICE_PAGE_TITLE}</title>`)
+    expect(artifacts.guideHtml).toContain(`<title>${GUIDE_PAGE_TITLE}</title>`)
+    expect(artifacts.guideHtml).toContain('rel="canonical" href="https://easydoc.kr/guide"')
+    expect(artifacts.guideHtml).toContain('property="og:url" content="https://easydoc.kr/guide"')
+    expect(artifacts.guideHtml).toContain('무료로 먼저 써 보세요')
+    expect(artifacts.guideHtml).toContain('결과 확인하고 내려받기')
+    expect(artifacts.guideHtml).not.toContain('noindex')
+    expect(artifacts.sitemapXml).toContain('<loc>https://easydoc.kr/guide</loc>')
+    expect(countOf(artifacts.sitemapXml, '<loc>')).toBe(2)
+  })
+
+  it('검색로봇도 회사 정보와 무료 체험 조건을 읽을 수 있다', () => {
+    expect(artifacts.landingHtml).toContain('카드 등록 없이 체험 5크레딧')
+    expect(artifacts.landingHtml).toContain('가입·휴대폰 인증')
+    expect(artifacts.landingHtml).toContain(COMPANY_INFO.businessRegistrationNumber)
+    expect(artifacts.guideHtml).toContain(COMPANY_INFO.businessRegistrationNumber)
+    expect(artifacts.landingHtml).toContain(COMPANY_INFO.mailOrderRegistrationNumber)
+    expect(artifacts.guideHtml).toContain(COMPANY_INFO.mailOrderRegistrationNumber)
   })
 })

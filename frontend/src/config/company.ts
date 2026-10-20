@@ -6,8 +6,8 @@
  * 화면(약관·방침 본문 자체는 `src/content/legal/*.md`가 원본이라 이 파일이 아니라 그쪽을
  * 고친다)에 값이 반영된다. JSX에 이 값들을 직접 박지 않는다.
  *
- * 전화번호와 통신판매업 신고번호는 아직 확정되지 않았다(같은 계획 §7-6·§7-10) —
- * `null`을 허용하고, 화면 쪽에서 `null`이면 해당 행을 아예 그리지 않는다. 값이
+ * 전화번호와 통신판매업 신고번호는 `null`을 허용하고,
+ * 화면 쪽에서 `null`이면 해당 행을 아예 그리지 않는다. 값이
  * 있는 라벨만 남고 값이 빈 줄을 만들지 않기 위해서다.
  */
 export interface CompanyInfo {
@@ -21,9 +21,9 @@ export interface CompanyInfo {
   readonly supportEmail: string
   /** 게시용 운영시간 문구. 「즉시 응답」이 아니라 「목표」로 적는다(계획 §6.1). */
   readonly businessHours: string
-  /** 게시 여부 확인 중 — 확정 전까지 `null`. */
+  /** 게시용 전화번호. 미확정이면 `null`. */
   readonly phoneNumber: string | null
-  /** 유료 결제 개시 전 신고 예정 — 신고 전까지 `null`. */
+  /** 운영자가 확인한 통신판매업 신고번호. 미확정이면 `null`. */
   readonly mailOrderRegistrationNumber: string | null
   /**
    * 서비스 최초 공개 연도(1차 배포). 사업 개시일이 아니다 — 카피라이트 표기는 이
@@ -41,8 +41,8 @@ export const COMPANY_INFO: CompanyInfo = {
   privacyOfficerRole: '대표',
   supportEmail: 'mobydick@hanmail.net',
   businessHours: '영업일 09:00~18:00 (당일 회신을 목표로 합니다)',
-  phoneNumber: null,
-  mailOrderRegistrationNumber: null,
+  phoneNumber: '050-6806-6552',
+  mailOrderRegistrationNumber: '제 2026-제주아라-0119 호',
   // ⟨확인 필요⟩ 1차 배포 시점의 실제 공개 연도로 다시 확인할 것 — 지금은 예정 연도다.
   serviceLaunchYear: 2026,
 }

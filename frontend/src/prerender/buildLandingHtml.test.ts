@@ -193,10 +193,12 @@ describe('buildLandingHtml', () => {
 })
 
 describe('buildSitemap', () => {
-  it('loc 하나와 주어진 lastmod를 담는다', () => {
+  it('두 공개 페이지와 주어진 lastmod를 담는다', () => {
     const xml = buildSitemap('2026-10-02')
 
     expect(countOf(xml, '<loc>https://easydoc.kr/</loc>')).toBe(1)
+    expect(countOf(xml, '<loc>https://easydoc.kr/guide</loc>')).toBe(1)
+    expect(countOf(xml, '<loc>')).toBe(2)
     expect(xml).toContain('<lastmod>2026-10-02</lastmod>')
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true)
     expect(xml).toContain('xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"')
