@@ -29,7 +29,6 @@ export function TargetPlanCatalog({
   onCheckout,
 }: TargetPlanCatalogProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<TargetPlan['id']>('start')
-  const [simulateFailure, setSimulateFailure] = useState(false)
   const [consent, setConsent] = useState(false)
   const selectedPlanName =
     TARGET_PLANS.find((plan) => plan.id === selectedPlanId)?.name ?? selectedPlanId
@@ -39,14 +38,10 @@ export function TargetPlanCatalog({
     checkoutEnabled &&
     activePlanId === null &&
     !pending &&
-    (!live || consent)
+    (!(live || tossEnabled) || consent)
   const buttonLabel =
     selectedPlanId === 'start'
-      ? live
-        ? 'Start 월 99,000원 정기결제 시작'
-        : tossEnabled
-          ? 'Start 토스 테스트 카드 등록'
-          : 'Start 테스트 결제'
+      ? 'Start 월 99,000원 정기결제 시작'
       : `${selectedPlanName} 결제 준비 중`
 
   return (
@@ -81,9 +76,7 @@ export function TargetPlanCatalog({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2 font-medium">
                     {plan.name}
-                    {plan.id === 'start' && (
-                      <Badge tone="success">{live ? '월 정기결제' : '테스트 결제 가능'}</Badge>
-                    )}
+                    {plan.id === 'start' && <Badge tone="success">월 정기결제</Badge>}
                     {plan.id !== 'start' && <Badge tone="neutral">결제 준비 중</Badge>}
                     {active && <Badge tone="info">이용 중</Badge>}
                   </span>
@@ -106,19 +99,19 @@ export function TargetPlanCatalog({
         })}
       </ul>
       <div className="mt-4 border-t border-border pt-4">
-        {live && (
-          <div className="space-y-2 text-sm">
-            <p>
-              Start는 월 99,000원에 50크레딧을 제공합니다. 실제 승인일부터 한 달 동안 이용하며 매월
-              자동 결제됩니다.
-            </p>
-            <p>
-              갱신 중단 시 이미 결제한 이용 기간은 유지됩니다. 환불은 이용 내역과 적용 약관에 따라
-              고객 지원을 통해 확인합니다.
-            </p>
-            <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
-              이용약관 및 환불 안내
-            </a>
+        <div className="space-y-2 text-sm">
+          <p>
+            Start는 월 99,000원에 50크레딧을 제공합니다. 실제 승인일부터 한 달 동안 이용하며 매월
+            자동 결제됩니다.
+          </p>
+          <p>
+            갱신 중단 시 이미 결제한 이용 기간은 유지됩니다. 환불은 이용 내역과 적용 약관에 따라
+            고객 지원을 통해 확인합니다.
+          </p>
+          <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
+            이용약관 및 환불 안내
+          </a>
+          {checkoutEnabled && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
               <input
                 type="checkbox"
@@ -128,31 +121,31 @@ export function TargetPlanCatalog({
               />
               금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.
             </label>
-          </div>
-        )}
+          )}
+        </div>
 
         <p className="text-xs text-muted-foreground">
           공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다. 재변환도 대상
           원문 분량만큼 이용량에 포함됩니다. 남은 이용량은 다음 결제 주기로 이월되지 않습니다.
         </p>
-        {!live && selectedPlanId === 'start' && checkoutEnabled && activePlanId === null && (
-          <label className="mt-3 flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={simulateFailure}
-              disabled={busy}
-              onChange={(event) => setSimulateFailure(event.target.checked)}
-            />
-            결제 실패 테스트
-          </label>
+        {!live && checkoutEnabled && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            결제 연동 확인 중이며 실제 금액은 청구되지 않습니다.
+          </p>
         )}
-        <Button
-          className="mt-3"
-          disabled={!startCanCheckout || busy}
-          onClick={() => onCheckout?.(selectedPlanId, live ? false : simulateFailure)}
-        >
-          {busy ? '처리 중…' : buttonLabel}
-        </Button>
+        {checkoutEnabled ? (
+          <Button
+            className="mt-3"
+            disabled={!startCanCheckout || busy}
+            onClick={() => onCheckout?.(selectedPlanId, false)}
+          >
+            {busy ? '처리 중…' : buttonLabel}
+          </Button>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            현재 신규 구독 접수를 준비하고 있습니다.
+          </p>
+        )}
         {workspaceId === null && (
           <p className="mt-2 text-xs text-muted-foreground">
             작업 공간을 선택하면 결제할 수 있습니다.

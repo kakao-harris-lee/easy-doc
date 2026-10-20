@@ -181,7 +181,7 @@ describe('인증 가드', () => {
     await user.type(screen.getByLabelText('비밀번호'), 'password123')
     await user.click(screen.getByRole('button', { name: '로그인' }))
 
-    expect(await screen.findByText(/테스트 구독이 적용/)).toBeInTheDocument()
+    expect(await screen.findByText(/구독이 적용/)).toBeInTheDocument()
     expect(resumeTossBilling).toHaveBeenCalledWith('resume-after-expiry')
   })
 

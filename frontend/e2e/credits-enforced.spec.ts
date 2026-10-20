@@ -113,16 +113,16 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     await verifyEmail(page, account)
     // 결제 checkout(Start 구독)은 계약 2.37.0 부터 휴대폰 인증을 전제한다
     // (`SubscriptionService.checkout`·`TossBillingService.beginBilling`) — 인증 없이는
-    // 403 이라 아래 "Start 테스트 결제" 클릭이 상태 문구를 보지 못한다.
+    // 403 이라 아래 "Start 월 99,000원 정기결제 시작" 클릭이 상태 문구를 보지 못한다.
     await verifyPhone(page, account)
 
-    // 1) 월 플랜 목록에서 Start 테스트 결제를 완료하면 가입 부여 1을 더하는 대신
+    // 1) 격리된 stub 환경에서 Start 구독을 시작하면 가입 부여 1을 더하는 대신
     // 새 월 주기의 allowance·balance를 정확히 50으로 설정한다.
     await page.goto('/usage')
-    await page.getByRole('button', { name: 'Start 테스트 결제', exact: true }).click()
+    await page.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작', exact: true }).click()
     const subscription = page.getByRole('region', { name: '월 구독 플랜' })
     await expect(subscription.getByRole('status')).toHaveText(
-      '테스트 구독이 적용되었습니다. 실제로 청구되지 않습니다.',
+      '구독이 적용되었습니다. 실제 금액은 청구되지 않았습니다.',
     )
     await expect(subscription.getByText('Start', { exact: true })).toBeVisible()
     await expect(subscription.getByText('월 99,000원 · 50크레딧', { exact: true })).toBeVisible()

@@ -10,6 +10,7 @@ import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import java.time.Clock
 import java.time.Duration
@@ -18,6 +19,44 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 class TossBillingServiceTest {
+    @Test
+    fun `closed purchases reject ordinary workspace before card registration`() {
+        val f = Fixture(purchase = false, autoCharge = false)
+        f.store.orders.clear()
+        f.store.currentSession = null
+
+        assertThatThrownBy { f.service.begin(f.owner, f.workspace, "start") }
+            .isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+            .hasMessage("신규 카드 등록이 중단되어 있습니다")
+        assertThat(f.store.currentSession).isNull()
+        assertThat(f.gateway.charges).isZero()
+    }
+
+    @Test
+    fun `closed purchases allow only the review workspace to register a card`() {
+        val f = Fixture(purchase = false, autoCharge = false, reviewWorkspace = true)
+        f.store.orders.clear()
+        f.store.currentSession = null
+
+        val session = f.service.begin(f.owner, f.workspace, "start")
+
+        assertThat(session.workspaceId).isEqualTo(f.workspace)
+        assertThat(session.environment).isEqualTo("toss_test")
+        assertThat(f.gateway.charges).isZero()
+    }
+
+    @Test
+    fun `review allowlist permits initial charge but does not enable automatic renewal`() {
+        val f = Fixture(purchase = false, autoCharge = false, reviewWorkspace = true)
+        f.service.process(f.order.id)
+        assertThat(f.gateway.charges).isEqualTo(1)
+
+        val renewal = Fixture(purchase = false, autoCharge = false, reviewWorkspace = true)
+        renewal.store.orders[renewal.order.id] = renewal.order.copy(kind = "renewal")
+        renewal.service.process(renewal.order.id)
+        assertThat(renewal.gateway.charges).isZero()
+    }
+
     @Test
     fun `recovery cutoff uses the injected clock and retry window`() {
         val now = Instant.parse("2026-09-28T00:00:00Z")
@@ -284,6 +323,7 @@ class TossBillingServiceTest {
     private class Fixture(
         autoCharge: Boolean = true,
         purchase: Boolean = true,
+        reviewWorkspace: Boolean = false,
         zone: java.time.ZoneId = ZoneOffset.UTC,
     ) {
         val now: Instant = Instant.parse("2026-03-05T00:00:00Z")
@@ -345,6 +385,7 @@ class TossBillingServiceTest {
                     },
                 purchaseEnabled = purchase,
                 autoChargeEnabled = autoCharge,
+                allowedWorkspaces = if (reviewWorkspace) setOf(workspace) else emptySet(),
             )
 
         fun payment(approved: Instant) =

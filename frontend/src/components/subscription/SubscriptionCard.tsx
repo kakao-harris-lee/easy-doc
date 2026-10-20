@@ -98,8 +98,8 @@ export function SubscriptionCard({
         cancel
           ? '현재 이용 기간이 끝나면 구독이 종료됩니다.'
           : declined
-            ? '테스트 결제가 거절되었습니다. 이용량은 그대로입니다.'
-            : '테스트 구독이 적용되었습니다. 실제로 청구되지 않습니다.',
+            ? '결제가 거절되었습니다. 이용량은 그대로입니다.'
+            : '구독이 적용되었습니다. 실제 금액은 청구되지 않았습니다.',
       )
       order.current = null
       onChanged?.()
@@ -132,6 +132,9 @@ export function SubscriptionCard({
   }
 
   const live = view?.billing_environment === 'toss_live'
+  const billingAvailable = Boolean(
+    view?.mock_enabled || (view?.toss_enabled && (live || view.purchase_enabled === true)),
+  )
   const current = view?.subscription
   const active = current?.status === 'active' || current?.status === 'canceling'
   return (
@@ -162,14 +165,12 @@ export function SubscriptionCard({
             <p className="mt-3 text-2xl font-bold">
               {active
                 ? (view.plans.find((item) => item.id === current.plan_id)?.name ?? current.plan_id)
-                : view.mock_enabled || view.toss_enabled
+                : billingAvailable
                   ? '선택한 플랜 없음'
                   : '구독 서비스 준비 중'}
             </p>
-            {(view.mock_enabled || view.toss_enabled || current) && (
-              <p className="mt-2 text-sm font-medium text-primary">
-                {live ? '실제 카드 결제 · 매월 자동결제' : '테스트 결제 · 실제 청구 없음'}
-              </p>
+            {(billingAvailable || current) && (
+              <p className="mt-2 text-sm font-medium text-primary">신용·체크카드 · 월 정기결제</p>
             )}
             {active && (
               <>
@@ -180,9 +181,9 @@ export function SubscriptionCard({
                   {date(current.cycle_ends_at)}{' '}
                   {current.status === 'canceling'
                     ? '구독 종료 예정'
-                    : live
+                    : live && view.auto_charge_enabled !== false
                       ? '이용 기간 종료 / 다음 결제 예정'
-                      : '다음 테스트 결제'}
+                      : '이용 기간 종료'}
                 </p>
               </>
             )}
@@ -192,7 +193,7 @@ export function SubscriptionCard({
             {view.current_period_start && (
               <p className="mt-2 text-sm">이용 시작일: {date(view.current_period_start)}</p>
             )}
-            {view.next_billing_at && (
+            {view.next_billing_at && view.auto_charge_enabled !== false && (
               <p className="mt-1 text-sm">다음 청구 예정: {date(view.next_billing_at)}</p>
             )}
             {view.billing_state && (
@@ -237,7 +238,7 @@ export function SubscriptionCard({
             {current?.status === 'expired' && (
               <p className="mt-2 text-sm text-muted-foreground">이전 구독이 종료되었습니다.</p>
             )}
-            {!(view.mock_enabled || view.toss_enabled) && !current && (
+            {!billingAvailable && !current && (
               <p className="mt-2 text-sm text-muted-foreground">
                 현재 신규 구독 접수를 준비하고 있습니다.
               </p>
@@ -262,23 +263,27 @@ export function SubscriptionCard({
                 카드 등록 취소
               </Button>
             )}
-            {!admin && view.toss_enabled && current && current.status !== 'expired' && (
-              <Button
-                variant="ghost"
-                className="mt-4"
-                disabled={
-                  busy ||
-                  view.manual_review ||
-                  view.billing_state === 'manual_review' ||
-                  view.billing_state === 'cancel_requested' ||
-                  view.billing_state === 'revoking' ||
-                  (view.pending && !view.retry_at)
-                }
-                onClick={() => void changeCard()}
-              >
-                결제 카드 변경
-              </Button>
-            )}
+            {!admin &&
+              billingAvailable &&
+              view.toss_enabled &&
+              current &&
+              current.status !== 'expired' && (
+                <Button
+                  variant="ghost"
+                  className="mt-4"
+                  disabled={
+                    busy ||
+                    view.manual_review ||
+                    view.billing_state === 'manual_review' ||
+                    view.billing_state === 'cancel_requested' ||
+                    view.billing_state === 'revoking' ||
+                    (view.pending && !view.retry_at)
+                  }
+                  onClick={() => void changeCard()}
+                >
+                  결제 카드 변경
+                </Button>
+              )}
             {view.billing_state === 'issuing' && (
               <p role="status" className="mt-3 text-sm">
                 카드 등록 결과 확인 중입니다. 자동으로 다시 확인합니다.
@@ -292,12 +297,12 @@ export function SubscriptionCard({
             {!hidePayments && view.payments.length > 0 && (
               <details className="mt-4 border-t border-border pt-3 text-sm">
                 <summary className="cursor-pointer">
-                  {live ? '결제 내역' : '테스트 결제 내역'}
+                  {admin && !live ? '테스트 결제 내역' : '결제 내역'}
                 </summary>
                 <p className="mt-2 text-xs text-muted-foreground">
                   {live
                     ? '승인된 카드 결제와 환불 내역입니다.'
-                    : '테스트 기록이며 카드 영수증이나 세무 증빙이 아닙니다.'}
+                    : '실제 청구가 없는 결제 연동 확인 기록입니다. 카드 영수증이나 세무 증빙으로 사용할 수 없습니다.'}
                 </p>
                 <ul className="mt-2 space-y-2">
                   {view.payments.map((payment) => (
@@ -342,7 +347,7 @@ export function SubscriptionCard({
         <TargetPlanCatalog
           workspaceId={workspaceId}
           checkoutEnabled={Boolean(
-            (view?.mock_enabled || view?.toss_enabled) &&
+            billingAvailable &&
             view?.purchase_enabled !== false &&
             !view?.manual_review &&
             view?.plans.some((availablePlan) => availablePlan.id === 'start'),

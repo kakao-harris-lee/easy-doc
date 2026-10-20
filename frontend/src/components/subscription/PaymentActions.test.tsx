@@ -70,9 +70,9 @@ it('rejects a non-HTTPS receipt and opens a verified link without sending a refe
   render(
     <PaymentActions workspace="workspace" payment={payment} admin={false} onChanged={vi.fn()} />,
   )
-  await user.click(screen.getByRole('button', { name: '테스트 영수증 확인' }))
+  await user.click(screen.getByRole('button', { name: '결제 기록 확인' }))
   expect(await screen.findByRole('alert')).toBeInTheDocument()
   expect(screen.queryByRole('link')).not.toBeInTheDocument()
-  await user.click(screen.getByRole('button', { name: '테스트 영수증 확인' }))
+  await user.click(screen.getByRole('button', { name: '결제 기록 확인' }))
   expect(await screen.findByRole('link')).toHaveAttribute('rel', 'noopener noreferrer')
 })

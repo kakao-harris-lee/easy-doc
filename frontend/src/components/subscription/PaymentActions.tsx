@@ -272,11 +272,11 @@ export function PaymentActions({
         )
       ) : receipt ? (
         <a href={receipt} target="_blank" rel="noopener noreferrer" className="underline">
-          {live ? '카드 영수증 열기' : '토스 테스트 영수증 열기'}
+          {live ? '카드 영수증 열기' : '결제 기록 열기'}
         </a>
       ) : (
         <Button variant="ghost" disabled={busy} onClick={() => void act()}>
-          {live ? '카드 영수증 확인' : '테스트 영수증 확인'}
+          {live ? '카드 영수증 확인' : '결제 기록 확인'}
         </Button>
       )}
       {message && <p role="status">{message}</p>}

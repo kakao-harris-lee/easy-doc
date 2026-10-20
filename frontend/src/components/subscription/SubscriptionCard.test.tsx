@@ -63,7 +63,7 @@ it('uses the server plan and applies mock checkout before refreshing usage', asy
     },
   })
   render(<SubscriptionCard workspaceId="w1" onChanged={changed} />)
-  await user.click(await screen.findByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   expect(checkoutSubscription).toHaveBeenCalledWith('w1', 'start', expect.any(String), false)
   expect(changed).toHaveBeenCalledOnce()
   expect(await screen.findByRole('button', { name: '구독 갱신 중단' })).toBeInTheDocument()
@@ -72,9 +72,9 @@ it('retries an uncertain payment with the same order id', async () => {
   const user = userEvent.setup()
   vi.mocked(checkoutSubscription).mockRejectedValue(new Error('network'))
   render(<SubscriptionCard workspaceId="w1" />)
-  await user.click(await screen.findByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   await screen.findByRole('alert')
-  await user.click(screen.getByRole('button', { name: 'Start 테스트 결제' }))
+  await user.click(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }))
   expect(vi.mocked(checkoutSubscription).mock.calls[0]?.[2]).toBe(
     vi.mocked(checkoutSubscription).mock.calls[1]?.[2],
   )
@@ -86,16 +86,30 @@ it('admin uses admin endpoint and does not show checkout controls', async () => 
   expect(screen.queryByRole('list', { name: '월 플랜 선택' })).not.toBeInTheDocument()
 })
 
-it('opens Toss billing for the selected plan when the server enables Toss test mode', async () => {
+it('opens Toss billing for an explicitly allowed review workspace', async () => {
   vi.mocked(getSubscription).mockResolvedValue({
     ...available,
     mock_enabled: false,
     toss_enabled: true,
+    billing_environment: 'toss_test',
+    purchase_enabled: true,
   })
   vi.mocked(openTossBilling).mockResolvedValue()
   const user = userEvent.setup()
   render(<SubscriptionCard workspaceId="w1" />)
-  await user.click(await screen.findByRole('button', { name: 'Start 토스 테스트 카드 등록' }))
+  const button = await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })
+  expect(button).toBeDisabled()
+  expect(screen.queryByLabelText('결제 실패 테스트')).not.toBeInTheDocument()
+  expect(screen.queryByText('테스트 결제 · 실제 청구 없음')).not.toBeInTheDocument()
+  expect(
+    screen.getByText('결제 연동 확인 중이며 실제 금액은 청구되지 않습니다.'),
+  ).toBeInTheDocument()
+  await user.click(
+    screen.getByLabelText(
+      '금액, 제공량, 매월 자동결제, 갱신 중단 및 환불 조건을 확인하고 동의합니다.',
+    ),
+  )
+  await user.click(button)
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false)
   expect(checkoutSubscription).not.toHaveBeenCalled()
 })
@@ -151,10 +165,10 @@ it('blocks new live purchases when manual review is required', async () => {
     manual_review: true,
   })
   render(<SubscriptionCard workspaceId="w1" />)
+  expect(await screen.findByText(/결제 결과를 관리자가 확인/)).toBeInTheDocument()
   expect(
-    await screen.findByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }),
-  ).toBeDisabled()
-  expect(screen.getByText(/결제 결과를 관리자가 확인/)).toBeInTheDocument()
+    screen.queryByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }),
+  ).not.toBeInTheDocument()
 })
 
 it('allows repair of a known declined renewal while purchases are closed', async () => {
@@ -204,3 +218,62 @@ it('immediately explains a needs_card state and offers safe card registration', 
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'replace_card')
   expect(cancelSubscription).not.toHaveBeenCalled()
 })
+
+it('labels review transactions without implying a real charge or tax receipt', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_test',
+    purchase_enabled: true,
+    auto_charge_enabled: false,
+    next_billing_at: '2026-11-16T00:00:00Z',
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99_000,
+      status: 'active',
+      cycle_ends_at: '2026-11-16T00:00:00Z',
+    },
+    payments: [
+      {
+        id: 'review-payment',
+        plan_id: 'start',
+        amount: 99_000,
+        status: 'paid',
+        created_at: '2026-10-16T00:00:00Z',
+        provider: 'toss_test',
+      },
+    ],
+  })
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="review" />)
+  await user.click(await screen.findByText('결제 내역', { selector: 'summary' }))
+  expect(screen.queryByText('테스트 결제 내역')).not.toBeInTheDocument()
+  expect(screen.queryByText(/다음 청구 예정:/)).not.toBeInTheDocument()
+  expect(screen.getByText(/실제 청구가 없는 결제 연동 확인 기록/)).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '결제 기록 확인' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
+})
+
+it.each([false, undefined])(
+  'hides test checkout without explicit workspace permission (%s)',
+  async (permission) => {
+    vi.mocked(getSubscription).mockResolvedValue({
+      ...available,
+      mock_enabled: false,
+      toss_enabled: true,
+      billing_environment: 'toss_test',
+      purchase_enabled: permission,
+    })
+    render(<SubscriptionCard workspaceId="ordinary" />)
+    expect(await screen.findByText('구독 서비스 준비 중')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/실제 금액은 청구되지 않습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/테스트 결제/)).not.toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '월 플랜 선택' })).toBeInTheDocument()
+    expect(openTossBilling).not.toHaveBeenCalled()
+    expect(checkoutSubscription).not.toHaveBeenCalled()
+  },
+)
