@@ -1,5 +1,5 @@
 /**
- * `dist/index.html`(셸)을 템플릿으로 `dist/landing.html`과 `dist/sitemap.xml`을 만든다.
+ * SPA 셸을 템플릿으로 홈페이지·가이드 HTML과 사이트맵을 만든다.
  *
  * 브라우저를 쓰지 않는다 — `vite build --ssr`가 만든 Node 번들을 import해
  * `node:22-alpine` 빌드 스테이지에서 그대로 돈다. 렌더·조립·검사는 모두
@@ -19,9 +19,10 @@ const distDir = path.join(projectRoot, 'dist')
 
 const template = await readFile(path.join(distDir, 'index.html'), 'utf8')
 
-const { landingHtml, sitemapXml } = buildLandingArtifacts({ template, now: new Date() })
+const { landingHtml, guideHtml, sitemapXml } = buildLandingArtifacts({ template, now: new Date() })
 
 await writeFile(path.join(distDir, 'landing.html'), landingHtml, 'utf8')
+await writeFile(path.join(distDir, 'guide.html'), guideHtml, 'utf8')
 await writeFile(path.join(distDir, 'sitemap.xml'), sitemapXml, 'utf8')
 
-process.stdout.write('prerender: dist/landing.html, dist/sitemap.xml 생성\n')
+process.stdout.write('prerender: dist/landing.html, dist/guide.html, dist/sitemap.xml 생성\n')

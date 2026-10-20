@@ -45,8 +45,8 @@ const START_PLAN = TARGET_PLANS.find((plan) => plan.id === 'start')
  * 로그인 전 첫 화면.
  *
  * 기능 목록보다 정체성이 먼저다 — 독자(누구를 위한 글인가) · 입력(어떤 문서를 넣는가) ·
- * 초안(무엇이 나오는가) 세 가지 사실을 먼저 읽게 하고, 재작성 예시 한 쌍으로 끝낸다.
- * 자세한 사용법은 가이드로 보낸다.
+ * 초안(무엇이 나오는가)을 먼저 밝히고 체험 조건과 문서 작업 흐름을 안내한다.
+ * 자세한 사용법과 형식별 제약은 가이드로 보낸다.
  */
 export function LandingPage() {
   return (
@@ -55,7 +55,7 @@ export function LandingPage() {
         <div>
           <p className="inline-flex items-center gap-2 rounded-full bg-brand-surface px-3 py-1.5 text-sm font-semibold text-brand-foreground">
             <FileCheck2 className="size-4" aria-hidden="true" />
-            쉬운 글로 다시 쓰는 도구
+            쉬운 글 변환 AI
           </p>
           <h1
             aria-label="어려운 글을 누구나 읽기 쉬운 글로"
@@ -68,15 +68,25 @@ export function LandingPage() {
           <p className="mt-5 max-w-xl text-[17px] leading-7 text-muted-foreground md:text-lg md:leading-8">
             {SERVICE_DEFINITION}
           </p>
+          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+            가정통신문부터 고객 안내문까지, 원문과 비교하며 직접 고치고 문서로 내려받으세요.
+          </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
             <Link to={SIGNUP_PATH} className={PRIMARY_LINK}>
-              가입하고 시작하기
+              무료로 체험하기
               <ArrowRight className="size-[18px]" aria-hidden="true" />
             </Link>
             <Link to={GUIDE_PATH} className={SECONDARY_LINK}>
               이용 가이드 보기
             </Link>
           </div>
+          <p className="mt-3 text-sm font-medium text-brand-foreground">
+            카드 등록 없이 체험 5크레딧 · 기본 수준 기준 약 5,000자
+          </p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            가입·휴대폰 인증 후 번호당 1회 지급하며, 지급일부터 한 달 동안 사용할 수 있습니다.
+            재변환에도 크레딧이 사용됩니다.
+          </p>
           {/* 고지는 회색 보조 문장이 아니라 검수 화면과 같은 경고 블록이다 — 확인은 자연스러운
               행동이 아니라 눈에 띄는 컴포넌트가 있어야 일어난다(GOV.UK AI 패턴). */}
           <p
@@ -187,6 +197,43 @@ export function LandingPage() {
             </p>
           </figure>
         </div>
+      </section>
+
+      <section
+        aria-labelledby="landing-workflow-heading"
+        className="rounded-[20px] border border-border bg-card p-6 shadow-card md:p-8"
+      >
+        <h2
+          id="landing-workflow-heading"
+          className="text-2xl font-extrabold leading-tight text-foreground"
+        >
+          쉬운 글 만들기부터 문서로 저장하기까지
+        </h2>
+        <ol className="mt-6 grid gap-6 md:grid-cols-3">
+          <li>
+            <h3 className="font-semibold text-foreground">1. 글을 붙여넣거나 문서 올리기</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              텍스트, DOCX, HWPX, PDF를 넣고 읽기 수준을 고릅니다.
+            </p>
+          </li>
+          <li>
+            <h3 className="font-semibold text-foreground">2. 원문과 비교하며 고치기</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              결과를 직접 편집하고, 아쉬운 문단만 다시 변환합니다. 어려운 낱말의 쉬운 표현도 찾아볼
+              수 있습니다.
+            </p>
+          </li>
+          <li>
+            <h3 className="font-semibold text-foreground">3. 확인한 글 내려받기</h3>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              DOCX·HWPX는 올린 형식으로, 붙여넣은 글·TXT·PDF는 TXT로 내려받습니다.
+            </p>
+          </li>
+        </ol>
+        <p className="mt-5 border-t border-border pt-4 text-sm leading-6 text-muted-foreground">
+          DOCX·HWPX도 줄바꿈·표·쪽 배치가 달라질 수 있습니다. 구형 HWP·DOC는 HWPX·DOCX로 저장해
+          주세요. PDF는 원본 서식을 유지하지 않습니다.
+        </p>
       </section>
 
       {START_PLAN !== undefined && (
