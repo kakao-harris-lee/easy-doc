@@ -1,5 +1,5 @@
 /**
- * `/` 프리렌더 산출물(`dist/landing.html`)과 `dist/sitemap.xml`을 만드는 순수 함수들.
+ * 공개 페이지 프리렌더 HTML과 사이트맵을 만드는 순수 함수들.
  *
  * 빌드 스크립트(`scripts/prerender-landing.mjs`)는 파일 입출력만 하고 문자열 조립은
  * 전부 여기서 한다 — 색인 규칙(canonical 하나, noindex 없음, 한 출처 description)은
@@ -15,6 +15,7 @@ import { SERVICE_NAME } from '../content/identity'
  * canonical을 두지 않는다.
  */
 export const CANONICAL_URL = 'https://easydoc.kr/'
+export const GUIDE_CANONICAL_URL = 'https://easydoc.kr/guide'
 
 /** JSON-LD `Organization.logo`. 1200×630 OG 이미지가 아니라 정사각 로고를 쓴다. */
 export const ORGANIZATION_LOGO_URL = 'https://easydoc.kr/icons/icon-320.png'
@@ -28,6 +29,7 @@ export interface BuildLandingHtmlInput {
   readonly markup: string
   /** `SERVICE_DEFINITION`. description 계열 메타 세 개를 모두 이 문장으로 채운다. */
   readonly description: string
+  readonly title?: string
   readonly canonicalUrl: string
   readonly jsonLd: readonly JsonLdNode[]
 }
@@ -42,8 +44,8 @@ const HEAD_CLOSE = /([ \t]*)<\/head>/
 /**
  * 랜딩에 싣는 구조화 데이터. `Organization`·`WebSite` 두 타입만 넣는다.
  *
- * 본문에는 사업자명·로고가 없다 — 근거는 화면이 아니라 푸터와 같은 출처
- * (`COMPANY_INFO`)를 쓴다는 점이다. 뒷받침할 본문이 없는 `SoftwareApplication`·
+ * 사업자명은 함께 렌더하는 푸터와 같은 출처(`COMPANY_INFO`)를 쓴다.
+ * 뒷받침할 본문이 없는 `SoftwareApplication`·
  * `FAQPage`는 넣지 않는다.
  */
 export function buildLandingJsonLd({
@@ -111,6 +113,7 @@ export function buildLandingHtml({
   template,
   markup,
   description,
+  title,
   canonicalUrl,
   jsonLd,
 }: BuildLandingHtmlInput): string {
@@ -136,6 +139,15 @@ export function buildLandingHtml({
   html = setMetaContent(html, 'name="description"', description)
   html = setMetaContent(html, 'property="og:description"', description)
   html = setMetaContent(html, 'name="twitter:description"', description)
+  if (title !== undefined) {
+    if (!/<title>[^<]*<\/title>/.test(html)) {
+      throw new Error('셸 템플릿에 title이 없다')
+    }
+    html = html.replace(/<title>[^<]*<\/title>/, () => `<title>${escapeAttribute(title)}</title>`)
+    html = setMetaContent(html, 'property="og:title"', title)
+    html = setMetaContent(html, 'name="twitter:title"', title)
+    html = setMetaContent(html, 'property="og:url"', canonicalUrl)
+  }
 
   // `</script>`가 본문에 섞여 script를 조기 종료하지 못하게 `<`만 이스케이프한다.
   const jsonLdPayload = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
@@ -167,7 +179,7 @@ export function buildLandingHtml({
 
 const LASTMOD_FORMAT = /^\d{4}-\d{2}-\d{2}$/
 
-/** 색인 대상은 `/` 하나다. 라우트가 늘어나면 이 함수가 목록을 받도록 넓힌다. */
+/** 공개 홈페이지와 이용 가이드만 검색 대상이다. */
 export function buildSitemap(lastmod: string): string {
   if (!LASTMOD_FORMAT.test(lastmod)) {
     throw new Error(`sitemap lastmod가 YYYY-MM-DD 형식이 아니다: ${lastmod}`)
@@ -177,6 +189,10 @@ export function buildSitemap(lastmod: string): string {
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     '  <url>',
     `    <loc>${CANONICAL_URL}</loc>`,
+    `    <lastmod>${lastmod}</lastmod>`,
+    '  </url>',
+    '  <url>',
+    `    <loc>${GUIDE_CANONICAL_URL}</loc>`,
     `    <lastmod>${lastmod}</lastmod>`,
     '  </url>',
     '</urlset>',

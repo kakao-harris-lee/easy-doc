@@ -60,24 +60,22 @@ describe('랜딩 화면', () => {
     ).toBeInTheDocument()
   })
 
-  it('상세 기능 목록 대신 하나의 변환 예시만 보여 준다', () => {
+  it('변환 예시와 문서 작업 흐름을 보여 준다', () => {
     renderLanding()
 
     expect(screen.getByRole('heading', { name: '뜻은 그대로, 문장은 쉽게' })).toBeInTheDocument()
     expect(screen.getByText(/행사 참여를 희망하는 경우/)).toBeInTheDocument()
     expect(screen.getByText(/행사에 참여하려면 신청 기간 안에/)).toBeInTheDocument()
     expect(screen.getByText(/결과는 직접 확인하고 고칠 수 있습니다/)).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '원문을 넣어요' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '문단별 다시 쓰기' })).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: '쉬운 글 만들기부터 문서로 저장하기까지' }),
+    ).toBeInTheDocument()
   })
 
   it('가입과 이용 가이드로 바로 보낸다', () => {
     renderLanding()
 
-    expect(screen.getByRole('link', { name: '가입하고 시작하기' })).toHaveAttribute(
-      'href',
-      '/signup',
-    )
+    expect(screen.getByRole('link', { name: '무료로 체험하기' })).toHaveAttribute('href', '/signup')
     expect(screen.getByRole('link', { name: '이용 가이드 보기' })).toHaveAttribute('href', '/guide')
   })
 

@@ -609,7 +609,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
       await page.setViewportSize({ width: 1440, height: 1000 })
       await page.goto('/')
       await selectTheme(page, theme)
-      await expectThemeSettled(page, theme, page.getByRole('link', { name: /가입하고 시작하기/ }))
+      await expectThemeSettled(page, theme, page.getByRole('link', { name: /무료로 체험하기/ }))
       await page.screenshot({
         path: testInfo.outputPath(`landing-${theme}-desktop.png`),
         fullPage: true,
