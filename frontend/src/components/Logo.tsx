@@ -6,7 +6,7 @@ export function Logo({ compact = false }: { compact?: boolean }) {
     <span className="inline-flex items-center gap-2 sm:gap-3">
       <img
         src="/icons/icon-320.png"
-        alt=""
+        alt={`${SERVICE_NAME} 로고`}
         width={44}
         height={44}
         className={

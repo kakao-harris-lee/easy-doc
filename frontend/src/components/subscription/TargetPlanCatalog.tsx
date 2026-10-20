@@ -111,7 +111,7 @@ export function TargetPlanCatalog({
           <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
             이용약관 및 환불 안내
           </a>
-          {(live || tossEnabled) && (
+          {checkoutEnabled && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
               <input
                 type="checkbox"
@@ -133,13 +133,19 @@ export function TargetPlanCatalog({
             결제 연동 확인 중이며 실제 금액은 청구되지 않습니다.
           </p>
         )}
-        <Button
-          className="mt-3"
-          disabled={!startCanCheckout || busy}
-          onClick={() => onCheckout?.(selectedPlanId, false)}
-        >
-          {busy ? '처리 중…' : buttonLabel}
-        </Button>
+        {checkoutEnabled ? (
+          <Button
+            className="mt-3"
+            disabled={!startCanCheckout || busy}
+            onClick={() => onCheckout?.(selectedPlanId, false)}
+          >
+            {busy ? '처리 중…' : buttonLabel}
+          </Button>
+        ) : (
+          <p className="mt-3 text-sm text-muted-foreground">
+            현재 신규 구독 접수를 준비하고 있습니다.
+          </p>
+        )}
         {workspaceId === null && (
           <p className="mt-2 text-xs text-muted-foreground">
             작업 공간을 선택하면 결제할 수 있습니다.
