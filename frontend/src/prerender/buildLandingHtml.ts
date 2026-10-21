@@ -179,22 +179,20 @@ export function buildLandingHtml({
 
 const LASTMOD_FORMAT = /^\d{4}-\d{2}-\d{2}$/
 
-/** 공개 홈페이지와 이용 가이드만 검색 대상이다. */
-export function buildSitemap(lastmod: string): string {
+/** 공개 페이지 주소만 검색 대상으로 전달한다. */
+export function buildSitemap(lastmod: string, additionalUrls: readonly string[] = []): string {
   if (!LASTMOD_FORMAT.test(lastmod)) {
     throw new Error(`sitemap lastmod가 YYYY-MM-DD 형식이 아니다: ${lastmod}`)
   }
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    '  <url>',
-    `    <loc>${CANONICAL_URL}</loc>`,
-    `    <lastmod>${lastmod}</lastmod>`,
-    '  </url>',
-    '  <url>',
-    `    <loc>${GUIDE_CANONICAL_URL}</loc>`,
-    `    <lastmod>${lastmod}</lastmod>`,
-    '  </url>',
+    ...[CANONICAL_URL, GUIDE_CANONICAL_URL, ...additionalUrls].flatMap((url) => [
+      '  <url>',
+      `    <loc>${escapeAttribute(url)}</loc>`,
+      `    <lastmod>${lastmod}</lastmod>`,
+      '  </url>',
+    ]),
     '</urlset>',
     '',
   ].join('\n')

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
@@ -50,7 +50,11 @@ describe('랜딩 화면', () => {
 
     expect(screen.getByText('학교 가정통신문')).toBeInTheDocument()
     expect(screen.getByText('서비스 이용 안내')).toBeInTheDocument()
-    expect(screen.getByText('제품 설명')).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('region', { name: '일상부터 학습과 업무까지' })).getByText(
+        '제품 설명',
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByText('개인정보가 담긴 글')).toBeInTheDocument()
     expect(screen.queryByText('원문 없이 새로 쓸 글')).not.toBeInTheDocument()
     expect(screen.getByText('외부에 공개하지 않는 내부 문서')).toBeInTheDocument()

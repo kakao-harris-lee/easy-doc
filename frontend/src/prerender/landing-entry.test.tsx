@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { COMPANY_INFO } from '../config/company'
 import { GUIDE_PAGE_TITLE, SERVICE_DEFINITION, SERVICE_PAGE_TITLE } from '../content/identity'
 import { buildLandingArtifacts } from './landing-entry'
+import { DOCUMENT_EXAMPLES, EXAMPLE_NOTICE } from '../content/documentExamples'
 
 /** Vite가 내보내는 `dist/index.html`의 모양을 줄인 템플릿. */
 const TEMPLATE = `<!doctype html>
@@ -74,7 +75,7 @@ describe('buildLandingArtifacts', () => {
     expect(artifacts.guideHtml).toContain('결과 확인하고 내려받기')
     expect(artifacts.guideHtml).not.toContain('noindex')
     expect(artifacts.sitemapXml).toContain('<loc>https://easydoc.kr/guide</loc>')
-    expect(countOf(artifacts.sitemapXml, '<loc>')).toBe(2)
+    expect(countOf(artifacts.sitemapXml, '<loc>')).toBe(6)
   })
 
   it('검색로봇도 회사 정보와 무료 체험 조건을 읽을 수 있다', () => {
@@ -84,5 +85,40 @@ describe('buildLandingArtifacts', () => {
     expect(artifacts.guideHtml).toContain(COMPANY_INFO.businessRegistrationNumber)
     expect(artifacts.landingHtml).toContain(COMPANY_INFO.mailOrderRegistrationNumber)
     expect(artifacts.guideHtml).toContain(COMPANY_INFO.mailOrderRegistrationNumber)
+  })
+
+  it('예시 목록과 상세 원문은 JavaScript 없이 읽을 수 있고 고유 대표 주소를 가진다', () => {
+    expect(artifacts.examplePages).toHaveLength(4)
+    expect(artifacts.sitemapXml).toContain('<loc>https://easydoc.kr/examples</loc>')
+    for (const example of DOCUMENT_EXAMPLES) {
+      const page = artifacts.examplePages.find(
+        (item) => item.filename === `examples/${example.id}.html`,
+      )
+      expect(page).toBeDefined()
+      expect(page?.html).toContain(example.title)
+      expect(page?.html).toContain(example.original.split('\n\n')[1])
+      expect(page?.html).toContain(EXAMPLE_NOTICE)
+      expect(page?.html).toContain(
+        `rel="canonical" href="https://easydoc.kr/examples/${example.id}"`,
+      )
+      expect(page?.html).toContain(
+        `property="og:url" content="https://easydoc.kr/examples/${example.id}"`,
+      )
+      expect(page?.html).not.toContain('noindex')
+      expect(countOf(page?.html ?? '', 'rel="canonical"')).toBe(1)
+      expect(artifacts.sitemapXml).toContain(`<loc>https://easydoc.kr/examples/${example.id}</loc>`)
+    }
+    expect(artifacts.sitemapXml).not.toContain('/login')
+    expect(artifacts.sitemapXml).not.toContain('/example-files')
+  })
+
+  it('다운로드 원문에도 가상 자료 표시를 포함하고 원문을 그대로 보존한다', () => {
+    expect(artifacts.exampleFiles).toHaveLength(3)
+    DOCUMENT_EXAMPLES.forEach((example) => {
+      const file = artifacts.exampleFiles.find(
+        (item) => item.filename === `example-files/${example.id}.txt`,
+      )
+      expect(file?.text).toBe(`${EXAMPLE_NOTICE}\n\n${example.original}\n`)
+    })
   })
 })

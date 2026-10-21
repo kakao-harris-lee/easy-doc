@@ -26,6 +26,15 @@ import {
 } from '../content/identity'
 import { GuidePage } from '../pages/GuidePage'
 import { LandingPage } from '../pages/LandingPage'
+import { DocumentExampleArticle, ExamplesPage } from '../pages/ExamplesPage'
+import {
+  DOCUMENT_EXAMPLES,
+  EXAMPLE_NOTICE,
+  EXAMPLES_DESCRIPTION,
+  EXAMPLES_PATH,
+  EXAMPLES_TITLE,
+  examplePath,
+} from '../content/documentExamples'
 import { GUIDE_PATH, HOME_PATH } from '../routes/paths'
 import {
   CANONICAL_URL,
@@ -54,6 +63,8 @@ export interface LandingArtifacts {
   readonly landingHtml: string
   readonly guideHtml: string
   readonly sitemapXml: string
+  readonly examplePages: readonly { readonly filename: string; readonly html: string }[]
+  readonly exampleFiles: readonly { readonly filename: string; readonly text: string }[]
 }
 
 /**
@@ -69,6 +80,22 @@ export function buildLandingArtifacts({
   readonly template: string
   readonly now: Date
 }): LandingArtifacts {
+  const publicExamples = [
+    {
+      path: EXAMPLES_PATH,
+      filename: 'examples/index.html',
+      title: EXAMPLES_TITLE,
+      description: EXAMPLES_DESCRIPTION,
+      element: <ExamplesPage />,
+    },
+    ...DOCUMENT_EXAMPLES.map((example) => ({
+      path: examplePath(example),
+      filename: `examples/${example.id}.html`,
+      title: `${example.category} 쉬운 글 예시: ${example.title} | EASY-DOC AI`,
+      description: `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`,
+      element: <DocumentExampleArticle example={example} />,
+    })),
+  ]
   return {
     landingHtml: buildLandingHtml({
       template,
@@ -93,6 +120,29 @@ export function buildLandingArtifacts({
       canonicalUrl: GUIDE_CANONICAL_URL,
       jsonLd: [],
     }),
-    sitemapXml: buildSitemap(seoulDateString(now)),
+    examplePages: publicExamples.map((page) => ({
+      filename: page.filename,
+      html: buildLandingHtml({
+        template,
+        markup: renderToStaticMarkup(
+          <StaticRouter location={page.path}>
+            <main className={`${CONTAINER} py-6`}>{page.element}</main>
+            <Footer />
+          </StaticRouter>,
+        ),
+        description: page.description,
+        title: page.title,
+        canonicalUrl: `https://easydoc.kr${page.path}`,
+        jsonLd: [],
+      }),
+    })),
+    exampleFiles: DOCUMENT_EXAMPLES.map((example) => ({
+      filename: `example-files/${example.id}.txt`,
+      text: `${EXAMPLE_NOTICE}\n\n${example.original}\n`,
+    })),
+    sitemapXml: buildSitemap(
+      seoulDateString(now),
+      publicExamples.map((page) => `https://easydoc.kr${page.path}`),
+    ),
   }
 }
