@@ -7,7 +7,7 @@
  *
  * 선행: `vite build` → `vite build --ssr src/prerender/landing-entry.tsx --outDir dist-ssr`.
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
@@ -19,10 +19,21 @@ const distDir = path.join(projectRoot, 'dist')
 
 const template = await readFile(path.join(distDir, 'index.html'), 'utf8')
 
-const { landingHtml, guideHtml, sitemapXml } = buildLandingArtifacts({ template, now: new Date() })
+const { landingHtml, guideHtml, sitemapXml, examplePages, exampleFiles } = buildLandingArtifacts({
+  template,
+  now: new Date(),
+})
 
 await writeFile(path.join(distDir, 'landing.html'), landingHtml, 'utf8')
 await writeFile(path.join(distDir, 'guide.html'), guideHtml, 'utf8')
 await writeFile(path.join(distDir, 'sitemap.xml'), sitemapXml, 'utf8')
+for (const page of examplePages) {
+  await mkdir(path.dirname(path.join(distDir, page.filename)), { recursive: true })
+  await writeFile(path.join(distDir, page.filename), page.html, 'utf8')
+}
+for (const file of exampleFiles) {
+  await mkdir(path.dirname(path.join(distDir, file.filename)), { recursive: true })
+  await writeFile(path.join(distDir, file.filename), file.text, 'utf8')
+}
 
-process.stdout.write('prerender: dist/landing.html, dist/guide.html, dist/sitemap.xml 생성\n')
+process.stdout.write('prerender: 홈페이지, 가이드, 예시 4개 페이지, 원문 TXT 3종, 사이트맵 생성\n')

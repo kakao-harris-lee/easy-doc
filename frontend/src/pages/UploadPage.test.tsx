@@ -23,6 +23,7 @@ import {
   workspaceItem,
 } from '../test/factories'
 import { SERVICE_DEFINITION } from '../content/identity'
+import { DOCUMENT_EXAMPLES } from '../content/documentExamples'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
 import {
@@ -153,6 +154,56 @@ beforeEach(() => {
 })
 
 describe('업로드 화면', () => {
+  describe('예시 불러오기', () => {
+    it.each(DOCUMENT_EXAMPLES)(
+      '$category 원문을 넣되 명시적으로 변환하기 전에는 제출하지 않는다',
+      async (example) => {
+        const user = userEvent.setup()
+        vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
+        renderPage()
+        await user.click(screen.getByRole('button', { name: example.category }))
+        expect(screen.getByLabelText('문서 제목')).toHaveValue(example.title)
+        expect(screen.getByLabelText('바꿀 글')).toHaveValue(example.original)
+        expect(createDocumentFromText).not.toHaveBeenCalled()
+        expect(createDocumentFromFile).not.toHaveBeenCalled()
+        await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
+        expect(createDocumentFromText).toHaveBeenCalledWith(example.original, 'w1', example.title)
+      },
+    )
+
+    it('기존 제목과 글은 교체를 취소하면 그대로 둔다', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      fireEvent.change(screen.getByLabelText('문서 제목'), { target: { value: '작성 중인 제목' } })
+      fireEvent.change(screen.getByLabelText('바꿀 글'), {
+        target: { value: '작성 중인 글을 보존하세요.' },
+      })
+      await user.click(screen.getByRole('button', { name: '고객 안내문' }))
+      expect(screen.getByLabelText('바꿀 글')).toHaveValue('작성 중인 글을 보존하세요.')
+      await user.click(screen.getByRole('button', { name: '취소' }))
+      expect(screen.getByLabelText('문서 제목')).toHaveValue('작성 중인 제목')
+      expect(screen.getByLabelText('바꿀 글')).toHaveValue('작성 중인 글을 보존하세요.')
+      expect(createDocumentFromText).not.toHaveBeenCalled()
+    })
+
+    it('선택한 파일도 확인 후에만 교체하고 읽기 수준은 유지한다', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      const input = await chooseFileMode(user)
+      await user.upload(input, docxFile())
+      await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'middle_school')
+      await user.click(screen.getByRole('button', { name: '가정통신문' }))
+      expect(screen.getByRole('radio', { name: '파일 올리기' })).toBeChecked()
+      await user.click(screen.getByRole('button', { name: '예시로 바꾸기' }))
+      expect(screen.getByRole('radio', { name: /글 붙여넣기/ })).toBeChecked()
+      expect(screen.getByLabelText('바꿀 글')).toHaveValue(DOCUMENT_EXAMPLES[0]?.original)
+      expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveValue('middle_school')
+      await chooseFileMode(user)
+      expect(screen.getByLabelText('바꿀 파일')).toHaveValue('')
+      expect(createDocumentFromFile).not.toHaveBeenCalled()
+    })
+  })
+
   describe('읽기 수준 선택', () => {
     it('중등 수준은 기본 크레딧으로 접수하며 선택을 요청에 보낸다', async () => {
       const user = userEvent.setup()

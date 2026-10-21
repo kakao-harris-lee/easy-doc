@@ -37,6 +37,8 @@ import { Input } from '../components/shadcn/input'
 import { Textarea } from '../components/shadcn/textarea'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { DocumentExamplePicker } from '../components/DocumentExamplePicker'
+import type { DocumentExample } from '../content/documentExamples'
 
 /**
  * `createDocument`가 이메일 미인증일 때 주는 고정 문구(계약 `x-input-limits` 403
@@ -680,6 +682,17 @@ export function UploadPage() {
     setPersonalDataWarning(null)
   }
 
+  function loadExample(example: DocumentExample) {
+    if (submitting) return
+    setMode('text')
+    setTitle(example.title)
+    setText(example.original)
+    setFile(null)
+    if (fileInputRef.current !== null) fileInputRef.current.value = ''
+    setError(null)
+    setPersonalDataWarning(null)
+  }
+
   return (
     <section aria-labelledby="upload-heading">
       <h1
@@ -741,6 +754,11 @@ export function UploadPage() {
           noValidate
         >
           <div className="flex flex-col gap-5 px-4 py-5 sm:px-6">
+            <DocumentExamplePicker
+              hasInput={title.length > 0 || text.length > 0 || file !== null}
+              disabled={submitting}
+              onLoad={loadExample}
+            />
             {error !== null && (
               <p className="form-error" role="alert">
                 {error}
