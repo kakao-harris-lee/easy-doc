@@ -2,6 +2,8 @@ import { ArrowRight, FileCheck2, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { Badge } from '../components/ui/Badge'
+import { DocumentExampleCards } from '../components/DocumentExampleCards'
+import { EXAMPLE_NOTICE, EXAMPLES_PATH } from '../content/documentExamples'
 import { COMPANY_INFO } from '../config/company'
 import { DRAFT_NOTICE, SERVICE_DEFINITION } from '../content/identity'
 import { TARGET_PLANS } from '../content/plans/targetPlans'
@@ -197,6 +199,25 @@ export function LandingPage() {
             </p>
           </figure>
         </div>
+      </section>
+
+      <section aria-labelledby="landing-document-examples-heading">
+        <div className="mb-5">
+          <h2
+            id="landing-document-examples-heading"
+            className="text-2xl font-extrabold text-foreground"
+          >
+            내 문서와 비슷한 예시부터 살펴보세요
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
+        </div>
+        <DocumentExampleCards />
+        <a
+          href={EXAMPLES_PATH}
+          className="mt-4 inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-4"
+        >
+          쉬운 글 예시 모두 보기
+        </a>
       </section>
 
       <section

@@ -5,6 +5,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { SignupPage } from '../pages/SignupPage'
 import { RequireAdmin } from './RequireAdmin'
 import { RequireAuth } from './RequireAuth'
+import { EXAMPLES_PATH } from '../content/documentExamples'
 import {
   ACCOUNT_SETTINGS_PATH,
   ADMIN_PATH,
@@ -46,6 +47,12 @@ const EmailVerificationPage = lazy(() =>
 )
 const GuidePage = lazy(() =>
   import('../pages/GuidePage').then((module) => ({ default: module.GuidePage })),
+)
+const ExamplesPage = lazy(() =>
+  import('../pages/ExamplesPage').then((module) => ({ default: module.ExamplesPage })),
+)
+const DocumentExamplePage = lazy(() =>
+  import('../pages/ExamplesPage').then((module) => ({ default: module.DocumentExamplePage })),
 )
 const HistoryPage = lazy(() =>
   import('../pages/HistoryPage').then((module) => ({ default: module.HistoryPage })),
@@ -95,6 +102,8 @@ export function AppRoutes() {
         <Route path={TERMS_PATH} element={<TermsPage />} />
         <Route path={PRIVACY_PATH} element={<PrivacyPolicyPage />} />
         <Route path={GUIDE_PATH} element={<GuidePage />} />
+        <Route path={EXAMPLES_PATH} element={<ExamplesPage />} />
+        <Route path={`${EXAMPLES_PATH}/:exampleId`} element={<DocumentExamplePage />} />
         <Route path={OAUTH_CALLBACK_PATH} element={<OAuthCallbackPage />} />
         <Route
           path={OAUTH_LINK_CALLBACK_PATH}
