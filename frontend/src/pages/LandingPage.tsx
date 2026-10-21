@@ -207,7 +207,7 @@ export function LandingPage() {
             id="landing-document-examples-heading"
             className="text-2xl font-extrabold text-foreground"
           >
-            내 문서와 비슷한 예시부터 살펴보세요
+            문서 예시 살펴보기
           </h2>
           <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
         </div>
@@ -216,7 +216,7 @@ export function LandingPage() {
           href={EXAMPLES_PATH}
           className="mt-4 inline-flex min-h-11 items-center font-semibold text-primary underline underline-offset-4"
         >
-          쉬운 글 예시 모두 보기
+          예시 모두 보기
         </a>
       </section>
 

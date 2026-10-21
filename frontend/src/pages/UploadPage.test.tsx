@@ -161,9 +161,14 @@ describe('업로드 화면', () => {
         const user = userEvent.setup()
         vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
         renderPage()
+        await user.click(screen.getByText('예시 불러오기', { selector: 'summary' }))
         await user.click(screen.getByRole('button', { name: example.category }))
         expect(screen.getByLabelText('문서 제목')).toHaveValue(example.title)
         expect(screen.getByLabelText('바꿀 글')).toHaveValue(example.original)
+        expect(
+          screen.getByText('예시 불러오기', { selector: 'summary' }).parentElement,
+        ).not.toHaveAttribute('open')
+        expect(screen.getByText('예시 불러오기', { selector: 'summary' })).toHaveFocus()
         expect(createDocumentFromText).not.toHaveBeenCalled()
         expect(createDocumentFromFile).not.toHaveBeenCalled()
         await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
@@ -174,6 +179,7 @@ describe('업로드 화면', () => {
     it('기존 제목과 글은 교체를 취소하면 그대로 둔다', async () => {
       const user = userEvent.setup()
       renderPage()
+      await user.click(screen.getByText('예시 불러오기', { selector: 'summary' }))
       fireEvent.change(screen.getByLabelText('문서 제목'), { target: { value: '작성 중인 제목' } })
       fireEvent.change(screen.getByLabelText('바꿀 글'), {
         target: { value: '작성 중인 글을 보존하세요.' },
@@ -189,6 +195,7 @@ describe('업로드 화면', () => {
     it('선택한 파일도 확인 후에만 교체하고 읽기 수준은 유지한다', async () => {
       const user = userEvent.setup()
       renderPage()
+      await user.click(screen.getByText('예시 불러오기', { selector: 'summary' }))
       const input = await chooseFileMode(user)
       await user.upload(input, docxFile())
       await user.selectOptions(screen.getByRole('combobox', { name: '변환 레벨' }), 'middle_school')
