@@ -118,7 +118,7 @@ const PDF_EXTRACTION_NOTICE =
 const RADIO_OVERLAY_CLASS =
   'absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0'
 const SEGMENT_CLASS =
-  'relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-3 text-[15px] has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring'
+  'relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-2 text-sm whitespace-nowrap has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring sm:px-3 sm:text-[15px]'
 const SEGMENT_ON = 'bg-card font-bold text-primary shadow-sm'
 const SEGMENT_OFF = 'text-muted-foreground'
 
@@ -820,8 +820,9 @@ export function UploadPage() {
                     checked={mode === 'text'}
                     onChange={() => selectMode('text')}
                   />
-                  <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기
-                  <span className="rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary">
+                  <FileText className="hidden size-[18px] shrink-0 sm:block" aria-hidden="true" />글
+                  붙여넣기
+                  <span className="sr-only rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary sm:not-sr-only">
                     권장
                   </span>
                 </label>
@@ -834,7 +835,7 @@ export function UploadPage() {
                     checked={mode === 'file'}
                     onChange={() => selectMode('file')}
                   />
-                  <Upload className="size-[18px]" aria-hidden="true" />
+                  <Upload className="hidden size-[18px] shrink-0 sm:block" aria-hidden="true" />
                   파일 올리기
                 </label>
               </div>

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
@@ -19,7 +20,8 @@ describe('공개 문서 예시', () => {
 
   it.each(DOCUMENT_EXAMPLES)(
     '$category의 원문·쉬운 표현·수정 제안과 실제 변환 조건을 구분한다',
-    (example) => {
+    async (example) => {
+      const user = userEvent.setup()
       render(
         <MemoryRouter initialEntries={[examplePath(example)]}>
           <Routes>
@@ -28,14 +30,25 @@ describe('공개 문서 예시', () => {
         </MemoryRouter>,
       )
       expect(screen.getByRole('heading', { level: 1, name: example.title })).toBeInTheDocument()
-      expect(
-        screen.getByText('실제 사용자의 수정 기록이 아닌 편집 제안입니다.'),
-      ).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: '가상 원문 TXT 내려받기' })).toHaveAttribute(
+      expect(screen.getByText(EXAMPLE_NOTICE)).toBeVisible()
+      expect(screen.getByText(example.editing.after)).not.toBeVisible()
+      await user.click(screen.getByText('바뀐 표현과 편집 제안'))
+      expect(screen.getByText(example.editing.after)).toBeVisible()
+      expect(screen.getByRole('link', { name: '원문 TXT 다운로드' })).toHaveAttribute(
         'href',
         `/example-files/${example.id}.txt`,
       )
-      expect(screen.getByText(/화면에 표시된 크레딧을 사용합니다/)).toBeInTheDocument()
+      expect(screen.getByText('불러오기는 무료 · 변환 시 크레딧 사용')).toBeVisible()
+      const originalButton = screen.getByRole('button', { name: '원문', pressed: false })
+      const easyButton = screen.getByRole('button', { name: '쉬운 글', pressed: true })
+      await user.click(originalButton)
+      expect(originalButton).toHaveAttribute('aria-pressed', 'true')
+      expect(easyButton).toHaveAttribute('aria-pressed', 'false')
+      expect(
+        document.getElementById(originalButton.getAttribute('aria-controls') ?? ''),
+      ).toHaveTextContent(example.original.split('\n')[0] ?? '')
+      await user.click(easyButton)
+      expect(easyButton).toHaveAttribute('aria-pressed', 'true')
     },
   )
 
