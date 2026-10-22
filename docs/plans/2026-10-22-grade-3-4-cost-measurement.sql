@@ -15,7 +15,7 @@ WHERE called_at >= '2026-09-25' AND purpose IN ('convert', 'repair', 'reconvert'
 GROUP BY 1, 2, 3
 ORDER BY 1, 2, 3;
 
-\echo '== ② 완료된 최초 변환(변환+보정) 1건 기준, 모델·수준·길이 구간별'
+\echo '== ② 완료된 최초 변환(변환+보정) 1건 기준, 모델·수준별 전체(0: 전체)와 길이 구간별'
 WITH conv AS (
   SELECT l.conversion_id, l.model, l.reading_level, max(l.document_char_count) AS chars,
          sum(l.estimated_cost_usd) AS cost_usd,
@@ -28,12 +28,12 @@ WITH conv AS (
   HAVING count(*) FILTER (WHERE l.estimated_cost_usd IS NULL) = 0
 ), charged AS (
   SELECT *, CASE WHEN reading_level = 'grade_3_4'
-                 THEN ceil(ceil(chars / 100.0) * 1.2) ELSE ceil(chars / 100.0) END AS units
+                 THEN ceil(ceil(chars / 100.0) * 1.2) ELSE ceil(chars / 100.0) END AS units,
+         CASE WHEN chars <= 1000 THEN '1: ~1천' WHEN chars <= 3000 THEN '2: ~3천'
+              WHEN chars <= 7000 THEN '3: ~7천' ELSE '4: 7천~' END AS length_band
   FROM conv
 )
-SELECT model, reading_level,
-       CASE WHEN chars <= 1000 THEN '1: ~1천' WHEN chars <= 3000 THEN '2: ~3천'
-            WHEN chars <= 7000 THEN '3: ~7천' ELSE '4: 7천~' END AS band,
+SELECT model, reading_level, coalesce(length_band, '0: 전체') AS band,
        count(*) AS conversions,
        round(sum(cost_usd) / (sum(units) / 10.0), 5) AS usd_per_charged_credit,
        round(sum(cost_usd) / (sum(chars) / 1000.0), 5) AS usd_per_1k_chars,
@@ -43,7 +43,7 @@ SELECT model, reading_level,
        percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50_latency_ms,
        max(latency_ms) AS max_latency_ms
 FROM charged
-GROUP BY 1, 2, 3
+GROUP BY GROUPING SETS ((model, reading_level, length_band), (model, reading_level))
 ORDER BY 1, 3, 2;
 
 \echo '== ③ 문단 재변환 1회 기준(근사: 같은 변환·같은 단위 길이로 3분 안에 이어진 행을 재변환 1회로 묶음)'
