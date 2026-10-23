@@ -13,6 +13,8 @@ internal data class RecordedFault(
     val documentId: String,
     val fault: LaneFault,
     val retried: Boolean,
+    /** judge 구간에서 붙잡은 실패인가. 변환·보정 실패와 가려 두는 이유는 [LaneJournal.lastConversionFault] KDoc. */
+    val judging: Boolean,
 )
 
 /**
@@ -213,7 +215,7 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         retried: Boolean,
     ) {
         calls++
-        faults += RecordedFault(stage, fault, retried)
+        faults += RecordedFault(stage, fault, retried, judging = judging)
         if (retried) {
             retries++
         }
@@ -222,7 +224,15 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     /** 레인 전체 재시도 예산이 남았는가. */
     fun retryAllowed(): Boolean = retries < retryBudget
 
-    fun lastFault(documentId: String): LaneFault? = faults.lastOrNull { it.documentId == documentId }?.fault
+    /**
+     * 이 문서(회차)의 **변환·보정** 호출에서 마지막으로 붙잡은 실패. judge 구간의 실패는
+     * 빼고 본다 — 비용을 변환 몫과 judge 몫으로 가르는 것([conversionCostFor])과 같은 이유다.
+     * 호출부는 judge 를 부른 **뒤에** 이 값을 읽어 회차 줄에 싣는데, 두 갈래를 섞으면 judge
+     * 쪽 429 가 변환 타임아웃(그 회차가 상한에 닿았다는 근거)을 덮는다. judge 호출 실패는
+     * 호출부가 잡은 예외로 따로 보고한다([LaneReport.recordJudgeFailure]).
+     */
+    fun lastConversionFault(documentId: String): LaneFault? =
+        faults.lastOrNull { it.documentId == documentId && !it.judging }?.fault
 
     fun retriesFor(documentId: String): Int = faults.count { it.documentId == documentId && it.retried }
 

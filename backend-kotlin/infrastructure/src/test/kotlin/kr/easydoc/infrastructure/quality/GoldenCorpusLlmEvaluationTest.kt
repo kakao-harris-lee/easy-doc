@@ -74,8 +74,12 @@ class GoldenCorpusLlmEvaluationTest {
         // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
         // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
         val conditions =
-            LaneConditions(variant, readingLevel, runs, budgetUsd)
-                .describe(ready.description, dictionary.description, transcript.description, selection.description)
+            LaneConditions(variant, readingLevel, runs, budgetUsd).describe(
+                provider = ready.description,
+                dictionary = dictionary.description,
+                transcript = transcript.description,
+                selection = selection.description,
+            )
         val report = LaneReport(conditions, journal, ready.options.maxTokens)
         // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
         // 같은 문자열을 유료 호출을 시작하기 전에 써 둔다(LaneTranscript.writeConditions KDoc).
@@ -266,7 +270,7 @@ private class LaneGrader(
         if (transcript.enabled) {
             report.recordTranscriptSkipped(document.id)
         }
-        val fault = journal.lastFault(journalId)
+        val fault = journal.lastConversionFault(journalId)
         report.recordConversionFailure(
             documentId = document.id,
             kind = result.kind,
@@ -343,7 +347,8 @@ private class LaneGrader(
                 conversionCostUsd = journal.conversionCostFor(journalId),
                 judgeCostUsd = journal.judgeCostFor(journalId),
                 // 재시도로 넘긴 흔들림도 회차 단위로 남는다 — 읽기 타임아웃이 이 자리에 온다.
-                faultLabel = journal.lastFault(journalId)?.label,
+                // judge 를 부른 뒤라 판정 쪽 실패와 가린 값을 읽는다(LaneJournal.lastConversionFault KDoc).
+                faultLabel = journal.lastConversionFault(journalId)?.label,
             ),
             elapsed,
         )

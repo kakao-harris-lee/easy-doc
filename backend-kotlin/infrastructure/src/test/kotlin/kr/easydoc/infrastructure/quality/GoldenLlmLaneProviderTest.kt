@@ -299,6 +299,21 @@ class GoldenLlmLaneProviderTest {
     }
 
     @Test
+    @DisplayName("judge 호출 실패는 변환 실패 원인을 덮지 않는다 — 회차 줄이 읽는 값은 변환 쪽이다")
+    fun `judge 실패는 변환 원인을 덮지 않는다`() {
+        val journal = LaneJournal()
+
+        journal.beginDocument("g-001")
+        journal.recordFault(LaneFault("ResourceAccessException", status = null, transient = true), retried = true)
+        journal.beginJudge("g-001")
+        journal.recordFault(LaneFault("HTTP 429", status = 429, transient = true), retried = false)
+
+        assertThat(journal.lastConversionFault("g-001")?.label).isEqualTo("ResourceAccessException")
+        // 두 갈래를 가려 센 뒤에도 흔들림 분포에는 둘 다 남는다 — 가려진 실패를 지우지 않는다.
+        assertThat(journal.distribution()).containsEntry("HTTP 429", 1).containsEntry("ResourceAccessException", 1)
+    }
+
+    @Test
     @DisplayName("재시도 간격은 지수로 벌어진다 — 서버가 밀어낼수록 더 기다린다")
     fun `backoff 는 지수로 늘어난다`() {
         val policy = LaneRetryPolicy(firstBackoff = Duration.ofSeconds(2), multiplier = 3)

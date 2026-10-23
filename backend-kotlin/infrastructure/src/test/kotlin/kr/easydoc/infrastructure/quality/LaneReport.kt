@@ -63,21 +63,22 @@ internal data class LaneMeasurement(
      * 사실 자체와는 다르다 — 보정이 잘리거나 더 나빠지면 유스케이스가 원본 초안을 채택하고
      * 이 값은 거짓이 된다(master-plan §3.3). 변환이 실패했으면 `null` — 채택할 본문이 없다.
      */
-    val repaired: Boolean? = null,
+    val repaired: Boolean?,
     /**
      * 이 회차의 **변환+보정** 호출 예상 비용([LaneJournal.conversionCostFor]). judge 몫을
      * 섞지 않는다 — 수준별 변환 원가를 비교하려는 값이다. 단가가 없으면 `null`(0달러가 아니다).
      */
-    val conversionCostUsd: BigDecimal? = null,
+    val conversionCostUsd: BigDecimal?,
     /** 같은 회차의 judge 호출 예상 비용([LaneJournal.judgeCostFor]). 부르지 않았으면 `null`. */
-    val judgeCostUsd: BigDecimal? = null,
+    val judgeCostUsd: BigDecimal?,
     /**
-     * 이 회차에서 마지막으로 붙잡은 provider 실패 원인([LaneFault.label]). **읽기 타임아웃이
-     * 이 자리에 온다** — 어댑터가 전송 예외 클래스 이름만 남기므로([LaneFaults.of]) 수준을
-     * 올려 출력이 길어진 회차가 타임아웃에 걸렸는지는 이 값으로만 회차 단위로 읽을 수 있다.
-     * 실패를 붙잡지 않은 회차는 `null`.
+     * 이 회차의 **변환·보정** 호출에서 마지막으로 붙잡은 provider 실패 원인
+     * ([LaneJournal.lastConversionFault] 의 [LaneFault.label]). **읽기 타임아웃이 이 자리에
+     * 온다** — 어댑터가 전송 예외 클래스 이름만 남기므로([LaneFaults.of]) 수준을 올려 출력이
+     * 길어진 회차가 타임아웃에 걸렸는지는 이 값으로만 회차 단위로 읽을 수 있다. 실패를
+     * 붙잡지 않은 회차는 `null`.
      */
-    val faultLabel: String? = null,
+    val faultLabel: String?,
 ) {
     /**
      * 출력 팽창비 = 변환 글자 수 / 원문 글자 수.
@@ -396,26 +397,51 @@ internal class LaneReport(
      */
     private fun StringBuilder.appendDocumentSection() {
         appendLine("문서별 측정 (원문 글자 수 내림차순)")
-        measurements
-            .zip(durationsMillis)
-            .sortedByDescending { (measurement, _) -> measurement.sourceChars }
-            .forEach { (measurement, elapsedMillis) ->
-                appendLine("  ${documentLine(measurement, elapsedMillis)}")
-                appendMissingFactsLine(measurement)
+        runRows()
+            .sortedByDescending { row -> row.measurement.sourceChars }
+            .forEach { row ->
+                appendLine("  ${documentLine(row)}")
+                appendMissingFactsLine(row.measurement)
             }
     }
+
+    /**
+     * 문서 줄 한 행 — 측정값·지연과 **그 줄의 이름**이다.
+     *
+     * [label] 은 회차를 반복한 문서에서만 `070#run1` 처럼 회차 접미사를 받는다. 접미사가 없으면
+     * 같은 문서의 두 회차가 같은 값을 냈을 때 문서 줄이 글자까지 같아지고, 리포트를 `sort -u`
+     * 로 추려 핸드오프 표를 만드는 자리에서 한 회차가 조용히 사라진다. 접미사 모양은 저널
+     * id (`journalIdOf`)·변환문 파일명이 쓰는 것과 같다 — 세 곳이 같은 회차 이름을 써야 한
+     * 회차의 비용·변환문·측정값을 서로 이을 수 있다. 회차를 반복하지 않은 실행(runs=1)에서는
+     * 그룹 크기가 늘 1이라 이름이 문서 id 그대로다.
+     */
+    private data class RunRow(
+        val measurement: LaneMeasurement,
+        val elapsedMillis: Long,
+        val label: String,
+    )
+
+    /** [documentGroups] 와 같은 근원([runGroups])에서 회차 이름을 붙인 행. */
+    private fun runRows(): List<RunRow> =
+        runGroups().flatMap { rows ->
+            rows.mapIndexed { index, (measurement, elapsedMillis) ->
+                val label =
+                    if (rows.size > 1) "${measurement.documentId}#run${index + 1}" else measurement.documentId
+                RunRow(measurement, elapsedMillis, label)
+            }
+        }
 
     /**
      * 수준별 원가 측정(`docs/plans/2026-10-22-grade-3-4-cost-measurement.md` 2단계)이 이 줄에서
      * 읽는 항목이 넷 더 있다 — 보정 채택 여부, 회차 지연, 변환 몫과 judge 몫으로 **나눈** 비용,
      * 그리고 문서 단위 절단 여부. 지연은 [measurements] 가 들지 않고 [recordDocument] 가 짝지어
      * 받으므로([runGroups] 와 같은 짝) 측정값과 함께 넘겨받는다 — 같은 값을 두 곳에 두면 갈린다.
+     *
+     * 줄 머리의 이름은 문서 id 가 아니라 [RunRow.label] 이다 — 그 이유는 [RunRow] KDoc에 있다.
      */
-    private fun documentLine(
-        measurement: LaneMeasurement,
-        elapsedMillis: Long,
-    ): String =
-        "${measurement.documentId} — 원문 ${measurement.sourceChars} · " +
+    private fun documentLine(row: RunRow): String {
+        val measurement = row.measurement
+        return "${row.label} — 원문 ${measurement.sourceChars} · " +
             "변환 ${measurement.convertedChars?.toString() ?: "-"} · " +
             "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
             "사실 보존 ${factCoverageLabel(measurement.factCoverage)} · " +
@@ -423,12 +449,13 @@ internal class LaneReport(
             "보정 ${yesNoLabel(measurement.repaired)} · " +
             "절단 문서 ${yesNoLabel(measurement.truncated)} · " +
             "절단 호출 ${measurement.truncatedCalls} · " +
-            "지연 ${seconds(elapsedMillis)} · " +
+            "지연 ${seconds(row.elapsedMillis)} · " +
             "비용 변환 ${costLabel(measurement.conversionCostUsd)} · judge ${costLabel(measurement.judgeCostUsd)} · " +
             "스타일 ${styleLabel(measurement.stylePassed)} · " +
             "문장 ${measurement.sentenceCount} · " +
             "위반 ${styleIssueSummary(measurement)}" +
             (measurement.faultLabel?.let { " · 실패 원인 $it" } ?: "")
+    }
 
     /** 잴 수 없는 값은 "-" — [styleLabel] 과 같은 관례다. */
     private fun yesNoLabel(value: Boolean?): String =
