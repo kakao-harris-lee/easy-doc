@@ -313,10 +313,13 @@ internal class LaneInstrumentedProvider(
     ): LlmCompletion {
         var attempt = 1
         while (true) {
-            spendLimit?.reserve(prompt, options)
+            val reservation = spendLimit?.reserve(prompt, options)
             try {
                 val completion = delegate.complete(prompt, options)
                 journal.recordCall(completion)
+                if (spendLimit != null && reservation != null) {
+                    spendLimit.settle(reservation, completion.estimatedCostUsd)
+                }
                 return completion
             } catch (exc: LlmProviderException) {
                 val fault = LaneFaults.of(exc)
@@ -332,29 +335,68 @@ internal class LaneInstrumentedProvider(
     }
 }
 
-/** 유료 레인은 각 시도 전에 보수적인 최대 비용을 예약한다. 실패한 시도의 예약도 반환하지 않는다. */
+/**
+ * 유료 레인은 각 시도 전에 보수적인 최대 비용을 예약한다. **성공한 시도의 예약은 응답의 실제
+ * 예상 비용으로 정산해 대체하고**([settle]), 실패한 시도의 예약은 돌려주지 않는다 — 그 시도가
+ * 얼마를 썼는지 알 수 없다. 단가가 미설정이라 실제 비용을 모르는 응답도 예약을 그대로 붙잡아 둔다.
+ *
+ * 정산하는 이유: 상계는 입력 바이트 상한 × 입력 단가 + `maxTokens` × 출력 단가라서 실제 비용의
+ * 수십 배다(출력 상한 64,000 토큰이면 한 건에 US$3 대). 정산하지 않으면 실제로 US$0.09 를 쓴
+ * 실행이 US$7 상한에서 두 호출 만에 멈춘다(2026-10-22 실측).
+ *
+ * 하드 스톱은 그대로다 — [committedUsd] + 다음 상계가 상한 안에 들어갈 때만 시도를 시작한다.
+ */
 internal class LaneSpendLimit(
     private val maxUsd: BigDecimal,
     private val inputPrice: BigDecimal,
     private val outputPrice: BigDecimal,
 ) {
-    var reservedUsd: BigDecimal = BigDecimal.ZERO
+    /** 정산을 마친 **실제** 예상 비용 합계. */
+    var settledUsd: BigDecimal = BigDecimal.ZERO
         private set
+
+    /** 아직 정산하지 못한 예약 합계 — 실패한 시도와 단가 없는 응답의 몫이다. */
+    var heldUsd: BigDecimal = BigDecimal.ZERO
+        private set
+
+    /** 상한에 견주는 지출: 정산한 실제 비용 + 붙잡고 있는 예약. */
+    val committedUsd: BigDecimal get() = settledUsd + heldUsd
 
     init {
         require(maxUsd > BigDecimal.ZERO && inputPrice > BigDecimal.ZERO && outputPrice > BigDecimal.ZERO)
     }
 
+    /** 시도 하나의 예약을 잡고 그 액수를 돌려준다 — 성공하면 [settle] 에 그대로 넘긴다. */
     fun reserve(
         prompt: LlmPrompt,
         options: LlmOptions,
-    ) {
+    ): BigDecimal {
         val reservation = reservationFor(prompt, options)
-        check(reservedUsd + reservation <= maxUsd) {
-            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 예약=$reservedUsd 다음요청상계=$reservation"
+        check(committedUsd + reservation <= maxUsd) {
+            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 지출=$committedUsd 다음요청상계=$reservation"
         }
-        reservedUsd += reservation
-        println("LLM budget: reserved_usd=$reservedUsd cap_usd=$maxUsd")
+        heldUsd += reservation
+        printBudget()
+        return reservation
+    }
+
+    /**
+     * 성공한 시도의 [reservation] 을 실제 비용 [actualUsd] 로 바꾼다.
+     * [actualUsd] 가 `null`(단가 미설정)이면 예약을 그대로 둔다 — 0달러로 속이지 않는다.
+     */
+    fun settle(
+        reservation: BigDecimal,
+        actualUsd: BigDecimal?,
+    ) {
+        if (actualUsd != null) {
+            heldUsd -= reservation
+            settledUsd += actualUsd
+        }
+        printBudget()
+    }
+
+    private fun printBudget() {
+        println("LLM budget: committed_usd=$committedUsd (settled $settledUsd, held $heldUsd) cap_usd=$maxUsd")
     }
 
     /** 실제 provider 호출 전에 같은 상계식으로 계획 전체의 예약액을 계산한다. */

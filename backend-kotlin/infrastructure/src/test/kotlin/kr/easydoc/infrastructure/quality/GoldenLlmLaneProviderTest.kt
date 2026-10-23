@@ -52,14 +52,74 @@ class GoldenLlmLaneProviderTest {
     }
 
     @Test
+    @DisplayName("실패한 시도의 예약은 돌려주지 않는다 — 그 시도가 얼마를 썼는지 알 수 없다")
     fun `예산은 실패한 시도도 돌려주지 않고 누적 예약한다`() {
-        val limit = LaneSpendLimit(BigDecimal("1"), BigDecimal("2"), BigDecimal("10"))
         val prompt = AnthropicTestSupport.conversionPrompt()
-        limit.reserve(prompt, LlmOptions())
-        val first = limit.reservedUsd
-        assertThat(first).isGreaterThan(BigDecimal.ZERO)
-        limit.reserve(prompt, LlmOptions())
-        assertThat(limit.reservedUsd).isEqualByComparingTo(first.multiply(BigDecimal("2")))
+        val worstCase = worstCaseReservation(prompt)
+        val limit = LaneSpendLimit(BigDecimal("1"), PRICE_IN, PRICE_OUT)
+        val provider = failingLane(limit)
+
+        repeat(2) {
+            assertThatThrownBy { provider.complete(prompt, LlmOptions()) }
+                .isInstanceOf(LlmProviderException::class.java)
+        }
+
+        assertThat(limit.settledUsd).isEqualByComparingTo(BigDecimal.ZERO)
+        assertThat(limit.heldUsd).isEqualByComparingTo(worstCase.multiply(BigDecimal("2")))
+        assertThat(limit.committedUsd).isEqualByComparingTo(worstCase.multiply(BigDecimal("2")))
+    }
+
+    @Test
+    @DisplayName("성공한 호출은 예약을 실제 비용으로 정산한다 — 싼 호출이 최악 상계 2건에 막히지 않는다")
+    fun `성공한 호출은 실제 비용으로 정산한다`() {
+        val prompt = AnthropicTestSupport.conversionPrompt()
+        // 최악 상계로는 두 번이면 차는 상한 — 정산하지 않으면 세 번째 호출에서 하드 스톱이다.
+        val limit = LaneSpendLimit(worstCaseReservation(prompt).multiply(BigDecimal("2.5")), PRICE_IN, PRICE_OUT)
+        val delegate = ScriptedProvider(List(CHEAP_CALLS) { costed(outputTokens = 20, cost = CHEAP_COST) })
+        val provider = LaneInstrumentedProvider(delegate, LaneJournal(), spendLimit = limit, pause = { })
+
+        repeat(CHEAP_CALLS) { provider.complete(prompt, LlmOptions()) }
+
+        val actualTotal = BigDecimal(CHEAP_COST).multiply(CHEAP_CALLS.toBigDecimal())
+        assertThat(limit.settledUsd).isEqualByComparingTo(actualTotal)
+        assertThat(limit.heldUsd).isEqualByComparingTo(BigDecimal.ZERO)
+        assertThat(limit.committedUsd).isEqualByComparingTo(actualTotal)
+    }
+
+    @Test
+    @DisplayName("단가가 없는 응답은 실제 비용을 모르므로 예약을 그대로 붙잡아 둔다")
+    fun `단가 없는 응답은 예약을 유지한다`() {
+        val prompt = AnthropicTestSupport.conversionPrompt()
+        val worstCase = worstCaseReservation(prompt)
+        val limit = LaneSpendLimit(BigDecimal("1"), PRICE_IN, PRICE_OUT)
+        val delegate = ScriptedProvider(listOf(draft("단가 없는 응답")))
+        val provider = LaneInstrumentedProvider(delegate, LaneJournal(), spendLimit = limit, pause = { })
+
+        provider.complete(prompt, LlmOptions())
+
+        assertThat(limit.settledUsd).isEqualByComparingTo(BigDecimal.ZERO)
+        assertThat(limit.heldUsd).isEqualByComparingTo(worstCase)
+        assertThat(limit.committedUsd).isEqualByComparingTo(worstCase)
+    }
+
+    @Test
+    @DisplayName("정산 뒤에도 다음 최악 상계가 상한을 넘으면 provider 를 부르기 전에 멈춘다")
+    fun `정산 뒤에도 하드 스톱은 그대로다`() {
+        val prompt = AnthropicTestSupport.conversionPrompt()
+        val worstCase = worstCaseReservation(prompt)
+        val limit = LaneSpendLimit(worstCase.multiply(BigDecimal("2")), PRICE_IN, PRICE_OUT)
+        val actual = worstCase.multiply(BigDecimal("1.5"))
+        // 대역에 응답이 하나뿐이다 — 두 번째 시도가 provider 까지 갔다면 IndexOutOfBounds 로 깨진다.
+        val delegate = ScriptedProvider(listOf(costed(outputTokens = 20, cost = actual.toPlainString())))
+        val provider = LaneInstrumentedProvider(delegate, LaneJournal(), spendLimit = limit, pause = { })
+
+        provider.complete(prompt, LlmOptions())
+
+        assertThatThrownBy { provider.complete(prompt, LlmOptions()) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("USD")
+        assertThat(limit.settledUsd).isEqualByComparingTo(actual)
+        assertThat(limit.heldUsd).isEqualByComparingTo(BigDecimal.ZERO)
     }
 
     @Test
@@ -322,6 +382,28 @@ class GoldenLlmLaneProviderTest {
         assertThat(policy.backoff(2)).isEqualTo(Duration.ofSeconds(6))
     }
 
+    /** 하드 스톱에 걸리지 않을 넉넉한 상한으로 상계식만 빌려 쓴다 — 시험 상한을 상계에 맞추기 위해서다. */
+    private fun worstCaseReservation(prompt: LlmPrompt): BigDecimal =
+        LaneSpendLimit(BigDecimal("1000"), PRICE_IN, PRICE_OUT).reservationFor(prompt, LlmOptions())
+
+    /** 한 시도로 끝나는 실패 레인 — 재시도가 예약 수를 늘리지 않도록 시도 상한을 1로 둔다. */
+    private fun failingLane(limit: LaneSpendLimit): LlmProvider =
+        LaneInstrumentedProvider(
+            delegate =
+                object : LlmProvider {
+                    override val name = "test"
+
+                    override fun complete(
+                        prompt: LlmPrompt,
+                        options: LlmOptions,
+                    ): LlmCompletion = throw LlmProviderException("test 호출 실패 (HTTP 400)")
+                },
+            journal = LaneJournal(),
+            policy = LaneRetryPolicy(maxAttempts = 1),
+            pause = { },
+            spendLimit = limit,
+        )
+
     private fun lane(
         server: StubLlmServer,
         journal: LaneJournal,
@@ -386,6 +468,15 @@ class GoldenLlmLaneProviderTest {
 
     private companion object {
         const val ATTEMPTS: Int = 3
+
+        /** 예산 테스트가 쓰는 단가(USD/MTok) — [costed] 가 내는 응답의 단가 스냅샷과 같은 값이다. */
+        val PRICE_IN: BigDecimal = BigDecimal("2")
+        val PRICE_OUT: BigDecimal = BigDecimal("10")
+
+        /** 최악 상계보다 두 자리 이상 싼 실제 비용. 정산하면 상한 안에서 여러 번 부를 수 있다. */
+        const val CHEAP_COST: String = "0.001000"
+        const val CHEAP_CALLS: Int = 5
+
         const val TOO_MANY_REQUESTS: Int = 429
         const val SERVER_ERROR: Int = 503
         const val BAD_REQUEST: Int = 400

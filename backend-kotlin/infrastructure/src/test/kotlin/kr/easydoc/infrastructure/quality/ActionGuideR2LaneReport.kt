@@ -107,7 +107,9 @@ internal class ActionGuideR2LaneReport(
                     "입력 ${journal.inputTokens} 토큰 · 출력 ${journal.outputTokens} 토큰",
             )
             appendLine(
-                "보수적 예약 US$${spendLimit.reservedUsd.setScale(6, RoundingMode.HALF_UP)} · " +
+                "지출 US$${spendLimit.committedUsd.setScale(6, RoundingMode.HALF_UP)} " +
+                    "(정산 US$${spendLimit.settledUsd.setScale(6, RoundingMode.HALF_UP)} · " +
+                    "미정산 예약 US$${spendLimit.heldUsd.setScale(6, RoundingMode.HALF_UP)}) · " +
                     "상한 US$${maxUsd.setScale(6, RoundingMode.HALF_UP)} · " +
                     costLine(),
             )
