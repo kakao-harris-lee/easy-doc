@@ -313,14 +313,8 @@ internal class LaneInstrumentedProvider(
     ): LlmCompletion {
         var attempt = 1
         while (true) {
-            val reservation = spendLimit?.reserve(prompt, options)
             try {
-                val completion = delegate.complete(prompt, options)
-                journal.recordCall(completion)
-                if (spendLimit != null && reservation != null) {
-                    spendLimit.settle(reservation, completion.estimatedCostUsd)
-                }
-                return completion
+                return callOnce(prompt, options)
             } catch (exc: LlmProviderException) {
                 val fault = LaneFaults.of(exc)
                 val retry = fault.transient && attempt < policy.maxAttempts && journal.retryAllowed()
@@ -333,6 +327,21 @@ internal class LaneInstrumentedProvider(
             }
         }
     }
+
+    /** 시도 하나 — 예약과 정산을 같은 scope 에 묶어 둔다. 예약이 없으면 정산할 것도 없다. */
+    private fun callOnce(
+        prompt: LlmPrompt,
+        options: LlmOptions,
+    ): LlmCompletion =
+        spendLimit?.let { limit ->
+            val reservation = limit.reserve(prompt, options)
+            recorded(prompt, options).also { limit.settle(reservation, it.estimatedCostUsd) }
+        } ?: recorded(prompt, options)
+
+    private fun recorded(
+        prompt: LlmPrompt,
+        options: LlmOptions,
+    ): LlmCompletion = delegate.complete(prompt, options).also(journal::recordCall)
 }
 
 /**
@@ -383,11 +392,20 @@ internal class LaneSpendLimit(
     /**
      * 성공한 시도의 [reservation] 을 실제 비용 [actualUsd] 로 바꾼다.
      * [actualUsd] 가 `null`(단가 미설정)이면 예약을 그대로 둔다 — 0달러로 속이지 않는다.
+     *
+     * 두 불변식을 지킨다: 음수 비용으로 지출을 깎지 못하고, 붙잡고 있지 않은 예약을 풀지 못한다.
+     * 둘 중 하나라도 깨지면 [heldUsd] 가 음수로 내려가 상한이 조용히 헐거워진다.
      */
     fun settle(
         reservation: BigDecimal,
         actualUsd: BigDecimal?,
     ) {
+        require(actualUsd == null || actualUsd.signum() >= 0) {
+            "실제 비용은 음수일 수 없다: actual_usd=$actualUsd"
+        }
+        check(reservation <= heldUsd) {
+            "붙잡은 예약보다 큰 정산: 정산=$reservation 예약=$heldUsd"
+        }
         if (actualUsd != null) {
             heldUsd -= reservation
             settledUsd += actualUsd
