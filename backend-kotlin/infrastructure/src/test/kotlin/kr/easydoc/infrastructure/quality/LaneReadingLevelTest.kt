@@ -22,11 +22,31 @@ class LaneReadingLevelTest {
     }
 
     @Test
-    @DisplayName("계약 wire 이름 세 값을 그대로 고른다")
-    fun `세 값을 고른다`() {
+    @DisplayName("이 레인이 재는 두 수준의 wire 이름을 그대로 고른다")
+    fun `두 값을 고른다`() {
         assertThat(LaneReadingLevel.from(env("grade_5_6"))).isEqualTo(ReadingLevel.GRADE_5_6)
         assertThat(LaneReadingLevel.from(env("grade_3_4"))).isEqualTo(ReadingLevel.GRADE_3_4)
-        assertThat(LaneReadingLevel.from(env("middle_school"))).isEqualTo(ReadingLevel.MIDDLE_SCHOOL)
+    }
+
+    @Test
+    @DisplayName("middle_school 은 judge 기준이 없어 유료 호출 전에 거절한다 — 변환과 채점이 갈린다")
+    fun `중학교 수준을 거절한다`() {
+        assertThatThrownBy { LaneReadingLevel.from(env("middle_school")) }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining(LaneReadingLevel.ENV)
+            .hasMessageContaining("middle_school")
+            .hasMessageContaining("judge")
+            .hasMessageContaining("중학교")
+            .hasMessageContaining("grade_5_6")
+            .hasMessageContaining("grade_3_4")
+    }
+
+    @Test
+    @DisplayName("대문자는 계약 경로(ReadingLevel.ofWireName)와 같이 다른 값으로 본다")
+    fun `대소문자를 구분한다`() {
+        assertThatThrownBy { LaneReadingLevel.from(env("GRADE_3_4")) }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("GRADE_3_4")
     }
 
     @Test
@@ -38,7 +58,6 @@ class LaneReadingLevelTest {
             .hasMessageContaining("grade_1_2")
             .hasMessageContaining("grade_5_6")
             .hasMessageContaining("grade_3_4")
-            .hasMessageContaining("middle_school")
     }
 
     private fun env(value: String): (String) -> String? = mapOf(LaneReadingLevel.ENV to value)::get
