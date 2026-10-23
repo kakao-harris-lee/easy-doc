@@ -128,7 +128,8 @@ git rev-list --left-right --count origin/main...HEAD    # 0 0이어야 한다
 - `backend-kotlin/core/src/main/kotlin/kr/easydoc/core/quality/JudgeLane.kt`
 
 1. **노브 `EASYDOC_LANE_READING_LEVEL`**
-   - 값은 `grade_5_6`·`grade_3_4`·`middle_school`이다. 계약의 wire 이름을 쓴다.
+   - 값은 `grade_5_6`·`grade_3_4`다. 계약의 wire 이름을 쓴다.
+   - `middle_school`은 받지 않는다. judge 프롬프트(`LlmPrompt.forJudge`)에 중학교 기준이 없어, 변환만 중학교 수준으로 가고 채점은 5~6학년 기준으로 남기 때문이다(PR #183 리뷰).
    - 미설정이면 `grade_5_6`이다.
    - 그 밖의 값이면 유료 호출 전에 실패시킨다.
 2. **변환에 전달:** `GoldenCorpusLlmEvaluationTest`의 변환 호출에 수준을 넘긴다. `ConvertDocumentUseCase.convert`는 이미 `readingLevel` 인자를 받는다(`ConvertDocumentUseCase.kt:116`).
@@ -239,6 +240,10 @@ run_level grade_3_4 11
 
 - 레인은 판정 실패가 있으면 AssertionError로 끝나서 종료 코드가 1이다. 이는 정상이다.
 - 리포트는 stdout과 AssertionError 메시지에 두 번 실린다. 문서별 줄을 셀 때는 중복을 걷어 낸다(`sort -u`).
+  - 문서별 줄은 `070#run1`처럼 회차가 붙어 있어 `sort -u`로 걸러도 회차가 합쳐지지 않는다. 그 아래 「사라진 사실」 보조 줄에는 회차가 없으므로 `sort -u` 결과로 세지 않는다.
+  - 변환문 파일명은 `070-run1.txt` 형식이다. 리포트 줄의 `#run1`과 회차 번호는 같다.
+  - judge 실패 줄의 재시도 수에는 같은 회차의 변환 재시도도 섞여 있다.
+- 실패한 시도(타임아웃·429)의 토큰 비용은 레인 비용 집계에 들어가지 않는다. 시간 초과·재시도 건수를 함께 적어 c34가 과소 추정될 수 있음을 기록에 남긴다.
 - 상한에 걸려 멈추면 그때까지의 결과를 그대로 기록하고 사용자에게 알린다.
 - 105에서 읽기 타임아웃(120초)이 나면 실패로 지우지 말고 그대로 기록한다. D12 상한을 정할 근거다.
 
