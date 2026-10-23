@@ -160,3 +160,15 @@ R의 범위가 두 구역에 걸칠 만큼 넓으면 판정하지 않고 다음 
 1. **진행 위치:** 1~4단계는 모두 운영 서버에서 [운영 서버 작업 지침](2026-10-22-grade-3-4-cost-measurement-handoff.md)대로 진행한다. 판정과 기록도 서버 쪽에서 하고, 결과는 이 문서의 `## 6. 실행 기록`에 남긴다.
 2. **2단계 착수:** 시험 코드만 바꾸고 PR 리뷰를 거친다.
 3. **3단계 비용 승인:** 최대 US$18이다. 1단계에서 생략 조건이 성립하면 요청하지 않는다.
+
+## 6. 실행 기록
+
+### 2026-10-23 — 1단계 원장 조회
+
+- **WORK 커밋:** `768cf8aa`
+- **측정 조건(파일럿 `.env`):** `EASYDOC_LLM_PROVIDER=openai`, `EASYDOC_LLM_MODEL=gpt-6-astra`, `EASYDOC_LLM_EFFORT=medium`, `EASYDOC_LLM_MAX_OUTPUT_TOKENS=64000`, `EASYDOC_LLM_READ_TIMEOUT=600`, 단가 입력 US$10 / 출력 US$50 (백만 토큰당), `EASYDOC_READING_LEVEL_EXTRA_EASY_ENABLED=true`
+- **결과:** 질의 ①②③ 모두 0행. 오류 없이 `ROLLBACK`으로 끝났다.
+- **원인 확인(읽기 전용 집계):** 파일럿 원장 전체가 `convert` 13건(2026-09-18~09-23, `reading_level` 비어 있음), `action_guide` 2건, `illustration_suggestion` 1건뿐이다. `conversions`는 `done`·`grade_5_6` 3건뿐이다. 2026-09-25 이후 변환 호출이 없고 `grade_3_4` 표본은 0건이다.
+- **구간별 R, R_max,Pro:** 계산 불가. c56·c34 모두 표본이 없다.
+- **판정:** 1단계로는 판정할 수 없다. 생략 조건(구간별 `conversions` ≥ 30)이 성립하지 않는다.
+- **다음 단계:** 2단계(레인 수준 노브 PR) 다음 3단계 유료 측정. 3단계는 사용자 승인 뒤에 진행한다.
