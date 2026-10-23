@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.quality
 import kr.easydoc.application.conversion.ConversionFailureKind
 import kr.easydoc.core.easyread.FactCoverage
 import kr.easydoc.core.easyread.StyleRuleKind
+import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Duration
 import java.util.Locale
@@ -57,6 +58,26 @@ internal data class LaneMeasurement(
      * 잴 본문이 없으므로 `null` — 다른 필드들과 같은 관례.
      */
     val factCoverage: FactCoverage?,
+    /**
+     * 보정 호출의 결과가 **채택됐는가**(`ConversionResult.Converted.repaired`). 보정을 부른
+     * 사실 자체와는 다르다 — 보정이 잘리거나 더 나빠지면 유스케이스가 원본 초안을 채택하고
+     * 이 값은 거짓이 된다(master-plan §3.3). 변환이 실패했으면 `null` — 채택할 본문이 없다.
+     */
+    val repaired: Boolean? = null,
+    /**
+     * 이 회차의 **변환+보정** 호출 예상 비용([LaneJournal.conversionCostFor]). judge 몫을
+     * 섞지 않는다 — 수준별 변환 원가를 비교하려는 값이다. 단가가 없으면 `null`(0달러가 아니다).
+     */
+    val conversionCostUsd: BigDecimal? = null,
+    /** 같은 회차의 judge 호출 예상 비용([LaneJournal.judgeCostFor]). 부르지 않았으면 `null`. */
+    val judgeCostUsd: BigDecimal? = null,
+    /**
+     * 이 회차에서 마지막으로 붙잡은 provider 실패 원인([LaneFault.label]). **읽기 타임아웃이
+     * 이 자리에 온다** — 어댑터가 전송 예외 클래스 이름만 남기므로([LaneFaults.of]) 수준을
+     * 올려 출력이 길어진 회차가 타임아웃에 걸렸는지는 이 값으로만 회차 단위로 읽을 수 있다.
+     * 실패를 붙잡지 않은 회차는 `null`.
+     */
+    val faultLabel: String? = null,
 ) {
     /**
      * 출력 팽창비 = 변환 글자 수 / 원문 글자 수.
@@ -376,23 +397,50 @@ internal class LaneReport(
     private fun StringBuilder.appendDocumentSection() {
         appendLine("문서별 측정 (원문 글자 수 내림차순)")
         measurements
-            .sortedByDescending { it.sourceChars }
-            .forEach { measurement ->
-                appendLine("  ${documentLine(measurement)}")
+            .zip(durationsMillis)
+            .sortedByDescending { (measurement, _) -> measurement.sourceChars }
+            .forEach { (measurement, elapsedMillis) ->
+                appendLine("  ${documentLine(measurement, elapsedMillis)}")
                 appendMissingFactsLine(measurement)
             }
     }
 
-    private fun documentLine(measurement: LaneMeasurement): String =
+    /**
+     * 수준별 원가 측정(`docs/plans/2026-10-22-grade-3-4-cost-measurement.md` 2단계)이 이 줄에서
+     * 읽는 항목이 넷 더 있다 — 보정 채택 여부, 회차 지연, 변환 몫과 judge 몫으로 **나눈** 비용,
+     * 그리고 문서 단위 절단 여부. 지연은 [measurements] 가 들지 않고 [recordDocument] 가 짝지어
+     * 받으므로([runGroups] 와 같은 짝) 측정값과 함께 넘겨받는다 — 같은 값을 두 곳에 두면 갈린다.
+     */
+    private fun documentLine(
+        measurement: LaneMeasurement,
+        elapsedMillis: Long,
+    ): String =
         "${measurement.documentId} — 원문 ${measurement.sourceChars} · " +
             "변환 ${measurement.convertedChars?.toString() ?: "-"} · " +
             "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
             "사실 보존 ${factCoverageLabel(measurement.factCoverage)} · " +
             "출력 토큰 ${measurement.outputTokens} · " +
+            "보정 ${yesNoLabel(measurement.repaired)} · " +
+            "절단 문서 ${yesNoLabel(measurement.truncated)} · " +
             "절단 호출 ${measurement.truncatedCalls} · " +
+            "지연 ${seconds(elapsedMillis)} · " +
+            "비용 변환 ${costLabel(measurement.conversionCostUsd)} · judge ${costLabel(measurement.judgeCostUsd)} · " +
             "스타일 ${styleLabel(measurement.stylePassed)} · " +
             "문장 ${measurement.sentenceCount} · " +
-            "위반 ${styleIssueSummary(measurement)}"
+            "위반 ${styleIssueSummary(measurement)}" +
+            (measurement.faultLabel?.let { " · 실패 원인 $it" } ?: "")
+
+    /** 잴 수 없는 값은 "-" — [styleLabel] 과 같은 관례다. */
+    private fun yesNoLabel(value: Boolean?): String =
+        when (value) {
+            true -> "예"
+            false -> "아니오"
+            null -> "-"
+        }
+
+    /** 단가 미설정은 0달러가 아니라 "-" — [costLine] 의 「미산출」과 같은 판단이다. */
+    private fun costLabel(usd: BigDecimal?): String =
+        usd?.let { "\$${it.setScale(COST_SCALE, RoundingMode.HALF_UP)}" } ?: "-"
 
     /** [FactCoverage.sourceFactCount] 가 0 이거나 값 자체가 없으면(변환 실패) "-" — 다른 필드와 같은 관례. */
     private fun factCoverageLabel(coverage: FactCoverage?): String {

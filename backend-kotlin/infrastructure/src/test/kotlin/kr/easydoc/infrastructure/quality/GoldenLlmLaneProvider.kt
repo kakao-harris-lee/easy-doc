@@ -120,6 +120,19 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
 
     private val truncatedCallsByDocument = mutableMapOf<String, Int>()
 
+    /**
+     * 문서(회차)별 비용 — 변환·보정 몫과 judge 몫을 **따로** 센다. [estimatedCostUsd] 가
+     * 둘을 구분 없이 합하는 것과 다른 값이고, 그 차이가 이 두 맵의 존재 이유다: 수준별 변환
+     * 원가를 비교하려면 judge(판정 한 줄)가 섞이지 않은 변환 몫이 필요하다
+     * (`docs/plans/2026-10-22-grade-3-4-cost-measurement.md` 2단계).
+     *
+     * 단가가 없는 호출은 어느 쪽에도 더하지 않는다 — 없는 값을 0으로 더하면 부분합이 전체합
+     * 처럼 보인다([estimatedCostUsd] 와 같은 규칙).
+     */
+    private val conversionCostByDocument = mutableMapOf<String, BigDecimal>()
+
+    private val judgeCostByDocument = mutableMapOf<String, BigDecimal>()
+
     val budget: Int get() = retryBudget
 
     /** 재시도 예산을 다 썼는가. 다 썼다는 사실 자체가 「그날 인프라가 흔들렸다」는 관측값이다. */
@@ -158,6 +171,12 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     /** 이 문서의 변환·보정 호출 중 절단된 수. 구간별 집계가 장문 쪽 쏠림을 보려면 문서별이어야 한다. */
     fun truncatedCallsFor(documentId: String): Int = truncatedCallsByDocument[documentId] ?: 0
 
+    /** 이 문서(회차)의 변환·보정 호출 예상 비용 합. 호출이 없었거나 단가가 없으면 `null`. */
+    fun conversionCostFor(documentId: String): BigDecimal? = conversionCostByDocument[documentId]
+
+    /** 같은 문서(회차)의 judge 호출 예상 비용 합. judge 를 부르지 않았으면 `null`. */
+    fun judgeCostFor(documentId: String): BigDecimal? = judgeCostByDocument[documentId]
+
     /**
      * [estimatedCostUsd]·[pricingInputUsdPerMtok]/[pricingOutputUsdPerMtok] 를 채운다.
      *
@@ -168,6 +187,10 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
      * 회차는 조립이 하나뿐이라 단가가 한 번 찍히면 이후 호출도 같은 값을 내므로 다시 찍지
      * 않는다. [completion.estimatedCostUsd] 가 `null` 이면(단가 미설정) 합계에 더하지 않고
      * [costUnknownCalls] 만 늘린다 — 없는 값을 0으로 더하면 부분합이 전체합처럼 보인다.
+     *
+     * 같은 비용을 [conversionCostByDocument]·[judgeCostByDocument] 로 한 번 더 — 지금 구간
+     * ([judging])과 문서([stage])별로 — 나눠 담는다. 리포트의 문서 줄이 변환 몫과 judge 몫을
+     * 갈라 내는 근거다.
      */
     private fun recordCost(completion: LlmCompletion) {
         if (!pricingCaptured && completion.pricingInputUsdPerMtok != null) {
@@ -178,9 +201,11 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         val cost = completion.estimatedCostUsd
         if (cost == null) {
             costUnknownCalls++
-        } else {
-            estimatedCostUsd = (estimatedCostUsd ?: BigDecimal.ZERO) + cost
+            return
         }
+        estimatedCostUsd = (estimatedCostUsd ?: BigDecimal.ZERO) + cost
+        val byDocument = if (judging) judgeCostByDocument else conversionCostByDocument
+        byDocument.merge(stage, cost, BigDecimal::add)
     }
 
     fun recordFault(

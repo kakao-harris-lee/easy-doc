@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.quality
 import kr.easydoc.application.conversion.ConversionFailureKind
 import kr.easydoc.application.conversion.ConversionResult
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.easyread.factCoverage
@@ -38,6 +39,7 @@ class GoldenCorpusLlmEvaluationTest {
     @DisplayName("비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다")
     fun `골든 변환을 채점한다`() {
         val variant = resolveVariant()
+        val readingLevel = resolveReadingLevel()
         val ready =
             when (val plan = GoldenLlmLane.plan(System::getenv)) {
                 is LanePlan.Ready -> plan
@@ -58,18 +60,7 @@ class GoldenCorpusLlmEvaluationTest {
         // 사전을 그 뒤에 정하는 이유는 몇 건에 실렸는지가 측정 조건의 일부이기 때문이다.
         val selection = selectDocuments()
         val documents = selection.documents
-        val dictionary =
-            when (
-                val plan =
-                    LaneDictionary.plan(
-                        System::getenv,
-                        documents.map(GoldenDocument::id),
-                        variant = variant,
-                    )
-            ) {
-                is LaneDictionaryPlan.Ready -> plan.dictionary
-                is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
-            }
+        val dictionary = planDictionary(documents, variant)
         // 변환문 보존은 유료 호출 전에 정해야 한다 — 쓸 수 없는 경로거나 문서 id 중 하나라도
         // 파일명으로 위험하면 여기서 실패해야 사용자가 변환문이 남는 줄 알고(또는 안전한 줄
         // 알고) 유료 호출을 다 쓰는 일이 없다(LaneTranscript KDoc). runs 를 넘겨야 반복이 붙인
@@ -83,9 +74,8 @@ class GoldenCorpusLlmEvaluationTest {
         // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
         // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
         val conditions =
-            "variant=${variant.wireName} · " +
-                "${ready.description} · ${dictionary.description} · ${transcript.description} · " +
-                "${selection.description} · runs=$runs cap_usd=$budgetUsd"
+            LaneConditions(variant, readingLevel, runs, budgetUsd)
+                .describe(ready.description, dictionary.description, transcript.description, selection.description)
         val report = LaneReport(conditions, journal, ready.options.maxTokens)
         // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
         // 같은 문자열을 유료 호출을 시작하기 전에 써 둔다(LaneTranscript.writeConditions KDoc).
@@ -109,9 +99,11 @@ class GoldenCorpusLlmEvaluationTest {
                         explanationPromptVersion = variant.explanationPromptVersion,
                         dictionary = dictionary.contextSource,
                     ),
-                judge = GoldenJudge(provider, ready.options),
+                // judge 도 변환과 같은 수준으로 묻는다(GoldenJudge.readingLevel KDoc).
+                judge = GoldenJudge(provider, ready.options, readingLevel),
                 materials = LaneMaterials(journal, report, dictionary, transcript, trace),
                 runs = runs,
+                readingLevel = readingLevel,
             )
 
         // 문서를 **순차로** 돈다 — 이유는 LaneInstrumentedProvider KDoc 「호출 간격」 절에 있다.
@@ -123,6 +115,16 @@ class GoldenCorpusLlmEvaluationTest {
             .withFailMessage { report.render() }
             .isEmpty()
     }
+
+    /** 고른 문서에만 사전을 싣는다 — 몇 건에 실렸는지가 측정 조건의 일부다([LaneDictionary] KDoc). */
+    private fun planDictionary(
+        documents: List<GoldenDocument>,
+        variant: GoldenLaneVariant,
+    ): LaneDictionary =
+        when (val plan = LaneDictionary.plan(System::getenv, documents.map(GoldenDocument::id), variant = variant)) {
+            is LaneDictionaryPlan.Ready -> plan.dictionary
+            is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
+        }
 
     private fun planTranscript(
         documents: List<GoldenDocument>,
@@ -148,6 +150,18 @@ class GoldenCorpusLlmEvaluationTest {
             GoldenLaneVariant.from(System::getenv)
         } catch (exc: ConfigurationException) {
             fail<GoldenLaneVariant>(exc.message)
+        }
+
+    /**
+     * 어느 독해 수준으로 변환·채점할지도 유료 호출 전에 정한다 — 잘못 적은 값을 조용히 기본
+     * 수준으로 접으면 `grade_3_4` 를 재려던 실행이 `grade_5_6` 을 재고도 쟀다고 적는다
+     * ([LaneReadingLevel] KDoc).
+     */
+    private fun resolveReadingLevel(): ReadingLevel =
+        try {
+            LaneReadingLevel.from(System::getenv)
+        } catch (exc: ConfigurationException) {
+            fail<ReadingLevel>(exc.message)
         }
 
     private fun spendLimitFor(
@@ -192,6 +206,7 @@ private class LaneGrader(
     private val judge: GoldenJudge,
     private val materials: LaneMaterials,
     private val runs: Int,
+    private val readingLevel: ReadingLevel,
 ) {
     private val journal get() = materials.journal
     private val report get() = materials.report
@@ -218,7 +233,12 @@ private class LaneGrader(
         journal.beginDocument(journalId)
         materials.trace.beginDocument()
         val startedAt = System.nanoTime()
-        val result = converter.convert(document.sourceText, dictionaryContext = dictionary.contextFor(document.id))
+        val result =
+            converter.convert(
+                document.sourceText,
+                dictionaryContext = dictionary.contextFor(document.id),
+                readingLevel = readingLevel,
+            )
         val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
         materials.trace.save(document.id, document.sourceText, result, run)
 
@@ -246,10 +266,11 @@ private class LaneGrader(
         if (transcript.enabled) {
             report.recordTranscriptSkipped(document.id)
         }
+        val fault = journal.lastFault(journalId)
         report.recordConversionFailure(
             documentId = document.id,
             kind = result.kind,
-            fault = journal.lastFault(journalId),
+            fault = fault,
             retries = journal.retriesFor(journalId),
         )
         report.recordDocument(
@@ -266,6 +287,11 @@ private class LaneGrader(
                 styleIssueCounts = emptyMap(),
                 // 채점할 본문이 없다 — 다른 null 필드와 같은 관례(LaneMeasurement.factCoverage KDoc).
                 factCoverage = null,
+                // 채택할 초안도, 부른 judge 도 없다.
+                repaired = null,
+                conversionCostUsd = journal.conversionCostFor(journalId),
+                judgeCostUsd = journal.judgeCostFor(journalId),
+                faultLabel = fault?.label,
             ),
             elapsed,
         )
@@ -311,6 +337,13 @@ private class LaneGrader(
                 sentenceCount = style.result.totalSentences,
                 styleIssueCounts = ruleCountsOf(style),
                 factCoverage = coverage,
+                // 보정을 불렀는지가 아니라 그 결과를 **채택**했는지다(LaneMeasurement.repaired KDoc).
+                repaired = result.repaired,
+                // judge 몫을 섞지 않은 변환 몫 — 수준별 원가 비교가 보는 값이다.
+                conversionCostUsd = journal.conversionCostFor(journalId),
+                judgeCostUsd = journal.judgeCostFor(journalId),
+                // 재시도로 넘긴 흔들림도 회차 단위로 남는다 — 읽기 타임아웃이 이 자리에 온다.
+                faultLabel = journal.lastFault(journalId)?.label,
             ),
             elapsed,
         )

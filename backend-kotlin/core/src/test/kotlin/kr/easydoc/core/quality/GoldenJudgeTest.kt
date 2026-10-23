@@ -1,5 +1,6 @@
 package kr.easydoc.core.quality
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
 import kr.easydoc.core.llm.LlmFinishReason
@@ -99,6 +100,35 @@ class GoldenJudgeTest {
         assertThat(score.passed).isFalse()
         assertThat(score.reason).isEqualTo("2023년이 빠졌다")
     }
+
+    @Test
+    @DisplayName("수준을 주지 않으면 judge 는 초등 5~6학년 기준으로 묻는다")
+    fun `기본 수준은 5~6학년이다`() {
+        val provider = FakeLlmProvider.replying("yes")
+
+        GoldenJudge(provider).score(document, "2023년 표본조사 대상은 302명입니다.")
+
+        assertThat(judgeSystemPrompt(provider)).contains("초등학교 5~6학년")
+    }
+
+    @Test
+    @DisplayName("수준을 주면 그 학년 기준으로 묻는다 — 변환 수준과 채점 수준이 갈리지 않게")
+    fun `수준을 judge 프롬프트에 넘긴다`() {
+        val provider = FakeLlmProvider.replying("yes")
+
+        GoldenJudge(provider, readingLevel = ReadingLevel.GRADE_3_4)
+            .score(document, "2023년에 조사한 사람은 302명입니다.")
+
+        val system = judgeSystemPrompt(provider)
+        assertThat(system).contains("초등학교 3~4학년")
+        assertThat(system).doesNotContain("초등학교 5~6학년")
+    }
+
+    /** judge 호출 한 건의 시스템 프롬프트. 본문은 user 쪽이라 여기 실리지 않는다. */
+    private fun judgeSystemPrompt(provider: FakeLlmProvider): String =
+        provider.calls
+            .single()
+            .prompt.system
 
     @Test
     @DisplayName("toString 에 원문·변환문이 실리지 않는다")
