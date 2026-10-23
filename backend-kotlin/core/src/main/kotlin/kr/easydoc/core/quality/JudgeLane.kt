@@ -1,5 +1,6 @@
 package kr.easydoc.core.quality
 
+import kr.easydoc.core.document.ReadingLevel
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
@@ -34,18 +35,29 @@ class JudgeScore(
 }
 
 /**
- * 변환문이 의미를 보존하며 고학년 수준에서 이해 가능한지 기존 평가 호출에서 함께 묻는다.
+ * 변환문이 의미를 보존하며 목표 독해 수준에서 이해 가능한지 기존 평가 호출에서 함께 묻는다.
  * 호출 여부는 [JudgeLane] 이 정한다 — 이 클래스를 비밀값 없이 만들지 마라.
+ *
+ * [readingLevel] 은 **변환에 쓴 수준과 같아야 한다** — 다르면 「3~4학년으로 변환한 글을
+ * 5~6학년 기준으로 채점한」 판정이 된다. 기본값이 제품 기본 수준이라 수준을 고르지 않는
+ * 기존 호출은 그대로 동작한다.
+ *
+ * 판정 프롬프트([LlmPrompt.forJudge])가 기준 학년을 구분하는 수준은
+ * [ReadingLevel.GRADE_5_6]·[ReadingLevel.GRADE_3_4] 둘뿐이다 — [ReadingLevel.MIDDLE_SCHOOL]
+ * 을 넘기면 변환만 중학교 수준으로 가고 채점 기준은 5~6학년으로 남아 위 갈림이 그대로
+ * 생긴다. 그래서 유료 레인의 수준 노브는 그 수준을 유료 호출 전에 거절한다.
  */
 class GoldenJudge(
     private val provider: LlmProvider,
     private val options: LlmOptions = LlmOptions(),
+    private val readingLevel: ReadingLevel = ReadingLevel.GRADE_5_6,
 ) {
     fun score(
         document: GoldenDocument,
         converted: String,
     ): JudgeScore {
-        val prompt = LlmPrompt.forJudge(document.sourceText, converted, document.requiredFacts)
+        val prompt =
+            LlmPrompt.forJudge(document.sourceText, converted, document.requiredFacts, readingLevel)
         val completion = provider.complete(prompt, options)
         val text = completion.text
         val passed = !completion.truncated && isYes(text)

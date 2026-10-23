@@ -227,6 +227,40 @@ class GoldenLlmLaneProviderTest {
     }
 
     @Test
+    @DisplayName("비용은 합계와 별도로 문서(회차)별 변환·judge 몫으로도 갈라 센다")
+    fun `문서별로 변환 비용과 judge 비용을 가른다`() {
+        val journal = LaneJournal()
+
+        journal.beginDocument("g-001")
+        journal.recordCall(costed(outputTokens = 100, cost = "1.50"))
+        journal.recordCall(costed(outputTokens = 80, cost = "0.90"))
+        journal.beginJudge("g-001")
+        journal.recordCall(costed(outputTokens = 5, cost = "0.25"))
+        journal.beginDocument("g-002")
+        journal.recordCall(costed(outputTokens = 20, cost = "0.10"))
+
+        assertThat(journal.conversionCostFor("g-001")).isEqualByComparingTo(BigDecimal("2.40"))
+        assertThat(journal.judgeCostFor("g-001")).isEqualByComparingTo(BigDecimal("0.25"))
+        assertThat(journal.conversionCostFor("g-002")).isEqualByComparingTo(BigDecimal("0.10"))
+        // judge 를 부르지 않은 문서의 judge 비용은 0달러가 아니라 없는 값이다.
+        assertThat(journal.judgeCostFor("g-002")).isNull()
+        assertThat(journal.estimatedCostUsd).isEqualByComparingTo(BigDecimal("2.75"))
+    }
+
+    @Test
+    @DisplayName("단가가 없으면 문서별 비용도 0달러가 아니라 null 이다")
+    fun `단가가 없으면 문서별 비용도 null 이다`() {
+        val journal = LaneJournal()
+
+        journal.beginDocument("g-001")
+        journal.recordCall(draft("단가 없는 호출"))
+
+        assertThat(journal.conversionCostFor("g-001")).isNull()
+        assertThat(journal.judgeCostFor("g-001")).isNull()
+        assertThat(journal.costUnknownCalls).isEqualTo(1)
+    }
+
+    @Test
     @DisplayName("단가가 통째로 없으면 합계도 0달러가 아니라 null 이고 건수만 센다")
     fun `단가가 전부 없으면 합계는 null 이다`() {
         val journal = LaneJournal()
@@ -262,6 +296,21 @@ class GoldenLlmLaneProviderTest {
         assertThat(journal.pricingOutputUsdPerMtok).isEqualByComparingTo(BigDecimal("10"))
         assertThat(journal.estimatedCostUsd).isEqualByComparingTo(BigDecimal("1.50"))
         assertThat(journal.costUnknownCalls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("judge 호출 실패는 변환 실패 원인을 덮지 않는다 — 회차 줄이 읽는 값은 변환 쪽이다")
+    fun `judge 실패는 변환 원인을 덮지 않는다`() {
+        val journal = LaneJournal()
+
+        journal.beginDocument("g-001")
+        journal.recordFault(LaneFault("ResourceAccessException", status = null, transient = true), retried = true)
+        journal.beginJudge("g-001")
+        journal.recordFault(LaneFault("HTTP 429", status = 429, transient = true), retried = false)
+
+        assertThat(journal.lastConversionFault("g-001")?.label).isEqualTo("ResourceAccessException")
+        // 두 갈래를 가려 센 뒤에도 흔들림 분포에는 둘 다 남는다 — 가려진 실패를 지우지 않는다.
+        assertThat(journal.distribution()).containsEntry("HTTP 429", 1).containsEntry("ResourceAccessException", 1)
     }
 
     @Test
