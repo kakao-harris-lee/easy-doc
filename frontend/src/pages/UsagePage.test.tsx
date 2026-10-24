@@ -47,6 +47,16 @@ beforeEach(() => {
 })
 
 describe('플랜과 사용량', () => {
+  it('크레딧 계산 안내에 공통 반응형 규칙을 적용한다', () => {
+    render(page())
+
+    expect(
+      screen.getByText(
+        '공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다.',
+      ),
+    ).toHaveClass('supporting-copy', 'min-w-0')
+  })
+
   it('월 구독 준비 상태와 현재 이용 기간 사용량만 간단히 보여준다', async () => {
     render(page())
     expect(screen.getByRole('heading', { name: '월 구독 플랜' })).toBeInTheDocument()
