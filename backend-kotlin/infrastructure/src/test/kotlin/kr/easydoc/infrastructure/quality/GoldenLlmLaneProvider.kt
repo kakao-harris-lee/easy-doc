@@ -13,6 +13,8 @@ internal data class RecordedFault(
     val documentId: String,
     val fault: LaneFault,
     val retried: Boolean,
+    /** judge 구간에서 붙잡은 실패인가. 변환·보정 실패와 가려 두는 이유는 [LaneJournal.lastConversionFault] KDoc. */
+    val judging: Boolean,
 )
 
 /**
@@ -120,6 +122,19 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
 
     private val truncatedCallsByDocument = mutableMapOf<String, Int>()
 
+    /**
+     * 문서(회차)별 비용 — 변환·보정 몫과 judge 몫을 **따로** 센다. [estimatedCostUsd] 가
+     * 둘을 구분 없이 합하는 것과 다른 값이고, 그 차이가 이 두 맵의 존재 이유다: 수준별 변환
+     * 원가를 비교하려면 judge(판정 한 줄)가 섞이지 않은 변환 몫이 필요하다
+     * (`docs/plans/2026-10-22-grade-3-4-cost-measurement.md` 2단계).
+     *
+     * 단가가 없는 호출은 어느 쪽에도 더하지 않는다 — 없는 값을 0으로 더하면 부분합이 전체합
+     * 처럼 보인다([estimatedCostUsd] 와 같은 규칙).
+     */
+    private val conversionCostByDocument = mutableMapOf<String, BigDecimal>()
+
+    private val judgeCostByDocument = mutableMapOf<String, BigDecimal>()
+
     val budget: Int get() = retryBudget
 
     /** 재시도 예산을 다 썼는가. 다 썼다는 사실 자체가 「그날 인프라가 흔들렸다」는 관측값이다. */
@@ -158,6 +173,12 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     /** 이 문서의 변환·보정 호출 중 절단된 수. 구간별 집계가 장문 쪽 쏠림을 보려면 문서별이어야 한다. */
     fun truncatedCallsFor(documentId: String): Int = truncatedCallsByDocument[documentId] ?: 0
 
+    /** 이 문서(회차)의 변환·보정 호출 예상 비용 합. 호출이 없었거나 단가가 없으면 `null`. */
+    fun conversionCostFor(documentId: String): BigDecimal? = conversionCostByDocument[documentId]
+
+    /** 같은 문서(회차)의 judge 호출 예상 비용 합. judge 를 부르지 않았으면 `null`. */
+    fun judgeCostFor(documentId: String): BigDecimal? = judgeCostByDocument[documentId]
+
     /**
      * [estimatedCostUsd]·[pricingInputUsdPerMtok]/[pricingOutputUsdPerMtok] 를 채운다.
      *
@@ -168,6 +189,10 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
      * 회차는 조립이 하나뿐이라 단가가 한 번 찍히면 이후 호출도 같은 값을 내므로 다시 찍지
      * 않는다. [completion.estimatedCostUsd] 가 `null` 이면(단가 미설정) 합계에 더하지 않고
      * [costUnknownCalls] 만 늘린다 — 없는 값을 0으로 더하면 부분합이 전체합처럼 보인다.
+     *
+     * 같은 비용을 [conversionCostByDocument]·[judgeCostByDocument] 로 한 번 더 — 지금 구간
+     * ([judging])과 문서([stage])별로 — 나눠 담는다. 리포트의 문서 줄이 변환 몫과 judge 몫을
+     * 갈라 내는 근거다.
      */
     private fun recordCost(completion: LlmCompletion) {
         if (!pricingCaptured && completion.pricingInputUsdPerMtok != null) {
@@ -178,9 +203,11 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         val cost = completion.estimatedCostUsd
         if (cost == null) {
             costUnknownCalls++
-        } else {
-            estimatedCostUsd = (estimatedCostUsd ?: BigDecimal.ZERO) + cost
+            return
         }
+        estimatedCostUsd = (estimatedCostUsd ?: BigDecimal.ZERO) + cost
+        val byDocument = if (judging) judgeCostByDocument else conversionCostByDocument
+        byDocument.merge(stage, cost, BigDecimal::add)
     }
 
     fun recordFault(
@@ -188,7 +215,7 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         retried: Boolean,
     ) {
         calls++
-        faults += RecordedFault(stage, fault, retried)
+        faults += RecordedFault(stage, fault, retried, judging = judging)
         if (retried) {
             retries++
         }
@@ -197,7 +224,15 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     /** 레인 전체 재시도 예산이 남았는가. */
     fun retryAllowed(): Boolean = retries < retryBudget
 
-    fun lastFault(documentId: String): LaneFault? = faults.lastOrNull { it.documentId == documentId }?.fault
+    /**
+     * 이 문서(회차)의 **변환·보정** 호출에서 마지막으로 붙잡은 실패. judge 구간의 실패는
+     * 빼고 본다 — 비용을 변환 몫과 judge 몫으로 가르는 것([conversionCostFor])과 같은 이유다.
+     * 호출부는 judge 를 부른 **뒤에** 이 값을 읽어 회차 줄에 싣는데, 두 갈래를 섞으면 judge
+     * 쪽 429 가 변환 타임아웃(그 회차가 상한에 닿았다는 근거)을 덮는다. judge 호출 실패는
+     * 호출부가 잡은 예외로 따로 보고한다([LaneReport.recordJudgeFailure]).
+     */
+    fun lastConversionFault(documentId: String): LaneFault? =
+        faults.lastOrNull { it.documentId == documentId && !it.judging }?.fault
 
     fun retriesFor(documentId: String): Int = faults.count { it.documentId == documentId && it.retried }
 
@@ -278,11 +313,8 @@ internal class LaneInstrumentedProvider(
     ): LlmCompletion {
         var attempt = 1
         while (true) {
-            spendLimit?.reserve(prompt, options)
             try {
-                val completion = delegate.complete(prompt, options)
-                journal.recordCall(completion)
-                return completion
+                return callOnce(prompt, options)
             } catch (exc: LlmProviderException) {
                 val fault = LaneFaults.of(exc)
                 val retry = fault.transient && attempt < policy.maxAttempts && journal.retryAllowed()
@@ -295,31 +327,94 @@ internal class LaneInstrumentedProvider(
             }
         }
     }
+
+    /** 시도 하나 — 예약과 정산을 같은 scope 에 묶어 둔다. 예약이 없으면 정산할 것도 없다. */
+    private fun callOnce(
+        prompt: LlmPrompt,
+        options: LlmOptions,
+    ): LlmCompletion =
+        spendLimit?.let { limit ->
+            val reservation = limit.reserve(prompt, options)
+            recorded(prompt, options).also { limit.settle(reservation, it.estimatedCostUsd) }
+        } ?: recorded(prompt, options)
+
+    private fun recorded(
+        prompt: LlmPrompt,
+        options: LlmOptions,
+    ): LlmCompletion = delegate.complete(prompt, options).also(journal::recordCall)
 }
 
-/** 유료 레인은 각 시도 전에 보수적인 최대 비용을 예약한다. 실패한 시도의 예약도 반환하지 않는다. */
+/**
+ * 유료 레인은 각 시도 전에 보수적인 최대 비용을 예약한다. **성공한 시도의 예약은 응답의 실제
+ * 예상 비용으로 정산해 대체하고**([settle]), 실패한 시도의 예약은 돌려주지 않는다 — 그 시도가
+ * 얼마를 썼는지 알 수 없다. 단가가 미설정이라 실제 비용을 모르는 응답도 예약을 그대로 붙잡아 둔다.
+ *
+ * 정산하는 이유: 상계는 입력 바이트 상한 × 입력 단가 + `maxTokens` × 출력 단가라서 실제 비용의
+ * 수십 배다(출력 상한 64,000 토큰이면 한 건에 US$3 대). 정산하지 않으면 실제로 US$0.09 를 쓴
+ * 실행이 US$7 상한에서 두 호출 만에 멈춘다(2026-10-22 실측).
+ *
+ * 하드 스톱은 그대로다 — [committedUsd] + 다음 상계가 상한 안에 들어갈 때만 시도를 시작한다.
+ */
 internal class LaneSpendLimit(
     private val maxUsd: BigDecimal,
     private val inputPrice: BigDecimal,
     private val outputPrice: BigDecimal,
 ) {
-    var reservedUsd: BigDecimal = BigDecimal.ZERO
+    /** 정산을 마친 **실제** 예상 비용 합계. */
+    var settledUsd: BigDecimal = BigDecimal.ZERO
         private set
+
+    /** 아직 정산하지 못한 예약 합계 — 실패한 시도와 단가 없는 응답의 몫이다. */
+    var heldUsd: BigDecimal = BigDecimal.ZERO
+        private set
+
+    /** 상한에 견주는 지출: 정산한 실제 비용 + 붙잡고 있는 예약. */
+    val committedUsd: BigDecimal get() = settledUsd + heldUsd
 
     init {
         require(maxUsd > BigDecimal.ZERO && inputPrice > BigDecimal.ZERO && outputPrice > BigDecimal.ZERO)
     }
 
+    /** 시도 하나의 예약을 잡고 그 액수를 돌려준다 — 성공하면 [settle] 에 그대로 넘긴다. */
     fun reserve(
         prompt: LlmPrompt,
         options: LlmOptions,
-    ) {
+    ): BigDecimal {
         val reservation = reservationFor(prompt, options)
-        check(reservedUsd + reservation <= maxUsd) {
-            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 예약=$reservedUsd 다음요청상계=$reservation"
+        check(committedUsd + reservation <= maxUsd) {
+            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 지출=$committedUsd 다음요청상계=$reservation"
         }
-        reservedUsd += reservation
-        println("LLM budget: reserved_usd=$reservedUsd cap_usd=$maxUsd")
+        heldUsd += reservation
+        printBudget()
+        return reservation
+    }
+
+    /**
+     * 성공한 시도의 [reservation] 을 실제 비용 [actualUsd] 로 바꾼다.
+     * [actualUsd] 가 `null`(단가 미설정)이면 예약을 그대로 둔다 — 0달러로 속이지 않는다.
+     *
+     * 두 불변식을 지킨다: 음수 비용으로 지출을 깎지 못하고, 붙잡고 있지 않은 예약을 풀지 못한다.
+     * 둘 중 하나라도 깨지면 [heldUsd] 가 음수로 내려가 상한이 조용히 헐거워진다.
+     */
+    fun settle(
+        reservation: BigDecimal,
+        actualUsd: BigDecimal?,
+    ) {
+        require(actualUsd == null || actualUsd.signum() >= 0) {
+            "실제 비용은 음수일 수 없다: actual_usd=$actualUsd"
+        }
+        check(reservation <= heldUsd) {
+            "붙잡은 예약보다 큰 정산: 정산=$reservation 예약=$heldUsd"
+        }
+        if (actualUsd != null) {
+            heldUsd -= reservation
+            settledUsd += actualUsd
+        }
+        printBudget()
+    }
+
+    private fun printBudget() {
+        println("LLM budget: committed_usd=$committedUsd (settled $settledUsd, held $heldUsd) cap_usd=$maxUsd")
     }
 
     /** 실제 provider 호출 전에 같은 상계식으로 계획 전체의 예약액을 계산한다. */

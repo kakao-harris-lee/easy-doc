@@ -178,15 +178,130 @@ class LaneReportTest {
         val documentLines = report.render().lines().filter { it.contains(" — 원문 ") }
 
         assertThat(documentLines).containsExactly(
-            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 사실 보존 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 - · " +
+            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 사실 보존 - · 출력 토큰 16000 · 보정 - · " +
+                "절단 문서 예 · 절단 호출 1 · 지연 3.0초 · 비용 변환 - · judge - · 스타일 - · " +
                 "문장 0 · 위반 -",
-            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 사실 보존 - · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과 · " +
+            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 사실 보존 - · 출력 토큰 9000 · 보정 아니오 · " +
+                "절단 문서 아니오 · 절단 호출 1 · 지연 3.0초 · 비용 변환 - · judge - · 스타일 통과 · " +
                 "문장 40 · 위반 4건(밀도 0.100 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)",
-            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 사실 보존 - · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과 · " +
+            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 사실 보존 - · 출력 토큰 2000 · 보정 아니오 · " +
+                "절단 문서 아니오 · 절단 호출 0 · 지연 3.0초 · 비용 변환 - · judge - · 스타일 통과 · " +
                 "문장 20 · 위반 0건(밀도 0.000 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
-            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 사실 보존 - · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과 · " +
+            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 사실 보존 - · 출력 토큰 2400 · 보정 아니오 · " +
+                "절단 문서 아니오 · 절단 호출 0 · 지연 3.0초 · 비용 변환 - · judge - · 스타일 미통과 · " +
                 "문장 15 · 위반 3건(밀도 0.200 · LENGTH=2 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
         )
+    }
+
+    @Test
+    @DisplayName("문서 줄에 보정 채택 여부·지연·변환/judge 비용을 갈라 낸다 — 수준별 원가를 이 줄에서 읽는다")
+    fun `문서 줄에 원가 항목을 낸다`() {
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-010",
+                sourceChars = 1_000,
+                convertedChars = 1_800,
+                outputTokens = 2_000,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = true,
+                sentenceCount = 10,
+                styleIssueCounts = emptyMap(),
+                factCoverage = null,
+                repaired = true,
+                conversionCostUsd = BigDecimal("0.1234"),
+                judgeCostUsd = BigDecimal("0.0012"),
+                faultLabel = null,
+            ),
+            // 2026-09-12 실측의 105 가 변환+보정에 쓴 시간 — 읽기 타임아웃 120초에 닿는 대역이다.
+            Duration.ofMillis(140_400),
+        )
+
+        assertThat(report.render()).contains(
+            "g-010 — 원문 1000 · 변환 1800 · 팽창비 1.80 · 사실 보존 - · 출력 토큰 2000 · 보정 예 · " +
+                "절단 문서 아니오 · 절단 호출 0 · 지연 140.4초 · " +
+                "비용 변환 \$0.1234 · judge \$0.0012 · 스타일 통과",
+        )
+    }
+
+    @Test
+    @DisplayName("그 회차가 붙잡은 provider 실패 원인을 문서 줄에 적는다 — 읽기 타임아웃이 이 자리에 온다")
+    fun `문서 줄에 실패 원인을 적는다`() {
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-011",
+                sourceChars = 6_712,
+                convertedChars = null,
+                outputTokens = 0,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = null,
+                sentenceCount = 0,
+                styleIssueCounts = emptyMap(),
+                factCoverage = null,
+                repaired = null,
+                conversionCostUsd = null,
+                judgeCostUsd = null,
+                faultLabel = "ResourceAccessException",
+            ),
+            Duration.ofMillis(120_000),
+        )
+
+        val rendered = report.render()
+
+        assertThat(rendered).contains("지연 120.0초")
+        assertThat(rendered).contains("· 실패 원인 ResourceAccessException")
+    }
+
+    @Test
+    @DisplayName("judge 호출이 실패해도 문서 줄의 실패 원인은 변환 쪽이다 — 타임아웃 근거가 덮이지 않는다")
+    fun `문서 줄의 실패 원인은 judge 실패로 덮이지 않는다`() {
+        // 변환이 타임아웃으로 흔들린 뒤 judge 호출이 429 로 실패한 회차. 저널이 가른 값을 그대로
+        // 싣는다 — 이 배선이 끊기면 수준을 올려 길어진 회차의 타임아웃 근거가 judge 라벨에 덮인다.
+        journal.beginDocument("g-001")
+        journal.recordFault(fault("ResourceAccessException"), retried = true)
+        journal.beginJudge("g-001")
+        journal.recordFault(fault("HTTP 429"), retried = false)
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-001",
+                sourceChars = 6_712,
+                convertedChars = 7_000,
+                outputTokens = 3_000,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = true,
+                sentenceCount = 30,
+                styleIssueCounts = emptyMap(),
+                factCoverage = null,
+                repaired = false,
+                conversionCostUsd = null,
+                judgeCostUsd = null,
+                faultLabel = journal.lastConversionFault("g-001")?.label,
+            ),
+            ELAPSED,
+        )
+
+        val documentLine = report.render().lines().single { it.contains(" — 원문 ") }
+
+        assertThat(documentLine).endsWith("· 실패 원인 ResourceAccessException")
+        assertThat(documentLine).doesNotContain("HTTP 429")
+    }
+
+    @Test
+    @DisplayName("같은 문서의 두 회차가 같은 값을 내도 문서 줄은 회차로 갈린다 — sort -u 가 한 줄을 지우지 않는다")
+    fun `회차가 같은 값을 내도 문서 줄이 갈린다`() {
+        repeat(2) {
+            record(id = "g-001", chars = CharCounts(1_000, 1_200), outputTokens = 2_000, style = StyleSample(true))
+        }
+
+        val documentLines = report.render().lines().filter { it.contains(" — 원문 ") }
+
+        assertThat(documentLines).hasSize(2)
+        assertThat(documentLines.distinct()).hasSize(2)
+        // 저널 id 와 같은 접미사다(journalIdOf) — 리포트와 저널·변환문 파일명이 같은 회차 이름을 쓴다.
+        assertThat(documentLines[0]).startsWith("  g-001#run1 — 원문 ")
+        assertThat(documentLines[1]).startsWith("  g-001#run2 — 원문 ")
     }
 
     @Test
@@ -246,6 +361,10 @@ class LaneReportTest {
             sentenceCount = sample.sentenceCount,
             styleIssueCounts = sample.styleIssueCounts,
             factCoverage = null,
+            repaired = null,
+            conversionCostUsd = null,
+            judgeCostUsd = null,
+            faultLabel = null,
         )
 
     @Test
@@ -477,50 +596,24 @@ class LaneReportTest {
     @DisplayName("같은 문서를 여러 번 돌리면 팽창비·밀도의 중앙값/최소/최대와 절단 호출 합계를 문서별로 낸다")
     fun `반복 실행을 문서별로 집계한다`() {
         // 세 번 다 같은 문서 g-001 — 팽창비 1.00/1.20/1.40, 밀도 0.100/0.200/0.300, 절단 호출 0/1/0.
-        report.recordDocument(
-            LaneMeasurement(
-                documentId = "g-001",
-                sourceChars = 1_000,
-                convertedChars = 1_000,
-                outputTokens = 500,
-                truncated = false,
-                truncatedCalls = 0,
-                stylePassed = true,
-                sentenceCount = 10,
-                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 1),
-                factCoverage = null,
-            ),
-            ELAPSED,
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_000),
+            outputTokens = 500,
+            style = StyleSample(passed = true, issueCounts = mapOf(StyleRuleKind.LENGTH to 1)),
         )
-        report.recordDocument(
-            LaneMeasurement(
-                documentId = "g-001",
-                sourceChars = 1_000,
-                convertedChars = 1_200,
-                outputTokens = 500,
-                truncated = false,
-                truncatedCalls = 1,
-                stylePassed = false,
-                sentenceCount = 10,
-                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 2),
-                factCoverage = null,
-            ),
-            ELAPSED,
+        recordRepairTruncated(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 500,
+            truncatedCalls = 1,
+            style = StyleSample(passed = false, issueCounts = mapOf(StyleRuleKind.LENGTH to 2)),
         )
-        report.recordDocument(
-            LaneMeasurement(
-                documentId = "g-001",
-                sourceChars = 1_000,
-                convertedChars = 1_400,
-                outputTokens = 500,
-                truncated = false,
-                truncatedCalls = 0,
-                stylePassed = false,
-                sentenceCount = 10,
-                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3),
-                factCoverage = null,
-            ),
-            ELAPSED,
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_400),
+            outputTokens = 500,
+            style = StyleSample(passed = false, issueCounts = mapOf(StyleRuleKind.LENGTH to 3)),
         )
 
         val rendered = report.render()
@@ -740,6 +833,10 @@ class LaneReportTest {
                 sentenceCount = style.sentenceCount,
                 styleIssueCounts = style.issueCounts,
                 factCoverage = factCoverage,
+                repaired = false,
+                conversionCostUsd = null,
+                judgeCostUsd = null,
+                faultLabel = null,
             ),
             ELAPSED,
         )
@@ -768,6 +865,11 @@ class LaneReportTest {
                 sentenceCount = style.sentenceCount,
                 styleIssueCounts = style.issueCounts,
                 factCoverage = null,
+                // 보정 호출이 잘려 원본 초안이 채택됐다 — 보정은 일어났지만 채택되지 않았다.
+                repaired = false,
+                conversionCostUsd = null,
+                judgeCostUsd = null,
+                faultLabel = null,
             ),
             ELAPSED,
         )
@@ -790,6 +892,11 @@ class LaneReportTest {
                 sentenceCount = 0,
                 styleIssueCounts = emptyMap(),
                 factCoverage = null,
+                // 채점할 본문도 부른 judge 도 없다 — 유료 레인의 변환 실패 기록과 같은 모양이다.
+                repaired = null,
+                conversionCostUsd = null,
+                judgeCostUsd = null,
+                faultLabel = null,
             ),
             ELAPSED,
         )
