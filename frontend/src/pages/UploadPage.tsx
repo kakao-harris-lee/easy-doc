@@ -695,10 +695,7 @@ export function UploadPage() {
 
   return (
     <section aria-labelledby="upload-heading">
-      <h1
-        id="upload-heading"
-        className="mb-6 text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
-      >
+      <h1 id="upload-heading" className="page-title mb-6">
         문서 변환하기
       </h1>
 
@@ -728,10 +725,10 @@ export function UploadPage() {
       읽힌다. */}
       {emailVerificationRequired && (
         <p
-          className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+          className="mb-6 flex flex-wrap items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
           role="status"
         >
-          <MailWarning className="size-5 shrink-0" aria-hidden="true" />
+          <MailWarning className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
           이메일 인증 후 문서를 변환할 수 있습니다.{' '}
           {/* 터치 대상 44px — 배너가 `flex` 컨테이너라 이 링크는 블록화된 flex item이다.
           `h-11`(44px)로 이 앱의 다른 조작 대상(예: EmailVerificationPage의 입력·버튼)과
@@ -1009,7 +1006,7 @@ export function UploadPage() {
                 type="submit"
                 size="lg"
                 loading={submitting}
-                className="h-12 w-full sm:h-auto sm:w-fit"
+                className="min-h-12 w-full sm:w-fit"
               >
                 <Wand2 className="size-[18px]" aria-hidden="true" />
                 {submitting ? '올리는 중…' : '쉬운 글로 바꾸기'}
@@ -1055,17 +1052,17 @@ export function UploadPage() {
             {/* 지원 형식·크기는 코드 상수에서 만든다 — 안내 문구와 실제 상한이 갈리면
             사용자는 화면을 믿고 거절당한다. */}
             <dl className="mt-5 flex flex-col gap-2 border-t border-border pt-4 text-sm">
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
                 <dt className="w-[4.5rem] shrink-0 text-muted-foreground">지원 형식</dt>
                 <dd className="font-medium text-foreground">{SUPPORTED_FORMAT_LABEL}</dd>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
                 <dt className="w-[4.5rem] shrink-0 text-muted-foreground">파일 크기</dt>
                 <dd className="font-medium text-foreground">
                   {formatBytes(MAX_UPLOAD_BYTES)} 이내
                 </dd>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-1 sm:flex-row sm:gap-3">
                 <dt className="w-[4.5rem] shrink-0 text-muted-foreground">글자 수</dt>
                 <dd className="font-medium text-foreground">한 번에 {chars(MAX_CHARS)}자까지</dd>
               </div>

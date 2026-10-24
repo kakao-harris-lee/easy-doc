@@ -154,6 +154,16 @@ beforeEach(() => {
 })
 
 describe('업로드 화면', () => {
+  it('변환 화면 제목과 안내에 공통 반응형 규칙을 적용한다', () => {
+    renderPage()
+
+    expect(screen.getByRole('heading', { name: '문서 변환하기' })).toHaveClass('page-title')
+    expect(screen.getByRole('button', { name: '쉬운 글로 바꾸기' })).toHaveClass(
+      'min-h-12',
+      'whitespace-normal',
+    )
+  })
+
   describe('예시 불러오기', () => {
     it.each(DOCUMENT_EXAMPLES)(
       '$category 원문을 넣되 명시적으로 변환하기 전에는 제출하지 않는다',

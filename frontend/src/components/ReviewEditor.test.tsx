@@ -803,6 +803,10 @@ describe('검수 에디터', () => {
       stubViewport(false)
       render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
 
+      expect(screen.getByRole('heading', { name: '쉬운 글 확인', level: 1 })).toHaveClass(
+        'page-title',
+      )
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveClass('min-h-11', 'whitespace-normal')
       expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['원문', '쉬운 글'])
       expect(screen.getByLabelText('원본 (읽기 전용)')).toBeVisible()
       expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).not.toBeVisible()

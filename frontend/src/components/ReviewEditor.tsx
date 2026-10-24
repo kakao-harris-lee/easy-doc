@@ -1288,12 +1288,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               **본문의 첫 제목은 h1이어야 한다**: h2로 시작하면 낭독기 목차에 뿌리가 없어
               "지금 어느 화면인가"를 제목으로 물을 수 없다.
             */}
-            <h1
-              className="text-2xl font-extrabold tracking-tight"
-              id="review-heading"
-              ref={headingRef}
-              tabIndex={-1}
-            >
+            <h1 className="page-title" id="review-heading" ref={headingRef} tabIndex={-1}>
               쉬운 글 확인
             </h1>
             <Badge tone="success">변환 완료</Badge>
@@ -1313,7 +1308,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </div>
         </div>
 
-        <p className="text-[15px] text-muted-foreground">
+        <p className="body-copy text-muted-foreground">
           원문과 비교해 필요한 내용을 고치고, 저장한 뒤 내려받으세요.
         </p>
 
@@ -1377,7 +1372,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 aria-controls={`${editorId}-${panel.key}-panel`}
                 tabIndex={activePanel === panel.key ? 0 : -1}
                 className={cn(
-                  'flex h-11 flex-1 items-center justify-center rounded-[10px] px-3 text-[15px] font-semibold transition-colors',
+                  'flex min-h-11 flex-1 items-center justify-center whitespace-normal rounded-[10px] px-2 py-2 text-center text-[15px] font-semibold transition-colors sm:px-3',
                   activePanel === panel.key
                     ? 'bg-card text-primary shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
@@ -1400,7 +1395,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               그 안의 입력칸과 버튼을 모두 대신한다(위 `focusedPanel`). */}
           <div
             ref={sourcePanelRef}
-            className="rounded-[12px] border border-border bg-card p-5"
+            className="min-w-0 rounded-[12px] border border-border bg-card p-4 sm:p-5"
             onFocus={() => setFocusedPanel('source')}
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('source')}
@@ -1452,7 +1447,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다. */}
           <div
             ref={resultPanelRef}
-            className="rounded-[12px] border-2 border-primary/40 bg-card p-5"
+            className="min-w-0 rounded-[12px] border-2 border-primary/40 bg-card p-4 sm:p-5"
             onFocus={() => setFocusedPanel('result')}
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('result')}
@@ -1660,7 +1655,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               />
             ) : (
               <>
-                <p id={`${editorId}-hint`} className="mb-3 text-sm text-muted-foreground">
+                <p id={`${editorId}-hint`} className="supporting-copy mb-3 text-muted-foreground">
                   글 전체를 이어서 읽고 수정하세요. 바꾸고 싶은 단어를 선택하면 쉬운 말 후보가
                   나타납니다.
                 </p>
