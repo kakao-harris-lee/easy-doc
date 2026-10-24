@@ -59,18 +59,11 @@ export function LandingPage() {
             <FileCheck2 className="size-4" aria-hidden="true" />
             쉬운 글 변환 AI
           </p>
-          <h1
-            aria-label="어려운 글을 누구나 읽기 쉬운 글로"
-            className="mt-5 max-w-xl text-[36px] font-extrabold leading-[1.18] tracking-[-0.035em] text-foreground md:text-5xl md:leading-[1.16]"
-          >
-            어려운 글을
-            <br />
-            <span className="text-primary">누구나 읽기 쉬운 글</span>로
+          <h1 aria-label="어려운 글을 누구나 읽기 쉬운 글로" className="page-title mt-5 max-w-xl">
+            어려운 글을 <span className="text-primary">누구나 읽기 쉬운 글</span>로
           </h1>
-          <p className="mt-5 max-w-xl text-[17px] leading-7 text-muted-foreground md:text-lg md:leading-8">
-            {SERVICE_DEFINITION}
-          </p>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+          <p className="body-copy mt-5 max-w-xl text-muted-foreground">{SERVICE_DEFINITION}</p>
+          <p className="supporting-copy mt-3 max-w-xl text-muted-foreground">
             가정통신문부터 고객 안내문까지, 원문과 비교하며 직접 고치고 문서로 내려받으세요.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -131,10 +124,7 @@ export function LandingPage() {
         className="rounded-[20px] border border-border bg-card p-6 shadow-card md:p-8"
       >
         <p className="text-sm font-semibold text-primary">이 서비스가 하는 일</p>
-        <h2
-          id="landing-fit-heading"
-          className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
-        >
+        <h2 id="landing-fit-heading" className="section-title mt-2">
           일상부터 학습과 업무까지
         </h2>
         <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -164,10 +154,7 @@ export function LandingPage() {
       >
         <div className="border-b border-border px-6 py-6 md:px-8">
           <p className="text-sm font-semibold text-primary">재작성 예시</p>
-          <h2
-            id="landing-example-heading"
-            className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
-          >
+          <h2 id="landing-example-heading" className="section-title mt-2">
             뜻은 그대로, 문장은 쉽게
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -203,13 +190,10 @@ export function LandingPage() {
 
       <section aria-labelledby="landing-document-examples-heading">
         <div className="mb-5">
-          <h2
-            id="landing-document-examples-heading"
-            className="text-2xl font-extrabold text-foreground"
-          >
+          <h2 id="landing-document-examples-heading" className="section-title">
             문서 예시 살펴보기
           </h2>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
+          <p className="supporting-copy mt-3 text-muted-foreground">{EXAMPLE_NOTICE}</p>
         </div>
         <DocumentExampleCards />
         <a
@@ -224,34 +208,31 @@ export function LandingPage() {
         aria-labelledby="landing-workflow-heading"
         className="rounded-[20px] border border-border bg-card p-6 shadow-card md:p-8"
       >
-        <h2
-          id="landing-workflow-heading"
-          className="text-2xl font-extrabold leading-tight text-foreground"
-        >
+        <h2 id="landing-workflow-heading" className="section-title">
           쉬운 글 만들기부터 문서로 저장하기까지
         </h2>
         <ol className="mt-6 grid gap-6 md:grid-cols-3">
           <li>
             <h3 className="font-semibold text-foreground">1. 글을 붙여넣거나 문서 올리기</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="supporting-copy mt-2 text-muted-foreground">
               텍스트, DOCX, HWPX, PDF를 넣고 읽기 수준을 고릅니다.
             </p>
           </li>
           <li>
             <h3 className="font-semibold text-foreground">2. 원문과 비교하며 고치기</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="supporting-copy mt-2 text-muted-foreground">
               결과를 직접 편집하고, 아쉬운 문단만 다시 변환합니다. 어려운 낱말의 쉬운 표현도 찾아볼
               수 있습니다.
             </p>
           </li>
           <li>
             <h3 className="font-semibold text-foreground">3. 확인한 글 내려받기</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            <p className="supporting-copy mt-2 text-muted-foreground">
               DOCX·HWPX는 올린 형식으로, 붙여넣은 글·TXT·PDF는 TXT로 내려받습니다.
             </p>
           </li>
         </ol>
-        <p className="mt-5 border-t border-border pt-4 text-sm leading-6 text-muted-foreground">
+        <p className="supporting-copy mt-5 border-t border-border pt-4 text-muted-foreground">
           DOCX·HWPX도 줄바꿈·표·쪽 배치가 달라질 수 있습니다. 구형 HWP·DOC는 HWPX·DOCX로 저장해
           주세요. PDF는 원본 서식을 유지하지 않습니다.
         </p>
@@ -265,10 +246,7 @@ export function LandingPage() {
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-sm font-semibold text-primary">월 정기결제 상품 안내</p>
-              <h2
-                id="landing-start-plan-heading"
-                className="mt-2 text-2xl font-extrabold leading-tight text-foreground"
-              >
+              <h2 id="landing-start-plan-heading" className="section-title mt-2">
                 {START_PLAN.name} 월 정기결제
               </h2>
               <p className="mt-2 text-sm text-muted-foreground">{START_PLAN.audience}</p>
