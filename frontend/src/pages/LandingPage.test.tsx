@@ -33,6 +33,16 @@ describe('랜딩 화면', () => {
     expect(screen.getByText(SERVICE_DEFINITION)).toBeInTheDocument()
   })
 
+  it('랜딩 제목과 설명에 공통 반응형 규칙을 적용한다', () => {
+    renderLanding()
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
+    expect(screen.getByText(SERVICE_DEFINITION)).toHaveClass('body-copy')
+    expect(screen.getByRole('heading', { name: '뜻은 그대로, 문장은 쉽게' })).toHaveClass(
+      'section-title',
+    )
+  })
+
   it('결과가 초안이라는 사실을 경고 블록으로 알린다', () => {
     renderLanding()
 

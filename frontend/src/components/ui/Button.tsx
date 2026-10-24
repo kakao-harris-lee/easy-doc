@@ -23,7 +23,7 @@ const variants: Record<Variant, string> = {
 const sizes: Record<Size, string> = {
   sm: 'min-h-11 px-3 text-sm',
   md: 'min-h-11 px-4 text-sm',
-  lg: 'h-12 px-5 text-base',
+  lg: 'min-h-12 px-5 text-base',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -47,7 +47,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         // 3px·offset 2px·ring 색을 이미 그리고, DESIGN.md §11 이 요구하는 두께도 그
         // 한 곳에 있다. 예전에 있던 `focus-visible:outline-2` 삼종은 같은 말을 하면서
         // 두께만 2px 로 덮어써, 규정된 3px 이 앱 어디에도 그려지지 않게 만들었다.
-        'inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex min-w-0 items-center justify-center gap-2 whitespace-normal rounded-md py-2 text-center font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         variants[variant],
         sizes[size],
         fullWidth && 'w-full',

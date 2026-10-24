@@ -13,13 +13,10 @@ export function DocumentExampleCards({ heading = 'h3' }: { readonly heading?: 'h
           >
             <div className="min-w-0">
               <p className="text-xs font-semibold text-primary">{example.category}</p>
-              <Heading
-                id={`example-card-${example.id}`}
-                className="mt-1 text-base font-bold leading-6 text-foreground"
-              >
+              <Heading id={`example-card-${example.id}`} className="section-title mt-1">
                 {example.title}
               </Heading>
-              <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
+              <p className="supporting-copy mt-2 hidden text-muted-foreground sm:block">
                 {example.summary}
               </p>
             </div>

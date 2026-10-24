@@ -635,3 +635,32 @@ test.describe('접근성 — 모션', () => {
     expect(moving.join('\n'), 'reduced motion 에서 도는 애니메이션이 남아 있다').toBe('')
   })
 })
+
+async function expectNoPageOverflow(page: Page): Promise<void> {
+  const widths = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+  }))
+  expect(widths.content, JSON.stringify(widths)).toBeLessThanOrEqual(widths.viewport)
+}
+
+for (const width of [320, 375, 768, 1024, 1440]) {
+  test(`공개 화면은 ${width}px에서 페이지 가로 넘침이 없다`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    for (const path of ['/', '/guide', '/examples']) {
+      await page.goto(path)
+      await expectNoPageOverflow(page)
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    }
+  })
+}
+
+test('공개 화면은 200%에 해당하는 좁은 CSS 폭에서도 본문을 유지한다', async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 900 })
+  await page.goto('/')
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expectNoPageOverflow(page)
+  await page.setViewportSize({ width: 320, height: 900 })
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expectNoPageOverflow(page)
+})

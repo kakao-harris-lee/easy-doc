@@ -173,6 +173,19 @@ describe('변환 기록', () => {
     )
   })
 
+  it('긴 문서 제목이 목록 컨트롤을 밀어 내지 않게 줄바꿈한다', async () => {
+    const longTitle = '긴 문서 제목 '.repeat(12).trim()
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [documentItem({ id: 'd1', title: longTitle })],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+    renderPage()
+
+    expect(await screen.findByRole('link', { name: longTitle })).toHaveClass('long-text', 'min-w-0')
+  })
+
   it('더 보기를 누르면 다음 쪽을 이어 붙인다', async () => {
     const user = userEvent.setup()
     vi.mocked(listDocuments)

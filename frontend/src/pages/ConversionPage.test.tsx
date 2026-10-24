@@ -94,6 +94,10 @@ describe('변환 폴링', () => {
     renderPage()
 
     await act(async () => {})
+    expect(screen.getByRole('link', { name: '변환 기록 보기' })).toHaveClass(
+      'min-h-11',
+      'whitespace-normal',
+    )
 
     // 원인은 이 화면의 유일한 alert다 — 조언까지 같은 문장에 붙이면 무엇이 일어났는지와
     // 무엇을 할지가 한 덩어리로 낭독된다(§6.3).

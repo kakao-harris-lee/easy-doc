@@ -378,8 +378,8 @@ export function HistoryPage() {
     // 제목 셀이 §6.6의 56~64px 행 높이를 넘긴다. 표에서는 22px 줄 높이를 고정해
     // 보조 정보 16px·셀 여백 24px과 합쳐 62px에 앉힌다.
     const shape = tableView
-      ? 'text-[15px] font-semibold leading-[22px]'
-      : 'inline-flex min-h-11 items-center text-[17px] font-bold leading-6'
+      ? 'long-text min-w-0 text-[15px] font-semibold leading-[22px]'
+      : 'long-text inline-flex min-h-11 min-w-0 max-w-full items-center text-[17px] font-bold leading-6'
     return item.conversion_id === null ? (
       <span className={shape}>{item.title}</span>
     ) : (
@@ -458,7 +458,7 @@ export function HistoryPage() {
                   : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}
               </p>
               <Link
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover"
+                className="inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md bg-primary px-4 py-2 text-center text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover"
                 to={HOME_PATH}
               >
                 <FilePlus2 className="size-[18px]" aria-hidden="true" />첫 문서 변환하기
@@ -509,7 +509,7 @@ export function HistoryPage() {
                 >
                   {actionBadge(item)}
                   {documentTitle(item)}
-                  <p className="text-[13px] leading-4 text-muted-foreground">
+                  <p className="supporting-copy max-w-full text-[13px] text-muted-foreground">
                     {secondaryInfo(item)} · {item.char_count.toLocaleString('ko-KR')}자
                   </p>
                   <div className="absolute right-2 top-2">{rowMenu(item)}</div>
