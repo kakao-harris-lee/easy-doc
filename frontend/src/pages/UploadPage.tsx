@@ -229,7 +229,7 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
           <FileText className="size-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p id={nameId} className="truncate font-semibold text-foreground">
+          <p id={nameId} className="long-text font-semibold text-foreground">
             {file.name}
           </p>
           <p className="text-sm text-muted-foreground">

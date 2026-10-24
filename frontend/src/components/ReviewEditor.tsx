@@ -1764,7 +1764,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         >
           <Button
             type="button"
-            className={cn('h-12 w-full sm:h-11 sm:w-auto', dirty && 'ring-2 ring-ring/40')}
+            className={cn(
+              'min-h-12 w-full py-2 sm:min-h-11 sm:w-auto',
+              dirty && 'ring-2 ring-ring/40',
+            )}
             variant={dirty ? 'primary' : 'secondary'}
             aria-describedby={statusId}
             onClick={(event) => {
@@ -1779,7 +1782,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </Button>
           {(singleFormat !== undefined || multipleFormats) && (
             <Button
-              className="h-12 w-full sm:h-11 sm:w-auto"
+              className="min-h-12 w-full py-2 sm:min-h-11 sm:w-auto"
               variant="outline"
               type="button"
               aria-haspopup={multipleFormats ? 'dialog' : undefined}

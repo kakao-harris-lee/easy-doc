@@ -548,6 +548,24 @@ describe('업로드 화면', () => {
     expect(screen.getByRole('button', { name: '안내문.docx 파일 제거' })).toBeInTheDocument()
   })
 
+  it('연속된 긴 파일명을 생략하지 않고 파일 카드 레이아웃을 유지한다', async () => {
+    const user = userEvent.setup()
+    const longFilename = `${'가'.repeat(180)}.docx`
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    await user.upload(input, docxFile(longFilename))
+
+    const filename = screen.getByText(longFilename)
+    expect(filename).toHaveClass('long-text')
+    expect(filename).not.toHaveClass('truncate')
+    expect(filename.parentElement).toHaveClass('min-w-0', 'flex-1')
+    expect(screen.getByText('DOCX · 2KB')).toBeInTheDocument()
+    const remove = screen.getByRole('button', { name: `${longFilename} 파일 제거` })
+    expect(remove).toBeInTheDocument()
+    expect(remove).toHaveClass('size-11', 'shrink-0')
+  })
+
   it('txt 파일도 올릴 수 있고 파일 등록으로 제출된다', async () => {
     const user = userEvent.setup()
     vi.mocked(createDocumentFromFile).mockResolvedValue(documentCreationResult())

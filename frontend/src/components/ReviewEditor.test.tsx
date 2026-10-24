@@ -696,8 +696,20 @@ describe('검수 에디터', () => {
 
     const bar = screen.getByRole('button', { name: '내려받기' }).parentElement
     expect(bar).toHaveClass('grid', 'grid-cols-2', 'sm:flex')
-    expect(screen.getByRole('button', { name: '내려받기' })).toHaveClass('h-12', 'w-full')
-    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass('h-12', 'w-full')
+    expect(screen.getByRole('button', { name: '내려받기' })).toHaveClass(
+      'min-h-12',
+      'w-full',
+      'py-2',
+      'sm:min-h-11',
+      'sm:w-auto',
+    )
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass(
+      'min-h-12',
+      'w-full',
+      'py-2',
+      'sm:min-h-11',
+      'sm:w-auto',
+    )
   })
 
   it('내려받을 형식이 없으면 저장 버튼이 좁은 화면에서 한 칸 전체를 쓴다', () => {
