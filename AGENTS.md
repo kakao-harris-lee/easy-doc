@@ -1,5 +1,7 @@
 # Easy-Read AI 작업 범위
 
+모든 작업은 총괄자가 직접 수행하지 않고 서브에이전트에 위임하며, 독립된 Git worktree와 전용 브랜치에서 진행한다. 총괄자는 범위 지정, 결과 검토, 검증, 종합을 맡고, 실행 서브에이전트는 다시 위임하지 않는다.
+
 제품 런타임은 Kotlin/Spring Boot 백엔드와 React/TypeScript 프런트엔드뿐이다. Python 구현, Python 비교 하네스, parity 작업을 만들지 않는다.
 
 ## 모델과 비용 상한
