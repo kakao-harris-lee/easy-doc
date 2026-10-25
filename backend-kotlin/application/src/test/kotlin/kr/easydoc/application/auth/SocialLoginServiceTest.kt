@@ -3,6 +3,8 @@ package kr.easydoc.application.auth
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.RecordingOperatorNotifications
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.ConfigurationException
@@ -78,6 +80,10 @@ class SocialLoginServiceTest {
                 .providerUserId,
         ).isEqualTo("google-sub-1")
         assertThat(world.users.saved.keys).containsExactly("new@example.test")
+        val created = world.users.saved.getValue("new@example.test").user
+        assertThat(world.notifications.events).containsExactly(
+            OperatorNotificationEvent.MemberSignedUp(created.id, created.createdAt, created.email, "google"),
+        )
         // 제공자가 이미 검증한 이메일이다 — 우리 쪽 이메일 인증 코드가 또 필요하지 않다
         // (backlog §1.4 P0-3, `UserRepository.createWithoutPassword` KDoc).
         assertThat(
@@ -105,6 +111,7 @@ class SocialLoginServiceTest {
         assertThat(token.token).isEqualTo("token:${existingUser.id}")
         assertThat(world.workspaces.createdFor).isEmpty()
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -130,6 +137,7 @@ class SocialLoginServiceTest {
         }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
             .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -165,6 +173,7 @@ class SocialLoginServiceTest {
         assertThat(emailVerification.issuedFor)
             .withFailMessage("경쟁에서 진 쪽은 이메일 인증 코드를 또 발급하면 안 된다")
             .isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(identities.findByProviderIdentityCallCount)
             .withFailMessage("첫 조회(트랜잭션 전) + 재조회(롤백 뒤) 두 번이어야 한다")
             .isEqualTo(2)
@@ -206,6 +215,7 @@ class SocialLoginServiceTest {
             ).hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
         assertThat(workspaces.createdFor).isEmpty()
         assertThat(emailVerification.issuedFor).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(identities.findByProviderIdentityCallCount)
             .withFailMessage("재조회까지 두 번 봤어야 진짜 중복으로 판정한다")
             .isEqualTo(2)
@@ -392,6 +402,7 @@ class SocialLoginServiceTest {
         val linked = world.identities.linked.single()
         assertThat(linked.userId).isEqualTo(user.id)
         assertThat(linked.providerUserId).isEqualTo("google-link-1")
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -549,6 +560,7 @@ class SocialLoginServiceTest {
         world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
 
         assertThat(identities.linkCalled).isTrue()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(identities.findByProviderIdentityCallCount)
             .withFailMessage("사전 검사 + 경쟁 후 재조회 두 번이어야 한다")
             .isEqualTo(2)
@@ -746,6 +758,14 @@ class SocialLoginServiceTest {
         // 커밋 뒤(트랜잭션 밖, depth == 0)에 best-effort 로 발급한다 — `AuthService.signup` 과 같다.
         assertThat(world.emailVerification.issuedFor).containsExactly(stored.user.id)
         assertThat(world.emailVerification.depthAtIssue).isZero()
+        assertThat(world.notifications.events).containsExactly(
+            OperatorNotificationEvent.MemberSignedUp(
+                stored.user.id,
+                stored.user.createdAt,
+                stored.user.email,
+                "naver",
+            ),
+        )
     }
 
     @Test
@@ -766,6 +786,7 @@ class SocialLoginServiceTest {
         }.isInstanceOf(InvalidInputException::class.java)
             .hasMessage(SocialLoginService.NAVER_EMAIL_REQUIRED_MESSAGE)
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.emailVerification.issuedFor).isEmpty()
     }
 
@@ -789,6 +810,7 @@ class SocialLoginServiceTest {
             .hasMessage(SocialLoginService.NAVER_EMAIL_REQUIRED_MESSAGE)
         assertThat(world.users.saved).isEmpty()
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.emailVerification.issuedFor).isEmpty()
     }
 
@@ -816,6 +838,7 @@ class SocialLoginServiceTest {
         }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
             .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.emailVerification.issuedFor).isEmpty()
     }
 
@@ -883,6 +906,7 @@ class SocialLoginServiceTest {
         world.service.unlink(user.id, SocialLoginProviderId.GOOGLE)
 
         assertThat(world.identities.findAllByUser(user.id)).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -959,6 +983,7 @@ private class SocialWorld(
     val emailVerification = SocialRecordingEmailVerification(transaction)
     val creditRepository = RecordingSocialCreditAccountRepository()
     val credits = CreditAccountService(creditRepository, enforced = false, signupGrant = signupGrant)
+    val notifications = RecordingOperatorNotifications()
     val service =
         SocialLoginService(
             providers =
@@ -974,6 +999,7 @@ private class SocialWorld(
             stateTtl = Duration.ofMinutes(10),
             emailVerification = emailVerification,
             credits = credits,
+            operatorNotifications = notifications,
         )
 }
 
@@ -1043,6 +1069,7 @@ private class RacedSocialWorld(
         FakeSocialLoginProvider("http://localhost:5173/auth/google/callback").apply {
             nextIdentity = SocialIdentity(providerUserId, email, emailVerified = true)
         }
+    val notifications = RecordingOperatorNotifications()
     val service =
         SocialLoginService(
             providers = mapOf(SocialLoginProviderId.GOOGLE to provider),
@@ -1053,6 +1080,7 @@ private class RacedSocialWorld(
             stateTtl = Duration.ofMinutes(10),
             emailVerification = emailVerification,
             credits = CreditAccountService(RecordingSocialCreditAccountRepository(), enforced = false),
+            operatorNotifications = notifications,
         )
 }
 

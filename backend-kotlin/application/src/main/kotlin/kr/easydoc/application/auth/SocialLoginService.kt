@@ -1,6 +1,8 @@
 package kr.easydoc.application.auth
 
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -57,6 +59,7 @@ class SocialLoginService
         private val stateTtl: Duration,
         private val emailVerification: PostSignupEmailVerification,
         private val credits: CreditAccountService,
+        private val operatorNotifications: OperatorNotifications = OperatorNotifications { },
     ) {
         /**
          * 제공자 인가 URL과 CSRF 방지 `state` 를 만든다.
@@ -123,10 +126,10 @@ class SocialLoginService
             val normalizedEmail = requireEmailPresent(identity, providerId)
             requireEmailNotAlreadyLinked(normalizedEmail)
 
-            // [newUserId] 는 이번 호출이 **새로 만든** 계정일 때만 채워진다 — `null` 이면
-            // 자기 자신과의 경쟁에서 져 재조회로 복구한 로그인이라 이메일 인증 코드를 또
-            // 발급하면 안 된다(반환문을 하나로 유지해 detekt `ReturnCount` 도 지킨다).
-            val (newUserId, issued) =
+            // [newUser] 는 이번 호출이 **새로 만든** 계정의 스냅샷일 때만 채워진다 — `null` 이면
+            // 자기 자신과의 경쟁에서 져 재조회로 복구한 로그인이라 가입 알림과 이메일 인증 코드를
+            // 또 발급하지 않는다(반환문을 하나로 유지해 detekt `ReturnCount` 도 지킨다).
+            val (newUser, issued) =
                 try {
                     transaction.inTransaction {
                         val user =
@@ -147,7 +150,7 @@ class SocialLoginService
                             normalizedEmail,
                             identity.emailVerified,
                         )
-                        user.id to accessTokens.issue(user.id)
+                        user to accessTokens.issue(user.id)
                     }
                 } catch (raced: EmailAlreadyRegisteredException) {
                     // 트랜잭션은 이미 롤백됐다 — 재조회는 새 트랜잭션 없이 그냥 SELECT 다.
@@ -165,10 +168,20 @@ class SocialLoginService
                             ?: throw EmailAlreadyRegisteredException(EMAIL_ALREADY_LINKED_MESSAGE)
                     null to accessTokens.issue(racedWinner.userId)
                 }
-            if (newUserId != null && !identity.emailVerified) {
-                // 커밋 **뒤**에 발송한다 — `AuthService.signup` 과 같은 이유(롤백될 수도 있는
-                // 계정에 메일을 먼저 보내지 않는다). best-effort 다.
-                emailVerification.issueAfterSignup(newUserId)
+            if (newUser != null) {
+                operatorNotifications.notify(
+                    OperatorNotificationEvent.MemberSignedUp(
+                        userId = newUser.id,
+                        occurredAt = newUser.createdAt,
+                        email = newUser.email,
+                        route = providerId.wireValue,
+                    ),
+                )
+                if (!identity.emailVerified) {
+                    // 커밋 **뒤**에 발송한다 — `AuthService.signup` 과 같은 이유(롤백될 수도 있는
+                    // 계정에 메일을 먼저 보내지 않는다). best-effort 다.
+                    emailVerification.issueAfterSignup(newUser.id)
+                }
             }
             return issued
         }
