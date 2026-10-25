@@ -56,10 +56,10 @@ export { CONTAINER } from './layoutStyles'
  */
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return cn(
-    'flex min-h-11 items-center gap-2 rounded-[10px] px-3 text-[15px]',
+    'flex min-h-11 items-center gap-2 rounded-[10px] px-3 text-[15px] transition-colors',
     isActive
-      ? 'bg-accent font-bold text-accent-foreground'
-      : 'font-medium text-muted-foreground hover:bg-secondary hover:text-foreground',
+      ? 'bg-selection font-bold text-selection-foreground'
+      : 'font-medium text-muted-foreground hover:bg-secondary hover:text-foreground active:bg-muted',
   )
 }
 
@@ -79,7 +79,7 @@ function mobileLinkClass(state: { isActive: boolean }): string {
  * 하나뿐이라(disclosure), 메뉴 역할이 요구하는 화살표 이동 규약까지 빌릴 이유가 없다.
  *
  * 대신 초점 규약은 직접 지킨다: 펼치면 첫 행동으로 초점을 옮기고, Esc로 접으면 트리거로
- * 되돌리며, 초점이 밖으로 나가거나 바깥을 누르면 접는다.
+ * 되돌리며, 초점이 밖으로 나가거나 바깥을 누륵면 접는다.
  *
  * disclosure를 골랐으므로 속성도 disclosure만 쓴다 — `aria-expanded` + `aria-controls`가
  * 전부이고 `aria-haspopup`은 쓰지 않는다. `aria-haspopup="true"`는 `"menu"`와 동의어라
@@ -107,7 +107,7 @@ function AccountMenu({
     }
   }, [open])
 
-  // 바깥을 누르면 접는다. click이 아니라 pointerdown으로 듣는다 — 바깥의 다른 버튼을
+  // 바깥을 누륵면 접는다. click이 아니라 pointerdown으로 듣는다 — 바깥의 다른 버튼을
   // 누른 경우 그 버튼의 click이 먼저 처리되기 전에 메뉴가 사라지는 편이 자연스럽다.
   useEffect(() => {
     if (!open) {
@@ -161,7 +161,7 @@ function AccountMenu({
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-[12px] border border-border bg-card p-3 shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-[12px] border border-border bg-popover p-3 text-popover-foreground shadow-lg"
         >
           <p className="text-xs font-semibold text-muted-foreground">로그인 계정</p>
           {/* 긴 주소는 잘라 보이되 title로 전체를 남긴다. */}
@@ -222,12 +222,12 @@ function AccountMenu({
 /**
  * 앱 껍데기 — 머리말(서비스명·이동 메뉴·작업 공간·계정)과 본문 랜드마크.
  *
- * header/nav/main을 시맨틱 요소로 두는 것은 낭독기 사용자가 본문으로 바로 건너뛰기
- * 위한 최소 조건이다(KWCAG). 건너뛰기 링크도 같은 이유로 맨 앞에 둔다.
+ * header/nav/main을 시맨틱 요소로 두는 것은 낭독기 사용자가 본문으로 바로 걷너뛰기
+ * 위한 최소 조건이다(KWCAG). 걷너뛰기 링크도 같은 이유로 맨 앞에 둔다.
  *
  * 데스크톱 한 줄의 순서는 `로고 · 새 변환 · 변환 기록 · (공백) · 작업 공간 · 계정`이다.
  * 작업 공간이 계정보다 앞에 온다(§5.1) — 목록과 새 변환의 범위를 정하는 현재 맥락이라
- * 계정 정보보다 자주 확인한다. 오른쪽 묶음에만 `ml-auto`를 걸어 공백을 한 번만 만든다.
+ * 계정 정볼보다 자주 확인한다. 오른쪽 묶음에만 `ml-auto`를 걸어 공백을 한 번만 만든다.
  *
  * 목적지가 둘뿐이라 데스크톱 영구 사이드바를 두지 않는다(§4).
  *
@@ -310,7 +310,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <a className="skip-link" href="#main">
-        본문으로 건너뛰기
+        본문으로 걷너뛰기
       </a>
       <header
         ref={headerRef}
