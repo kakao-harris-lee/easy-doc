@@ -135,7 +135,7 @@ export function ExplanationsPanel({
       </p>
 
       {dirty && (
-        <p className="mt-3 rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+        <p className="notice-warning mt-3 p-3 text-sm">
           수정 중인 글입니다. 본문을 저장한 뒤 다시 확인해 주세요.
         </p>
       )}

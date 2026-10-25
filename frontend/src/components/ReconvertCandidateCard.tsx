@@ -52,7 +52,7 @@ export function ReconvertCandidateCard({
       tabIndex={-1}
       role="region"
       aria-label={`원본 ${sourceUnitIndex + 1}번째 문단 재변환 후보`}
-      className="rounded-[10px] border border-primary/40 bg-accent p-3"
+      className="rounded-[10px] border border-primary/40 bg-selection p-3 text-selection-foreground"
     >
       {/* 카드가 도착했다는 사실 자체를 낭독한다 — 위 초점 이동만으로는
           카드가 뭔지(바꾸기/삽입) 미리 알리지 못한다. `role="status"`는 `aria-live="polite"`와
