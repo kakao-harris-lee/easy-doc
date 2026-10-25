@@ -78,3 +78,4 @@ client_secret_*.json
 
 # 에이전트 격리 worktree (Agent isolation: worktree)
 .claude/worktrees/
+.worktrees/

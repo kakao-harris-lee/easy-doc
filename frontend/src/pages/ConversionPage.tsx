@@ -34,14 +34,14 @@ function stageStatus(conversion: ConversionResponse | null): StageStatus {
 }
 
 /** 카드 공통 모양. 같은 작업군이라 그림자는 §8.3 상한 하나만 쓴다. */
-const CARD_CLASS = 'rounded-[16px] border border-border bg-card p-6 shadow-card sm:p-8'
+const CARD_CLASS = 'rounded-[16px] border border-border bg-card p-4 shadow-card sm:p-6 lg:p-8'
 
 /** 보조 행동 링크(기록으로 나가기). 대표 행동과 구별되게 테두리형으로 둔다. */
 const QUIET_LINK_CLASS =
-  'inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-card px-4 text-[15px] font-semibold text-foreground no-underline transition-colors hover:bg-secondary'
+  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md border border-input bg-card px-4 py-2 text-center text-[15px] font-semibold text-foreground no-underline transition-colors hover:bg-secondary'
 
 const ACTION_LINK_CLASS =
-  'inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover'
+  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md bg-primary px-4 py-2 text-center text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover'
 
 /**
  * 변환 화면.
@@ -110,7 +110,7 @@ export function ConversionPage() {
                 된다. 그래서 가능성을 나란히 두기만 하고 **어느 쪽인지 가려내려 하지
                 않는다** — 화면이 가진 정보로는 넷을 구분할 수 없고, 구분해 주는 자리도
                 제품에 없다(아래 「다음에 할 일」 주석 참고). */}
-            <p className="m-0 font-medium" role="status">
+            <p className="supporting-copy m-0 font-medium" role="status">
               주소가 잘못됐거나, 다른 계정의 변환이거나, 보관 기간이 지나 문서와 함께 파기된
               경우입니다. 새로 고쳐도 결과는 같습니다.
             </p>
@@ -126,7 +126,7 @@ export function ConversionPage() {
                 문서 제목을 모르므로(`ConversionResponse` 에 제목이 없다) 사용자가 어느
                 줄이 이 변환인지 짚을 수도 없다. 확인할 수 없는 것을 확인하라고 시키는
                 안내는 안내가 아니다. 할 수 있는 일만 적는다. */}
-            <p className="m-0 mt-1 text-sm leading-[22px] text-muted-foreground">
+            <p className="supporting-copy m-0 mt-1 text-muted-foreground">
               변환 기록에서 다른 문서를 열어 보거나, 문서를 다시 올려 변환해 주세요.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -165,7 +165,7 @@ export function ConversionPage() {
           <div className="flex items-start gap-3">
             <CircleAlert className="mt-0.5 size-[18px] shrink-0 text-danger" aria-hidden="true" />
             {/* 실패는 이 화면의 유일한 alert다 — 같은 사실을 두 번 알리지 않는다(§11). */}
-            <p className="m-0 font-semibold text-danger" role="alert">
+            <p className="supporting-copy m-0 font-semibold text-danger" role="alert">
               {failure.reason}
             </p>
           </div>
@@ -175,7 +175,7 @@ export function ConversionPage() {
             {/* 확인한 사실만 말한다. 원문을 실제로 불러온 경우에만 §9의 예시 문구
                 `원문은 남아 있습니다.`에 해당하는 말을 덧붙인다 — 아직 불러오는 중이거나
                 못 불러왔는데 「남아 있다」고 적으면 바로 아래 패널과 모순된다. */}
-            <p className="m-0 mt-1 text-sm leading-[22px] text-muted-foreground">
+            <p className="supporting-copy m-0 mt-1 text-muted-foreground">
               이 변환은 변환 기록에 남아 있습니다. 화면을 닫아도 기록에서 다시 열 수 있습니다.
               {source.state.status === 'ready' &&
                 ' 추출한 원문도 아래에 그대로 있습니다 — 복사해서 다시 올릴 수 있습니다.'}
@@ -184,9 +184,7 @@ export function ConversionPage() {
 
           <div>
             <h2 className="m-0 text-[15px] font-bold">다음에 할 일</h2>
-            <p className="m-0 mt-1 text-sm leading-[22px] text-muted-foreground">
-              {failure.advice}
-            </p>
+            <p className="supporting-copy m-0 mt-1 text-muted-foreground">{failure.advice}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link className={ACTION_LINK_CLASS} to={HOME_PATH}>
                 <FilePlus2 className="size-[18px]" aria-hidden="true" />
@@ -231,7 +229,7 @@ export function ConversionPage() {
           {timedOut ? (
             // 오래 걸리는 것은 실패가 아니다 — 위험 색 대신 정보 색을 쓴다(§6.3).
             <div className="flex flex-col gap-3 rounded-[12px] border border-info/25 bg-info-surface px-4 py-3">
-              <p className="m-0 flex items-start gap-2 text-sm font-medium leading-[22px] text-info">
+              <p className="supporting-copy m-0 flex items-start gap-2 font-medium text-info">
                 <Clock className="mt-0.5 size-[18px] shrink-0" aria-hidden="true" />
                 변환이 예상보다 오래 걸리고 있습니다. 이 화면을 닫아도 됩니다 — 결과는 변환 기록에서
                 확인할 수 있습니다.
@@ -242,7 +240,7 @@ export function ConversionPage() {
               </Link>
             </div>
           ) : (
-            <p className="m-0 flex items-center gap-2 font-semibold text-primary">
+            <p className="supporting-copy m-0 flex items-center gap-2 font-semibold text-primary">
               {/* 이 화면에서 유일하게 반복 움직이는 표시다(§12). 장식이므로 낭독기에서
                   숨기고, 상태는 옆 문구가 알린다. */}
               <LoaderCircle
@@ -254,7 +252,7 @@ export function ConversionPage() {
                 : PROGRESS_TEXT[conversion.status === 'processing' ? 'processing' : 'pending']}
             </p>
           )}
-          {error !== null && <p className="m-0 text-sm text-muted-foreground">{error}</p>}
+          {error !== null && <p className="supporting-copy m-0 text-muted-foreground">{error}</p>}
         </div>
 
         {/* 결과가 아직 없을 뿐 **원문은 이미 있다.** 기다리는 동안 무엇이 변환되고 있는지
@@ -267,7 +265,7 @@ export function ConversionPage() {
         <ResultSkeleton />
 
         {!timedOut && (
-          <p className="field-hint">
+          <p className="supporting-copy field-hint">
             화면을 닫아도 됩니다. 변환이 끝난 결과는 <Link to={HISTORY_PATH}>변환 기록</Link>에서
             다시 열 수 있습니다.
           </p>

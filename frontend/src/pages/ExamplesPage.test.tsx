@@ -9,6 +9,7 @@ import { DocumentExamplePage, ExamplesPage } from './ExamplesPage'
 describe('공개 문서 예시', () => {
   it('가입 없이 세 문서로 이동할 수 있고 자료의 성격을 알린다', () => {
     render(<ExamplesPage />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
     expect(screen.getByText(EXAMPLE_NOTICE)).toBeInTheDocument()
     DOCUMENT_EXAMPLES.forEach((example) => {
       expect(screen.getByRole('link', { name: example.title })).toHaveAttribute(

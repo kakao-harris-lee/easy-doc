@@ -24,19 +24,30 @@ describe('페이지 헤더', () => {
     expect(screen.getByText(BASE.description)).toBeInTheDocument()
   })
 
-  it('제목은 모바일에서만 작게 그린다', () => {
+  it('제목과 설명에 공통 반응형 텍스트 규칙을 적용한다', () => {
     render(
       <MemoryRouter>
         <PageHeader {...BASE} />
       </MemoryRouter>,
     )
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveClass(
-      'text-2xl',
-      'leading-8',
-      'sm:text-[28px]',
-      'sm:leading-9',
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
+    expect(screen.getByText(BASE.description)).toHaveClass('supporting-copy')
+  })
+
+  it('대표 행동은 최소 높이를 유지하면서 긴 문구를 여러 줄로 표시한다', () => {
+    render(
+      <MemoryRouter>
+        <PageHeader {...BASE} action={{ label: '새 문서 변환', to: '/' }} />
+      </MemoryRouter>,
     )
+
+    expect(screen.getByRole('link', { name: '새 문서 변환' })).toHaveClass(
+      'min-h-11',
+      'whitespace-normal',
+      'py-2',
+    )
+    expect(screen.getByRole('link', { name: '새 문서 변환' })).not.toHaveClass('h-11')
   })
 
   it('대표 행동은 하나뿐이다', async () => {
