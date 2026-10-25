@@ -13,11 +13,15 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-primary text-primary-foreground hover:bg-primary-hover',
-  secondary: 'border border-border bg-secondary text-secondary-foreground hover:bg-accent',
-  outline: 'border border-input bg-card text-foreground hover:bg-secondary',
-  ghost: 'bg-transparent text-foreground hover:bg-secondary',
-  danger: 'bg-danger text-danger-foreground hover:brightness-95',
+  primary:
+    'bg-primary text-primary-foreground enabled:hover:bg-primary-hover enabled:active:bg-primary-active',
+  secondary:
+    'border border-input bg-card text-foreground enabled:hover:bg-secondary enabled:active:bg-muted',
+  outline:
+    'border border-input bg-card text-foreground enabled:hover:bg-secondary enabled:active:bg-muted',
+  ghost: 'bg-transparent text-foreground enabled:hover:bg-secondary enabled:active:bg-muted',
+  danger:
+    'bg-danger text-danger-foreground enabled:hover:brightness-95 enabled:active:brightness-90',
 }
 
 const sizes: Record<Size, string> = {

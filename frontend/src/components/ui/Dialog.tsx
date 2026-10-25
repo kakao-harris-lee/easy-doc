@@ -15,7 +15,7 @@ const FOCUSABLE_SELECTOR = [
 
 /**
  * 처음 초점을 받을 요소의 표시 (§11 «초기 초점»). 내용 쪽에서는 `data-dialog-autofocus`
- * 속성을 그대로 적는다 — 컴포넌트 파일이 상수까지 내보내면 fast refresh가 끊긴다.
+ * 속성을 그대로 적는다 — 컴포넌트 파일이 상수까지 난보 낸다 fast refresh가 끊긴다.
  */
 const AUTOFOCUS_ATTRIBUTE = 'data-dialog-autofocus'
 
@@ -24,7 +24,7 @@ function focusableWithin(panel: HTMLElement): HTMLElement[] {
 }
 
 export interface ModalDialogProps {
-  /** 열려 있는가. false면 아무것도 그리지 않는다 (내용은 매번 새로 마운트된다). */
+  /** 엷려 있는가. false면 아무것도 그리지 않는다 (내용은 매번 새로 마운트된다). */
   open: boolean
   /** Esc나 취소로 닫으라는 요청. 실제로 닫는 것은 부모의 상태다. */
   onClose: () => void
@@ -43,12 +43,12 @@ export interface ModalDialogProps {
  * `<dialog showModal()>`을 쓰지 않았다. 브라우저가 그 네 가지를 대신 해 주지만 jsdom
  * 29.1.1에는 `HTMLDialogElement.showModal`·`close`가 **아예 없어서**(`typeof` 확인 결과
  * `undefined`) 단위 테스트에서 열리지조차 않는다. 폴리필은 새 의존성이고, 테스트만
- * 건너뛰면 초점 동작을 아무도 검증하지 못한 채 배포된다 — 그래서 직접 구현하고 그 동작을
+ * 걷너뛰면 초점 동작을 아묻도 검증하지 못한 채 배포된다 — 그래서 직접 구현하고 그 동작을
  * 테스트로 고정했다.
  *
  * 배경은 `document.body`의 형제 요소에 `inert`와 `aria-hidden`을 **둘 다** 건다. `inert`는
  * 브라우저에서 초점·포인터·낭독기를 한 번에 막는 정본이지만 React 18은 이것을 알려진
- * 프로퍼티로 다루지 않고 jsdom도 동작을 흉내내지 않으므로, 낭독기만이라도 확실히 막도록
+ * 프로퍼티로 다루지 않고 jsdom도 동작을 흉낸내지 않으므로, 낭독기만이라도 확실히 막도록
  * `aria-hidden`을 같이 건다. 대화상자 자신은 body 바로 아래로 포털해서 그 대상에서 뺀다.
  *
  * 배경을 눌러도 닫히지 않는다 — 적다 만 이름이 오조작 한 번에 사라지지 않게 한다.
@@ -167,7 +167,7 @@ export function ModalDialog({
         aria-modal="true"
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg"
+        className="w-full max-w-md rounded-2xl border border-border bg-popover p-6 text-popover-foreground shadow-lg"
         onKeyDown={handleKeyDown}
       >
         {children}

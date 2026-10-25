@@ -10,6 +10,7 @@
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -20,6 +21,8 @@
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-surface: var(--brand-surface);
   --color-brand-hover: var(--brand-hover);
+  --color-selection: var(--selection);
+  --color-selection-foreground: var(--selection-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -67,13 +70,15 @@
   --muted-foreground: #4b5870;
   --secondary: #e8f0f8;
   --secondary-foreground: #172033;
-  /* 노란색은 선택 상태와 브랜드 장식에만 쓰고 경고 토큰과 분리한다. */
+  /* 노란색은 브랜드 장식과 짧은 혜택 강조에만 쓰고, 선택 상태는 selection 토큰을 사용한다. */
   --accent: #fff4cf;
   --accent-foreground: #4a3500;
   --brand: #c58b1a;
   --brand-foreground: #4a3500;
   --brand-surface: #fff4cf;
   --brand-hover: #a8730d;
+  --selection: #e7f2fc;
+  --selection-foreground: #125493;
   --border: #d6dee8;
   /* 컨트롤 외곽선은 카드와 캔버스 모두에서 3:1 이상 식별되도록 유지한다. */
   --input: #64748b;
@@ -81,12 +86,13 @@
   --primary: #1764b5;
   --primary-foreground: #ffffff;
   --primary-hover: #125493;
+  --primary-active: #0f447a;
   --success: #197a48;
   --success-foreground: #ffffff;
   --success-surface: #e8f5ee;
   --warning: #8c4a00;
   --warning-foreground: #ffffff;
-  --warning-surface: #fff0d6;
+  --warning-surface: #fff7e8;
   --danger: #b4231f;
   --danger-foreground: #ffffff;
   --danger-surface: #fdecec;
@@ -107,7 +113,7 @@ html[data-theme='dark'] {
   --foreground: #e8edf5;
   --card: #1b2535;
   --card-foreground: #e8edf5;
-  --popover: #1b2535;
+  --popover: #243247;
   --popover-foreground: #e8edf5;
   --muted: #243247;
   --muted-foreground: #b8c4d4;
@@ -119,18 +125,21 @@ html[data-theme='dark'] {
   --brand-foreground: #ffe8a8;
   --brand-surface: #4b3a17;
   --brand-hover: #ffda85;
+  --selection: #183954;
+  --selection-foreground: #9cd4ff;
   --border: #35445a;
   --input: #8190a6;
   --ring: #75bfff;
   --primary: #75bfff;
   --primary-foreground: #111827;
   --primary-hover: #9cd4ff;
+  --primary-active: #c2e3ff;
   --success: #65d6a0;
   --success-foreground: #0b2518;
   --success-surface: #163b2a;
   --warning: #ffbe6e;
   --warning-foreground: #322300;
-  --warning-surface: #4a2c16;
+  --warning-surface: #2d281f;
   --danger: #ff8c86;
   --danger-foreground: #321010;
   --danger-surface: #4a2024;
@@ -163,8 +172,8 @@ html[data-theme='dark'] {
     border-radius: var(--radius-md);
   }
   ::selection {
-    background: var(--accent);
-    color: var(--accent-foreground);
+    background: var(--selection);
+    color: var(--foreground);
   }
 }
 
@@ -204,6 +213,19 @@ html[data-theme='dark'] {
   .long-text {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  .landing-glow {
+    @apply pointer-events-none absolute rounded-full bg-brand-surface opacity-40 blur-xl;
+  }
+  .landing-glow-start {
+    @apply left-0 top-12 size-16;
+  }
+  .landing-glow-end {
+    @apply right-0 bottom-10 size-24;
+  }
+  html[data-theme='dark'] .landing-glow {
+    opacity: 0.18;
   }
 
   .landing-flow-image-dark {
@@ -262,7 +284,21 @@ html[data-theme='dark'] {
     @apply m-0 rounded-[10px] border border-danger/25 bg-danger-surface px-3 py-2 text-sm font-medium text-danger;
   }
   .form-success {
-    @apply m-0 rounded-[10px] border border-success/25 bg-success-surface px-3 py-2 text-sm font-medium text-success;
+    @apply m-0 rounded-[10px] border border-success/25 bg-success-surface px-3 py-2 text-sm font-medium text-foreground;
+  }
+  .notice-warning {
+    @apply rounded-[10px] border border-warning/25 bg-warning-surface text-foreground;
+  }
+  .notice-warning > svg,
+  .notice-warning-title {
+    @apply text-warning;
+  }
+  .notice-success {
+    @apply rounded-[10px] border border-success/25 bg-success-surface text-foreground;
+  }
+  .notice-success > svg,
+  .notice-success-title {
+    @apply text-success;
   }
 
   .review-textarea {
@@ -350,10 +386,16 @@ html[data-theme='dark'] {
 
   /* 가이드와 예시의 부가 설명은 키보드로 여는 native details를 공유한다. */
   .help-disclosure {
-    @apply rounded-xl border border-border bg-card;
+    @apply bg-card text-foreground transition-colors;
+  }
+  .help-disclosure[open] {
+    @apply bg-selection;
   }
   .help-disclosure > summary {
-    @apply min-h-12 cursor-pointer px-4 py-3 font-semibold text-foreground;
+    @apply min-h-12 cursor-pointer px-4 py-3 font-semibold text-foreground transition-colors hover:text-primary;
+  }
+  .help-disclosure[open] > summary {
+    @apply text-selection-foreground;
   }
   .help-disclosure > summary h2 {
     @apply inline text-base font-semibold;
@@ -377,13 +419,13 @@ html[data-theme='dark'] {
   }
 
   .guide-page .legal-document blockquote {
-    @apply my-4 rounded-xl border border-warning/25 bg-warning-surface px-4 py-3 text-sm;
+    @apply my-4 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 text-sm text-foreground;
   }
   .guide-page .legal-document blockquote p {
-    @apply my-0 leading-6;
+    @apply my-0 leading-6 text-foreground;
   }
   .guide-page > .legal-document > ol {
-    @apply my-4 list-decimal space-y-2 rounded-xl border border-border bg-card py-4 pr-4 pl-10;
+    @apply my-4 list-decimal space-y-2 py-2 pl-6;
   }
   .guide-page .help-disclosure .legal-document {
     @apply text-sm;

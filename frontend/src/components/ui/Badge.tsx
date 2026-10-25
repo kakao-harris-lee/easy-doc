@@ -11,7 +11,7 @@ const tones: Record<Tone, string> = {
   warning: 'border-warning/25 bg-warning-surface text-warning',
   danger: 'border-danger/25 bg-danger-surface text-danger',
   info: 'border-info/25 bg-info-surface text-info',
-  primary: 'border-primary/25 bg-accent text-accent-foreground',
+  primary: 'border-primary/25 bg-selection text-selection-foreground',
 }
 
 const icons = {
