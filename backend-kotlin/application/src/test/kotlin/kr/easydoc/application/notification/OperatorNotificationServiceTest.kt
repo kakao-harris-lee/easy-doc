@@ -70,6 +70,35 @@ class OperatorNotificationServiceTest {
     }
 
     @Test
+    fun `실결제 환경이 아니면 알 수 없는 환경 값도 테스트로 표시한다`() {
+        val userId = UUID.fromString("44444444-4444-4444-4444-444444444444")
+        val occurredAt = Instant.parse("2026-03-05T00:00:00Z")
+        val sent = mutableListOf<String>()
+        val users = NotificationUserRepository(User(userId, "hello@example.test", occurredAt, hasPassword = true))
+        val service = OperatorNotificationService(true, users) { sent += it }
+
+        listOf("toss_live", "toss_test", "toss-test", "").forEach { environment ->
+            service.notify(
+                OperatorNotificationEvent.Payment(
+                    userId,
+                    occurredAt,
+                    OperatorPaymentKind.PAYMENT_APPROVED,
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    "start",
+                    99000,
+                    environment,
+                ),
+            )
+        }
+
+        assertThat(sent[0]).startsWith("결제 승인").doesNotContain("[TEST]")
+        assertThat(sent[1]).startsWith("[TEST] 결제 승인")
+        assertThat(sent[2]).startsWith("[TEST] 결제 승인")
+        assertThat(sent[3]).startsWith("[TEST] 결제 승인")
+    }
+
+    @Test
     fun `비활성화면 사용자 조회 메시지 생성 발송과 로그를 모두 생략한다`() {
         val users = NotificationUserRepository()
         var sends = 0
