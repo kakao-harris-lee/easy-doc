@@ -47,12 +47,12 @@ const STATE_TEXT: Record<StageState, string> = {
  * 그래서 이 함수가 `done`을 주는 근거는 딱 하나다.
  *
  * - `문서 접수`: 변환 조회가 응답했다는 것은 서버에 이 변환 레코드가 있다는 뜻이므로
- *   접수는 실제로 끝났다. 첫 응답 전(`null`)에는 그것조차 모르므로 `current`에 둔다.
+ *   접수는 실제로 끝났다. 첫 응답 전(`null`)에는 그것조차 모륵므로 `current`에 둔다.
  *
  * `검수 준비`는 이 화면에서 절대 `done`이 되지 않는다 — `done` 상태가 되는 순간
  * 페이지가 검수 에디터로 바뀌기 때문이다.
  *
- * 진행률 막대나 퍼센트를 넣으려면 서버가 내부 단계를 응답에 실어야 한다.
+ * 진행률 막대나 퍼센트를 넣으려면 서버가 낸부 단계를 응답에 실어야 한다.
  */
 function stageStates(status: StageStatus): StageState[] {
   if (status === 'processing') {
@@ -68,7 +68,7 @@ function stageStates(status: StageStatus): StageState[] {
 /** 상태별 표식. 반복 모션은 화면 전체에서 하나만 사용한다. */
 const MARKER_CLASS: Record<StageState, string> = {
   done: 'border-success bg-success text-success-foreground',
-  current: 'border-primary bg-accent text-primary',
+  current: 'border-primary bg-selection text-selection-foreground',
   next: 'border-input bg-card text-muted-foreground',
   waiting: 'border-border bg-muted text-muted-foreground',
 }
