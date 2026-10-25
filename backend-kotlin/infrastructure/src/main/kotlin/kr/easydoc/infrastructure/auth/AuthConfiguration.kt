@@ -548,6 +548,7 @@ class AuthConfiguration {
         JdbcAccountDeletionRepository(jdbcClient, documentJobLocks, retainedTransactionArchiver)
 
     /** 세금계산서 처리 대기 알림도 같은 운영자 주소를 쓴다(`InvoiceRequestConfiguration`과 같은 설정). */
+    @Suppress("LongParameterList") // Bean factory parameters are the use case's required collaborators.
     @Bean
     fun deleteAccountService(
         accounts: AccountDeletionRepository,

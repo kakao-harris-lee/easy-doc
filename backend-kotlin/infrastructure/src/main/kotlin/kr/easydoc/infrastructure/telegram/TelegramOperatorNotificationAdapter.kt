@@ -12,12 +12,14 @@ class TelegramOperatorNotificationAdapter(
     private val json = JsonMapper.builder().build()
 
     override fun send(message: String) {
-        val response = client.post()
-            .uri("/bot${properties.botToken.reveal()}/sendMessage")
-            .contentType(MediaType.APPLICATION_JSON)
-            .body(mapOf("chat_id" to properties.chatId, "text" to message))
-            .retrieve()
-            .body(String::class.java)
+        val response =
+            client
+                .post()
+                .uri("/bot${properties.botToken.reveal()}/sendMessage")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapOf("chat_id" to properties.chatId, "text" to message))
+                .retrieve()
+                .body(String::class.java)
         val body = requireNotNull(response) { "Telegram sendMessage returned no body" }
         val ok = json.readTree(body).get("ok")
         check(ok != null && ok.isBoolean && ok.booleanValue()) { "Telegram sendMessage failed" }

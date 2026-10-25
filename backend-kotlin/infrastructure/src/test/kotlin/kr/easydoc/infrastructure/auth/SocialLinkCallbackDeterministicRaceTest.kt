@@ -176,6 +176,9 @@ class SocialLinkCallbackDeterministicRaceTest {
             stateTtl = Duration.ofMinutes(10),
             emailVerification = { error("이 테스트는 linkCallback 만 부른다 — 이메일 인증 코드 발급은 부르지 않는다") },
             credits = CreditAccountService(JdbcCreditAccountRepository(client), enforced = false),
+            operatorNotifications =
+                kr.easydoc.application.notification
+                    .OperatorNotifications { },
         )
     }
 

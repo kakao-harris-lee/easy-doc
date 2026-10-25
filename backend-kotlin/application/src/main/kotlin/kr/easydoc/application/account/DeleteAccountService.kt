@@ -26,7 +26,7 @@ import java.util.UUID
  * 갈래마다 다른 판정(계정 소멸·관리자·재확인 실패)이 서로 독립인 가드라 `ThrowsCount` 를
  * 억제한다 — `PasswordService.set` 과 같은 판단.
  */
-@Suppress("ThrowsCount")
+@Suppress("ThrowsCount", "LongParameterList") // The use case requires each independent collaborator explicitly.
 class DeleteAccountService(
     private val accounts: AccountDeletionRepository,
     private val passwords: PasswordHasher,
@@ -41,7 +41,10 @@ class DeleteAccountService(
     private data class AccountDeletionResult(
         val pendingInvoiceRequestIds: List<UUID>,
         val deletedEmail: String,
-    )
+    ) {
+        override fun toString(): String =
+            "AccountDeletionResult(pendingInvoiceRequestIds=$pendingInvoiceRequestIds, deletedEmail=[REDACTED])"
+    }
 
     /**
      * [rawPassword] 는 비밀번호가 있는 계정(`has_password`)에만 필수다 — 소셜 전용 계정은

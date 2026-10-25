@@ -21,7 +21,7 @@ class AuthService(
     private val transaction: TransactionRunner,
     private val emailVerification: PostSignupEmailVerification,
     private val credits: CreditAccountService,
-    private val operatorNotifications: OperatorNotifications = OperatorNotifications { },
+    private val operatorNotifications: OperatorNotifications,
 ) {
     private val log = LoggerFactory.getLogger(AuthService::class.java)
 

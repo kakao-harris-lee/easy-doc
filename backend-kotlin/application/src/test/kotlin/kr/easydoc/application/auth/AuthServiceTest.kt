@@ -124,9 +124,10 @@ class AuthServiceTest {
     @Test
     fun `Telegram 준비 발송 실패 후에도 가입 결과가 유지된다`() {
         val world = World()
-        val bestEffort = OperatorNotificationService(true, world.users) {
-            throw IllegalStateException("sensitive provider failure")
-        }
+        val bestEffort =
+            OperatorNotificationService(true, world.users) {
+                throw IllegalStateException("sensitive provider failure")
+            }
         val service = world.serviceWith(bestEffort)
 
         val created = service.signup(uniqueEmail(), VALID_PASSWORD)
@@ -456,7 +457,7 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
     ): User {
         if (failNextCreate) {
             failNextCreate = false
-            throw IllegalStateException("simulated create rollback")
+            error("simulated create rollback")
         }
         val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, hasPassword = true), passwordHash)
         saved[email] = stored

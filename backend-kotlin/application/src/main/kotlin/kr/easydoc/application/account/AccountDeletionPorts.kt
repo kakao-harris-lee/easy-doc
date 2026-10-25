@@ -21,6 +21,8 @@ data class LockedAccount(
 ) {
     /** [kr.easydoc.core.user.User.hasPassword] 와 같은 판정 — 해시 존재 여부. */
     val hasPassword: Boolean get() = passwordHash != null
+
+    override fun toString(): String = "LockedAccount(isAdmin=$isAdmin, hasPassword=$hasPassword, email=[REDACTED])"
 }
 
 /**

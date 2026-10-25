@@ -36,6 +36,7 @@ import org.springframework.boot.env.YamlPropertySourceLoader
 import org.springframework.core.convert.ConversionService
 import org.springframework.core.convert.support.DefaultConversionService
 import org.springframework.core.io.ClassPathResource
+import org.springframework.core.io.FileSystemResource
 import java.math.BigDecimal
 import java.nio.file.Files
 import java.nio.file.Path
@@ -558,42 +559,77 @@ class ConfigurationPropertiesBindingTest {
 
     @Test
     fun `Telegram 설정과 두 실행 모듈의 환경변수 계약이 일치한다`() {
-        val properties = bind(
-            "easydoc.telegram",
-            TelegramProperties::class.java,
-            mapOf(
-                "easydoc.telegram.enabled" to "true",
-                "easydoc.telegram.bot-token" to SECRET_VALUE,
-                "easydoc.telegram.chat-id" to "-100999",
-                "easydoc.telegram.connect-timeout" to "3",
-                "easydoc.telegram.read-timeout" to "7",
-            ),
-        )
+        val properties =
+            bind(
+                "easydoc.telegram",
+                TelegramProperties::class.java,
+                mapOf(
+                    "easydoc.telegram.enabled" to "true",
+                    "easydoc.telegram.bot-token" to SECRET_VALUE,
+                    "easydoc.telegram.chat-id" to "-100999",
+                    "easydoc.telegram.connect-timeout" to "3",
+                    "easydoc.telegram.read-timeout" to "7",
+                ),
+            )
         assertThat(properties.enabled).isTrue()
         assertThat(properties.botToken.reveal()).isEqualTo(SECRET_VALUE)
         assertThat(properties.chatId).isEqualTo("-100999")
         assertThat(properties.connectTimeout).isEqualTo(Duration.ofSeconds(3))
         assertThat(properties.readTimeout).isEqualTo(Duration.ofSeconds(7))
 
-        val block = """
-          telegram:
-            enabled: ${'$'}{EASYDOC_TELEGRAM_ENABLED:false}
-            bot-token: ${'$'}{EASYDOC_TELEGRAM_BOT_TOKEN:}
-            chat-id: ${'$'}{EASYDOC_TELEGRAM_CHAT_ID:}
-            connect-timeout: ${'$'}{EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
-            read-timeout: ${'$'}{EASYDOC_TELEGRAM_READ_TIMEOUT:5}
-        """.trimIndent().prependIndent("  ")
-        val api = Files.readString(Path.of("src/main/resources/application.yml"))
-        val worker = Files.readString(Path.of("../worker/src/main/resources/application.yml"))
-        assertThat(api).contains(block)
-        assertThat(worker).contains(block)
-        assertThat(api).doesNotContain("telegram:\n    base-url")
-        assertThat(worker).doesNotContain("telegram:\n    base-url")
-
-        val env = Files.readString(Path.of("../../.env.example"))
-        listOf("ENABLED=false", "BOT_TOKEN=", "CHAT_ID=", "CONNECT_TIMEOUT=2", "READ_TIMEOUT=5").forEach {
-            assertThat(env).contains("EASYDOC_TELEGRAM_$it")
+        val block =
+            """
+            telegram:
+              enabled: ${'$'}{EASYDOC_TELEGRAM_ENABLED:false}
+              bot-token: ${'$'}{EASYDOC_TELEGRAM_BOT_TOKEN:}
+              chat-id: ${'$'}{EASYDOC_TELEGRAM_CHAT_ID:}
+              connect-timeout: ${'$'}{EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
+              read-timeout: ${'$'}{EASYDOC_TELEGRAM_READ_TIMEOUT:5}
+            """.trimIndent().prependIndent("  ")
+        val apiPath = Path.of("src/main/resources/application.yml")
+        val workerPath = Path.of("../worker/src/main/resources/application.yml")
+        assertThat(Files.readString(apiPath)).contains(block)
+        assertThat(Files.readString(workerPath)).contains(block)
+        listOf(apiPath, workerPath).forEach { path ->
+            val sources = YamlPropertySourceLoader().load(path.toString(), FileSystemResource(path))
+            assertThat(sources).allSatisfy { source ->
+                assertThat(source.getProperty("easydoc.telegram.base-url")).isNull()
+            }
         }
+
+        val expected =
+            mapOf(
+                "EASYDOC_TELEGRAM_ENABLED" to "false",
+                "EASYDOC_TELEGRAM_BOT_TOKEN" to "",
+                "EASYDOC_TELEGRAM_CHAT_ID" to "",
+                "EASYDOC_TELEGRAM_CONNECT_TIMEOUT" to "2",
+                "EASYDOC_TELEGRAM_READ_TIMEOUT" to "5",
+            )
+        val assignments =
+            environmentAssignments(Path.of("../../.env.example"))
+                .filterKeys { it.startsWith("EASYDOC_TELEGRAM_") }
+        assertThat(assignments).containsExactlyInAnyOrderEntriesOf(expected)
+    }
+
+    private fun environmentAssignments(path: Path): Map<String, String> {
+        val assignments =
+            Files
+                .readAllLines(path)
+                .map(String::trim)
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .map { line ->
+                    val separator = line.indexOf('=')
+                    check(separator > 0) { "환경 예시의 할당 형식이 아닙니다: $line" }
+                    line.substring(0, separator) to line.substring(separator + 1)
+                }
+        val duplicates =
+            assignments
+                .groupingBy { it.first }
+                .eachCount()
+                .filterValues { it > 1 }
+                .keys
+        check(duplicates.isEmpty()) { "환경 예시에 중복 변수가 있습니다: $duplicates" }
+        return assignments.toMap()
     }
 
     /** 프로필 문서까지 포함해 api `application.yml` 이 선언한 값을 그대로 읽는다. */

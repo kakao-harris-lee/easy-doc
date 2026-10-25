@@ -1,12 +1,12 @@
 package kr.easydoc.infrastructure.telegram
 
-import tools.jackson.databind.json.JsonMapper
 import com.sun.net.httpserver.HttpServer
 import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.time.Duration
@@ -70,9 +70,7 @@ class TelegramOperatorNotificationAdapterTest {
             .isInstanceOf(RuntimeException::class.java)
     }
 
-    private fun properties(
-        readTimeout: Duration = Duration.ofSeconds(1),
-    ): TelegramProperties =
+    private fun properties(readTimeout: Duration = Duration.ofSeconds(1)): TelegramProperties =
         TelegramProperties(
             enabled = true,
             botToken = Secret("fake-bot-token"),
@@ -87,7 +85,8 @@ class TelegramOperatorNotificationAdapterTest {
     ): TelegramOperatorNotificationAdapter {
         val settings = properties(readTimeout = readTimeout)
         return TelegramOperatorNotificationAdapter(
-            TelegramConfiguration().telegramRestClient(settings, baseUrl), settings,
+            TelegramConfiguration().telegramRestClient(settings, baseUrl),
+            settings,
         )
     }
 
@@ -102,11 +101,12 @@ class TelegramOperatorNotificationAdapterTest {
         init {
             server.createContext("/") { exchange ->
                 exchange.use {
-                    received += RecordedTelegramRequest(
-                        exchange.requestMethod,
-                        exchange.requestURI.toString(),
-                        exchange.requestBody.readBytes().toString(Charsets.UTF_8),
-                    )
+                    received +=
+                        RecordedTelegramRequest(
+                            exchange.requestMethod,
+                            exchange.requestURI.toString(),
+                            exchange.requestBody.readBytes().toString(Charsets.UTF_8),
+                        )
                     if (!delay.isZero) Thread.sleep(delay.toMillis())
                     val payload = body.toByteArray(Charsets.UTF_8)
                     exchange.responseHeaders.add("Content-Type", "application/json")
@@ -117,7 +117,11 @@ class TelegramOperatorNotificationAdapterTest {
             server.start()
         }
 
-        fun replyWith(status: Int, body: String, delay: Duration = Duration.ZERO) {
+        fun replyWith(
+            status: Int,
+            body: String,
+            delay: Duration = Duration.ZERO,
+        ) {
             this.status = status
             this.body = body
             this.delay = delay

@@ -59,7 +59,7 @@ class SocialLoginService
         private val stateTtl: Duration,
         private val emailVerification: PostSignupEmailVerification,
         private val credits: CreditAccountService,
-        private val operatorNotifications: OperatorNotifications = OperatorNotifications { },
+        private val operatorNotifications: OperatorNotifications,
     ) {
         /**
          * 제공자 인가 URL과 CSRF 방지 `state` 를 만든다.

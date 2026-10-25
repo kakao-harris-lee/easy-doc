@@ -96,6 +96,38 @@ class TossBillingServiceTest {
     }
 
     @Test
+    fun `scheduled renewal creation sends no operator notification`() {
+        val f = Fixture()
+        f.store.orders.clear()
+        f.current = Subscription(f.workspace, f.owner, "start", 50, 99000, "active", f.now, "toss_test")
+
+        f.service.runDue()
+
+        assertThat(
+            f.store.orders.values
+                .single()
+                .kind,
+        ).isEqualTo("renewal")
+        assertThat(f.gateway.charges).isZero()
+        assertThat(f.gateway.lookups).isZero()
+        assertThat(f.notifications.events).isEmpty()
+    }
+
+    @Test
+    fun `release only retry sends no operator notification`() {
+        val f = Fixture()
+        val nextAttempt = f.now.plus(Duration.ofHours(1))
+        f.store.orders[f.order.id] = f.order.copy(status = "scheduled", nextAttemptAt = nextAttempt)
+
+        f.service.process(f.order.id)
+
+        assertThat(f.store.releases).containsExactly(f.order.id to nextAttempt)
+        assertThat(f.gateway.charges).isZero()
+        assertThat(f.gateway.lookups).isZero()
+        assertThat(f.notifications.events).isEmpty()
+    }
+
+    @Test
     fun `charge 승인은 커밋 후 한 번이고 재처리는 미발송이다`() {
         val f = Fixture()
         f.gateway.payment = f.payment(f.now)
@@ -120,14 +152,17 @@ class TossBillingServiceTest {
         f.gateway.decline = true
         f.store.orders[f.order.id] = f.order.copy(kind = "renewal")
         f.service.process(f.order.id)
-        val next = f.store.orders.values.single { it.status == "scheduled" }
+        val next =
+            f.store.orders.values
+                .single { it.status == "scheduled" }
         f.store.orders[next.id] = next.copy(nextAttemptAt = f.now)
 
         f.service.process(next.id)
 
         val events = f.notifications.events.filterIsInstance<OperatorNotificationEvent.Payment>()
         assertThat(events.map { it.kind }).containsExactly(
-            OperatorPaymentKind.RENEWAL_FAILED, OperatorPaymentKind.RENEWAL_FAILED,
+            OperatorPaymentKind.RENEWAL_FAILED,
+            OperatorPaymentKind.RENEWAL_FAILED,
         )
         assertThat(events.map { it.orderId }).doesNotHaveDuplicates()
     }
@@ -137,10 +172,18 @@ class TossBillingServiceTest {
         val f = Fixture()
         val originalPayment = f.payment(f.now)
         val original = f.order.copy(status = "paid", payment = originalPayment)
-        val operation = BillingOrder(
-            UUID.randomUUID(), f.workspace, original.planId, 1000, f.now, original.cycleEndsAt,
-            kind = "refund", originalId = original.id, previousRemaining = 99000,
-        )
+        val operation =
+            BillingOrder(
+                UUID.randomUUID(),
+                f.workspace,
+                original.planId,
+                1000,
+                f.now,
+                original.cycleEndsAt,
+                kind = "refund",
+                originalId = original.id,
+                previousRemaining = 99000,
+            )
         f.store.orders[original.id] = original
         f.store.orders[operation.id] = operation
         f.gateway.payment = originalPayment.copy(status = "PARTIAL_CANCELED", remainingAmount = 98000)
@@ -155,7 +198,7 @@ class TossBillingServiceTest {
     }
 
     @Test
-    fun `manual_review는 첫 전이만 알리고 알림 실패는 paid 저장을 유지한다`() {
+    fun `manual review notifies once and notification failure preserves payment`() {
         val review = Fixture()
         review.store.orders[review.order.id] = review.order.copy(createdAt = review.now.minus(Duration.ofDays(15)))
         review.service.process(review.order.id)
@@ -165,10 +208,13 @@ class TossBillingServiceTest {
 
         val approved = Fixture()
         approved.gateway.payment = approved.payment(approved.now)
-        val bestEffort = OperatorNotificationService(
-            true,
-            NotificationUserRepository(User(approved.owner, "billing@example.test", approved.now, hasPassword = true)),
-        ) { throw IllegalStateException("sensitive provider failure") }
+        val bestEffort =
+            OperatorNotificationService(
+                true,
+                NotificationUserRepository(
+                    User(approved.owner, "billing@example.test", approved.now, hasPassword = true),
+                ),
+            ) { throw IllegalStateException("sensitive provider failure") }
         approved.serviceWith(bestEffort).process(approved.order.id)
         assertThat(approved.store.orders[approved.order.id]?.status).isEqualTo("paid")
     }
@@ -433,7 +479,8 @@ class TossBillingServiceTest {
 
         val events = f.notifications.events.filterIsInstance<OperatorNotificationEvent.Payment>()
         assertThat(events.map { it.kind }).containsExactly(
-            OperatorPaymentKind.SUBSCRIPTION_CANCELING, OperatorPaymentKind.SUBSCRIPTION_EXPIRED,
+            OperatorPaymentKind.SUBSCRIPTION_CANCELING,
+            OperatorPaymentKind.SUBSCRIPTION_EXPIRED,
         )
         assertThat(events.map { it.orderId }).containsOnly(f.order.id)
         assertThat(events.map { it.planId }).containsOnly("start")
@@ -462,9 +509,12 @@ class TossBillingServiceTest {
     @Test
     fun `카드 대기 종료는 renewal 실패와 past_due를 각각 알리고 후속 정리는 실패를 반복하지 않는다`() {
         val f = Fixture()
-        f.store.orders[f.order.id] = f.order.copy(
-            kind = "renewal", status = "scheduled", firstFailureAt = f.now.minus(Duration.ofDays(15)),
-        )
+        f.store.orders[f.order.id] =
+            f.order.copy(
+                kind = "renewal",
+                status = "scheduled",
+                firstFailureAt = f.now.minus(Duration.ofDays(15)),
+            )
         f.store.currentSession = requireNotNull(f.store.currentSession).copy(state = "needs_card")
         f.current = Subscription(f.workspace, f.owner, "start", 50, 99000, "active", f.now, "toss_test")
 
@@ -488,9 +538,10 @@ class TossBillingServiceTest {
         f.store.orders.clear()
         f.current = Subscription(f.workspace, f.owner, "start", 50, 99000, "active", f.now, "toss_test")
 
-        val logs = captureTossLogs {
-            assertThat(f.service.subscriptionEventsForTransition(f.current!!, "expired")).isEmpty()
-        }
+        val logs =
+            captureTossLogs {
+                assertThat(f.service.subscriptionEventsForTransition(f.current!!, "expired")).isEmpty()
+            }
         f.service.begin(f.owner, f.workspace, "start", "replace_card")
         f.service.billingDeleted(Secret("card"))
         f.service.retryCardDeletion(f.workspace)
@@ -663,6 +714,7 @@ class TossBillingServiceTest {
     private class RecordingStore : TossBillingStore {
         var retryCutoff: Instant? = null
         val orders = mutableMapOf<UUID, BillingOrder>()
+        val releases = mutableListOf<Pair<UUID, Instant>>()
         var currentSession: BillingSession? = null
         var claims = 0
 
@@ -709,7 +761,9 @@ class TossBillingServiceTest {
         override fun release(
             id: UUID,
             nextAttempt: Instant,
-        ) = Unit
+        ) {
+            releases += id to nextAttempt
+        }
 
         override fun candidates(now: Instant): List<UUID> = emptyList()
 

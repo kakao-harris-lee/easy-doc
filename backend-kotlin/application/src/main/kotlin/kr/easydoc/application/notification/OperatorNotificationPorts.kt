@@ -15,6 +15,9 @@ sealed interface OperatorNotificationEvent {
         val route: String,
     ) : OperatorNotificationEvent {
         override val eventType: String get() = "member_signed_up"
+
+        override fun toString(): String =
+            "MemberSignedUp(userId=$userId, occurredAt=$occurredAt, email=[REDACTED], route=$route)"
     }
 
     data class MemberDeleted(
@@ -23,6 +26,8 @@ sealed interface OperatorNotificationEvent {
         val email: String,
     ) : OperatorNotificationEvent {
         override val eventType: String get() = "member_deleted"
+
+        override fun toString(): String = "MemberDeleted(userId=$userId, occurredAt=$occurredAt, email=[REDACTED])"
     }
 
     data class Payment(

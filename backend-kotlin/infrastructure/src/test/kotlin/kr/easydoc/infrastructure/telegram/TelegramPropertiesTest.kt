@@ -22,7 +22,12 @@ class TelegramPropertiesTest {
             TelegramProperties(enabled = true, botToken = Secret("token"), connectTimeout = Duration.ZERO)
         }.isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy {
-            TelegramProperties(enabled = true, botToken = Secret("token"), chatId = "chat", readTimeout = Duration.ofSeconds(-1))
+            TelegramProperties(
+                enabled = true,
+                botToken = Secret("token"),
+                chatId = "chat",
+                readTimeout = Duration.ofSeconds(-1),
+            )
         }.isInstanceOf(IllegalArgumentException::class.java)
         val rendered = TelegramProperties(true, Secret("real-looking-token"), "private-chat").toString()
         assertThat(rendered).doesNotContain("real-looking-token", "private-chat")

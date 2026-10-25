@@ -80,7 +80,10 @@ class SocialLoginServiceTest {
                 .providerUserId,
         ).isEqualTo("google-sub-1")
         assertThat(world.users.saved.keys).containsExactly("new@example.test")
-        val created = world.users.saved.getValue("new@example.test").user
+        val created =
+            world.users.saved
+                .getValue("new@example.test")
+                .user
         assertThat(world.notifications.events).containsExactly(
             OperatorNotificationEvent.MemberSignedUp(created.id, created.createdAt, created.email, "google"),
         )

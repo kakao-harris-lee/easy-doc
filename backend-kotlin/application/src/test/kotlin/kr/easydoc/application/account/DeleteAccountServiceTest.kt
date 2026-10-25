@@ -314,7 +314,7 @@ private class FakeAccountDeletionRepository : AccountDeletionRepository {
     override fun deleteUser(userId: UUID) {
         if (failNextDelete) {
             failNextDelete = false
-            throw IllegalStateException("deletion rollback")
+            error("deletion rollback")
         }
         usersDeleted += userId
     }
