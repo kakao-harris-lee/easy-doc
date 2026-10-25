@@ -163,6 +163,14 @@ logging:
   level:
     root: INFO
     kr.easydoc: INFO
+    # 아래 로거는 요청·DB 값 유출을 막기 위해 DEBUG/TRACE로 내리지 않는다.
+    # 특히 텔레그램 봇 토큰은 요청 URI 경로에 들어가므로 org.springframework.web(.client 포함)을 INFO로 고정한다.
+    org.springframework.web: INFO
+    org.apache.coyote.http11.Http11InputBuffer: INFO
+    org.springframework.jdbc.core.StatementCreatorUtils: INFO
+    org.postgresql.core.v3.QueryExecutorImpl: INFO
+    org.springframework.security: INFO
+    org.flywaydb: INFO
 
 ---
 spring:
