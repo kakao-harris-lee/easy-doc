@@ -559,7 +559,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     }
   })
 
-  test('업로드 입력은 테마를 바꿔도 유지되고 문서 등록 요청을 복내지 않는다', async ({ page }) => {
+  test('업로드 입력은 테마를 바꿔도 유지되고 문서 등록 요청을 본내지 않는다', async ({ page }) => {
     await mockApi(page)
     await seedAuthenticatedTheme(page, 'light')
     const documentPosts: string[] = []
