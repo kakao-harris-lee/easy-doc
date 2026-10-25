@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest'
 import { COMPANY_INFO, type CompanyInfo } from '../config/company'
 import { Footer } from './Footer'
 
+/**
+ * 지원 이메일 링크의 접근 가능한 이름 == 화면에 보이는 문구.
+ * WCAG 2.5.3 「레이블과 명칭의 일치」 때문에 둘을 같은 상수로 묶는다.
+ */
+const SUPPORT_EMAIL_LINK_NAME = `고객지원 이메일 : ${COMPANY_INFO.supportEmail}`
+
 function renderFooter(company?: CompanyInfo) {
   return render(
     <MemoryRouter>
@@ -17,7 +23,7 @@ describe('Footer', () => {
   it('전화번호·통신판매업 신고번호가 없으면 그 행을 그리지 않는다', () => {
     renderFooter({ ...COMPANY_INFO, phoneNumber: null, mailOrderRegistrationNumber: null })
 
-    expect(screen.queryByText(/^전화\s*:?/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^전화\s*:/)).not.toBeInTheDocument()
     expect(screen.queryByText(/통신판매업 신고번호/)).not.toBeInTheDocument()
   })
 
@@ -53,26 +59,38 @@ describe('Footer', () => {
   it('고객지원 이메일이 mailto 링크로 걸리고 읽히는 이름을 가진다', () => {
     renderFooter()
 
-    const emailLink = screen.getByRole('link', {
-      name: `고객지원 이메일 ${COMPANY_INFO.supportEmail}`,
-    })
+    const emailLink = screen.getByRole('link', { name: SUPPORT_EMAIL_LINK_NAME })
     expect(emailLink).toHaveAttribute('href', `mailto:${COMPANY_INFO.supportEmail}`)
-    // 보이는 문구는 운영자가 정한 형식 그대로 유지한다.
-    expect(emailLink).toHaveTextContent(`고객지원 e-mail : ${COMPANY_INFO.supportEmail}`)
+    // 보이는 문구는 운영자가 정한 형식 `고객지원 이메일 : …` 그대로 유지한다
+    // (2026-10-25 결정). 접근 가능한 이름과 글자까지 같아야 음성 입력으로 고를 수 있다.
+    expect(emailLink).toHaveTextContent(SUPPORT_EMAIL_LINK_NAME)
   })
 
   it('연락처 행을 이메일 · 전화 · 운영시간 순서로 그린다', () => {
     renderFooter({ ...COMPANY_INFO, phoneNumber: '064-000-0000' })
 
-    const emailLink = screen.getByRole('link', {
-      name: `고객지원 이메일 ${COMPANY_INFO.supportEmail}`,
-    })
+    const emailLink = screen.getByRole('link', { name: SUPPORT_EMAIL_LINK_NAME })
     const phone = screen.getByText('전화 : 064-000-0000')
     const businessHours = screen.getByText(COMPANY_INFO.businessHours)
 
     expect(emailLink.compareDocumentPosition(phone) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(
       phone.compareDocumentPosition(businessHours) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('전화번호가 없어도 이메일 · 운영시간 · 카피라이트 순서를 지킨다', () => {
+    renderFooter({ ...COMPANY_INFO, phoneNumber: null })
+
+    const emailLink = screen.getByRole('link', { name: SUPPORT_EMAIL_LINK_NAME })
+    const businessHours = screen.getByText(COMPANY_INFO.businessHours)
+    const copyright = screen.getByText(`© ${COMPANY_INFO.serviceLaunchYear} All rights reserved.`)
+
+    expect(
+      emailLink.compareDocumentPosition(businessHours) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      businessHours.compareDocumentPosition(copyright) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 
