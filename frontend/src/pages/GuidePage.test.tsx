@@ -22,14 +22,26 @@ describe('간결한 이용 가이드', () => {
 
   it('파일 도움말을 펼치면 기존 다운로드 형식과 제약을 확인할 수 있다', async () => {
     const user = userEvent.setup()
-    render(<GuidePage />)
+    const { container } = render(<GuidePage />)
     const text = screen.getByText('DOCX·HWPX → 같은 형식')
+    const disclosure = screen.getByText('파일 형식과 다운로드').closest('details')
+
     expect(text).not.toBeVisible()
+    expect(disclosure).toHaveClass('help-disclosure')
+    expect(disclosure).not.toHaveAttribute('open')
+    expect(container.querySelector('.guide-page > .legal-document > ol')).not.toHaveClass(
+      'border',
+      'bg-card',
+    )
+
     await user.click(screen.getByText('파일 형식과 다운로드'))
+
+    expect(disclosure).toHaveAttribute('open')
     expect(text).toBeVisible()
     expect(screen.getByText('붙여넣은 글·TXT·PDF → TXT')).toBeVisible()
     expect(screen.getByText('10MB 이하')).toBeVisible()
-    expect(screen.getByText(/원본 서식은 보존되지 않습니다/)).toBeVisible()
+    expect(screen.getByText(/원본 서식은 .*않습니다/)).toBeVisible()
+
     await user.click(screen.getByText('파일 형식과 다운로드'))
     expect(text).not.toBeVisible()
   })
