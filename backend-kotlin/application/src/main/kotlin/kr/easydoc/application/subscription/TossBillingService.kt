@@ -3,6 +3,9 @@ package kr.easydoc.application.subscription
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.OperatorPaymentKind
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -36,6 +39,7 @@ class TossBillingService(
     val purchaseEnabled: Boolean = enabled,
     val autoChargeEnabled: Boolean = enabled,
     val allowedWorkspaces: Set<UUID> = emptySet(),
+    private val operatorNotifications: OperatorNotifications,
 ) {
     fun owns(workspace: UUID): Boolean =
         subscriptions.find(workspace)?.let { it.provider in listOf("toss_test", "toss_live") }
@@ -499,17 +503,19 @@ class TossBillingService(
     ) {
         // Serialize meaningful revision stamps with every other workspace billing writer.
         // Re-read after the provider call so a late uncertain result cannot overwrite a settled order.
-        owned(owner, order.workspaceId) {
-            val current = store.order(order.id) ?: return@owned
-            if (current.status in listOf("paid", "failed", "canceled")) return@owned
-            if (retryWindowElapsed(current.createdAt) &&
-                current.status in listOf("pending", "processing", "scheduled")
-            ) {
-                store.saveOrder(current.copy(status = "manual_review"))
+        val events = owned(owner, order.workspaceId) {
+            val current = store.order(order.id) ?: return@owned emptyList()
+            if (current.status in listOf("paid", "failed", "canceled")) return@owned emptyList()
+            if (retryWindowElapsed(current.createdAt) && current.status in FAILURE_SOURCE_STATUSES) {
+                val saved = current.copy(status = "manual_review")
+                store.saveOrder(saved)
+                listOf(paymentEvent(owner, saved, OperatorPaymentKind.PAYMENT_MANUAL_REVIEW))
             } else {
                 store.release(order.id, clock.instant().plus(timing.retryInterval))
+                emptyList()
             }
         }
+        notifyAll(events)
     }
 
     private fun chargeAllowed(order: BillingOrder): Boolean =
@@ -561,6 +567,45 @@ class TossBillingService(
         return gateway.refund(payment.key, order.amount, order.id)
     }
 
+    private fun paymentEvent(
+        owner: UUID,
+        order: BillingOrder,
+        kind: OperatorPaymentKind,
+    ): OperatorNotificationEvent.Payment =
+        OperatorNotificationEvent.Payment(
+            userId = owner,
+            occurredAt = clock.instant(),
+            kind = kind,
+            workspaceId = order.workspaceId,
+            orderId = order.id,
+            planId = order.planId,
+            amountKrw = order.amount,
+            environment = order.environment,
+        )
+
+    private fun notifyAll(events: List<OperatorNotificationEvent.Payment>) {
+        events.forEach(operatorNotifications::notify)
+    }
+
+    private fun failedOrderEvent(
+        owner: UUID,
+        current: BillingOrder,
+    ): OperatorNotificationEvent.Payment? {
+        if (current.status !in FAILURE_SOURCE_STATUSES) return null
+        val kind = when (current.kind) {
+            "charge" -> OperatorPaymentKind.PAYMENT_FAILED
+            "renewal" -> OperatorPaymentKind.RENEWAL_FAILED
+            else -> return null
+        }
+        return paymentEvent(owner, current, kind)
+    }
+
+    private fun approvedKind(order: BillingOrder): OperatorPaymentKind = when (order.kind) {
+        "charge" -> OperatorPaymentKind.PAYMENT_APPROVED
+        "renewal" -> OperatorPaymentKind.RENEWAL_APPROVED
+        else -> throw IllegalArgumentException("unsupported approval kind")
+    }
+
     @Suppress("ThrowsCount") // Ownership and persisted state are rechecked under the lock.
     private fun finish(
         order: BillingOrder,
@@ -581,31 +626,40 @@ class TossBillingService(
             throw TossUncertain()
         }
         val owner = accounts.ownerOf(order.workspaceId) ?: throw TossUncertain()
-        owned(owner, order.workspaceId) {
-            val latest = store.order(original.id) ?: throw TossUncertain()
-            // Finalization is atomic with allowance replacement. Replays and webhooks cannot replenish credits.
-            if (latest.status in listOf("pending", "processing", "scheduled", "manual_review") &&
-                payment.status == "DONE"
+        val events = owned(owner, order.workspaceId) {
+            val events = mutableListOf<OperatorNotificationEvent.Payment>()
+            val latestOriginal = store.order(original.id) ?: throw TossUncertain()
+            val effective = latestOriginal.payment?.takeIf { it.remainingAmount < payment.remainingAmount } ?: payment
+            val endsAt = (effective.approvedAt ?: clock.instant()).atZone(zone).plusMonths(1).toInstant()
+            val savedOriginal = latestOriginal.copy(
+                status = "paid", payment = effective, cycleEndsAt = endsAt,
+                nextAttemptAt = clock.instant().plus(Duration.ofDays(1)),
+            )
+
+            if (order.kind in listOf("charge", "renewal") &&
+                latestOriginal.status in UNSETTLED_ORDER_STATUSES && payment.status == "DONE"
             ) {
                 grantApprovedPeriod(original, payment, owner)
+                events += paymentEvent(owner, savedOriginal, approvedKind(savedOriginal))
             }
-            // A slower status lookup must never undo a refund already reconciled in another transaction.
-            val effective = latest.payment?.takeIf { it.remainingAmount < payment.remainingAmount } ?: payment
-            val endsAt = (effective.approvedAt ?: clock.instant()).atZone(zone).plusMonths(1).toInstant()
-            store.saveOrder(
-                latest.copy(
-                    status = "paid",
-                    payment = effective,
-                    cycleEndsAt = endsAt,
-                    nextAttemptAt = clock.instant().plus(Duration.ofDays(1)),
-                ),
-            )
+
+            store.saveOrder(savedOriginal)
             store.savePayment(original, effective)
             store.session(order.workspaceId)?.takeIf { it.state == "cancel_requested" }?.let {
                 store.saveSession(it.copy(state = "revoking", authKey = null))
             }
-            if (order.kind == "refund") store.saveOrder(order.copy(status = "paid", payment = payment))
+
+            if (order.kind == "refund") {
+                val latestOperation = store.order(order.id) ?: throw TossUncertain()
+                val savedOperation = latestOperation.copy(status = "paid", payment = payment)
+                store.saveOrder(savedOperation)
+                if (latestOperation.status in UNSETTLED_ORDER_STATUSES) {
+                    events += paymentEvent(owner, savedOperation, OperatorPaymentKind.REFUND_APPROVED)
+                }
+            }
+            events
         }
+        notifyAll(events)
     }
 
     private fun grantApprovedPeriod(
@@ -648,9 +702,10 @@ class TossBillingService(
         requiresCard: Boolean,
     ) {
         val owner = accounts.ownerOf(order.workspaceId) ?: return
-        owned(owner, order.workspaceId) {
-            val current = store.order(order.id) ?: return@owned
-            if (current.status !in listOf("pending", "processing", "scheduled")) return@owned
+        val events = owned(owner, order.workspaceId) {
+            val current = store.order(order.id) ?: return@owned emptyList()
+            if (current.status !in FAILURE_SOURCE_STATUSES) return@owned emptyList()
+            val event = failedOrderEvent(owner, current)
             store.saveOrder(current.copy(status = "failed"))
             if (order.kind in listOf("charge", "renewal")) {
                 if (requiresCard) {
@@ -674,7 +729,7 @@ class TossBillingService(
                     store.session(order.workspaceId)?.let {
                         store.saveSession(it.copy(state = "revoking", authKey = null))
                     }
-                    return@owned
+                    return@owned listOfNotNull(event)
                 }
                 val first = order.firstFailureAt ?: clock.instant()
                 val delays = RETRY_DELAYS
@@ -701,7 +756,9 @@ class TossBillingService(
                     )
                 }
             }
+            listOfNotNull(event)
         }
+        notifyAll(events)
     }
 
     fun retryCardDeletion(workspace: UUID) = revoke(workspace)
@@ -809,6 +866,8 @@ class TossBillingService(
         const val SUSPENSION_DAYS = 14L
         const val SECOND_RETRY_DAYS = 3L
         const val THIRD_RETRY_DAYS = 7L
+        val UNSETTLED_ORDER_STATUSES = setOf("pending", "processing", "scheduled", "manual_review")
+        val FAILURE_SOURCE_STATUSES = setOf("pending", "processing", "scheduled")
         val SUSPENSION_DELAY: Duration = Duration.ofDays(SUSPENSION_DAYS)
         val RETRY_DELAYS: List<Duration> =
             listOf(Duration.ofHours(1), Duration.ofDays(SECOND_RETRY_DAYS), Duration.ofDays(THIRD_RETRY_DAYS))

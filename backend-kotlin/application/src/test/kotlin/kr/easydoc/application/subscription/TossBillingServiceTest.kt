@@ -5,6 +5,12 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.application.notification.NotificationUserRepository
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotificationService
+import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.OperatorPaymentKind
+import kr.easydoc.application.notification.RecordingOperatorNotifications
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -75,11 +81,90 @@ class TossBillingServiceTest {
                 zone = ZoneOffset.UTC,
                 users = UnusedUserRepository,
                 timing = TossBillingTiming(retryWindow = retryWindow),
+                operatorNotifications = OperatorNotifications { },
             )
 
         service.runDue()
 
         assertThat(store.retryCutoff).isEqualTo(now.minus(retryWindow))
+    }
+
+    @Test
+    fun `charge 승인은 커밋 후 한 번이고 재처리는 미발송이다`() {
+        val f = Fixture()
+        f.gateway.payment = f.payment(f.now)
+
+        f.service.process(f.order.id)
+        f.service.process(f.order.id)
+        f.service.recheck(f.order.id)
+
+        val event = f.notifications.events.single() as OperatorNotificationEvent.Payment
+        assertThat(event.kind).isEqualTo(OperatorPaymentKind.PAYMENT_APPROVED)
+        assertThat(event.userId).isEqualTo(f.owner)
+        assertThat(event.orderId).isEqualTo(f.order.id)
+        assertThat(event.workspaceId).isEqualTo(f.workspace)
+        assertThat(event.planId).isEqualTo("start")
+        assertThat(event.amountKrw).isEqualTo(99000)
+        assertThat(event.environment).isEqualTo("toss_test")
+    }
+
+    @Test
+    fun `서로 다른 renewal 재시도 주문 실패는 각각 알린다`() {
+        val f = Fixture()
+        f.gateway.decline = true
+        f.store.orders[f.order.id] = f.order.copy(kind = "renewal")
+        f.service.process(f.order.id)
+        val next = f.store.orders.values.single { it.status == "scheduled" }
+        f.store.orders[next.id] = next.copy(nextAttemptAt = f.now)
+
+        f.service.process(next.id)
+
+        val events = f.notifications.events.filterIsInstance<OperatorNotificationEvent.Payment>()
+        assertThat(events.map { it.kind }).containsExactly(
+            OperatorPaymentKind.RENEWAL_FAILED, OperatorPaymentKind.RENEWAL_FAILED,
+        )
+        assertThat(events.map { it.orderId }).doesNotHaveDuplicates()
+    }
+
+    @Test
+    fun `환불은 원 결제가 아니라 환불 작업 주문의 실제 paid 전이를 알린다`() {
+        val f = Fixture()
+        val originalPayment = f.payment(f.now)
+        val original = f.order.copy(status = "paid", payment = originalPayment)
+        val operation = BillingOrder(
+            UUID.randomUUID(), f.workspace, original.planId, 1000, f.now, original.cycleEndsAt,
+            kind = "refund", originalId = original.id, previousRemaining = 99000,
+        )
+        f.store.orders[original.id] = original
+        f.store.orders[operation.id] = operation
+        f.gateway.payment = originalPayment.copy(status = "PARTIAL_CANCELED", remainingAmount = 98000)
+
+        f.service.recheck(operation.id)
+        f.service.recheck(operation.id)
+
+        val event = f.notifications.events.single() as OperatorNotificationEvent.Payment
+        assertThat(event.kind).isEqualTo(OperatorPaymentKind.REFUND_APPROVED)
+        assertThat(event.orderId).isEqualTo(operation.id)
+        assertThat(event.amountKrw).isEqualTo(1000)
+    }
+
+    @Test
+    fun `manual_review는 첫 전이만 알리고 알림 실패는 paid 저장을 유지한다`() {
+        val review = Fixture()
+        review.store.orders[review.order.id] = review.order.copy(createdAt = review.now.minus(Duration.ofDays(15)))
+        review.service.process(review.order.id)
+        review.service.process(review.order.id)
+        assertThat(review.notifications.events.map { (it as OperatorNotificationEvent.Payment).kind })
+            .containsExactly(OperatorPaymentKind.PAYMENT_MANUAL_REVIEW)
+
+        val approved = Fixture()
+        approved.gateway.payment = approved.payment(approved.now)
+        val bestEffort = OperatorNotificationService(
+            true,
+            NotificationUserRepository(User(approved.owner, "billing@example.test", approved.now, hasPassword = true)),
+        ) { throw IllegalStateException("sensitive provider failure") }
+        approved.serviceWith(bestEffort).process(approved.order.id)
+        assertThat(approved.store.orders[approved.order.id]?.status).isEqualTo("paid")
     }
 
     @Test
@@ -321,10 +406,10 @@ class TossBillingServiceTest {
     }
 
     private class Fixture(
-        autoCharge: Boolean = true,
-        purchase: Boolean = true,
+        val autoCharge: Boolean = true,
+        val purchase: Boolean = true,
         reviewWorkspace: Boolean = false,
-        zone: java.time.ZoneId = ZoneOffset.UTC,
+        val zone: java.time.ZoneId = ZoneOffset.UTC,
     ) {
         val now: Instant = Instant.parse("2026-03-05T00:00:00Z")
         val owner: UUID = UUID.randomUUID()
@@ -345,6 +430,11 @@ class TossBillingServiceTest {
                     )
             }
         val gateway = RecordingGateway()
+        val notifications = RecordingOperatorNotifications()
+        val transaction = DirectTransaction
+        val clock = Clock.fixed(now, ZoneOffset.UTC)
+        val timing = TossBillingTiming()
+        val allowedWorkspaces = if (reviewWorkspace) setOf(workspace) else emptySet()
         var current: Subscription? = null
         var saves = 0
         private val subscriptions =
@@ -360,32 +450,38 @@ class TossBillingServiceTest {
             object : CreditAccountRepository by NoopCreditAccountRepository {
                 override fun ownerOf(workspaceId: UUID): UUID = owner
             }
-        val service =
+        val credits = CreditAccountService(accounts, enforced = false)
+        val users =
+            object : UserRepository by UnusedUserRepository {
+                override fun findById(id: UUID): User =
+                    User(
+                        id,
+                        "billing@example.test",
+                        now,
+                        emailVerifiedAt = now,
+                        phoneVerifiedAt = now,
+                        hasPassword = true,
+                    )
+            }
+        val service = serviceWith(notifications)
+
+        fun serviceWith(operatorNotifications: OperatorNotifications): TossBillingService =
             TossBillingService(
-                store,
-                subscriptions,
-                accounts,
-                CreditAccountService(accounts, enforced = false),
-                DirectTransaction,
-                gateway,
-                true,
-                Clock.fixed(now, ZoneOffset.UTC),
-                zone,
-                users =
-                    object : UserRepository by UnusedUserRepository {
-                        override fun findById(id: UUID): User =
-                            User(
-                                id,
-                                "billing@example.test",
-                                now,
-                                emailVerifiedAt = now,
-                                phoneVerifiedAt = now,
-                                hasPassword = true,
-                            )
-                    },
+                store = store,
+                subscriptions = subscriptions,
+                accounts = accounts,
+                credits = credits,
+                transaction = transaction,
+                gateway = gateway,
+                enabled = true,
+                clock = clock,
+                zone = zone,
+                users = users,
+                timing = timing,
                 purchaseEnabled = purchase,
                 autoChargeEnabled = autoCharge,
-                allowedWorkspaces = if (reviewWorkspace) setOf(workspace) else emptySet(),
+                allowedWorkspaces = allowedWorkspaces,
+                operatorNotifications = operatorNotifications,
             )
 
         fun payment(approved: Instant) =

@@ -4,6 +4,7 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.application.subscription.SubscriptionStore
 import kr.easydoc.application.subscription.TossBillingService
 import kr.easydoc.application.subscription.TossBillingStore
@@ -86,6 +87,7 @@ class TossConfiguration {
         billing: TossBillingProperties,
         usage: UsageProperties,
         users: kr.easydoc.application.auth.UserRepository,
+        operatorNotifications: OperatorNotifications,
     ): TossBillingService =
         TossBillingService(
             store,
@@ -104,5 +106,6 @@ class TossConfiguration {
             purchaseEnabled = properties.purchaseEnabled,
             autoChargeEnabled = properties.autoChargeEnabled,
             allowedWorkspaces = properties.allowedWorkspaces,
+            operatorNotifications = operatorNotifications,
         )
 }
