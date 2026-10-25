@@ -22,6 +22,12 @@ spring:
     enabled: true
 
 easydoc:
+  telegram:
+    enabled: ${EASYDOC_TELEGRAM_ENABLED:false}
+    bot-token: ${EASYDOC_TELEGRAM_BOT_TOKEN:}
+    chat-id: ${EASYDOC_TELEGRAM_CHAT_ID:}
+    connect-timeout: ${EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
+    read-timeout: ${EASYDOC_TELEGRAM_READ_TIMEOUT:5}
   table-relations:
     enabled: ${EASYDOC_TABLE_RELATIONS_ENABLED:false}
   review-history:
