@@ -245,12 +245,12 @@ export function ReviewSupportPanel({
           </p>
 
           {dirty && (
-            <p className="mt-3 rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+            <p className="notice-warning mt-3 p-3 text-sm">
               수정 중인 글입니다. 본문을 저장한 뒤 다시 확인해 주세요.
             </p>
           )}
           {stale && !dirty && (
-            <div className="mt-3 rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+            <div className="notice-warning mt-3 p-3 text-sm">
               <p>본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.</p>
               <Button
                 type="button"
