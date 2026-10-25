@@ -555,6 +555,7 @@ class AuthConfiguration {
         transactionRunner: TransactionRunner,
         mailSender: MailSender,
         billingProperties: BillingProperties,
+        operatorNotifications: OperatorNotifications,
     ): DeleteAccountService =
         DeleteAccountService(
             accounts = accounts,
@@ -562,6 +563,8 @@ class AuthConfiguration {
             transaction = transactionRunner,
             mail = mailSender,
             operatorEmail = billingProperties.operatorEmail,
+            operatorNotifications = operatorNotifications,
+            clock = Clock.systemUTC(),
         )
 
     private companion object {

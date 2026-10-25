@@ -17,6 +17,7 @@ import java.util.UUID
 data class LockedAccount(
     val isAdmin: Boolean,
     val passwordHash: PasswordHash?,
+    val email: String,
 ) {
     /** [kr.easydoc.core.user.User.hasPassword] 와 같은 판정 — 해시 존재 여부. */
     val hasPassword: Boolean get() = passwordHash != null

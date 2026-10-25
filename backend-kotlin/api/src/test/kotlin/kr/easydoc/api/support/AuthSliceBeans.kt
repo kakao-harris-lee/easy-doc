@@ -364,6 +364,7 @@ class AuthSliceBeans {
         hasher: StubPasswordHasher,
         transaction: TransactionRunner,
         mail: FakeMailSender,
+        operatorNotifications: OperatorNotifications,
     ): DeleteAccountService =
         DeleteAccountService(
             accounts = accounts,
@@ -371,6 +372,8 @@ class AuthSliceBeans {
             transaction = transaction,
             mail = mail,
             operatorEmail = "",
+            operatorNotifications = operatorNotifications,
+            clock = Clock.systemUTC(),
         )
 
     @Bean
@@ -937,7 +940,7 @@ class InMemoryAccountDeletionRepository(private val users: InMemoryUserRepositor
 
     override fun lockForDeletion(userId: UUID): LockedAccount? {
         val stored = users.storedById(userId) ?: return null
-        return LockedAccount(isAdmin = userId in admins, passwordHash = stored.passwordHash)
+        return LockedAccount(isAdmin = userId in admins, passwordHash = stored.passwordHash, email = stored.user.email)
     }
 
     override fun pendingInvoiceRequestIds(userId: UUID): List<UUID> = pending[userId] ?: emptyList()

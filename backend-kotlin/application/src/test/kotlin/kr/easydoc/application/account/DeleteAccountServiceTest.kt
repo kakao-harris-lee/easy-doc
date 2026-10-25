@@ -5,6 +5,11 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.notification.NotificationUserRepository
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotificationService
+import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.RecordingOperatorNotifications
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -14,6 +19,9 @@ import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -36,6 +44,13 @@ class DeleteAccountServiceTest {
         assertThat(world.accounts.feedbackDeletedFor).containsExactly(userId)
         assertThat(world.accounts.usersDeleted).containsExactly(userId)
         assertThat(world.accounts.feedbackDeletedBeforeUserDeleted).isTrue()
+        assertThat(world.notifications.events).containsExactly(
+            OperatorNotificationEvent.MemberDeleted(
+                userId,
+                world.clock.instant(),
+                "deleted@example.test",
+            ),
+        )
     }
 
     @Test
@@ -62,6 +77,7 @@ class DeleteAccountServiceTest {
         }.isInstanceOf(InvalidInputException::class.java)
             .hasMessage(DeleteAccountService.PASSWORD_MISMATCH_MESSAGE)
         assertThat(world.accounts.usersDeleted).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.accounts.feedbackDeletedFor).isEmpty()
     }
 
@@ -76,6 +92,7 @@ class DeleteAccountServiceTest {
         }.isInstanceOf(InvalidInputException::class.java)
             .hasMessage(DeleteAccountService.PASSWORD_MISMATCH_MESSAGE)
         assertThat(world.accounts.usersDeleted).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -88,6 +105,7 @@ class DeleteAccountServiceTest {
             .isInstanceOf(InvalidInputException::class.java)
             .hasMessage(DeleteAccountService.CONFIRMATION_MISMATCH_MESSAGE)
         assertThat(world.accounts.usersDeleted).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.accounts.lockCount).isZero()
     }
 
@@ -102,6 +120,7 @@ class DeleteAccountServiceTest {
         }.isInstanceOf(ConflictException::class.java)
             .hasMessage(DeleteAccountService.ADMIN_CANNOT_DELETE_MESSAGE)
         assertThat(world.accounts.usersDeleted).isEmpty()
+        assertThat(world.notifications.events).isEmpty()
         assertThat(world.accounts.feedbackDeletedFor).isEmpty()
     }
 
@@ -113,6 +132,7 @@ class DeleteAccountServiceTest {
         assertThatThrownBy {
             world.service.deleteAccount(UUID.randomUUID(), null, DeleteAccountService.CONFIRMATION_PHRASE)
         }.isInstanceOf(InvalidCredentialsException::class.java)
+        assertThat(world.notifications.events).isEmpty()
     }
 
     @Test
@@ -126,6 +146,7 @@ class DeleteAccountServiceTest {
         world.service.deleteAccount(userId, null, DeleteAccountService.CONFIRMATION_PHRASE)
 
         assertThat(world.mail.sent).hasSize(1)
+        assertThat(world.notifications.events).hasSize(1)
         val sent = world.mail.sent.single()
         assertThat(sent.textBody).contains(pendingId.toString())
     }
@@ -177,19 +198,45 @@ class DeleteAccountServiceTest {
 
         assertThat(world.transaction.callCount).isEqualTo(1)
     }
+
+    @Test
+    fun `삭제 롤백은 미발송이고 알림 실패는 탈퇴 결과를 바꾸지 않는다`() {
+        val rolledBack = DeleteAccountWorld()
+        val userId = rolledBack.accounts.seed(isAdmin = false, passwordHash = null)
+        rolledBack.accounts.failNextDelete = true
+        assertThatThrownBy {
+            rolledBack.service.deleteAccount(userId, null, DeleteAccountService.CONFIRMATION_PHRASE)
+        }
+        assertThat(rolledBack.notifications.events).isEmpty()
+
+        val world = DeleteAccountWorld()
+        val deletedId = world.accounts.seed(isAdmin = false, passwordHash = null)
+        val bestEffort =
+            OperatorNotificationService(true, NotificationUserRepository()) {
+                throw IllegalStateException("sensitive provider failure")
+            }
+        world.serviceWith(bestEffort).deleteAccount(deletedId, null, DeleteAccountService.CONFIRMATION_PHRASE)
+        assertThat(world.accounts.usersDeleted).containsExactly(deletedId)
+    }
 }
 
-private class DeleteAccountWorld(operatorEmail: String = "") {
+private class DeleteAccountWorld(private val operatorEmail: String = "") {
     val accounts = FakeAccountDeletionRepository()
     val transaction = RecordingDeletionTransactionRunner()
     val mail = RecordingDeletionMailSender()
-    val service =
+    val notifications = RecordingOperatorNotifications()
+    val clock = Clock.fixed(Instant.parse("2026-10-25T01:02:03Z"), ZoneOffset.UTC)
+    val service = serviceWith(notifications)
+
+    fun serviceWith(operatorNotifications: OperatorNotifications): DeleteAccountService =
         DeleteAccountService(
             accounts = accounts,
             passwords = StubDeletionPasswordHasher(),
             transaction = transaction,
             mail = mail,
             operatorEmail = operatorEmail,
+            operatorNotifications = operatorNotifications,
+            clock = clock,
         )
 }
 
@@ -236,6 +283,7 @@ private class FakeAccountDeletionRepository : AccountDeletionRepository {
     val feedbackDeletedFor: MutableList<UUID> = mutableListOf()
     var lockCount = 0
         private set
+    var failNextDelete = false
 
     /** 삭제 순서 단언용 — 피드백 삭제가 사용자 삭제보다 먼저였는지. */
     var feedbackDeletedBeforeUserDeleted = false
@@ -244,9 +292,10 @@ private class FakeAccountDeletionRepository : AccountDeletionRepository {
     fun seed(
         isAdmin: Boolean,
         passwordHash: PasswordHash?,
+        email: String = "deleted@example.test",
     ): UUID {
         val id = UUID.randomUUID()
-        byId[id] = LockedAccount(isAdmin, passwordHash)
+        byId[id] = LockedAccount(isAdmin, passwordHash, email)
         return id
     }
 
@@ -263,6 +312,10 @@ private class FakeAccountDeletionRepository : AccountDeletionRepository {
     }
 
     override fun deleteUser(userId: UUID) {
+        if (failNextDelete) {
+            failNextDelete = false
+            throw IllegalStateException("deletion rollback")
+        }
         usersDeleted += userId
     }
 }
