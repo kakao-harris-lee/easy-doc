@@ -33,6 +33,9 @@ services:
       # R2 3회 평가(bounded-quality)의 동결 응답. round3 12개 재생 회귀가 같은 방식으로
       # 저장소 루트의 이 디렉터리를 읽는다(유료 호출 없음).
       - ./docs/reports/2026-09-21-r2-bounded-quality-artifacts:/docs/reports/2026-09-21-r2-bounded-quality-artifacts:ro
+      # ConfigurationPropertiesBindingTest 의 Telegram 환경변수 계약 검사가 api 모듈(/build/api)에서
+      # ../../.env.example 로 저장소 루트의 .env.example 을 읽으므로 /.env.example 로 붙인다.
+      - ./.env.example:/.env.example:ro
 
   frontend-check:
     profiles: [ci]
