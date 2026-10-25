@@ -34,7 +34,7 @@ export function ExamplesPage() {
 
 function ExampleStart() {
   return (
-    <section className={`${PANEL} bg-brand-surface/40`} aria-label="예시로 변환 시작하기">
+    <section className={PANEL} aria-label="예시로 변환 시작하기">
       <h2 className="section-title">예시로 시작하기</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         로그인 후 ‘예시 불러오기’를 선택하세요.
@@ -45,13 +45,13 @@ function ExampleStart() {
       <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:gap-3">
         <a
           href={SIGNUP_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-active"
         >
           가입하기
         </a>
         <a
           href={LOGIN_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground transition-colors hover:bg-secondary active:bg-muted"
         >
           로그인
         </a>
@@ -99,7 +99,7 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
               aria-pressed={view === value}
               aria-controls={`example-${value}`}
               onClick={() => setView(value)}
-              className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${view === value ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
+              className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${view === value ? 'bg-selection text-selection-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
             >
               {label}
             </button>
@@ -118,7 +118,7 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
           </section>
           <section
             id="example-simplified"
-            className={`${PANEL} bg-brand-surface/40 ${view === 'simplified' ? '' : 'hidden lg:block'}`}
+            className={`${PANEL} bg-selection ${view === 'simplified' ? '' : 'hidden lg:block'}`}
             aria-labelledby="example-simplified-heading"
           >
             <h2 id="example-simplified-heading" className="section-title">

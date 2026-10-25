@@ -166,7 +166,7 @@ export function WorkspaceMenu({
         id={menuId}
         hidden={!expanded}
         className={cn(
-          'absolute top-full z-40 mt-2 rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg',
+          'absolute top-full z-40 mt-2 rounded-xl border border-border bg-popover p-1.5 text-popover-foreground shadow-lg',
           variant === 'row' ? 'inset-x-0' : 'w-72 max-w-[calc(100vw-2rem)]',
           variant !== 'row' && (align === 'right' ? 'right-0' : 'left-0'),
         )}
@@ -178,7 +178,7 @@ export function WorkspaceMenu({
               key={workspace.id}
               type="button"
               aria-pressed={workspace.id === currentId}
-              className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-secondary aria-pressed:bg-secondary aria-pressed:font-semibold"
+              className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-secondary aria-pressed:bg-selection aria-pressed:font-semibold aria-pressed:text-selection-foreground"
               onClick={() => {
                 select(workspace.id)
                 setExpanded(false)

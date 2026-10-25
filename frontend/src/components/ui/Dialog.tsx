@@ -167,7 +167,7 @@ export function ModalDialog({
         aria-modal="true"
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
-        className="w-full max-w-md rounded-2xl border border-border bg-card p-6 text-card-foreground shadow-lg"
+        className="w-full max-w-md rounded-2xl border border-border bg-popover p-6 text-popover-foreground shadow-lg"
         onKeyDown={handleKeyDown}
       >
         {children}

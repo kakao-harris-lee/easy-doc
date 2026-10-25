@@ -1272,7 +1272,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
       <p
-        className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2 text-sm font-semibold text-warning sm:px-4 sm:py-3 sm:text-base"
+        className="notice-warning flex items-center gap-2 px-3 py-2 text-sm font-semibold sm:px-4 sm:py-3 sm:text-base"
         role="note"
       >
         <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
@@ -1374,8 +1374,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 className={cn(
                   'flex min-h-11 flex-1 items-center justify-center whitespace-normal rounded-[10px] px-2 py-2 text-center text-[15px] font-semibold transition-colors sm:px-3',
                   activePanel === panel.key
-                    ? 'bg-card text-primary shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground',
+                    ? 'bg-selection text-selection-foreground'
+                    : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                 )}
                 onClick={() => {
                   setPanelPickedByUser(true)
@@ -1447,7 +1447,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다. */}
           <div
             ref={resultPanelRef}
-            className="min-w-0 rounded-[12px] border-2 border-primary/40 bg-card p-4 sm:p-5"
+            className="min-w-0 rounded-[12px] border-2 border-primary/40 bg-selection p-4 sm:p-5"
             onFocus={() => setFocusedPanel('result')}
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('result')}
@@ -1492,7 +1492,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   </Button>
                 )}
                 {!dirty && !focusedStale && focusedCoverageLimited && (
-                  <p className="rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+                  <p className="notice-warning p-3 text-sm">
                     자동 검사가 일부만 이루어졌습니다. 문서 전체도 확인해 주세요.
                   </p>
                 )}
@@ -1504,7 +1504,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                     <p className="field-hint">자동 검사에서 추가 표시를 찾지 못했습니다.</p>
                   )}
                 {dirty && (
-                  <p className="rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
+                  <p className="notice-warning p-3 text-sm">
                     저장하면 검토할 부분을 다시 찾습니다.
                   </p>
                 )}
@@ -1521,8 +1521,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   (supportsParagraphComparison
                     ? focusedUnlocatedItems.length > 0
                     : focusedPendingItems.length > 0) && (
-                    <section className="rounded-[10px] border border-warning/30 bg-warning-surface p-3">
-                      <h3 className="font-semibold text-warning">
+                    <section className="notice-warning p-3">
+                      <h3 className="notice-warning-title font-semibold">
                         {supportsParagraphComparison
                           ? `결과에서 위치를 찾지 못한 검토 항목 ${focusedUnlocatedItems.length}개`
                           : `문서 전체에서 확인할 검토 항목 ${focusedPendingItems.length}개`}
@@ -1727,11 +1727,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         )}
 
         {contentConflict && (
-          <div className="mt-4 rounded-[10px] border border-warning/25 bg-warning-surface p-4">
-            <p className="m-0 text-sm font-semibold text-warning">
+          <div className="notice-warning mt-4 p-4">
+            <p className="notice-warning-title m-0 text-sm font-semibold">
               다른 화면에서 저장한 최신 내용과 충돌했습니다.
             </p>
-            <p className="m-0 mt-1 text-sm text-muted-foreground">
+            <p className="m-0 mt-1 text-sm text-foreground">
               현재 편집 내용을 먼저 복사한 뒤 최신 내용을 불러와 비교해 주세요. 최신 내용을 불러오면
               이 화면의 편집 내용은 바뀝니다.
             </p>
@@ -1768,7 +1768,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               'min-h-12 w-full py-2 sm:min-h-11 sm:w-auto',
               dirty && 'ring-2 ring-ring/40',
             )}
-            variant={dirty ? 'primary' : 'secondary'}
+            variant="primary"
             aria-describedby={statusId}
             onClick={(event) => {
               refocusRef.current = event.currentTarget

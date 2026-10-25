@@ -298,6 +298,106 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   ).toBeLessThanOrEqual(dimensions.clientWidth + 1)
 }
 
+function channels(color: string): [number, number, number] {
+  const values = color
+    .match(/[\d.]+/g)
+    ?.map(Number)
+    .slice(0, 3)
+  if (values?.length !== 3 || values.some((value) => value === undefined)) {
+    throw new Error(`RGB 색을 해석할 수 없습니다: ${color}`)
+  }
+  return values as [number, number, number]
+}
+
+function luminance(color: string): number {
+  const linear = channels(color).map((value) => {
+    const channel = value / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * linear[0]! + 0.7152 * linear[1]! + 0.0722 * linear[2]!
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const first = luminance(foreground)
+  const second = luminance(background)
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
+}
+
+async function expectTextContrast(locator: Locator, minimum = 4.5): Promise<void> {
+  const colors = await locator.evaluate((element) => {
+    let current: HTMLElement | SVGElement | null = element
+    let background = ''
+    while (current !== null) {
+      const candidate = getComputedStyle(current).backgroundColor
+      if (candidate !== 'transparent' && candidate !== 'rgba(0, 0, 0, 0)') {
+        background = candidate
+        break
+      }
+      current = current.parentElement
+    }
+    return { foreground: getComputedStyle(element).color, background }
+  })
+  expect(colors.background).not.toBe('')
+  expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(minimum)
+}
+
+async function expectBorderContrast(locator: Locator): Promise<void> {
+  const colors = await locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { border: style.borderTopColor, background: style.backgroundColor }
+  })
+  expect(contrastRatio(colors.border, colors.background)).toBeGreaterThanOrEqual(3)
+}
+
+async function expectFocusRing(locator: Locator, expectedRing: string): Promise<void> {
+  // Establish keyboard modality before focusing; doing it afterwards can leave the browser's
+  // default focus color in place even though the element already has DOM focus.
+  await locator.page().keyboard.press('Shift')
+  await locator.focus()
+  await expect(locator).toBeFocused()
+  await expect
+    .poll(() => locator.evaluate((element) => getComputedStyle(element).outlineColor))
+    .toBe(expectedRing)
+  const outline = await locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    let adjacent = element.parentElement
+    let adjacentBackground = ''
+    while (adjacent !== null) {
+      const candidate = getComputedStyle(adjacent).backgroundColor
+      if (candidate !== 'transparent' && candidate !== 'rgba(0, 0, 0, 0)') {
+        adjacentBackground = candidate
+        break
+      }
+      adjacent = adjacent.parentElement
+    }
+    return {
+      focusVisible: element.matches(':focus-visible'),
+      ringToken: getComputedStyle(document.documentElement).getPropertyValue('--ring').trim(),
+      style: style.outlineStyle,
+      width: style.outlineWidth,
+      color: style.outlineColor,
+      adjacentBackground,
+    }
+  })
+  expect(outline.focusVisible).toBe(true)
+  expect(outline.ringToken).not.toBe('')
+  expect(outline.style).toBe('solid')
+  expect(outline.width).toBe('3px')
+  expect(outline.color).toBe(expectedRing)
+  expect(outline.adjacentBackground).not.toBe('')
+  expect(contrastRatio(outline.color, outline.adjacentBackground)).toBeGreaterThanOrEqual(3)
+}
+
+async function tabTo(page: Page, locator: Locator): Promise<void> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    if (await locator.evaluate((element) => element === document.activeElement)) {
+      return
+    }
+    await page.keyboard.press('Tab')
+  }
+  await expect(locator).toBeFocused()
+}
+
 test.describe('테마 디자인 브라우저 검증', () => {
   test('저장된 다크 테마를 첫 페인트 전에 복원한다', async ({ page }) => {
     await mockApi(page)
@@ -642,6 +742,217 @@ test.describe('테마 디자인 브라우저 검증', () => {
       })
     }
     await authenticatedPage.close()
+  })
+
+  for (const width of [320, 375, 768, 1024, 1440]) {
+    test(`시각 개선 — 공개 화면 ${width}px 두 테마`, async ({ page }) => {
+      await mockApi(page)
+      await page.setViewportSize({ width, height: 900 })
+
+      for (const theme of ['light', 'dark'] as const) {
+        for (const path of ['/', '/guide', '/examples', '/examples/school-notice']) {
+          await page.goto(path)
+          await selectTheme(page, theme)
+          await expect.poll(() => currentTheme(page)).toBe(theme)
+          await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+          await expectNoHorizontalOverflow(page)
+
+          if (path === '/') {
+            const warning = page.getByRole('note')
+            await expectTextContrast(warning)
+            await expectTextContrast(warning.locator('svg'), 3)
+            await expectTextContrast(page.getByText(/가정통신문부터/))
+            await expectTextContrast(page.getByText('쉬운 글 변환 AI', { exact: true }))
+            await expectTextContrast(page.getByText(/카드 등록 없이 체험 5크레딧/))
+            await expectBorderContrast(page.getByRole('link', { name: '이용 가이드 보기' }))
+            const glowOpacity = await page
+              .locator('.landing-glow')
+              .first()
+              .evaluate((element) => getComputedStyle(element).opacity)
+            expect(glowOpacity).toBe(theme === 'dark' ? '0.18' : '0.4')
+          }
+          if (path === '/guide') {
+            await expectTextContrast(page.locator('.guide-page blockquote'))
+            const disclosure = page.locator('details.help-disclosure').first()
+            const summary = disclosure.locator('summary')
+            await summary.click()
+            await expect(disclosure).toHaveAttribute('open', '')
+            await expect(disclosure).toHaveCSS(
+              'background-color',
+              theme === 'dark' ? 'rgb(24, 57, 84)' : 'rgb(231, 242, 252)',
+            )
+            await expectTextContrast(summary)
+          }
+          if (path === '/examples/school-notice') {
+            await expectTextContrast(page.getByText(/AI가 만든 가상 예시입니다/))
+            await expectTextContrast(page.locator('#example-simplified .body-copy'))
+            await expectBorderContrast(
+              page
+                .getByRole('region', { name: '예시로 변환 시작하기' })
+                .getByRole('link', { name: '로그인', exact: true }),
+            )
+            const selected = page.getByRole('button', { name: '쉬운 글', exact: true })
+            if (await selected.isVisible()) {
+              await expect(selected).toHaveAttribute('aria-pressed', 'true')
+              await expectTextContrast(selected)
+            }
+          }
+        }
+      }
+    })
+
+    test(`시각 개선 — 검수 화면 ${width}px 두 테마`, async ({ page }) => {
+      await mockApi(page)
+      await seedAuthenticatedTheme(page, 'light')
+      await page.setViewportSize({ width, height: 900 })
+
+      for (const theme of ['light', 'dark'] as const) {
+        await page.goto(`/conversions/${CONVERSION_ID}`)
+        await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible()
+        await selectTheme(page, theme)
+        await expect.poll(() => currentTheme(page)).toBe(theme)
+        await expectNoHorizontalOverflow(page)
+        await expectTextContrast(page.getByRole('note'))
+        await expectTextContrast(page.getByText('변환 완료', { exact: true }))
+        const easyTextTab = page.getByRole('tab', { name: '쉬운 글', exact: true })
+        if (await easyTextTab.isVisible()) {
+          await easyTextTab.click()
+        }
+        const editor = page.getByLabel('쉬운 글 결과 (고칠 수 있습니다)')
+        await expect(editor).toBeVisible()
+        await expectTextContrast(editor)
+        await expectBorderContrast(editor)
+        await expectBorderContrast(page.getByRole('button', { name: /TXT로/ }))
+        await expectFocusRing(
+          page.getByRole('button', { name: '검수 내용 저장' }),
+          theme === 'dark' ? 'rgb(117, 191, 255)' : 'rgb(23, 100, 181)',
+        )
+      }
+    })
+  }
+
+  test('시각 개선 — 상호작용 상태와 키보드 초점이 유지된다', async ({ page }) => {
+    await mockApi(page)
+    await page.setViewportSize({ width: 1024, height: 900 })
+    await page.goto('/')
+
+    const primary = page.getByRole('link', { name: /체험하기/ })
+    await primary.hover()
+    await page.mouse.down()
+    await expect(primary).toHaveCSS('background-color', 'rgb(15, 68, 122)')
+    await page.mouse.up()
+
+    await page.goto('/examples')
+    const card = page.locator('main a[href^="/examples/"]').first()
+    const before = await card.boundingBox()
+    await card.hover()
+    const after = await card.boundingBox()
+    expect(after).toEqual(before)
+    await expect(card).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+    await tabTo(page, card)
+    await expectFocusRing(card, 'rgb(23, 100, 181)')
+    await page.keyboard.press('Enter')
+    await expect(page).toHaveURL('/examples/school-notice')
+    await expect(
+      page.getByRole('heading', { name: '학교 독서 행사 신청 안내', exact: true }),
+    ).toBeVisible()
+
+    await page.goto('/guide')
+    const summary = page.locator('details.help-disclosure summary').first()
+    await tabTo(page, summary)
+    await expectFocusRing(summary, 'rgb(23, 100, 181)')
+    await page.keyboard.press('Enter')
+    await expect(summary.locator('..')).toHaveAttribute('open', '')
+
+    await seedAuthenticatedTheme(page, 'light')
+    await page.goto('/history')
+    const current = page
+      .getByRole('navigation', { name: '주요 메뉴', exact: true })
+      .getByRole('link', { name: '변환 기록' })
+    await expect(current).toHaveAttribute('aria-current', 'page')
+    await expect(current).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+
+    const account = page.getByRole('button', { name: '계정 메뉴' })
+    await account.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('button', { name: '로그아웃' })).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(account).toBeFocused()
+
+    await page.setViewportSize({ width: 375, height: 900 })
+    await page.goto('/history')
+    const menu = page.getByRole('button', { name: '메뉴 열기' })
+    await menu.click()
+    const mobileCurrent = page
+      .getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+      .getByRole('link', { name: '변환 기록' })
+    await expect(mobileCurrent).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+    await page.keyboard.press('Escape')
+    await expect(menu).toBeFocused()
+
+    await page.goto(`/conversions/${CONVERSION_ID}`)
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible()
+    const sourceTab = page.getByRole('tab', { name: '원문', exact: true })
+    const easyTextTab = page.getByRole('tab', { name: '쉬운 글', exact: true })
+    await tabTo(page, sourceTab)
+    await page.keyboard.press('ArrowRight')
+    await expect(easyTextTab).toBeFocused()
+    await expect(easyTextTab).toHaveAttribute('aria-selected', 'true')
+    const editor = page.getByLabel('쉬운 글 결과 (고칠 수 있습니다)')
+    await editor.fill('저장 중 disabled 상태를 확인하는 수정본입니다.')
+    let releaseSave: (() => void) | undefined
+    const saveGate = new Promise<void>((resolve) => {
+      releaseSave = resolve
+    })
+    await page.route(`**/conversions/${CONVERSION_ID}`, async (route) => {
+      if (route.request().method() !== 'PUT') {
+        await route.continue()
+        return
+      }
+      await saveGate
+      await json(route, {
+        ...CONVERSION,
+        edited_text: '저장 중 disabled 상태를 확인하는 수정본입니다.',
+        reviewed_at: '2026-10-24T00:00:00Z',
+      })
+    })
+    const save = page.getByRole('button', { name: /검수 내용 저장|저장 중…/ })
+    await tabTo(page, save)
+    await page.keyboard.press('Enter')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveCSS('opacity', '0.5')
+    await expect(save).toHaveCSS('cursor', 'not-allowed')
+    await page.mouse.move(0, 0)
+    await expect(save).toHaveCSS('background-color', 'rgb(23, 100, 181)')
+    const disabledBackground = await save.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    await save.hover()
+    await expect(save).toHaveCSS('background-color', disabledBackground)
+    releaseSave?.()
+    await expect(save).toBeEnabled()
+    await expectTextContrast(page.getByText('검수 내용을 저장했습니다.', { exact: true }))
+    const download = page.getByRole('button', { name: /TXT로/, exact: true })
+    await expectBorderContrast(download)
+    await save.focus()
+    await page.keyboard.press('Tab')
+    await expect(download).toBeFocused()
+  })
+
+  test('시각 개선 — reduced motion에서 색 전환만 즉시 끝난다', async ({ page }) => {
+    await mockApi(page)
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto('/examples')
+    const card = page.locator('main a[href^="/examples/"]').first()
+    await card.hover()
+
+    const durations = await card.evaluate((element) =>
+      getComputedStyle(element)
+        .transitionDuration.split(',')
+        .map((value) => Number.parseFloat(value) * (value.includes('ms') ? 1 : 1000)),
+    )
+    expect(durations.every((duration) => duration <= 0.001)).toBe(true)
+    expect(await card.evaluate((element) => getComputedStyle(element).animationName)).toBe('none')
   })
 })
 

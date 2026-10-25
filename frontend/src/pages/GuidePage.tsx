@@ -23,18 +23,18 @@ export function GuidePage() {
       <div className="my-5 grid grid-cols-2 gap-3">
         <a
           href={HOME_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-active"
         >
           시작하기
         </a>
         <a
           href={EXAMPLES_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground transition-colors hover:bg-secondary active:bg-muted"
         >
           예시 보기
         </a>
       </div>
-      <div className="space-y-2">
+      <div className="divide-y divide-border border-y border-border bg-card">
         {topics.map((topic) => (
           <details key={topic.title} className="help-disclosure">
             <summary>

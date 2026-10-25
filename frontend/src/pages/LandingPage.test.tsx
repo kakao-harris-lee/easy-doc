@@ -43,12 +43,14 @@ describe('랜딩 화면', () => {
     )
   })
 
-  it('결과가 초안이라는 사실을 경고 블록으로 알린다', () => {
+  it('초안 경고는 주황 아이콘과 기본 본문색을 사용한다', () => {
     renderLanding()
 
     const notice = screen.getByRole('note')
-
     expect(notice).toHaveTextContent(DRAFT_NOTICE)
+    expect(notice).toHaveClass('notice-warning')
+    expect(notice).not.toHaveClass('text-warning')
+    expect(notice.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
   })
 
   it('어떤 문서를 넣고 넣지 않는지 칩으로 보여 준다', () => {
@@ -84,6 +86,28 @@ describe('랜딩 화면', () => {
     expect(
       screen.getByRole('heading', { name: '쉬운 글 만들기부터 문서로 저장하기까지' }),
     ).toBeInTheDocument()
+  })
+
+  it('핵심 예시만 파란 강조를 쓰고 설명 카드와 일러스트 번짐은 낮춘다', () => {
+    const { container } = renderLanding()
+
+    const example = screen.getByRole('region', { name: '뜻은 그대로, 문장은 쉽게' })
+    const fit = screen.getByRole('region', { name: '일상부터 학습과 업무까지' })
+    const workflow = screen.getByRole('region', {
+      name: '쉬운 글 만들기부터 문서로 저장하기까지',
+    })
+    const simplified = screen.getByText(/행사에 참여하려면 신청 기간 안에/).closest('figure')
+
+    expect(example).toHaveClass('border-primary/40')
+    expect(example).not.toHaveClass('shadow-card')
+    expect(fit).not.toHaveClass('shadow-card')
+    expect(workflow).not.toHaveClass('shadow-card')
+    expect(simplified).toHaveClass('bg-selection')
+    expect(simplified).not.toHaveClass('bg-brand-surface/70')
+    expect(container.querySelectorAll('.landing-glow')).toHaveLength(2)
+    expect(container.querySelector('.landing-glow')).toHaveClass('landing-glow', 'blur-xl')
+    expect(container.querySelector('.landing-glow')).not.toHaveClass('opacity-40')
+    expect(container.querySelector('.landing-glow')).not.toHaveClass('blur-2xl')
   })
 
   it('가입과 이용 가이드로 바로 보낸다', () => {

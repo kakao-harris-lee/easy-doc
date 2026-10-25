@@ -48,6 +48,20 @@ async function fillRequired(user: ReturnType<typeof userEvent.setup>): Promise<v
 }
 
 describe('검수 피드백 폼', () => {
+  it('선택한 의견 항목은 파란 선택 표면과 전경을 사용한다', async () => {
+    const user = userEvent.setup()
+    render(<ReviewFeedback conversionId="c1" />)
+
+    await user.click(screen.getByLabelText('조금 고쳐서 쓰겠다'))
+    await user.click(screen.getByLabelText('4점'))
+
+    for (const name of ['조금 고쳐서 쓰겠다', '4점']) {
+      const label = screen.getByLabelText(name).closest('label')
+      expect(label).toHaveClass('bg-selection', 'text-selection-foreground')
+      expect(label).not.toHaveClass('bg-accent', 'text-accent-foreground')
+    }
+  })
+
   it('라디오 묶음에 접근 가능한 이름이 있다', () => {
     render(<ReviewFeedback conversionId="c1" />)
 
