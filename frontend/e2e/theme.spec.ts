@@ -559,7 +559,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     }
   })
 
-  test('업로드 입력은 테마를 바꿔도 유지되고 문서 등록 요청을 본내지 않는다', async ({ page }) => {
+  test('업로드 입력은 테마를 바꿔도 유지되고 문서 등록 요청을 보내지 않는다', async ({ page }) => {
     await mockApi(page)
     await seedAuthenticatedTheme(page, 'light')
     const documentPosts: string[] = []
@@ -593,7 +593,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     expect(documentPosts).toEqual([])
   })
 
-  test('모바일 업로드 제출 버튼은 긴 폼을 스크롤핸도 하단에 고정되고 포커스 링이 잘리지 않는다', async ({
+  test('모바일 업로드 제출 버튼은 긴 폼을 스크롤해도 하단에 고정되고 포커스 링이 잘리지 않는다', async ({
     page,
   }, testInfo) => {
     await mockApi(page)
@@ -709,7 +709,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
       await page.setViewportSize({ width: 1440, height: 1000 })
       await page.goto('/')
       await selectTheme(page, theme)
-      await expectThemeSettled(page, theme, page.getByRole('link', { name: /묻료로 체험하기/ }))
+      await expectThemeSettled(page, theme, page.getByRole('link', { name: /무료로 체험하기/ }))
       await page.screenshot({
         path: testInfo.outputPath(`landing-${theme}-desktop.png`),
         fullPage: true,
