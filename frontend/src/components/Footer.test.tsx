@@ -17,7 +17,7 @@ describe('Footer', () => {
   it('전화번호·통신판매업 신고번호가 없으면 그 행을 그리지 않는다', () => {
     renderFooter({ ...COMPANY_INFO, phoneNumber: null, mailOrderRegistrationNumber: null })
 
-    expect(screen.queryByText(/전화 /)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^전화\s*:?/)).not.toBeInTheDocument()
     expect(screen.queryByText(/통신판매업 신고번호/)).not.toBeInTheDocument()
   })
 
@@ -50,13 +50,30 @@ describe('Footer', () => {
     expect(screen.getByRole('link', { name: '이용 가이드' })).toHaveAttribute('href', '/guide')
   })
 
-  it('고객지원 이메일이 mailto 링크로 걸린다', () => {
+  it('고객지원 이메일이 mailto 링크로 걸리고 읽히는 이름을 가진다', () => {
     renderFooter()
 
     const emailLink = screen.getByRole('link', {
-      name: `고객지원 e-mail : ${COMPANY_INFO.supportEmail}`,
+      name: `고객지원 이메일 ${COMPANY_INFO.supportEmail}`,
     })
     expect(emailLink).toHaveAttribute('href', `mailto:${COMPANY_INFO.supportEmail}`)
+    // 보이는 문구는 운영자가 정한 형식 그대로 유지한다.
+    expect(emailLink).toHaveTextContent(`고객지원 e-mail : ${COMPANY_INFO.supportEmail}`)
+  })
+
+  it('연락처 행을 이메일 · 전화 · 운영시간 순서로 그린다', () => {
+    renderFooter({ ...COMPANY_INFO, phoneNumber: '064-000-0000' })
+
+    const emailLink = screen.getByRole('link', {
+      name: `고객지원 이메일 ${COMPANY_INFO.supportEmail}`,
+    })
+    const phone = screen.getByText('전화 : 064-000-0000')
+    const businessHours = screen.getByText(COMPANY_INFO.businessHours)
+
+    expect(emailLink.compareDocumentPosition(phone) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(
+      phone.compareDocumentPosition(businessHours) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 
   it('사업자정보 확인은 새 창으로 여는 외부 링크다', () => {
