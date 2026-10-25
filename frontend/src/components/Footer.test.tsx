@@ -103,7 +103,8 @@ describe('Footer', () => {
     expect(representative.parentElement).toHaveClass('items-center')
     expect(representative).toHaveClass('inline-flex', 'items-center')
     expect(representative.className).not.toContain('min-h-11')
-    expect(businessLookup).toHaveClass('whitespace-nowrap')
+    expect(representative).toHaveClass('min-w-0', 'break-words')
+    expect(businessLookup).toHaveClass('whitespace-normal', 'break-words')
   })
 
   it('링크는 터치 44px를 유지하되 넓은 화면의 마우스에서만 줄어든다', () => {

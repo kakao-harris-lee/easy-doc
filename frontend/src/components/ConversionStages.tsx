@@ -68,7 +68,7 @@ function stageStates(status: StageStatus): StageState[] {
 /** 상태별 표식. 반복 모션은 화면 전체에서 하나만 사용한다. */
 const MARKER_CLASS: Record<StageState, string> = {
   done: 'border-success bg-success text-success-foreground',
-  current: 'border-primary bg-accent text-primary',
+  current: 'border-primary bg-selection text-selection-foreground',
   next: 'border-input bg-card text-muted-foreground',
   waiting: 'border-border bg-muted text-muted-foreground',
 }

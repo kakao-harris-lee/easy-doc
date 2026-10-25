@@ -9,12 +9,24 @@ import { DocumentExamplePage, ExamplesPage } from './ExamplesPage'
 describe('공개 문서 예시', () => {
   it('가입 없이 세 문서로 이동할 수 있고 자료의 성격을 알린다', () => {
     render(<ExamplesPage />)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
     expect(screen.getByText(EXAMPLE_NOTICE)).toBeInTheDocument()
     DOCUMENT_EXAMPLES.forEach((example) => {
       expect(screen.getByRole('link', { name: example.title })).toHaveAttribute(
         'href',
         examplePath(example),
       )
+      expect(screen.getByRole('link', { name: example.title })).toHaveClass(
+        'border',
+        'border-border',
+        'bg-card',
+        'hover:border-primary',
+        'hover:bg-selection',
+        'active:border-primary-active',
+        'active:bg-selection',
+        'transition-colors',
+      )
+      expect(screen.getByRole('link', { name: example.title })).not.toHaveClass('hover:bg-accent')
     })
   })
 
@@ -31,6 +43,15 @@ describe('공개 문서 예시', () => {
       )
       expect(screen.getByRole('heading', { level: 1, name: example.title })).toBeInTheDocument()
       expect(screen.getByText(EXAMPLE_NOTICE)).toBeVisible()
+      expect(document.getElementById('example-simplified')).toHaveClass('bg-selection')
+      expect(document.getElementById('example-original')).not.toHaveClass('bg-selection')
+      expect(screen.getByRole('button', { name: '쉬운 글', pressed: true })).toHaveClass(
+        'bg-selection',
+        'text-selection-foreground',
+      )
+      expect(screen.getByRole('region', { name: '예시로 변환 시작하기' })).not.toHaveClass(
+        'bg-brand-surface/40',
+      )
       expect(screen.getByText(example.editing.after)).not.toBeVisible()
       await user.click(screen.getByText('바뀐 표현과 편집 제안'))
       expect(screen.getByText(example.editing.after)).toBeVisible()

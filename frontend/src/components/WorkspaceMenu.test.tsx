@@ -55,6 +55,14 @@ describe('작업 공간 메뉴', () => {
       'aria-pressed',
       'true',
     )
+    expect(screen.getByRole('button', { name: '민원 안내' })).toHaveClass(
+      'aria-pressed:bg-selection',
+      'aria-pressed:text-selection-foreground',
+    )
+    expect(screen.getByRole('group', { name: '작업 공간 목록' }).parentElement).toHaveClass(
+      'bg-popover',
+      'text-popover-foreground',
+    )
   })
 
   it('다른 작업 공간을 고르면 전환한다', async () => {
@@ -104,6 +112,7 @@ describe('작업 공간 대화상자', () => {
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
 
     expect(screen.getByRole('dialog')).toHaveAccessibleName('새 작업 공간')
+    expect(screen.getByRole('dialog')).toHaveClass('bg-popover', 'text-popover-foreground')
     expect(nameInput()).toHaveFocus()
   })
 

@@ -305,6 +305,22 @@ describe('검수 에디터', () => {
     expect(panel).toHaveAttribute('readonly')
   })
 
+  it('결과 패널만 파란 선택 표면이고 첫 도구는 항상 주행동이다', async () => {
+    stubViewport(false)
+    const user = userEvent.setup()
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
+
+    await user.click(screen.getByRole('tab', { name: '쉬운 글' }))
+    const result = screen.getByRole('tabpanel', { name: '쉬운 글' })
+    expect(result).toHaveClass('border-2', 'border-primary/40', 'bg-selection')
+    expect(result).not.toHaveClass('bg-brand-surface')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass(
+      'bg-primary',
+      'text-primary-foreground',
+    )
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).not.toHaveClass('bg-secondary')
+  })
+
   /**
    * 원문을 못 가져온 경로에서 왼쪽에 빈 입력칸이 남아 있으면, 화면은 "못 가져왔다"가
    * 아니라 "아직 안 왔다" 또는 "여기에 원문을 적어야 한다"고 말하게 된다. 셋은 서로 다른
@@ -355,10 +371,13 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: '원문 다시 불러오기' })).not.toBeInTheDocument()
   })
 
-  it('AI 초안임을 알리는 배너를 보여준다', () => {
+  it('초안 경고는 경고 표면 위에 기본 본문색을 사용한다', () => {
     render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
-    expect(screen.getByRole('note')).toHaveTextContent('AI가 만든 초안입니다')
+    const notice = screen.getByRole('note')
+    expect(notice).toHaveTextContent('AI가 만든 초안입니다')
+    expect(notice).toHaveClass('notice-warning')
+    expect(notice).not.toHaveClass('text-warning')
   })
 
   it('수정하면 저장 안 됨이 되고, 저장하면 저장한 시각을 남긴다', async () => {
@@ -397,6 +416,8 @@ describe('검수 에디터', () => {
     expect(announced).toHaveLength(1)
     expect(announced[0]).toHaveTextContent(/^저장됨 · /)
     expect(success).not.toHaveAttribute('role')
+    expect(success).toHaveClass('form-success')
+    expect(success).not.toHaveClass('text-success')
   })
 
   /*
@@ -696,8 +717,20 @@ describe('검수 에디터', () => {
 
     const bar = screen.getByRole('button', { name: '내려받기' }).parentElement
     expect(bar).toHaveClass('grid', 'grid-cols-2', 'sm:flex')
-    expect(screen.getByRole('button', { name: '내려받기' })).toHaveClass('h-12', 'w-full')
-    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass('h-12', 'w-full')
+    expect(screen.getByRole('button', { name: '내려받기' })).toHaveClass(
+      'min-h-12',
+      'w-full',
+      'py-2',
+      'sm:min-h-11',
+      'sm:w-auto',
+    )
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass(
+      'min-h-12',
+      'w-full',
+      'py-2',
+      'sm:min-h-11',
+      'sm:w-auto',
+    )
   })
 
   it('내려받을 형식이 없으면 저장 버튼이 좁은 화면에서 한 칸 전체를 쓴다', () => {
@@ -803,9 +836,19 @@ describe('검수 에디터', () => {
       stubViewport(false)
       render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
 
+      expect(screen.getByRole('heading', { name: '쉬운 글 확인', level: 1 })).toHaveClass(
+        'page-title',
+      )
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveClass('min-h-11', 'whitespace-normal')
       expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['원문', '쉬운 글'])
       expect(screen.getByLabelText('원본 (읽기 전용)')).toBeVisible()
       expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).not.toBeVisible()
+      expect(screen.getByRole('tabpanel', { name: '원문' })).toHaveClass(
+        'border',
+        'border-border',
+        'bg-card',
+      )
+      expect(screen.getByRole('tabpanel', { name: '원문' })).not.toHaveClass('bg-selection')
 
       screen.getByRole('tab', { name: '원문' }).focus()
       await user.keyboard('{ArrowRight}')

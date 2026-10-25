@@ -150,7 +150,11 @@ describe('선택 트리거', () => {
 
     expect(lookupTerm).toHaveBeenCalledTimes(1)
     expect(lookupTerm).toHaveBeenCalledWith('구비서류', expect.anything())
-    expect(screen.getByRole('dialog', { name: '쉬운 말 후보' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '쉬운 말 후보' })).toHaveClass(
+      'bg-popover',
+      'text-popover-foreground',
+      'shadow-lg',
+    )
   })
 
   it('디바운스 도중 다시 선택하면 마지막 선택 하나만 조회한다', async () => {

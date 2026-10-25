@@ -124,6 +124,11 @@ describe('계정 메뉴', () => {
     await user.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: '로그아웃' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: '로그아웃' }).parentElement).toHaveClass(
+      'bg-popover',
+      'text-popover-foreground',
+      'shadow-lg',
+    )
 
     await user.keyboard('{Escape}')
 
@@ -397,6 +402,24 @@ describe('저장하지 않은 수정 가드', () => {
 })
 
 describe('머리말 구성', () => {
+  it('데스크톱과 모바일 활성 메뉴는 파란 선택 표면과 굵기를 사용한다', async () => {
+    const user = userEvent.setup()
+    renderLayout({}, '/history')
+
+    const desktop = screen.getByRole('navigation', { name: '주요 메뉴' })
+    const desktopCurrent = within(desktop).getByRole('link', { name: '변환 기록' })
+    expect(desktopCurrent).toHaveAttribute('aria-current', 'page')
+    expect(desktopCurrent).toHaveClass('bg-selection', 'font-bold', 'text-selection-foreground')
+    expect(desktopCurrent).not.toHaveClass('bg-accent')
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+    const mobile = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+    expect(within(mobile).getByRole('link', { name: '변환 기록' })).toHaveClass(
+      'bg-selection',
+      'text-selection-foreground',
+    )
+  })
+
   it('익명 상태에서는 업무 메뉴와 계정 메뉴를 그리지 않는다', () => {
     renderLayout({ status: 'anonymous', user: null })
 

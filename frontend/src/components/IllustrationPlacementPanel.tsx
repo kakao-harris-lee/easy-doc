@@ -170,16 +170,8 @@ export function IllustrationPlacementPanel({
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{ALWAYS_NOTICE}</p>
 
-      {dirty && (
-        <p className="mt-3 rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
-          {DIRTY_NOTICE}
-        </p>
-      )}
-      {stale && (
-        <p className="mt-3 rounded-[10px] border border-warning/25 bg-warning-surface p-3 text-sm text-warning">
-          {STALE_NOTICE}
-        </p>
-      )}
+      {dirty && <p className="notice-warning mt-3 p-3 text-sm">{DIRTY_NOTICE}</p>}
+      {stale && <p className="notice-warning mt-3 p-3 text-sm">{STALE_NOTICE}</p>}
 
       {loading && (
         <p className="mt-5" role="status" aria-busy="true">

@@ -41,7 +41,7 @@ export interface PageHeaderProps {
 
 /** 대표 행동이 링크일 때 쓰는 모양. `Button`의 primary와 같은 시각 언어를 맞춘다. */
 const ACTION_LINK_CLASS =
-  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover sm:w-auto'
+  'inline-flex min-h-11 w-full items-center justify-center gap-2 whitespace-normal rounded-md bg-primary px-4 py-2 text-center text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover sm:w-auto'
 
 /**
  * 업무 화면의 첫머리. 맥락 라벨 → 제목 → 한 줄 설명 → 대표 행동 순서를 강제한다
@@ -59,14 +59,11 @@ export function PageHeader({ context, title, description, titleId, action }: Pag
   return (
     <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        <p className="text-sm font-semibold leading-[22px] text-accent-foreground">{context}</p>
-        <h1
-          id={titleId}
-          className="mt-1 text-2xl font-extrabold leading-8 tracking-tight text-foreground sm:text-[28px] sm:leading-9"
-        >
+        <p className="supporting-copy font-semibold text-accent-foreground">{context}</p>
+        <h1 id={titleId} className="page-title mt-1">
           {title}
         </h1>
-        <p className="mt-2 max-w-2xl text-sm leading-[22px] text-muted-foreground">{description}</p>
+        <p className="supporting-copy mt-2 max-w-2xl text-muted-foreground">{description}</p>
       </div>
       {action !== undefined && (
         <div className="shrink-0 sm:pb-1">
@@ -79,7 +76,7 @@ export function PageHeader({ context, title, description, titleId, action }: Pag
             <Button
               type="button"
               onClick={action.onClick}
-              className="h-11 w-full px-4 text-[15px] sm:w-auto"
+              className="min-h-11 w-full whitespace-normal px-4 py-2 text-center text-[15px] sm:w-auto"
             >
               {Icon && <Icon className="size-[18px]" aria-hidden="true" />}
               {action.label}

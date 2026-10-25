@@ -23,20 +23,20 @@ function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
     <div className="mt-5 border-t border-border pt-4">
       <dl>
         <dt className="text-sm text-muted-foreground">남은 이용량</dt>
-        <dd className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+        <dd className="mt-1 min-w-0 break-words text-2xl font-bold tabular-nums text-foreground">
           {credits.enforced
             ? `${formatCredits(Math.max(0, credits.available))}크레딧`
             : '이용량 제한 없음'}
         </dd>
       </dl>
       {credits.enforced && credits.cycle_ends_at !== null && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="supporting-copy mt-2 text-sm text-muted-foreground">
           제공량 {formatCredits(credits.allowance)}크레딧 ·{' '}
           {new Date(credits.cycle_ends_at).toLocaleDateString('ko-KR')} 이용 기간 종료
         </p>
       )}
       {credits.enforced && credits.cycle_started_at === null && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="supporting-copy mt-2 text-sm text-muted-foreground">
           진행 중인 이용 기간이 없습니다. 플랜 결제가 완료되면 이용량이 제공됩니다.
         </p>
       )}
@@ -44,17 +44,17 @@ function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
         credits.cycle_started_at !== null &&
         credits.balance <= 0 &&
         credits.reserved === 0 && (
-          <p className="mt-2 text-sm font-medium text-danger">
+          <p className="supporting-copy mt-2 text-sm font-medium text-danger">
             이번 이용 기간의 제공량을 모두 사용했습니다.
           </p>
         )}
       {credits.enforced && credits.reserved > 0 && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="supporting-copy mt-2 text-sm text-muted-foreground">
           변환 중인 {formatCredits(credits.reserved)}크레딧을 제외한 수량입니다.
         </p>
       )}
       {credits.signup_grant_skipped && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="supporting-copy mt-2 text-sm text-muted-foreground">
           이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.
         </p>
       )}
@@ -112,19 +112,19 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
       ) : credits !== null && credits.cycle_started_at === null ? (
         <div className="mt-3">
           <p className="text-lg font-semibold text-foreground">사용 중인 이용 기간이 없습니다.</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="supporting-copy mt-1 text-sm text-muted-foreground">
             미결제·결제 실패·만료 상태의 과거 사용량은 현재 사용량에 포함하지 않습니다.
           </p>
         </div>
       ) : (
         <>
-          <p className="mt-3 text-3xl font-bold tabular-nums text-foreground">
+          <p className="mt-3 min-w-0 break-words text-3xl font-bold tabular-nums text-foreground">
             {formatCredits(usage.credits)}크레딧 사용
           </p>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="supporting-copy mt-2 text-sm text-muted-foreground">
             문서 {count(usage.documents)}건 · {count(usage.characters)}자
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="supporting-copy mt-1 text-xs text-muted-foreground">
             {credits?.cycle_started_at !== null && credits?.cycle_started_at !== undefined
               ? `${usageDate(credits.cycle_started_at)} 이용 시작일부터 오늘까지`
               : '현재 이용 기간 시작일부터 오늘까지'}
@@ -178,8 +178,10 @@ export function UsagePage() {
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <p>공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다.</p>
-        <div className="flex items-center gap-4">
+        <p className="supporting-copy min-w-0 flex-1 basis-64">
+          공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다.
+        </p>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
           <Link
             to={HISTORY_PATH}
             className="inline-flex min-h-11 items-center text-primary hover:underline"

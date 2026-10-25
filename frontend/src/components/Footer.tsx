@@ -6,9 +6,9 @@ import { GUIDE_PATH, PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
 import { CONTAINER } from './layoutStyles'
 
 const POLICY_LINK_CLASS =
-  'inline-flex min-h-11 min-w-11 sm:pointer-fine:min-h-6 sm:pointer-fine:min-w-0 shrink-0 items-center whitespace-nowrap text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
+  'inline-flex min-h-11 min-w-11 sm:pointer-fine:min-h-6 sm:pointer-fine:min-w-0 items-center whitespace-normal break-words text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
 
-const INFO_TEXT_CLASS = 'inline-flex items-center whitespace-nowrap'
+const INFO_TEXT_CLASS = 'inline-flex min-w-0 items-center break-words'
 
 /** 모든 화면에서 회사 정보와 정책·문의 링크를 제공한다. */
 export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {}) {
@@ -40,10 +40,10 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
             aria-label="정책"
             className="flex w-full flex-wrap items-center justify-between gap-x-2 sm:w-auto sm:justify-start sm:gap-x-4"
           >
-            <Link to={GUIDE_PATH} className={POLICY_LINK_CLASS}>
+            <Link to={GUIDE_PATH} className={cn(POLICY_LINK_CLASS, 'whitespace-nowrap')}>
               이용 가이드
             </Link>
-            <Link to={TERMS_PATH} className={POLICY_LINK_CLASS}>
+            <Link to={TERMS_PATH} className={cn(POLICY_LINK_CLASS, 'whitespace-nowrap')}>
               이용약관
             </Link>
             <Link

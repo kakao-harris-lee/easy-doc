@@ -56,10 +56,10 @@ export { CONTAINER } from './layoutStyles'
  */
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return cn(
-    'flex min-h-11 items-center gap-2 rounded-[10px] px-3 text-[15px]',
+    'flex min-h-11 items-center gap-2 rounded-[10px] px-3 text-[15px] transition-colors',
     isActive
-      ? 'bg-accent font-bold text-accent-foreground'
-      : 'font-medium text-muted-foreground hover:bg-secondary hover:text-foreground',
+      ? 'bg-selection font-bold text-selection-foreground'
+      : 'font-medium text-muted-foreground hover:bg-secondary hover:text-foreground active:bg-muted',
   )
 }
 
@@ -161,7 +161,7 @@ function AccountMenu({
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-[12px] border border-border bg-card p-3 shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-[12px] border border-border bg-popover p-3 text-popover-foreground shadow-lg"
         >
           <p className="text-xs font-semibold text-muted-foreground">로그인 계정</p>
           {/* 긴 주소는 잘라 보이되 title로 전체를 남긴다. */}

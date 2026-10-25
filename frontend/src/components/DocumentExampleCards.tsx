@@ -9,17 +9,14 @@ export function DocumentExampleCards({ heading = 'h3' }: { readonly heading?: 'h
           <a
             href={examplePath(example)}
             aria-labelledby={`example-card-${example.id}`}
-            className="flex h-full min-h-16 items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 hover:bg-accent"
+            className="flex h-full min-h-16 items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary hover:bg-selection active:border-primary-active active:bg-selection"
           >
             <div className="min-w-0">
               <p className="text-xs font-semibold text-primary">{example.category}</p>
-              <Heading
-                id={`example-card-${example.id}`}
-                className="mt-1 text-base font-bold leading-6 text-foreground"
-              >
+              <Heading id={`example-card-${example.id}`} className="section-title mt-1">
                 {example.title}
               </Heading>
-              <p className="mt-2 hidden text-sm leading-6 text-muted-foreground sm:block">
+              <p className="supporting-copy mt-2 hidden text-muted-foreground sm:block">
                 {example.summary}
               </p>
             </div>

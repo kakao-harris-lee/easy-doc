@@ -22,7 +22,7 @@ export function ExamplesPage() {
         <a href={HOME_PATH} className={`inline-flex min-h-11 items-center ${TEXT_LINK}`}>
           홈
         </a>
-        <h1 className="mt-2 text-2xl font-extrabold text-foreground sm:text-3xl">쉬운 글 예시</h1>
+        <h1 className="page-title mt-2">쉬운 글 예시</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{EXAMPLES_DESCRIPTION}</p>
       </header>
       <DocumentExampleCards heading="h2" />
@@ -34,8 +34,8 @@ export function ExamplesPage() {
 
 function ExampleStart() {
   return (
-    <section className={`${PANEL} bg-brand-surface/40`} aria-label="예시로 변환 시작하기">
-      <h2 className="text-lg font-bold text-foreground">예시로 시작하기</h2>
+    <section className={PANEL} aria-label="예시로 변환 시작하기">
+      <h2 className="section-title">예시로 시작하기</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">
         로그인 후 ‘예시 불러오기’를 선택하세요.
       </p>
@@ -45,13 +45,13 @@ function ExampleStart() {
       <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:gap-3">
         <a
           href={SIGNUP_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg bg-primary px-3 font-semibold text-primary-foreground transition-colors hover:bg-primary-hover active:bg-primary-active"
         >
           가입하기
         </a>
         <a
           href={LOGIN_PATH}
-          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg border border-input bg-card px-3 font-semibold text-foreground transition-colors hover:bg-secondary active:bg-muted"
         >
           로그인
         </a>
@@ -78,9 +78,7 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
           모든 예시
         </a>
         <p className="mt-2 text-sm font-semibold text-primary">{example.category}</p>
-        <h1 className="mt-2 text-2xl font-extrabold leading-tight text-foreground sm:text-3xl">
-          {example.title}
-        </h1>
+        <h1 className="page-title mt-2">{example.title}</h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
       </header>
       <div className="space-y-3">
@@ -101,7 +99,7 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
               aria-pressed={view === value}
               aria-controls={`example-${value}`}
               onClick={() => setView(value)}
-              className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${view === value ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}
+              className={`min-h-11 rounded-lg px-3 text-sm font-semibold ${view === value ? 'bg-selection text-selection-foreground' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
             >
               {label}
             </button>
@@ -113,20 +111,20 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
             className={`${PANEL} ${view === 'original' ? '' : 'hidden lg:block'}`}
             aria-labelledby="example-original-heading"
           >
-            <h2 id="example-original-heading" className="text-lg font-bold text-foreground">
+            <h2 id="example-original-heading" className="section-title">
               원문
             </h2>
-            <p className="mt-4 whitespace-pre-line leading-7 text-foreground">{example.original}</p>
+            <p className="body-copy mt-4 whitespace-pre-line text-foreground">{example.original}</p>
           </section>
           <section
             id="example-simplified"
-            className={`${PANEL} bg-brand-surface/40 ${view === 'simplified' ? '' : 'hidden lg:block'}`}
+            className={`${PANEL} bg-selection ${view === 'simplified' ? '' : 'hidden lg:block'}`}
             aria-labelledby="example-simplified-heading"
           >
-            <h2 id="example-simplified-heading" className="text-lg font-bold text-foreground">
+            <h2 id="example-simplified-heading" className="section-title">
               쉬운 글
             </h2>
-            <p className="mt-4 whitespace-pre-line leading-7 text-foreground">
+            <p className="body-copy mt-4 whitespace-pre-line text-foreground">
               {example.simplified}
             </p>
           </section>
