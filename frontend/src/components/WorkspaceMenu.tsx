@@ -10,7 +10,7 @@ import { ModalDialog } from './ui/Dialog'
 const FALLBACK_ERROR_MESSAGE = '작업 공간을 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.'
 const NAME_HINT = '이름은 50자 이내로 지어 주세요.'
 
-/** 대화상자가 무엇을 하려고 엷렸는지. 닫혀 있으면 null. */
+/** 대화상자가 무엇을 하려고 열렸는지. 닫혀 있으면 null. */
 type DialogMode = 'create' | 'rename'
 
 /**
@@ -78,7 +78,7 @@ export function WorkspaceMenu({
   }
 
   function close(): void {
-    // 복내는 중에는 닫지 않는다 — 결과를 보여줄 자리가 사라진다.
+    // 보내는 중에는 닫지 않는다 — 결과를 보여줄 자리가 사라진다.
     if (busy) {
       return
     }
@@ -236,7 +236,7 @@ export function WorkspaceMenu({
             id={nameId}
             type="text"
             value={name}
-            // 복내는 중에도 초점을 잃지 않도록 disabled 대신 readOnly로 잠근다.
+            // 보내는 중에도 초점을 잃지 않도록 disabled 대신 readOnly로 잠근다.
             readOnly={busy}
             aria-invalid={error !== null}
             aria-describedby={error === null ? hintId : `${hintId} ${errorId}`}
