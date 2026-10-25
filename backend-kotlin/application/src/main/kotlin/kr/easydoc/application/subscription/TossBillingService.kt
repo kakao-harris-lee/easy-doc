@@ -505,9 +505,11 @@ class TossBillingService(
         if (waitForCard(existing, owner)) return
         val order = owned(owner, existing.workspaceId) { store.claim(id, clock.instant()) } ?: return
         if (deferClaimedOrder(order)) return
+        // 알림은 결제 예외 처리와 섞이지 않도록 try 밖에서 한 번만 보낸다.
+        var suspended = emptyList<OperatorNotificationEvent.Payment>()
         try {
             if (order.status == "suspend_pending") {
-                val events =
+                suspended =
                     owned(owner, order.workspaceId) {
                         val current = store.order(order.id) ?: return@owned emptyList()
                         if (current.status != "suspend_pending") return@owned emptyList()
@@ -515,16 +517,16 @@ class TossBillingService(
                         store.saveOrder(current.copy(status = "failed"))
                         events
                     }
-                notifyAll(events)
-                return
+            } else {
+                val payment = if (order.kind == "refund") refundResult(order) else chargeResult(order)
+                finish(order, payment)
             }
-            val payment = if (order.kind == "refund") refundResult(order) else chargeResult(order)
-            finish(order, payment)
         } catch (failure: TossDeclined) {
             failed(order, failure.requiresCard)
         } catch (_: TossUncertain) {
             handleUncertain(owner, order)
         }
+        notifyAll(suspended)
     }
 
     private fun handleUncertain(
