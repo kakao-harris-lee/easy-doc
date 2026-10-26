@@ -26,6 +26,19 @@ class JdbcRetainedTransactionRepositoryTest {
     private val now = Instant.parse("2026-10-11T00:00:00Z")
 
     @Test
+    fun `November legal resources contain the published Start conditions`() {
+        listOf("terms", "privacy").forEach { kind ->
+            val text =
+                requireNotNull(javaClass.classLoader.getResource("legal/$kind-2026-11-01.md"))
+                    .readText()
+            assertThat(text).contains("$kind-2026-11-01", "2026-10-26", "2026년 11월 1일")
+            assertThat(text).doesNotContain("출시 전 공고로 확정", "확정 전에는 신규 실결제를 받지 않습니다")
+        }
+        val terms = requireNotNull(javaClass.classLoader.getResource("legal/terms-2026-11-01.md")).readText()
+        assertThat(terms).contains("월 99,000원", "50크레딧", "start-monthly-v1")
+    }
+
+    @Test
     fun `full and partial live payments are archived before account rows disappear`() {
         val db = database("retained_delete")
         val (user, workspace, session) = owner(db)
@@ -82,7 +95,9 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(consent.consentAt)
         assertThat(archivedConsent.summary.retainedUntil).isEqualTo(Instant.parse("2032-10-07T00:00:00Z"))
-        assertThat(archivedConsent.payloadJson).contains("terms_snapshot", "2026-10-07")
+        assertThat(archivedConsent.payloadJson).contains("terms_snapshot", "2026-11-01")
+        assertThat(archivedConsent.payloadJson).contains("privacy_snapshot", "2026-11-01")
+        assertThat(archivedConsent.payloadJson).contains("2026년 11월 1일", "99,000원", "50크레딧")
         assertThat(archivedConsent.summary.manualReview).isFalse()
     }
 
@@ -359,7 +374,7 @@ class JdbcRetainedTransactionRepositoryTest {
         db.execute(
             """
             INSERT INTO toss_billing_sessions(workspace_id,id,customer,plan_id,state,expires_at,payload_encrypted,encryption_scheme,key_version,environment,purpose,consent_version,consent_at)
-            VALUES ('$workspace','$session','$user','start','revoked','2030-01-01T00:00:00Z',decode('00','hex'),'aes256gcm-v1',1,'toss_live','purchase','start-monthly-v1','2026-10-07T00:00:00Z')
+            VALUES ('$workspace','$session','$user','start','revoked','2030-01-01T00:00:00Z',decode('00','hex'),'aes256gcm-v1',1,'toss_live','purchase','start-monthly-v1','2026-11-01T00:00:00Z')
             """.trimIndent(),
         )
         return Triple(user, workspace, session)
@@ -378,7 +393,7 @@ class JdbcRetainedTransactionRepositoryTest {
         environment = "toss_live",
         purpose = "purchase",
         consentVersion = "start-monthly-v1",
-        consentAt = Instant.parse("2026-10-07T00:00:00Z"),
+        consentAt = Instant.parse("2026-11-01T00:00:00Z"),
     )
 
     @Suppress("LongParameterList", "LongMethod") // Seed the complete payment and refund history used by archive tests.

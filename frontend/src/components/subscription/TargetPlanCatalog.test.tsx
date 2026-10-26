@@ -39,6 +39,12 @@ it('live catalog contains only Start with the existing price and credits', () =>
   expect(screen.queryByText(/실제 금액은 청구되지 않습니다/)).not.toBeInTheDocument()
 })
 
+it('shows the fixed paid effective date beside live consent', () => {
+  render(<TargetPlanCatalog workspaceId="w1" live checkoutEnabled tossEnabled />)
+  expect(screen.getByText('유료 서비스 적용일: 2026년 11월 1일')).toBeInTheDocument()
+  expect(screen.getByLabelText(/금액, 제공량, 매월 자동결제/)).toBeInTheDocument()
+})
+
 it('모든 플랜을 선택할 수 있지만 Start만 구독을 시작한다', async () => {
   const user = userEvent.setup()
   const checkout = vi.fn()

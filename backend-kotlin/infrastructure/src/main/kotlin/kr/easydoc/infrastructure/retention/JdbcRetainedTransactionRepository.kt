@@ -587,7 +587,7 @@ class JdbcRetainedTransactionRepository(
         // version/time and stay quarantined until evidence is reviewed.
         val current =
             snapshotEligible && session.consentVersion == CURRENT_CONSENT_VERSION &&
-                occurredAt != null && !occurredAt.isBefore(Instant.parse("2026-10-06T00:00:00+09:00"))
+                occurredAt != null && !occurredAt.isBefore(Instant.parse("2026-11-01T00:00:00+09:00"))
         upsertRecord(
             id = id,
             type = RetainedRecordType.CONSENT,
@@ -1039,7 +1039,7 @@ class JdbcRetainedTransactionRepository(
         fun consentId(sessionId: UUID): UUID = UUID.nameUUIDFromBytes("consent:$sessionId".toByteArray())
 
         const val CURRENT_CONSENT_VERSION = "start-monthly-v1"
-        const val LEGAL_SNAPSHOT_VERSION = "2026-10-06"
+        const val LEGAL_SNAPSHOT_VERSION = "2026-11-01"
 
         fun refundId(
             orderId: UUID,

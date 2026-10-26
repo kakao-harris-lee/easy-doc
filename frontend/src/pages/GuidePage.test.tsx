@@ -2,7 +2,6 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
-import { TARGET_PLANS } from '../content/plans/targetPlans'
 import { GuidePage } from './GuidePage'
 
 describe('간결한 이용 가이드', () => {
@@ -60,15 +59,24 @@ describe('간결한 이용 가이드', () => {
     const { container } = render(<GuidePage />)
     await user.click(screen.getByText('크레딧과 요금'))
     const details = container.querySelector('details[open]')
-    for (const plan of TARGET_PLANS) {
-      expect(details).toHaveTextContent(plan.name)
-      expect(details).toHaveTextContent(plan.monthlyPriceLabel)
-      expect(details).toHaveTextContent(`${plan.monthlyCredits.toLocaleString('ko-KR')}크레딧`)
-    }
+    expect(details).toHaveTextContent('Start')
+    expect(details).toHaveTextContent('월 99,000원 · 50크레딧')
+    expect(details).toHaveTextContent('2026년 11월 1일')
+    expect(details).toHaveTextContent('실제 승인일부터 한 달')
+    expect(details).toHaveTextContent('다음 결제가 중단')
+    expect(details).toHaveTextContent('이미 결제한 이용 기간은 유지')
+    expect(details).toHaveTextContent('고객 지원')
+    expect(details).toHaveTextContent(
+      'Basic·Pro는 판매하지 않으며 가격·제공량·출시 시점을 약속하지 않습니다.',
+    )
+    expect(details).not.toHaveTextContent('190,000원')
+    expect(details).not.toHaveTextContent('599,000원')
+    expect(details).not.toHaveTextContent('200크레딧')
+    expect(details).not.toHaveTextContent('1,000크레딧')
+    expect(details).not.toHaveTextContent('Basic 결제 준비 중')
+    expect(details).not.toHaveTextContent('Pro 결제 준비 중')
     expect(details).toHaveTextContent('문단 재변환도 해당 분량만큼 차감')
     expect(details).toHaveTextContent('월 정기결제')
-    expect(details).toHaveTextContent('다음 갱신을 중단')
-    expect(details).toHaveTextContent('결제 준비 중')
   })
 
   it('접힌 본문에도 개인정보 처리와 30일 보관·탈퇴 삭제 안내를 남긴다', () => {
