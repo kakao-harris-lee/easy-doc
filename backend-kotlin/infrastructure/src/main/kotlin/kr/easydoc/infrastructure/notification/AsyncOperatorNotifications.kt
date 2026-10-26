@@ -43,7 +43,7 @@ class AsyncOperatorNotifications(
     @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     override fun notify(event: OperatorNotificationEvent) {
         try {
-            executor.execute(DeliveryTask(event.eventType) { deliver(event) })
+            executor.execute(DeliveryTask(event) { deliver(event) })
         } catch (failure: Throwable) {
             // JVM 이 더 못 버티는 상태(OOM·StackOverflow)는 삼키지 않는다 — 호출자가 깨진
             // 런타임 위에서 계속 돌게 두는 쪽이 알림 하나를 잃는 것보다 나쁘다.
@@ -76,13 +76,27 @@ class AsyncOperatorNotifications(
         }
     }
 
+    // 버려진 알림은 어디에도 남지 않으므로 WARN 한 줄이 유일한 흔적이다. 결제 알림은
+    // 주문을, 나머지는 사용자를 적어 운영자가 되짚을 수 있게 한다 — 발송 실패 로그
+    // (OperatorNotificationService)와 같은 식별자만 쓰고 본문·이메일은 넣지 않는다.
     private fun drop(task: Runnable) {
-        val eventType = (task as? DeliveryTask)?.eventType ?: UNKNOWN_EVENT_TYPE
-        log.warn("운영 알림을 보내지 못하고 버린다(큐 포화 또는 종료): eventType={}", eventType)
+        when (val event = (task as? DeliveryTask)?.event) {
+            is OperatorNotificationEvent.Payment -> {
+                log.warn("$DROP_MESSAGE eventType={} orderId={}", event.eventType, event.orderId)
+            }
+
+            null -> {
+                log.warn("$DROP_MESSAGE eventType={}", UNKNOWN_EVENT_TYPE)
+            }
+
+            else -> {
+                log.warn("$DROP_MESSAGE eventType={} userId={}", event.eventType, event.userId)
+            }
+        }
     }
 
     private class DeliveryTask(
-        val eventType: String,
+        val event: OperatorNotificationEvent,
         private val body: () -> Unit,
     ) : Runnable {
         override fun run() = body()
@@ -91,5 +105,6 @@ class AsyncOperatorNotifications(
     private companion object {
         const val THREAD_NAME = "operator-notifications"
         const val UNKNOWN_EVENT_TYPE = "unknown"
+        const val DROP_MESSAGE = "운영 알림을 보내지 못하고 버린다(큐 포화 또는 종료):"
     }
 }

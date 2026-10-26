@@ -6,6 +6,8 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import kr.easydoc.application.notification.OperatorNotificationEvent
 import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.OperatorPaymentKind
+import kr.easydoc.application.subscription.PaymentEnvironments
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
@@ -43,7 +45,7 @@ class AsyncOperatorNotificationsTest {
     }
 
     @Test
-    fun `큐가 가득 차면 던지지 않고 버리며 이벤트 종류만 남긴다`() {
+    fun `큐가 가득 차면 던지지 않고 버리며 추적용 식별자만 남긴다`() {
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         val received = ConcurrentLinkedQueue<OperatorNotificationEvent>()
@@ -56,7 +58,8 @@ class AsyncOperatorNotificationsTest {
         val notifications = AsyncOperatorNotifications(delegate, 1, SHUTDOWN_TIMEOUT)
         val running = signUp("running@example.test")
         val queued = signUp("queued@example.test")
-        val dropped = signUp("dropped@example.test")
+        // 버려지는 쪽을 결제 실패로 둔다 — 추적이 가장 급한 종류라 주문 번호가 로그에 남아야 한다.
+        val dropped = refundFailed()
 
         val logs =
             captureLogs {
@@ -71,8 +74,8 @@ class AsyncOperatorNotificationsTest {
         assertThat(received).containsExactly(running, queued)
         assertThat(logs).singleElement().satisfies({
             assertThat(it.level).isEqualTo(Level.WARN)
-            assertThat(it.formattedMessage).contains("member_signed_up")
-            assertThat(it.formattedMessage).doesNotContain("dropped@example.test")
+            assertThat(it.formattedMessage).contains("refund_failed", dropped.orderId.toString())
+            assertThat(it.formattedMessage).doesNotContain("@")
             assertThat(it.throwableProxy).isNull()
         })
     }
@@ -128,6 +131,18 @@ class AsyncOperatorNotificationsTest {
 
     private fun signUp(email: String): OperatorNotificationEvent =
         OperatorNotificationEvent.MemberSignedUp(UUID.randomUUID(), Instant.EPOCH, email, "email")
+
+    private fun refundFailed(): OperatorNotificationEvent.Payment =
+        OperatorNotificationEvent.Payment(
+            UUID.randomUUID(),
+            Instant.EPOCH,
+            OperatorPaymentKind.REFUND_FAILED,
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            "start",
+            99000,
+            PaymentEnvironments.TOSS_TEST,
+        )
 
     private fun CountDownLatch.awaitOrFail() {
         check(await(AWAIT_SECONDS, TimeUnit.SECONDS)) { "대기 시간을 넘겼다" }
