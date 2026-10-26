@@ -578,6 +578,7 @@ it('관리자는 production 가용성을 보지만 구매 버튼은 없다', asy
     toss_enabled: true,
     billing_environment: 'toss_live',
     purchase_enabled: true,
+    auto_charge_enabled: true,
     plans: [{ id: 'start', name: 'Start', allowance: 50, monthly_price: 99_000 }],
     subscription: null,
     payments: [],
@@ -684,8 +685,15 @@ expect(details).toHaveTextContent('실제 승인일부터 한 달')
 expect(details).toHaveTextContent('다음 결제가 중단')
 expect(details).toHaveTextContent('이미 결제한 이용 기간은 유지')
 expect(details).toHaveTextContent('고객 지원')
-expect(details).not.toHaveTextContent('Basic')
-expect(details).not.toHaveTextContent('Pro')
+expect(details).toHaveTextContent(
+  'Basic·Pro는 판매하지 않으며 가격·제공량·출시 시점을 약속하지 않습니다.',
+)
+expect(details).not.toHaveTextContent('190,000원')
+expect(details).not.toHaveTextContent('599,000원')
+expect(details).not.toHaveTextContent('200크레딧')
+expect(details).not.toHaveTextContent('1,000크레딧')
+expect(details).not.toHaveTextContent('Basic 결제 준비 중')
+expect(details).not.toHaveTextContent('Pro 결제 준비 중')
 ```
 
 In `JdbcRetainedTransactionRepositoryTest.kt`, update archived snapshot assertions and fixture consent timestamps to November:
@@ -809,10 +817,10 @@ cd backend-kotlin && ./gradlew build
 cd ../frontend && npm run check && npm run test -- --run && npm run build
 cd .. && docker compose --env-file .env.example -f compose.yml config
 docker compose --env-file .env.example -f compose.yml -f compose.pilot.yml config --quiet
-git diff --exit-code -- contracts/easy-doc-v1.yaml frontend/src/api
+git diff --exit-code main...HEAD -- contracts/easy-doc-v1.yaml frontend/src/api
 ```
 
-Expected: backend build PASS, frontend type/lint checks and all tests PASS, frontend production build PASS, both Compose configurations PASS, and contract/API diff is empty. Repeat Task 3's exact local/Production profile assertions on this final diff. Do not start services, deploy, read real `.env`, inject live keys, or execute transactions.
+Expected: backend build PASS, frontend type/lint checks and all tests PASS, frontend production build PASS, both Compose configurations PASS, and the contract/API branch diff against local `main` is empty, including all committed branch changes. Repeat Task 3's exact local/Production profile assertions on this final diff. Do not start services, deploy, read real `.env`, inject live keys, or execute transactions.
 
 - [ ] **Step 6: Commit legal content and snapshots**
 
