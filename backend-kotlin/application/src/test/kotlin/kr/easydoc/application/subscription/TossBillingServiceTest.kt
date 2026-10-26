@@ -196,8 +196,8 @@ class TossBillingServiceTest {
         assertThat(event.kind).isEqualTo(OperatorPaymentKind.REFUND_FAILED)
         assertThat(event.orderId).isEqualTo(operation.id)
         assertThat(event.amountKrw).isEqualTo(1000)
-        assertThat(f.store.orders.getValue(operation.id).status).isEqualTo("failed")
-        assertThat(f.store.orders.getValue(original.id).status).isEqualTo("paid")
+        assertThat(f.store.orders[operation.id]?.status).isEqualTo("failed")
+        assertThat(f.store.orders[original.id]?.status).isEqualTo("paid")
     }
 
     @Test
