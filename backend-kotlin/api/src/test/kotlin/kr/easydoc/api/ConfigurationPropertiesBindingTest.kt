@@ -630,7 +630,7 @@ class ConfigurationPropertiesBindingTest {
             """
             notification:
               queue-capacity: ${'$'}{EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
-              shutdown-timeout: ${'$'}{EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:5}
+              shutdown-timeout: ${'$'}{EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
             """.trimIndent().prependIndent("  ")
         val apiPath = Path.of("src/main/resources/application.yml")
         val workerPath = Path.of("../worker/src/main/resources/application.yml")
@@ -640,7 +640,7 @@ class ConfigurationPropertiesBindingTest {
         val expected =
             mapOf(
                 "EASYDOC_NOTIFICATION_QUEUE_CAPACITY" to "100",
-                "EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT" to "5",
+                "EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT" to "10",
             )
         val assignments =
             environmentAssignments(Path.of("../../.env.example"))

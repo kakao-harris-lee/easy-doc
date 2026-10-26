@@ -25,6 +25,10 @@ data class OperatorNotificationProperties(
 
     private companion object {
         const val DEFAULT_QUEUE_CAPACITY = 100
-        const val DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 5L
+
+        // 종료 대기는 전송 한 번보다 길어야 "남은 큐를 비운다"는 약속이 지켜진다. Telegram 채널의
+        // 기본값은 connect 2s + read 5s = 7s(easydoc.telegram.connect-timeout/read-timeout)이므로
+        // 그보다 여유 있는 10s 를 기본으로 둔다. 채널 timeout 을 올리면 이 값도 함께 올린다.
+        const val DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 10L
     }
 }

@@ -57,7 +57,7 @@ easydoc:
     read-timeout: ${EASYDOC_TELEGRAM_READ_TIMEOUT:5}
   notification:
     queue-capacity: ${EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
-    shutdown-timeout: ${EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:5}
+    shutdown-timeout: ${EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   payment:
