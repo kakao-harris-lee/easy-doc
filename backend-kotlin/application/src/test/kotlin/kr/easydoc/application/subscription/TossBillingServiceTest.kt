@@ -715,7 +715,7 @@ class TossBillingServiceTest {
             operation: UUID,
         ): TossPayment {
             if (refundDeclines) throw TossDeclined()
-            throw TossUncertain()
+            error("gateway must not be called")
         }
 
         override fun issueCard(
