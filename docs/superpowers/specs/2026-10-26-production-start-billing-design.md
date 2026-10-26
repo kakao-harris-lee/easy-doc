@@ -15,7 +15,7 @@
 
 환경 경계도 현재보다 명확해야 한다. 로컬 Compose는 `api,local`과 `worker,local`을 사용하지만 공개 배포용 `compose.pilot.yml`도 같은 `local` 프로필을 사용한다. 현재 설정은 `stub`, `toss_test`, `toss_live`를 지원하고 키 접두사와 mock의 일부 조합을 검사하지만, Production은 반드시 `toss_live`와 HTTPS 공개 URL을 사용하도록 강제하는 별도 시작 검증이 필요하다.
 
-공개 문구에는 아직 유료 적용일을 별도 공지로 확정한다는 출시 전 표현이 남아 있다. 실제 Start 판매를 여는 같은 릴리스에서 약관, 동의 문구, 이용 안내의 상품 조건과 적용 시점을 일치시켜야 한다.
+공개 문구에는 아직 유료 적용일을 별도 공지로 확정한다는 출시 전 표현이 남아 있다. 유료 서비스의 법적 적용일은 **2026년 11월 1일**로 확정하며, 실제 Start 판매를 여는 같은 릴리스에서 약관, 동의 문구, 이용 안내의 상품 조건과 적용 시점을 이 날짜로 일치시켜야 한다.
 
 ## 목표/비목표
 
@@ -127,10 +127,11 @@ Production의 라이브 MID와 키 쌍은 운영자가 Toss 상점 계약 및 �
 1. Start 결제 화면의 동의 문구, 이용약관, 이용 가이드, 개인정보처리방침의 관련 고지는 같은 릴리스에서 함께 갱신한다.
 2. 모든 유료 조건은 **월 KRW 99,000원, 월 50크레딧, 실제 승인일부터 한 달 이용, 등록 카드로 매월 자동 결제**라는 동일한 내용을 사용한다.
 3. 갱신 중단 시 다음 결제가 중단되고 이미 결제한 이용 기간은 유지된다는 조건을 일치시킨다. 환불은 적용 법령, 공개 약관, 결제·이용 내역에 따라 고객 지원에서 확인한다는 기존 기준을 유지하며 임의의 환불액이나 보장을 새로 만들지 않는다.
-4. 현재 약관의 **“유료 서비스 적용일: 출시 전 공고로 확정”**, **“확정 전에는 신규 실결제를 받지 않습니다”** 등 별도 공지 후 유료 시작을 전제로 한 문구는 실제 판매를 여는 같은 릴리스에서 교체한다. 실제 릴리스 일자를 유료 서비스 적용일로 명시하고, 약관 버전과 관련 고지도 그 릴리스의 상태를 가리키게 한다.
-5. 기존 동의 기록 구조는 유지한다. 사용자가 동의하는 화면 문구와 해당 시점의 약관이 같은 Start 조건을 나타내야 하며, 동의 없는 라이브 구매를 허용하지 않는다.
-6. Basic·Pro는 판매 범위 밖임을 명확히 하고, 가격·제공량·출시 시점을 약속하는 표현을 만들지 않는다.
-7. 로컬 stub·테스트 결제의 무청구 안내와 Production 실결제 안내를 혼용하지 않는다. 실제 라이브 승인 후에는 카드 영수증과 결제 내역을 기존 방식으로 안내한다.
+4. 현재 약관의 **“유료 서비스 적용일: 출시 전 공고로 확정”**, **“확정 전에는 신규 실결제를 받지 않습니다”** 등 별도 공지 후 유료 시작을 전제로 한 문구는 실제 판매를 여는 같은 릴리스에서 교체한다. 유료 서비스 적용일은 **2026년 11월 1일**로 고정하고, 문서 버전은 `terms-2026-11-01`과 `privacy-2026-11-01`, 검토일은 2026-10-26으로 명시한다.
+5. 기존 동의 기록 구조와 `start-monthly-v1` 동의 식별자는 유지한다. 사용자가 동의하는 화면 문구와 해당 시점의 약관이 같은 Start 조건을 나타내야 하며, 동의 없는 라이브 구매를 허용하지 않는다.
+6. 라이브 동의 스냅샷 선택자는 `LEGAL_SNAPSHOT_VERSION="2026-11-01"`로 바꾸고, 백엔드 `legal/terms-2026-11-01.md`와 `legal/privacy-2026-11-01.md`에 공개 문서와 같은 적용일·유료 조건을 저장한다. 새로 아카이브되는 동의가 실제 공개 약관을 담게 하며 DB 마이그레이션은 추가하지 않는다.
+7. Basic·Pro는 판매 범위 밖임을 명확히 하고, 가격·제공량·출시 시점을 약속하는 표현을 만들지 않는다.
+8. 로컬 stub·테스트 결제의 무청구 안내와 Production 실결제 안내를 혼용하지 않는다. 실제 라이브 승인 후에는 카드 영수증과 결제 내역을 기존 방식으로 안내한다.
 
 ## 테스트
 
@@ -163,19 +164,20 @@ Compose 검증에서는 로컬 조합이 `local`, 공개 배포 조합이 `produ
 ### 코드 릴리스 게이트
 
 1. 구현, 테스트, 약관·고지, Compose 변경이 하나의 PR에서 함께 리뷰된다.
-2. PR 리뷰 승인과 운영자의 실제 출시 승인이 모두 있은 뒤에만 Production 릴리스를 수행한다.
-3. 실제 릴리스가 이루어지면 별도 후속 코드 활성화 없이 Production의 Start 판매가 즉시 열린다. PR 작성이나 병합 사실만으로 운영 반영이 완료된 것으로 보지 않는다.
+2. PR 리뷰 승인과 운영자의 실제 출시 승인이 모두 있은 뒤에만 Production 릴리스를 수행하며, **2026년 11월 1일 이전에는 유료 판매를 활성화하지 않는다.**
+3. 2026년 11월 1일 이후 실제 릴리스가 이루어지면 별도 후속 코드 활성화 없이 Production의 Start 판매가 열린다. PR 작성이나 병합 사실만으로 운영 반영이 완료된 것으로 보지 않으며, 날짜에 따라 판매를 자동 전환하는 동적 장치는 추가하지 않는다.
 4. 이번 설계와 후속 구현 PR에는 운영 배포, 운영 `.env` 변경, 라이브 키 주입, Toss 상점 설정 변경, 실제 결제·환불이 포함되지 않는다. 이 작업들은 승인된 운영자가 별도 출시 절차에서 수행한다.
 
 ### 운영자 출시 체크리스트
 
+- [ ] 현재 일자가 2026년 11월 1일 이후이며 PR 리뷰와 운영자 출시 승인이 완료됐다.
 - [ ] Production API·worker·일회성 worker 프로필이 `production`이며 공개 배포 Compose가 `local`을 포함하지 않는다.
 - [ ] Toss 개발자센터에서 실제 상점의 라이브 MID와 클라이언트·시크릿 키 쌍이 같은 상점·라이브 환경에 속함을 확인했다.
 - [ ] 라이브 키를 값 노출 없이 서버 Secret 경로로 주입했고, Production 시작 검증이 통과했다.
 - [ ] `PAYMENT_STATUS_CHANGED`와 `BILLING_DELETED` 웹훅이 실제 라이브 상점의 공개 경로에 등록되고 공급자 전달이 확인됐다.
 - [ ] 공개 기준 URL과 `/api/payments/toss/billing/callback`이 HTTPS로 외부에서 도달하며, 인증 토큰이 로그에 남지 않는다.
 - [ ] 신규 구매와 자동 갱신이 활성 상태이며 Start 99,000원·50크레딧 외 판매 경로가 없다.
-- [ ] 약관 적용일·버전·동의 문구·이용 안내가 실제 릴리스와 일치한다.
+- [ ] 약관 적용일이 2026년 11월 1일이고 버전·동의 문구·이용 안내·동의 스냅샷이 같은 유료 조건과 일치한다.
 - [ ] SMTP 발신 설정과 실제 수신을 확인했다. 테스트 메일은 결제 성공이나 실거래 알림의 증거로 사용하지 않는다.
 - [ ] 미확정 주문, 수동 확인, 알림 실패를 담당할 운영자와 대응 경로를 확인했다.
 
@@ -195,25 +197,21 @@ Compose 검증에서는 로컬 조합이 `local`, 공개 배포 조합이 `produ
 
 | 영역 | 후보 경로 | 변경 성격 |
 |---|---|---|
-| 공통 결제 설정 | `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/SubscriptionConfiguration.kt` | `local`·`test`·`production` 제공자, 키, mock 조합의 시작 검증 |
-| 공개 URL 검증 | `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/app/AppProperties.kt` | Production HTTPS 공개 기준 URL 검증 경계 |
-| Toss 설정 연결 | `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/TossConfiguration.kt` | API·worker 공통 환경 설정 연결과 Production 허용 목록 정책 제거 |
+| 공통 결제 설정 | `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/SubscriptionConfiguration.kt` | `local`·`test`·`production` 제공자, 키, mock, 공개 URL 조합의 시작 검증 |
 | 구매 자격 | `backend-kotlin/application/src/main/kotlin/kr/easydoc/application/subscription/TossBillingService.kt` | Production 구매 시작·승인에서 심사 허용 목록 제거, 기존 결제 흐름 보존 |
 | 구독 개요 | `backend-kotlin/application/src/main/kotlin/kr/easydoc/application/subscription/SubscriptionService.kt` | 사용자·관리자가 공유하는 서버 판매 가능 값 일치 |
-| API 설정 | `backend-kotlin/api/src/main/resources/application.yml` | 명시적 프로필별 결제·공개 URL 설정 |
-| worker 설정 | `backend-kotlin/worker/src/main/resources/application.yml` | API와 동일한 Production 결제 환경 설정 |
-| 백엔드 테스트 | `backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/PaymentConfigurationTest.kt` | 라이브 거부, Production 필수 설정, 비밀값 미노출 |
+| 설정 테스트 | `backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/PaymentConfigurationTest.kt`, `backend-kotlin/api/src/test/kotlin/kr/easydoc/api/ConfigurationPropertiesBindingTest.kt`, `backend-kotlin/worker/src/test/kotlin/kr/easydoc/worker/WorkerStartupTest.kt` | 라이브 거부, Production 필수 설정, 비밀값 미노출, API·worker 공통 바인딩 |
 | 구매 정책 테스트 | `backend-kotlin/application/src/test/kotlin/kr/easydoc/application/subscription/TossBillingServiceTest.kt` | 모든 사용자 Start 판매와 기존 결제·복구 회귀 |
-| 공개 배포 Compose | `compose.pilot.yml` | `api,production`, `worker,production`, 일회성 worker 포함 프로필 전환 |
+| 공개 배포 Compose | `compose.pilot.yml`, `.env.example` | `api,production`, `worker,production`, 일회성 worker 포함 프로필 전환과 무 secret 예제 |
 | 공통 구독 UI | `frontend/src/components/subscription/SubscriptionCard.tsx` | 서버 가용성 기반 준비 문구와 Production Start 판매 상태 |
-| 플랜 UI | `frontend/src/components/subscription/TargetPlanCatalog.tsx` | Production Start 단일 노출, 동의·갱신·환불 문구 일치 |
-| 약관 | `frontend/src/content/legal/terms-of-service.md` | 실제 유료 적용 상태와 Start 조건, 별도 공지 전제 문구 교체 |
-| 개인정보 고지 | `frontend/src/content/legal/privacy-policy.md` | 유료 거래 관련 적용 상태를 같은 릴리스에 맞춤 |
+| 플랜 UI | `frontend/src/components/subscription/TargetPlanCatalog.tsx` | Production Start 단일 노출, 동의·적용일·갱신·환불 문구 일치 |
+| 약관 | `frontend/src/content/legal/terms-of-service.md`, `frontend/src/content/legal/privacy-policy.md` | 2026년 11월 1일 적용 상태와 Start 조건, 별도 공지 전제 문구 교체 |
+| 동의 스냅샷 | `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/retention/JdbcRetainedTransactionRepository.kt`, `backend-kotlin/infrastructure/src/main/resources/legal/terms-2026-11-01.md`, `backend-kotlin/infrastructure/src/main/resources/legal/privacy-2026-11-01.md` | 새 동의 아카이브가 2026년 11월 1일 공개 약관을 사용하도록 선택자와 리소스 갱신 |
 | 이용 안내 | `frontend/src/content/guide/user-guide.md` | Start 단일 판매와 Basic·Pro 비약속 표현 정리 |
-| 프런트 테스트 | `frontend/src/components/subscription/SubscriptionCard.test.tsx`, `frontend/src/components/subscription/TargetPlanCatalog.test.tsx`, `frontend/src/pages/UsagePage.test.tsx`, `frontend/src/pages/admin/AdminWorkspacesTab.test.tsx` | 사용자·관리자 가용성, 준비 문구, Start 단일 판매 회귀 |
-| 운영 문서 | `docs/pilot-runbook.md` | 라이브 MID·키·웹훅·HTTPS·SMTP, 최초 실거래·환불, 장애 중단·롤백 절차 |
+| 테스트 | `frontend/src/components/subscription/SubscriptionCard.test.tsx`, `frontend/src/components/subscription/TargetPlanCatalog.test.tsx`, `frontend/src/pages/UsagePage.test.tsx`, `frontend/src/pages/admin/AdminWorkspacesTab.test.tsx`, `frontend/src/pages/TermsPage.test.tsx`, `frontend/src/pages/PrivacyPolicyPage.test.tsx`, `frontend/src/pages/GuidePage.test.tsx`, `backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/retention/JdbcRetainedTransactionRepositoryTest.kt` | 사용자·관리자 가용성, Start 단일 판매, 공개 문구와 동의 아카이브 회귀 |
+| 운영 문서 | `docs/pilot-runbook.md` | 2026년 11월 1일 이후 출시 게이트와 라이브 MID·키·웹훅·HTTPS·SMTP, 최초 실거래·환불, 장애 중단·롤백 절차 |
 
-`contracts/easy-doc-v1.yaml`과 `frontend/src/api/`는 스키마가 바뀌지 않는 현재 설계의 변경 대상이 아니다. 기존 Toss 게이트웨이, 콜백 저장소, 웹훅, 환불 저장소와 마이그레이션도 새 아키텍처 없이 유지한다.
+`contracts/easy-doc-v1.yaml`과 `frontend/src/api/`는 스키마가 바뀌지 않는 현재 설계의 변경 대상이 아니다. 기존 Toss 게이트웨이, 콜백 저장소, 웹훅, 환불 저장소와 마이그레이션도 새 아키텍처 없이 유지한다. API·worker의 기존 `application.yml`은 필요한 설정을 이미 선언하므로 변경하지 않는다.
 
 ## 완료 기준
 
@@ -225,7 +223,7 @@ Compose 검증에서는 로컬 조합이 `local`, 공개 배포 조합이 `produ
 6. Production은 `toss_live`, 유효한 라이브 키 쌍, mock 비활성, HTTPS 공개·콜백 URL 없이 시작하지 않는다. 공개 배포 Compose의 API·worker·일회성 worker가 `production`을 사용한다.
 7. 카드 등록부터 환불·수동 확인까지 기존 결제 흐름과 트랜잭션·멱등성·보안 불변조건이 유지된다.
 8. 설정 오류와 로그에 키·Secret·콜백 인증 값이 노출되지 않고, 설계·구현·테스트 과정에서 `.env`를 읽거나 복사하지 않는다.
-9. 약관, 동의, 이용 안내가 Start 가격·제공량·자동 갱신·갱신 중단·환불 조건과 실제 적용일에 일치하며 별도 공지 후 유료 시작이라는 이전 표현이 제거된다.
+9. 약관, 동의, 이용 안내가 Start 가격·제공량·자동 갱신·갱신 중단·환불 조건과 **2026년 11월 1일** 적용일에 일치하고, 새 동의 스냅샷도 같은 문서를 사용하며 별도 공지 후 유료 시작이라는 이전 표현이 제거된다.
 10. 백엔드, 프런트엔드, 로컬·공개 배포 Compose 검증과 지정된 결제 회귀 테스트가 최종 diff에서 통과한다.
 11. HTTP 스키마 변경 없이 구현되어 계약과 API 클라이언트 경계가 유지된다.
 12. PR 리뷰와 운영자 승인 전에는 Production 변경이 없고, 실제 최초 결제·환불은 승인된 운영자만 수행한다. 실제 Production 전개와 실거래는 이번 PR의 완료 실적으로 주장하지 않는다.
