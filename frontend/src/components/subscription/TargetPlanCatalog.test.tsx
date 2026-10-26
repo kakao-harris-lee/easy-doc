@@ -30,6 +30,15 @@ it('실제 월 플랜 가격과 제공량을 표시한다', () => {
   expect(screen.getByText(/재변환도 대상 원문 분량만큼 이용량에 포함/)).toBeInTheDocument()
 })
 
+it('live catalog contains only Start with the existing price and credits', () => {
+  render(<TargetPlanCatalog workspaceId="w1" live checkoutEnabled tossEnabled />)
+  expect(screen.getByRole('radio', { name: 'Start' })).toBeInTheDocument()
+  expect(screen.queryByRole('radio', { name: 'Basic' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('radio', { name: 'Pro' })).not.toBeInTheDocument()
+  expect(screen.getByText(/Start는 월 99,000원에 50크레딧/)).toBeInTheDocument()
+  expect(screen.queryByText(/실제 금액은 청구되지 않습니다/)).not.toBeInTheDocument()
+})
+
 it('모든 플랜을 선택할 수 있지만 Start만 구독을 시작한다', async () => {
   const user = userEvent.setup()
   const checkout = vi.fn()

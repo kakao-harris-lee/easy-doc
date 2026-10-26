@@ -134,6 +134,23 @@ async function open() {
   return user
 }
 describe('월별 관리자 작업공간', () => {
+  it('관리자는 production 가용성을 보지만 구매 버튼은 없다', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({
+      mock_enabled: false,
+      toss_enabled: true,
+      billing_environment: 'toss_live',
+      purchase_enabled: true,
+      auto_charge_enabled: true,
+      plans: [{ id: 'start', name: 'Start', allowance: 50, monthly_price: 99_000 }],
+      subscription: null,
+      payments: [],
+    })
+    await open()
+    expect(await screen.findByText('선택한 플랜 없음')).toBeInTheDocument()
+    expect(screen.queryByText('구독 서비스 준비 중')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+  })
+
   it('결산 장애 중에도 결제 운영과 현재 구독을 확인할 수 있다', async () => {
     vi.mocked(admin.readAdminMonthlySummary).mockRejectedValue(new Error('report unavailable'))
     const user = userEvent.setup()

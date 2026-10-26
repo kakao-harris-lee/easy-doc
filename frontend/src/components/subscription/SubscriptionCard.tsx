@@ -133,7 +133,7 @@ export function SubscriptionCard({
 
   const live = view?.billing_environment === 'toss_live'
   const billingAvailable = Boolean(
-    view?.mock_enabled || (view?.toss_enabled && (live || view.purchase_enabled === true)),
+    view?.mock_enabled || (view?.toss_enabled && view?.purchase_enabled === true),
   )
   const current = view?.subscription
   const active = current?.status === 'active' || current?.status === 'canceling'
@@ -264,7 +264,7 @@ export function SubscriptionCard({
               </Button>
             )}
             {!admin &&
-              billingAvailable &&
+              (billingAvailable || live) &&
               view.toss_enabled &&
               current &&
               current.status !== 'expired' && (
