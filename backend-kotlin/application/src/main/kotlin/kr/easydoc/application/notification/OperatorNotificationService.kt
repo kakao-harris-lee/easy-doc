@@ -103,6 +103,7 @@ class OperatorNotificationService(
             OperatorPaymentKind.PAYMENT_FAILED -> "결제 실패"
             OperatorPaymentKind.RENEWAL_FAILED -> "정기 결제 실패"
             OperatorPaymentKind.REFUND_APPROVED -> "환불 승인"
+            OperatorPaymentKind.REFUND_FAILED -> "환불 실패"
             OperatorPaymentKind.SUBSCRIPTION_CANCELING -> "구독 해지 예정"
             OperatorPaymentKind.SUBSCRIPTION_EXPIRED -> "구독 만료"
             OperatorPaymentKind.SUBSCRIPTION_PAST_DUE -> "구독 연체"
