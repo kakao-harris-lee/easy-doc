@@ -39,6 +39,40 @@ class JdbcRetainedTransactionRepositoryTest {
     }
 
     @Test
+    fun `consent at the November cutoff archives the current snapshots`() {
+        val db = database("retained_consent_at_cutoff")
+        val (user, workspace, session) = owner(db)
+        val repository = repository(db, 1)
+        val fixture = paymentIds(db, workspace, "start", 1000, 0)
+        val cutoff = Instant.parse("2026-10-31T15:00:00Z")
+        val consent = sessionModel(workspace, session, user).copy(consentAt = cutoff)
+
+        repository.archivePayment(fixture.order, fixture.payment, 0, null, consent)
+
+        val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
+        assertThat(archivedConsent.summary.occurredAt).isEqualTo(cutoff)
+        assertThat(archivedConsent.summary.manualReview).isFalse()
+        assertThat(archivedConsent.payloadJson).contains("terms-2026-11-01", "privacy-2026-11-01")
+    }
+
+    @Test
+    fun `consent one instant before the November cutoff is quarantined without snapshots`() {
+        val db = database("retained_consent_before_cutoff")
+        val (user, workspace, session) = owner(db)
+        val repository = repository(db, 1)
+        val fixture = paymentIds(db, workspace, "start", 1000, 0)
+        val beforeCutoff = Instant.parse("2026-10-31T14:59:59Z")
+        val consent = sessionModel(workspace, session, user).copy(consentAt = beforeCutoff)
+
+        repository.archivePayment(fixture.order, fixture.payment, 0, null, consent)
+
+        val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
+        assertThat(archivedConsent.summary.occurredAt).isEqualTo(beforeCutoff)
+        assertThat(archivedConsent.summary.manualReview).isTrue()
+        assertThat(archivedConsent.payloadJson).contains("\"terms_snapshot\":null", "\"privacy_snapshot\":null")
+    }
+
+    @Test
     fun `full and partial live payments are archived before account rows disappear`() {
         val db = database("retained_delete")
         val (user, workspace, session) = owner(db)
