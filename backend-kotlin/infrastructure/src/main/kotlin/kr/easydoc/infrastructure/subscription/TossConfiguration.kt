@@ -5,6 +5,7 @@ import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.SubscriptionStore
 import kr.easydoc.application.subscription.TossBillingService
 import kr.easydoc.application.subscription.TossBillingStore
@@ -96,7 +97,7 @@ class TossConfiguration {
             credits,
             transaction,
             gateway,
-            properties.provider in setOf("toss_test", "toss_live"),
+            properties.provider in setOf(PaymentEnvironments.TOSS_TEST, PaymentEnvironments.TOSS_LIVE),
             Clock.systemUTC(),
             usage.zoneId(),
             properties.tossClientKey,
