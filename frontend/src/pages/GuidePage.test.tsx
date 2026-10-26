@@ -85,7 +85,9 @@ describe('간결한 이용 가이드', () => {
     expect(container).toHaveTextContent('이름·주소 등은 탐지하지 못할 수 있습니다')
     expect(container).toHaveTextContent('30일 후 자동 삭제')
     expect(container).toHaveTextContent('일반적으로 계정과 문서가 즉시 삭제되며 복구할 수 없습니다')
-    expect(container).toHaveTextContent('실결제 이력이 있어 법령·운영상 보존이 필요한 거래 증빙은 별도 보관')
+    expect(container).toHaveTextContent(
+      '실결제 이력이 있어 법령·운영상 보존이 필요한 거래 증빙은 별도 보관',
+    )
     expect(container).toHaveTextContent(
       '필수 증빙이 불완전하거나 수동 검토가 필요하면 해결될 때까지 계정 삭제 완료가 제한될 수 있습니다',
     )
