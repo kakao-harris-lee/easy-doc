@@ -323,8 +323,13 @@ function contrastRatio(foreground: string, background: string): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
 }
 
-async function expectTextContrast(locator: Locator, minimum = 4.5): Promise<void> {
-  const colors = await locator.evaluate((element) => {
+interface MeasuredColors {
+  foreground: string
+  background: string
+}
+
+function readTextColors(locator: Locator): Promise<MeasuredColors> {
+  return locator.evaluate((element) => {
     let current: HTMLElement | SVGElement | null = element
     let background = ''
     while (current !== null) {
@@ -337,16 +342,64 @@ async function expectTextContrast(locator: Locator, minimum = 4.5): Promise<void
     }
     return { foreground: getComputedStyle(element).color, background }
   })
-  expect(colors.background).not.toBe('')
-  expect(contrastRatio(colors.foreground, colors.background)).toBeGreaterThanOrEqual(minimum)
+}
+
+function readBorderColors(locator: Locator): Promise<MeasuredColors> {
+  return locator.evaluate((element) => {
+    const style = getComputedStyle(element)
+    return { foreground: style.borderTopColor, background: style.backgroundColor }
+  })
+}
+
+/**
+ * 테마를 바꾸면 색에 전환이 걸린 요소(`Button.tsx`, `LandingPage.tsx`, `ReviewEditor.tsx`,
+ * `index.css`의 `.help-disclosure`)의 computed color가 두 테마 사이의 중간값을 지나간다.
+ * `data-theme`만 확인하고 바로 읽으면 그 중간값을 재게 되어, 실제로는 대비가 충분한 색이
+ * 1.5 같은 값으로 측정된다. 요소와 그 조상에 걸린 색 전환이 끝난 뒤에 읽는다. 무한 반복
+ * 애니메이션(로딩 스피너)에 걸려 멈추지 않도록 끝이 정해진 `CSSTransition`만 기다리고,
+ * 요소가 사라져 전환이 취소된 경우는 무시한다.
+ */
+async function settleColorTransitions(locator: Locator): Promise<void> {
+  await locator.evaluate(async (element) => {
+    const transitions: Promise<unknown>[] = []
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      for (const animation of node.getAnimations()) {
+        if (animation instanceof CSSTransition) {
+          transitions.push(animation.finished.catch(() => undefined))
+        }
+      }
+    }
+    await Promise.all(transitions)
+  })
+}
+
+/**
+ * 전환이 끝난 뒤에 읽어도 측정 시점이 한 번뿐이면 느린 CI에서 다시 어긋날 수 있어,
+ * 기준을 넘길 때까지 다시 읽는다. 색 자체가 기준에 못 미치면 폴링이 만료되면서 실패한다.
+ */
+async function expectContrast(
+  locator: Locator,
+  minimum: number,
+  read: (target: Locator) => Promise<MeasuredColors>,
+): Promise<void> {
+  await expect
+    .poll(async () => {
+      await settleColorTransitions(locator)
+      const colors = await read(locator)
+      if (colors.background === '') {
+        throw new Error('배경색을 가진 조상을 찾지 못했습니다.')
+      }
+      return contrastRatio(colors.foreground, colors.background)
+    })
+    .toBeGreaterThanOrEqual(minimum)
+}
+
+async function expectTextContrast(locator: Locator, minimum = 4.5): Promise<void> {
+  await expectContrast(locator, minimum, readTextColors)
 }
 
 async function expectBorderContrast(locator: Locator): Promise<void> {
-  const colors = await locator.evaluate((element) => {
-    const style = getComputedStyle(element)
-    return { border: style.borderTopColor, background: style.backgroundColor }
-  })
-  expect(contrastRatio(colors.border, colors.background)).toBeGreaterThanOrEqual(3)
+  await expectContrast(locator, 3, readBorderColors)
 }
 
 async function expectFocusRing(locator: Locator, expectedRing: string): Promise<void> {
@@ -358,6 +411,8 @@ async function expectFocusRing(locator: Locator, expectedRing: string): Promise<
   await expect
     .poll(() => locator.evaluate((element) => getComputedStyle(element).outlineColor))
     .toBe(expectedRing)
+  // 초점 링과 대비를 재는 조상 배경도 테마 전환 중에는 중간값이다.
+  await settleColorTransitions(locator)
   const outline = await locator.evaluate((element) => {
     const style = getComputedStyle(element)
     let adjacent = element.parentElement
