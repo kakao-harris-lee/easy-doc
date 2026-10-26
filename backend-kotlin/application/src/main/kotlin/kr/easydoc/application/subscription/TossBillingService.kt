@@ -37,6 +37,9 @@ class TossBillingService(
     val autoChargeEnabled: Boolean = enabled,
     val allowedWorkspaces: Set<UUID> = emptySet(),
 ) {
+    fun purchaseAllowed(workspace: UUID): Boolean =
+        purchaseEnabled || (environment != "toss_live" && workspace in allowedWorkspaces)
+
     fun owns(workspace: UUID): Boolean =
         subscriptions.find(workspace)?.let { it.provider in listOf("toss_test", "toss_live") }
             ?: (enabled && store.session(workspace) != null)
@@ -66,7 +69,7 @@ class TossBillingService(
                 purpose,
                 consentVersion,
                 environment,
-                purchaseEnabled || workspace in allowedWorkspaces,
+                purchaseAllowed(workspace),
             )
             val ownerUser = users.findById(owner)
             requirePaymentEligible(ownerUser, PaymentAction.CARD_REGISTRATION)
@@ -516,7 +519,7 @@ class TossBillingService(
         enabled &&
             when (order.kind) {
                 "renewal" -> autoChargeEnabled
-                "charge" -> purchaseEnabled || order.workspaceId in allowedWorkspaces
+                "charge" -> purchaseAllowed(order.workspaceId)
                 else -> false
             }
 

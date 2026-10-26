@@ -58,6 +58,68 @@ class TossBillingServiceTest {
     }
 
     @Test
+    fun `production purchase opens Start overview registration and initial approval for ordinary workspace`() {
+        val f = Fixture(environment = "toss_live", purchase = true, reviewWorkspace = false)
+        f.store.orders.clear()
+        f.store.currentSession = null
+
+        val overview = f.overview()
+        assertThat(overview.purchaseEnabled).isTrue()
+        assertThat(overview.autoChargeEnabled).isTrue()
+        assertThat(overview.plans.map { it.id }).containsExactly("start")
+        assertThat(overview.plans.single().monthlyPrice).isEqualTo(99_000)
+        assertThat(overview.plans.single().allowance).isEqualTo(50)
+
+        val session =
+            f.service.begin(
+                f.owner,
+                f.workspace,
+                "start",
+                consentVersion = "start-monthly-v1",
+            )
+        assertThat(session.workspaceId).isEqualTo(f.workspace)
+        assertThat(session.environment).isEqualTo("toss_live")
+
+        val approval = Fixture(environment = "toss_live", purchase = true, reviewWorkspace = false)
+        approval.service.process(approval.order.id)
+        assertThat(approval.gateway.charges).isEqualTo(1)
+    }
+
+    @Test
+    fun `production ignores review allowlist in both directions`() {
+        val closed = Fixture(environment = "toss_live", purchase = false, reviewWorkspace = true)
+        closed.store.orders.clear()
+        closed.store.currentSession = null
+        assertThat(closed.overview().purchaseEnabled).isFalse()
+        assertThatThrownBy {
+            closed.service.begin(
+                closed.owner,
+                closed.workspace,
+                "start",
+                consentVersion = "start-monthly-v1",
+            )
+        }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+
+        val closedApproval = Fixture(environment = "toss_live", purchase = false, reviewWorkspace = true)
+        closedApproval.service.process(closedApproval.order.id)
+        assertThat(closedApproval.gateway.charges).isZero()
+
+        val otherWorkspace = Fixture(environment = "toss_live", purchase = true, reviewWorkspace = false)
+        assertThat(otherWorkspace.overview().purchaseEnabled).isTrue()
+    }
+
+    @Test
+    fun `production keeps existing Start only plan validation`() {
+        val f = Fixture(environment = "toss_live")
+        f.store.orders.clear()
+        f.store.currentSession = null
+        assertThatThrownBy {
+            f.service.begin(f.owner, f.workspace, "basic", consentVersion = "start-monthly-v1")
+        }.isInstanceOf(kr.easydoc.core.exceptions.InvalidInputException::class.java)
+            .hasMessage("알 수 없는 구독 플랜입니다")
+    }
+
+    @Test
     fun `recovery cutoff uses the injected clock and retry window`() {
         val now = Instant.parse("2026-09-28T00:00:00Z")
         val retryWindow = Duration.ofHours(2)
@@ -324,12 +386,22 @@ class TossBillingServiceTest {
         autoCharge: Boolean = true,
         purchase: Boolean = true,
         reviewWorkspace: Boolean = false,
-        zone: java.time.ZoneId = ZoneOffset.UTC,
+        environment: String = "toss_test",
+        val zone: java.time.ZoneId = ZoneOffset.UTC,
     ) {
         val now: Instant = Instant.parse("2026-03-05T00:00:00Z")
         val owner: UUID = UUID.randomUUID()
         val workspace: UUID = UUID.randomUUID()
-        val order = BillingOrder(UUID.randomUUID(), workspace, "start", 99000, now, now.plus(Duration.ofDays(30)))
+        val order =
+            BillingOrder(
+                UUID.randomUUID(),
+                workspace,
+                "start",
+                99000,
+                now,
+                now.plus(Duration.ofDays(30)),
+                environment = environment,
+            )
         val store =
             RecordingStore().also {
                 it.orders[order.id] = order
@@ -342,6 +414,7 @@ class TossBillingServiceTest {
                         now.plusSeconds(3600),
                         billingKey = Secret("card"),
                         state = "active",
+                        environment = environment,
                     )
             }
         val gateway = RecordingGateway()
@@ -360,6 +433,18 @@ class TossBillingServiceTest {
             object : CreditAccountRepository by NoopCreditAccountRepository {
                 override fun ownerOf(workspaceId: UUID): UUID = owner
             }
+        private val userRepository =
+            object : UserRepository by UnusedUserRepository {
+                override fun findById(id: UUID): User =
+                    User(
+                        id,
+                        "billing@example.test",
+                        now,
+                        emailVerifiedAt = now,
+                        phoneVerifiedAt = now,
+                        hasPassword = true,
+                    )
+            }
         val service =
             TossBillingService(
                 store,
@@ -371,22 +456,31 @@ class TossBillingServiceTest {
                 true,
                 Clock.fixed(now, ZoneOffset.UTC),
                 zone,
-                users =
-                    object : UserRepository by UnusedUserRepository {
-                        override fun findById(id: UUID): User =
-                            User(
-                                id,
-                                "billing@example.test",
-                                now,
-                                emailVerifiedAt = now,
-                                phoneVerifiedAt = now,
-                                hasPassword = true,
-                            )
-                    },
+                users = userRepository,
+                environment = environment,
                 purchaseEnabled = purchase,
                 autoChargeEnabled = autoCharge,
                 allowedWorkspaces = if (reviewWorkspace) setOf(workspace) else emptySet(),
             )
+
+        fun overview(): SubscriptionOverview =
+            SubscriptionService(
+                subscriptions,
+                CreditAccountService(accounts, enforced = false),
+                DirectTransaction,
+                object : PaymentGateway {
+                    override fun charge(
+                        orderId: UUID,
+                        amount: Int,
+                        fail: Boolean,
+                    ): Boolean = error("stub gateway must not be called")
+                },
+                false,
+                Clock.fixed(now, ZoneOffset.UTC),
+                zone,
+                userRepository,
+                service,
+            ).read(owner, workspace)
 
         fun payment(approved: Instant) =
             TossPayment(

@@ -280,7 +280,7 @@ class SubscriptionService(
             toss?.pending(workspaceId) == true,
             toss?.state(workspaceId),
             store.find(workspaceId)?.provider ?: toss?.environment,
-            toss?.let { it.purchaseEnabled || workspaceId in it.allowedWorkspaces } == true,
+            toss?.purchaseAllowed(workspaceId) == true,
             toss?.autoChargeEnabled == true,
             store.payments(workspaceId).mapNotNull { it.approvedAt }.maxOrNull(),
             store.find(workspaceId)?.takeIf { it.status == "active" }?.cycleEndsAt,
