@@ -70,8 +70,15 @@ class JdbcAccountDeletionRepositoryTest {
         val socialUser = insertUser(isAdmin = false, passwordHash = null)
         val admin = insertUser(isAdmin = true, passwordHash = null)
 
+        val expectedEmail =
+            jdbcClient
+                .sql("SELECT email FROM users WHERE id = :id")
+                .param("id", passwordUser)
+                .query(String::class.java)
+                .single()
         assertThat(repository.lockForDeletion(passwordUser)?.isAdmin).isFalse()
         assertThat(repository.lockForDeletion(passwordUser)?.passwordHash).isEqualTo(HASH)
+        assertThat(repository.lockForDeletion(passwordUser)?.email).isEqualTo(expectedEmail)
         assertThat(repository.lockForDeletion(socialUser)?.hasPassword).isFalse()
         assertThat(repository.lockForDeletion(admin)?.isAdmin).isTrue()
     }

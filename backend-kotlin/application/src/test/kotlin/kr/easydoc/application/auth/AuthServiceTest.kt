@@ -3,6 +3,10 @@ package kr.easydoc.application.auth
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotificationService
+import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.RecordingOperatorNotifications
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.ConfigurationException
@@ -87,6 +91,48 @@ class AuthServiceTest {
         assertThat(world.emailVerification.depthAtIssue)
             .withFailMessage("발급이 트랜잭션 안에서 불렸다 — 커밋 뒤여야 한다")
             .isZero()
+    }
+
+    @Test
+    fun `이메일 가입은 생성 스냅샷을 커밋 뒤 한 번 알린다`() {
+        val world = World()
+        var depth = -1
+        world.notifications.onNotify = { depth = world.transaction.depth }
+
+        val created = world.service.signup(" New@Example.Test ", VALID_PASSWORD)
+
+        assertThat(depth).isZero()
+        assertThat(world.notifications.events).containsExactly(
+            OperatorNotificationEvent.MemberSignedUp(created.id, created.createdAt, created.email, "email"),
+        )
+    }
+
+    @Test
+    fun `가입 생성 실패와 로그인은 알리지 않는다`() {
+        val world = World()
+        world.users.failNextCreate = true
+        assertThatThrownBy { world.service.signup(uniqueEmail(), VALID_PASSWORD) }
+        assertThat(world.notifications.events).isEmpty()
+
+        val email = uniqueEmail()
+        world.service.signup(email, VALID_PASSWORD)
+        world.notifications.events.clear()
+        world.service.login(email, VALID_PASSWORD)
+        assertThat(world.notifications.events).isEmpty()
+    }
+
+    @Test
+    fun `Telegram 준비 발송 실패 후에도 가입 결과가 유지된다`() {
+        val world = World()
+        val bestEffort =
+            OperatorNotificationService(true, world.users) {
+                throw IllegalStateException("sensitive provider failure")
+            }
+        val service = world.serviceWith(bestEffort)
+
+        val created = service.signup(uniqueEmail(), VALID_PASSWORD)
+
+        assertThat(world.users.findById(created.id)).isEqualTo(created)
     }
 
     @Test
@@ -263,16 +309,11 @@ private class World(
     val emailVerification = RecordingEmailVerification(transaction)
     val creditRepository = RecordingCreditAccountRepository(transaction)
     val credits = CreditAccountService(creditRepository, enforced = false, signupGrant = signupGrant)
-    val service =
-        AuthService(
-            users,
-            workspaces,
-            hasher,
-            tokens,
-            transaction,
-            emailVerification,
-            credits,
-        )
+    val notifications = RecordingOperatorNotifications()
+    val service = serviceWith(notifications)
+
+    fun serviceWith(notifications: OperatorNotifications): AuthService =
+        AuthService(users, workspaces, hasher, tokens, transaction, emailVerification, credits, notifications)
 }
 
 /** [RecordingCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
@@ -400,6 +441,7 @@ private class RecordingHasher(
 private class RecordingUserRepository(private val rehashFails: Boolean) : UserRepository {
     val saved: MutableMap<String, StoredUser> = mutableMapOf()
     val rehashed: MutableList<UUID> = mutableListOf()
+    var failNextCreate = false
 
     override fun findByEmail(email: String): StoredUser? = saved[email]
 
@@ -413,6 +455,10 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
         email: String,
         passwordHash: PasswordHash,
     ): User {
+        if (failNextCreate) {
+            failNextCreate = false
+            error("simulated create rollback")
+        }
         val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, hasPassword = true), passwordHash)
         saved[email] = stored
         return stored.user

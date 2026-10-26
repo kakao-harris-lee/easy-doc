@@ -10,6 +10,7 @@ dependencies {
     testImplementation(platform(libs.spring.boot.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.logback.classic)
     testImplementation(testFixtures(project(":core")))
     testRuntimeOnly(libs.junit.platform.launcher)
 }

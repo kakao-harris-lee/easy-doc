@@ -27,6 +27,7 @@ import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
@@ -287,6 +288,7 @@ class AuthConfiguration {
         transactionRunner: TransactionRunner,
         emailVerification: EmailVerificationService,
         credits: CreditAccountService,
+        operatorNotifications: OperatorNotifications,
     ): AuthService =
         AuthService(
             users = users,
@@ -296,6 +298,7 @@ class AuthConfiguration {
             transaction = transactionRunner,
             emailVerification = emailVerification,
             credits = credits,
+            operatorNotifications = operatorNotifications,
         )
 
     @Bean
@@ -521,6 +524,7 @@ class AuthConfiguration {
         oauthProperties: OAuthProperties,
         emailVerification: EmailVerificationService,
         credits: CreditAccountService,
+        operatorNotifications: OperatorNotifications,
     ): SocialLoginService =
         SocialLoginService(
             providers = providers,
@@ -531,6 +535,7 @@ class AuthConfiguration {
             stateTtl = Duration.ofMinutes(oauthProperties.stateTtlMinutes),
             emailVerification = emailVerification,
             credits = credits,
+            operatorNotifications = operatorNotifications,
         )
 
     /** `POST /auth/me/deletion` — 회원 탈퇴(계획 `docs/plans/2026-09-09-account-deletion.md`). */
@@ -543,6 +548,7 @@ class AuthConfiguration {
         JdbcAccountDeletionRepository(jdbcClient, documentJobLocks, retainedTransactionArchiver)
 
     /** 세금계산서 처리 대기 알림도 같은 운영자 주소를 쓴다(`InvoiceRequestConfiguration`과 같은 설정). */
+    @Suppress("LongParameterList") // Bean factory parameters are the use case's required collaborators.
     @Bean
     fun deleteAccountService(
         accounts: AccountDeletionRepository,
@@ -550,6 +556,7 @@ class AuthConfiguration {
         transactionRunner: TransactionRunner,
         mailSender: MailSender,
         billingProperties: BillingProperties,
+        operatorNotifications: OperatorNotifications,
     ): DeleteAccountService =
         DeleteAccountService(
             accounts = accounts,
@@ -557,6 +564,8 @@ class AuthConfiguration {
             transaction = transactionRunner,
             mail = mailSender,
             operatorEmail = billingProperties.operatorEmail,
+            operatorNotifications = operatorNotifications,
+            clock = Clock.systemUTC(),
         )
 
     private companion object {

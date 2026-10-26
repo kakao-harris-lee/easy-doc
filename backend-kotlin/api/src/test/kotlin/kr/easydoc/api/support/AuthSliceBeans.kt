@@ -84,6 +84,7 @@ import kr.easydoc.application.invoice.InvoiceRequestRepository
 import kr.easydoc.application.invoice.InvoiceRequestRow
 import kr.easydoc.application.invoice.InvoiceRequestService
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.usage.UsageReadRepository
 import kr.easydoc.application.usage.UsageReportRepository
@@ -270,6 +271,9 @@ class AuthSliceBeans {
             override fun <T> inTransaction(block: () -> T): T = block()
         }
 
+    @Bean
+    fun operatorNotifications(): OperatorNotifications = OperatorNotifications { }
+
     /** 조립 지점의 매개변수 수는 협력자의 수다 — 제품 조립(`AuthConfiguration`)과 같은 근거로 억제한다. */
     @Suppress("LongParameterList")
     @Bean
@@ -281,7 +285,9 @@ class AuthSliceBeans {
         transaction: TransactionRunner,
         emailVerification: EmailVerificationService,
         credits: CreditAccountService,
-    ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification, credits)
+        operatorNotifications: OperatorNotifications,
+    ): AuthService =
+        AuthService(users, workspaces, hasher, tokens, transaction, emailVerification, credits, operatorNotifications)
 
     @Bean
     fun fakeMailSender(): FakeMailSender = FakeMailSender()
@@ -358,6 +364,7 @@ class AuthSliceBeans {
         hasher: StubPasswordHasher,
         transaction: TransactionRunner,
         mail: FakeMailSender,
+        operatorNotifications: OperatorNotifications,
     ): DeleteAccountService =
         DeleteAccountService(
             accounts = accounts,
@@ -365,6 +372,8 @@ class AuthSliceBeans {
             transaction = transaction,
             mail = mail,
             operatorEmail = "",
+            operatorNotifications = operatorNotifications,
+            clock = Clock.systemUTC(),
         )
 
     @Bean
@@ -409,6 +418,7 @@ class AuthSliceBeans {
         transaction: TransactionRunner,
         emailVerification: EmailVerificationService,
         credits: CreditAccountService,
+        operatorNotifications: OperatorNotifications,
     ): SocialLoginService =
         SocialLoginService(
             providers =
@@ -424,6 +434,7 @@ class AuthSliceBeans {
             stateTtl = java.time.Duration.ofMinutes(10),
             emailVerification = emailVerification,
             credits = credits,
+            operatorNotifications = operatorNotifications,
         )
 
     /**
@@ -929,7 +940,7 @@ class InMemoryAccountDeletionRepository(private val users: InMemoryUserRepositor
 
     override fun lockForDeletion(userId: UUID): LockedAccount? {
         val stored = users.storedById(userId) ?: return null
-        return LockedAccount(isAdmin = userId in admins, passwordHash = stored.passwordHash)
+        return LockedAccount(isAdmin = userId in admins, passwordHash = stored.passwordHash, email = stored.user.email)
     }
 
     override fun pendingInvoiceRequestIds(userId: UUID): List<UUID> = pending[userId] ?: emptyList()

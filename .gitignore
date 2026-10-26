@@ -20,6 +20,9 @@ frontend/.claude/launch.json
 # OMC 상태
 .omc/
 
+# superpowers 에이전트 작업 산출물
+.superpowers/
+
 # Kotlin / Gradle
 # 빌드 산출물과 데몬 상태는 커밋하지 않는다. 단 **gradle.lockfile 과 wrapper 는 커밋한다** —
 # 락파일이 없으면 전이 의존성이 조용히 올라가고, wrapper 가 없으면 CI가 로컬과 다른

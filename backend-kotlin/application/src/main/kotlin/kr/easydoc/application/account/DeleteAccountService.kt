@@ -5,11 +5,14 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.user.PasswordHash
 import org.slf4j.LoggerFactory
+import java.time.Clock
 import java.util.UUID
 
 /**
@@ -23,15 +26,25 @@ import java.util.UUID
  * 갈래마다 다른 판정(계정 소멸·관리자·재확인 실패)이 서로 독립인 가드라 `ThrowsCount` 를
  * 억제한다 — `PasswordService.set` 과 같은 판단.
  */
-@Suppress("ThrowsCount")
+@Suppress("ThrowsCount", "LongParameterList") // The use case requires each independent collaborator explicitly.
 class DeleteAccountService(
     private val accounts: AccountDeletionRepository,
     private val passwords: PasswordHasher,
     private val transaction: TransactionRunner,
     private val mail: MailSender,
     private val operatorEmail: String,
+    private val operatorNotifications: OperatorNotifications,
+    private val clock: Clock,
 ) {
     private val log = LoggerFactory.getLogger(DeleteAccountService::class.java)
+
+    private data class AccountDeletionResult(
+        val pendingInvoiceRequestIds: List<UUID>,
+        val deletedEmail: String,
+    ) {
+        override fun toString(): String =
+            "AccountDeletionResult(pendingInvoiceRequestIds=$pendingInvoiceRequestIds, deletedEmail=[REDACTED])"
+    }
 
     /**
      * [rawPassword] 는 비밀번호가 있는 계정(`has_password`)에만 필수다 — 소셜 전용 계정은
@@ -45,7 +58,7 @@ class DeleteAccountService(
     ) {
         requireConfirmationPhrase(confirmation)
 
-        val pendingInvoiceRequestIds =
+        val result =
             transaction.inTransaction {
                 val locked =
                     accounts.lockForDeletion(userId)
@@ -61,12 +74,15 @@ class DeleteAccountService(
                 // 사용자보다 먼저 지운다 — 포트 KDoc.
                 accounts.deleteConversionFeedback(userId)
                 accounts.deleteUser(userId)
-                ids
+                AccountDeletionResult(ids, locked.email)
             }
 
         // 감사 로그는 user_id 한 줄뿐이다 — 이메일·이름을 남기지 않는다(계획 §2 결정 10).
         log.info("계정을 탈퇴 처리했다: userId={}", userId)
-        notifyOperatorIfPending(pendingInvoiceRequestIds)
+        notifyOperatorIfPending(result.pendingInvoiceRequestIds)
+        operatorNotifications.notify(
+            OperatorNotificationEvent.MemberDeleted(userId, clock.instant(), result.deletedEmail),
+        )
     }
 
     private fun requireConfirmationPhrase(confirmation: String) {

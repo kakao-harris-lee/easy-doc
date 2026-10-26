@@ -155,6 +155,9 @@ class SocialLoginCallbackConcurrencyTest {
             // 발급 경로(네이버 전용)를 재지 않는다.
             emailVerification = { error("이 테스트는 이메일 인증 코드 발급을 부르지 않는다") },
             credits = CreditAccountService(JdbcCreditAccountRepository(client), enforced = false),
+            operatorNotifications =
+                kr.easydoc.application.notification
+                    .OperatorNotifications { },
         )
     }
 
