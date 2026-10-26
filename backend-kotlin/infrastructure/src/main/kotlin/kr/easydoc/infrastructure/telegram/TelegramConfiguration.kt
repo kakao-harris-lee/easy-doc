@@ -5,6 +5,8 @@ import kr.easydoc.application.notification.OperatorNotificationPort
 import kr.easydoc.application.notification.OperatorNotificationService
 import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.security.Secret
+import kr.easydoc.infrastructure.notification.AsyncOperatorNotifications
+import kr.easydoc.infrastructure.notification.OperatorNotificationProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.convert.DurationUnit
@@ -48,7 +50,7 @@ data class TelegramProperties(
 }
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(TelegramProperties::class)
+@EnableConfigurationProperties(TelegramProperties::class, OperatorNotificationProperties::class)
 class TelegramConfiguration {
     @Bean
     fun telegramRestClient(properties: TelegramProperties): RestClient =
@@ -74,12 +76,20 @@ class TelegramConfiguration {
         properties: TelegramProperties,
     ): OperatorNotificationPort = TelegramOperatorNotificationAdapter(client, properties)
 
+    // 전달은 호출자 스레드 밖에서 best-effort 로 이뤄진다. Spring 이 데코레이터의 close() 를
+    // destroy method 로 추론해 컨텍스트 종료 시 남은 큐를 비운다.
     @Bean
     fun operatorNotifications(
         properties: TelegramProperties,
+        notifications: OperatorNotificationProperties,
         users: UserRepository,
         port: OperatorNotificationPort,
-    ): OperatorNotifications = OperatorNotificationService(properties.enabled, users, port)
+    ): OperatorNotifications =
+        AsyncOperatorNotifications(
+            OperatorNotificationService(properties.enabled, users, port),
+            notifications.queueCapacity,
+            notifications.shutdownTimeout,
+        )
 
     companion object {
         internal const val DEFAULT_BASE_URL = "https://api.telegram.org"
