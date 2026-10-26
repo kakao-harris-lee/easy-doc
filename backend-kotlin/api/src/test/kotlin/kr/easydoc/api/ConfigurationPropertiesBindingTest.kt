@@ -22,6 +22,7 @@ import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import kr.easydoc.infrastructure.mail.MailProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
+import kr.easydoc.infrastructure.subscription.PaymentProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -551,6 +552,25 @@ class ConfigurationPropertiesBindingTest {
                 mapOf("easydoc.app.public-base-url" to "https://easydoc.kr"),
             )
         assertThat(app.publicBaseUrl).isEqualTo("https://easydoc.kr")
+    }
+
+    @Test
+    fun `결제 제공자와 구매·갱신 스위치가 바인딩된다`() {
+        val payment =
+            bind(
+                "easydoc.payment",
+                PaymentProperties::class.java,
+                mapOf(
+                    "easydoc.payment.provider" to "toss_live",
+                    "easydoc.payment.purchase-enabled" to "true",
+                    "easydoc.payment.auto-charge-enabled" to "true",
+                    "easydoc.payment.mock-enabled" to "false",
+                ),
+            )
+        assertThat(payment.provider).isEqualTo("toss_live")
+        assertThat(payment.purchaseEnabled).isTrue()
+        assertThat(payment.autoChargeEnabled).isTrue()
+        assertThat(payment.mockEnabled).isFalse()
     }
 
     /** 프로필 문서까지 포함해 api `application.yml` 이 선언한 값을 그대로 읽는다. */

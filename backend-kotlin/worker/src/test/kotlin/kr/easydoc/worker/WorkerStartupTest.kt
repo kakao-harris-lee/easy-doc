@@ -7,10 +7,12 @@ import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.PurgeFeedbackComments
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.subscription.PaymentGateway
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
+import kr.easydoc.infrastructure.subscription.PaymentProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -49,6 +51,14 @@ class WorkerStartupTest {
     fun `완료 알림이 조립된다`() {
         assertThat(context.getBean(ConversionCompletedNotifier::class.java)).isNotNull()
         assertThat(context.getBean(MailSender::class.java)).isNotNull()
+    }
+
+    @Test
+    fun `worker 는 공통 결제 설정을 stub 준비 상태로 조립한다`() {
+        val payment = context.getBean(PaymentProperties::class.java)
+        assertThat(payment.provider).isEqualTo("stub")
+        assertThat(payment.mockEnabled).isFalse()
+        assertThat(context.getBean(PaymentGateway::class.java)).isNotNull()
     }
 
     @Test
