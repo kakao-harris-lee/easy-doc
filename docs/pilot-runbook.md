@@ -72,10 +72,16 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
 EASYDOC_DEPLOYMENT_MODE=pilot
 SPRING_DATASOURCE_PASSWORD=<openssl rand -hex 32 결과>
 EASYDOC_APP_PUBLIC_BASE_URL=https://easydoc.kr
+EASYDOC_WORKER_PROFILES_INCLUDE=production
 EASYDOC_OAUTH_GOOGLE_REDIRECT_URIS=https://easydoc.kr/auth/google/callback,https://easydoc.kr/auth/google/link/callback
 EASYDOC_OAUTH_KAKAO_REDIRECT_URIS=https://easydoc.kr/auth/kakao/callback,https://easydoc.kr/auth/kakao/link/callback
 EASYDOC_OAUTH_NAVER_REDIRECT_URIS=https://easydoc.kr/auth/naver/callback,https://easydoc.kr/auth/naver/link/callback
 ```
+
+Production 환경/Secret 설정에는 `EASYDOC_WORKER_PROFILES_INCLUDE=production`을 반드시 명시한다.
+`.env.example`에서 복사한 `local` 값이 오버레이 fallback을 덮어쓰지 않게 하기 위해서다.
+이 설정은 상시 worker와 `admin-grant` 같은 일회성 운영 명령에 공통으로 적용되는
+Production Start 출시 전제다.
 
 호스트 nginx 설정은 `ops/nginx/easydoc.kr.conf`를 기준으로 설치한다. 업로드 10MB 허용과
 OAuth·결제 query string 비기록이 기존 TLS 프록시에도 반영되어야 한다.
