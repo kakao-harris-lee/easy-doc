@@ -76,6 +76,53 @@ class PaymentConfigurationTest {
     }
 
     @Test
+    fun `production rejects non root public URL paths without echoing them`() {
+        val url = "https://easydoc.kr/app"
+        assertThatThrownBy {
+            configuration.paymentGateway(live, environment("production"), AppProperties(url))
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("easydoc.app.public-base-url")
+            .hasMessageNotContaining(url)
+
+        configuration.paymentGateway(live, environment("production"), AppProperties("https://easydoc.kr/"))
+    }
+
+    @Test
+    fun `production rejects localhost variants and non public IP literals without DNS or raw URL errors`() {
+        listOf(
+            "https://LOCALHOST.",
+            "https://service.localhost",
+            "https://localhost.localdomain",
+            "https://127.0.0.2",
+            "https://10.0.0.1",
+            "https://172.16.0.1",
+            "https://192.168.0.1",
+            "https://169.254.0.1",
+            "https://0.0.0.0",
+            "https://224.0.0.1",
+            "https://[::1]",
+            "https://[::]",
+            "https://[fc00::1]",
+            "https://[fec0::1]",
+            "https://[fe80::1]",
+            "https://[ff02::1]",
+        ).forEach { url ->
+            assertThatThrownBy {
+                configuration.paymentGateway(live, environment("production"), AppProperties(url))
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("easydoc.app.public-base-url")
+                .hasMessageNotContaining(url)
+        }
+    }
+
+    @Test
+    fun `production accepts an ordinary public domain independent of case and trailing dot`() {
+        assertThat(
+            configuration.paymentGateway(live, environment("production"), AppProperties("HTTPS://EASYDOC.KR.")),
+        ).isInstanceOf(StubPaymentGateway::class.java)
+    }
+
+    @Test
     fun `local stub and explicit local mock remain available`() {
         assertThat(configuration.paymentGateway(PaymentProperties(), environment("local"), AppProperties()))
             .isInstanceOf(StubPaymentGateway::class.java)

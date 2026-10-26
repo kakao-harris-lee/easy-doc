@@ -12,6 +12,9 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.net.Inet6Address
+import java.net.InetAddress
+import java.net.UnknownHostException
 import java.time.Clock
 import java.util.UUID
 
@@ -99,6 +102,9 @@ class SubscriptionConfiguration {
             invalid("easydoc.payment.toss-secret-key", "live secret key is required", profiles)
         }
         val publicUrl = parsePublicUrl(app.publicBaseUrl, profiles)
+        check(publicUrl.path.isNullOrEmpty() || publicUrl.path == "/") {
+            invalid("easydoc.app.public-base-url", "public URL path must be root", profiles)
+        }
         val callback = publicUrl.resolve("/api/payments/toss/billing/callback")
         check(
             isPublicHttps(callback) &&
@@ -128,9 +134,15 @@ class SubscriptionConfiguration {
         return uri
     }
 
-    private fun isPublicHttps(uri: java.net.URI): Boolean =
-        uri.scheme == "https" && uri.host != null &&
-            uri.host !in setOf("localhost", "127.0.0.1", "::1")
+    private fun isPublicHttps(uri: java.net.URI): Boolean {
+        val host = uri.host?.lowercase()?.removeSuffix(".")
+        return uri.scheme.equals("https", ignoreCase = true) &&
+            host != null &&
+            host != "localhost" &&
+            !host.endsWith(".localhost") &&
+            host != "localhost.localdomain" &&
+            isPublicIpLiteral(host)
+    }
 
     private fun invalid(
         property: String,
@@ -167,3 +179,56 @@ class SubscriptionConfiguration {
             toss.ifAvailable,
         )
 }
+
+private fun isPublicIpLiteral(host: String): Boolean {
+    val literal = host.removeSurrounding("[", "]")
+    val ipv4Candidate = literal.all { it in '0'..'9' || it == '.' }
+    val ipv6Literal = literal.contains(":")
+    return when {
+        !ipv4Candidate && !ipv6Literal -> true
+        else -> parseIpLiteral(literal, ipv4Candidate, ipv6Literal)?.let(::isPublicAddress) == true
+    }
+}
+
+private fun parseIpLiteral(
+    literal: String,
+    ipv4Candidate: Boolean,
+    ipv6Literal: Boolean,
+): InetAddress? =
+    if ((ipv4Candidate && isIpv4Literal(literal)) || ipv6Literal) {
+        try {
+            InetAddress.getByName(literal)
+        } catch (_: UnknownHostException) {
+            null
+        }
+    } else {
+        null
+    }
+
+private fun isPublicAddress(address: InetAddress): Boolean =
+    !address.isAnyLocalAddress &&
+        !address.isLoopbackAddress &&
+        !address.isSiteLocalAddress &&
+        !address.isLinkLocalAddress &&
+        !address.isMulticastAddress &&
+        !isUniqueLocalIpv6(address)
+
+private fun isIpv4Literal(value: String): Boolean {
+    val parts = value.split('.')
+    return parts.size == IPV4_PART_COUNT &&
+        parts.all { part ->
+            part.length in 1..IPV4_PART_MAX_LENGTH &&
+                part.all { it in '0'..'9' } &&
+                part.toInt() <= IPV4_PART_MAX
+        }
+}
+
+private fun isUniqueLocalIpv6(address: InetAddress): Boolean =
+    address is Inet6Address &&
+        (address.address[0].toInt() and UNIQUE_LOCAL_IPV6_MASK) == UNIQUE_LOCAL_IPV6_PREFIX
+
+private const val IPV4_PART_COUNT = 4
+private const val IPV4_PART_MAX_LENGTH = 3
+private const val IPV4_PART_MAX = 255
+private const val UNIQUE_LOCAL_IPV6_MASK = 0xfe
+private const val UNIQUE_LOCAL_IPV6_PREFIX = 0xfc
