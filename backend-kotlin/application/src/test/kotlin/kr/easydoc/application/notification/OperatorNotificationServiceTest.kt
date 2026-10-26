@@ -19,7 +19,7 @@ class OperatorNotificationServiceTest {
         val occurredAt = Instant.parse("2026-03-05T00:00:00Z")
         val sent = mutableListOf<String>()
         val users = NotificationUserRepository(User(userId, "hello@example.test", occurredAt, hasPassword = true))
-        val service = OperatorNotificationService(true, users) { sent += it }
+        val service = OperatorNotificationService(users) { sent += it }
 
         service.notify(OperatorNotificationEvent.MemberSignedUp(userId, occurredAt, "h@example.test", "email"))
         service.notify(
@@ -75,7 +75,7 @@ class OperatorNotificationServiceTest {
         val occurredAt = Instant.parse("2026-03-05T00:00:00Z")
         val sent = mutableListOf<String>()
         val users = NotificationUserRepository(User(userId, "hello@example.test", occurredAt, hasPassword = true))
-        val service = OperatorNotificationService(true, users) { sent += it }
+        val service = OperatorNotificationService(users) { sent += it }
 
         listOf("toss_live", "toss_test", "toss-test", "").forEach { environment ->
             service.notify(
@@ -99,10 +99,10 @@ class OperatorNotificationServiceTest {
     }
 
     @Test
-    fun `비활성화면 사용자 조회 메시지 생성 발송과 로그를 모두 생략한다`() {
+    fun `형식이 깨진 이메일은 발송하지 않고 정제된 WARN 한 줄만 남긴다`() {
         val users = NotificationUserRepository()
         var sends = 0
-        val service = OperatorNotificationService(false, users) { sends++ }
+        val service = OperatorNotificationService(users) { sends++ }
         val malformed =
             OperatorNotificationEvent.MemberSignedUp(
                 UUID.randomUUID(),
@@ -115,7 +115,11 @@ class OperatorNotificationServiceTest {
 
         assertThat(users.findByIdCount).isZero()
         assertThat(sends).isZero()
-        assertThat(logs).isEmpty()
+        assertThat(logs).singleElement().satisfies({
+            assertThat(it.level).isEqualTo(Level.WARN)
+            assertThat(it.formattedMessage).contains("member_signed_up", "IllegalArgumentException")
+            assertThat(it.formattedMessage).doesNotContain("not-an-email")
+        })
     }
 
     @Test
@@ -124,7 +128,7 @@ class OperatorNotificationServiceTest {
         val orderId = UUID.randomUUID()
         val users = NotificationUserRepository()
         val secretMessage = "body-token-chat-full-email@example.test"
-        val service = OperatorNotificationService(true, users) { throw IllegalStateException(secretMessage) }
+        val service = OperatorNotificationService(users) { throw IllegalStateException(secretMessage) }
         val event =
             OperatorNotificationEvent.Payment(
                 userId,

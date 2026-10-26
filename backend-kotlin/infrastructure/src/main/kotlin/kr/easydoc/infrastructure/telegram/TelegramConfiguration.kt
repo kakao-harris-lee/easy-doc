@@ -1,10 +1,8 @@
 package kr.easydoc.infrastructure.telegram
 
-import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.notification.OperatorNotificationPort
-import kr.easydoc.application.notification.OperatorNotificationService
-import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.security.Secret
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.convert.DurationUnit
@@ -47,14 +45,28 @@ data class TelegramProperties(
     }
 }
 
+/**
+ * Telegram 채널만 조립한다. 운영 알림 자체의 조립은 채널을 모르는
+ * [kr.easydoc.infrastructure.notification.NotificationConfiguration] 몫이다.
+ */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(TelegramProperties::class)
 class TelegramConfiguration {
+    /** 꺼져 있으면 포트 자체가 없다 — 알림 빈은 그대로 있고 아무 데도 보내지 않는다. */
     @Bean
-    fun telegramRestClient(properties: TelegramProperties): RestClient =
-        telegramRestClient(properties, DEFAULT_BASE_URL)
+    @ConditionalOnProperty(prefix = "easydoc.telegram", name = ["enabled"], havingValue = "true")
+    fun telegramOperatorNotificationAdapter(properties: TelegramProperties): OperatorNotificationPort =
+        telegramOperatorNotificationAdapter(properties, DEFAULT_BASE_URL)
 
-    // 테스트만 로컬 스텁 baseUrl을 전달한다. Spring @Bean으로 노출하지 않는다.
+    // 테스트만 로컬 스텁 baseUrl 을 전달한다.
+    fun telegramOperatorNotificationAdapter(
+        properties: TelegramProperties,
+        baseUrl: String,
+    ): OperatorNotificationPort =
+        TelegramOperatorNotificationAdapter(telegramRestClient(properties, baseUrl), properties)
+
+    // RestClient 는 이 채널의 내부 사정이다. @Bean 으로 노출하면 타입으로 주입되는 공용 빈이
+    // 되어 다른 곳의 RestClient 와 충돌한다.
     fun telegramRestClient(
         properties: TelegramProperties,
         baseUrl: String,
@@ -67,19 +79,6 @@ class TelegramConfiguration {
             .requestFactory(requests)
             .build()
     }
-
-    @Bean
-    fun telegramOperatorNotificationAdapter(
-        client: RestClient,
-        properties: TelegramProperties,
-    ): OperatorNotificationPort = TelegramOperatorNotificationAdapter(client, properties)
-
-    @Bean
-    fun operatorNotifications(
-        properties: TelegramProperties,
-        users: UserRepository,
-        port: OperatorNotificationPort,
-    ): OperatorNotifications = OperatorNotificationService(properties.enabled, users, port)
 
     companion object {
         internal const val DEFAULT_BASE_URL = "https://api.telegram.org"

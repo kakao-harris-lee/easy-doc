@@ -21,6 +21,7 @@ import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import kr.easydoc.infrastructure.mail.MailProperties
+import kr.easydoc.infrastructure.notification.OperatorNotificationProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
 import kr.easydoc.infrastructure.telegram.TelegramProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
@@ -608,6 +609,42 @@ class ConfigurationPropertiesBindingTest {
         val assignments =
             environmentAssignments(Path.of("../../.env.example"))
                 .filterKeys { it.startsWith("EASYDOC_TELEGRAM_") }
+        assertThat(assignments).containsExactlyInAnyOrderEntriesOf(expected)
+    }
+
+    @Test
+    fun `운영 알림 큐 설정과 두 실행 모듈의 환경변수 계약이 일치한다`() {
+        val properties =
+            bind(
+                "easydoc.notification",
+                OperatorNotificationProperties::class.java,
+                mapOf(
+                    "easydoc.notification.queue-capacity" to "7",
+                    "easydoc.notification.shutdown-timeout" to "9",
+                ),
+            )
+        assertThat(properties.queueCapacity).isEqualTo(7)
+        assertThat(properties.shutdownTimeout).isEqualTo(Duration.ofSeconds(9))
+
+        val block =
+            """
+            notification:
+              queue-capacity: ${'$'}{EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
+              shutdown-timeout: ${'$'}{EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
+            """.trimIndent().prependIndent("  ")
+        val apiPath = Path.of("src/main/resources/application.yml")
+        val workerPath = Path.of("../worker/src/main/resources/application.yml")
+        assertThat(Files.readString(apiPath)).contains(block)
+        assertThat(Files.readString(workerPath)).contains(block)
+
+        val expected =
+            mapOf(
+                "EASYDOC_NOTIFICATION_QUEUE_CAPACITY" to "100",
+                "EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT" to "10",
+            )
+        val assignments =
+            environmentAssignments(Path.of("../../.env.example"))
+                .filterKeys { it.startsWith("EASYDOC_NOTIFICATION_") }
         assertThat(assignments).containsExactlyInAnyOrderEntriesOf(expected)
     }
 

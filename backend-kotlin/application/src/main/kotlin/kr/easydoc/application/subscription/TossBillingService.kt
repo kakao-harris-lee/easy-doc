@@ -620,6 +620,8 @@ class TossBillingService(
         events.forEach(operatorNotifications::notify)
     }
 
+    // `waitForCard` 는 `scheduled` 주문만 이 함수로 넘기는데 환불 주문은 그 상태가 되지 않는다
+    // (`scheduled` 전이는 renewal 재시도에만 있다). 환불 실패는 `failed` 경로에서만 알린다.
     private fun failedOrderEvent(
         owner: UUID,
         current: BillingOrder,
@@ -628,6 +630,7 @@ class TossBillingService(
             when (failed.kind) {
                 "charge" -> paymentEvent(owner, failed, OperatorPaymentKind.PAYMENT_FAILED)
                 "renewal" -> paymentEvent(owner, failed, OperatorPaymentKind.RENEWAL_FAILED)
+                "refund" -> paymentEvent(owner, failed, OperatorPaymentKind.REFUND_FAILED)
                 else -> null
             }
         }
@@ -859,7 +862,7 @@ class TossBillingService(
         order: BillingOrder,
         payment: TossPayment,
     ) {
-        if (order.environment == "toss_live" && payment.approvedAt == null) throw TossUncertain()
+        if (order.environment == PaymentEnvironments.TOSS_LIVE && payment.approvedAt == null) throw TossUncertain()
         if (payment.orderId != order.id || payment.amount != order.amount ||
             payment.remainingAmount !in 0..order.amount
         ) {

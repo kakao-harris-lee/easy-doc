@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.subscription
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.PaymentGateway
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.SubscriptionStore
@@ -41,8 +42,8 @@ class SubscriptionConfiguration {
         properties: PaymentProperties,
         environment: Environment,
     ): PaymentGateway {
-        check(properties.provider in setOf("stub", "toss_test", "toss_live")) { "Unknown payment provider" }
-        if (properties.provider == "toss_test") {
+        check(properties.provider in PaymentEnvironments.ALLOWED) { "Unknown payment provider" }
+        if (properties.provider == PaymentEnvironments.TOSS_TEST) {
             check(
                 environment.activeProfiles.any { it in setOf("local", "test") } &&
                     environment.activeProfiles.none { it in setOf("prod", "production") },
@@ -52,7 +53,7 @@ class SubscriptionConfiguration {
                     properties.tossSecretKey.reveal().startsWith("test_sk_"),
             ) { "Toss individual test keys are required" }
         }
-        if (properties.provider == "toss_live") {
+        if (properties.provider == PaymentEnvironments.TOSS_LIVE) {
             check(
                 properties.tossClientKey.reveal().startsWith("live_ck_") &&
                     properties.tossSecretKey.reveal().startsWith("live_sk_"),

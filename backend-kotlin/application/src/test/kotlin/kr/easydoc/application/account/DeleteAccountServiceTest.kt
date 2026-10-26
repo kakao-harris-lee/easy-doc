@@ -212,7 +212,7 @@ class DeleteAccountServiceTest {
         val world = DeleteAccountWorld()
         val deletedId = world.accounts.seed(isAdmin = false, passwordHash = null)
         val bestEffort =
-            OperatorNotificationService(true, NotificationUserRepository()) {
+            OperatorNotificationService(NotificationUserRepository()) {
                 throw IllegalStateException("sensitive provider failure")
             }
         world.serviceWith(bestEffort).deleteAccount(deletedId, null, DeleteAccountService.CONFIRMATION_PHRASE)

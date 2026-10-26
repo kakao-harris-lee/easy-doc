@@ -50,6 +50,7 @@ enum class OperatorPaymentKind(val wireValue: String) {
     PAYMENT_FAILED("payment_failed"),
     RENEWAL_FAILED("renewal_failed"),
     REFUND_APPROVED("refund_approved"),
+    REFUND_FAILED("refund_failed"),
     SUBSCRIPTION_CANCELING("subscription_canceling"),
     SUBSCRIPTION_EXPIRED("subscription_expired"),
     SUBSCRIPTION_PAST_DUE("subscription_past_due"),

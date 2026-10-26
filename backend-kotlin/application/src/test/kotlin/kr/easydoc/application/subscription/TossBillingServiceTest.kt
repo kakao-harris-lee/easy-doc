@@ -168,6 +168,39 @@ class TossBillingServiceTest {
     }
 
     @Test
+    fun `환불 거절은 한 번만 알리고 webhook 재전달에도 중복되지 않는다`() {
+        val f = Fixture()
+        val originalPayment = f.payment(f.now)
+        val original = f.order.copy(status = "paid", payment = originalPayment)
+        val operation =
+            BillingOrder(
+                UUID.randomUUID(),
+                f.workspace,
+                original.planId,
+                1000,
+                f.now,
+                original.cycleEndsAt,
+                kind = "refund",
+                originalId = original.id,
+                previousRemaining = 99000,
+            )
+        f.store.orders[original.id] = original
+        f.store.orders[operation.id] = operation
+        f.gateway.payment = originalPayment
+        f.gateway.refundDeclines = true
+
+        f.service.process(operation.id)
+        f.service.process(operation.id)
+
+        val event = f.notifications.events.single() as OperatorNotificationEvent.Payment
+        assertThat(event.kind).isEqualTo(OperatorPaymentKind.REFUND_FAILED)
+        assertThat(event.orderId).isEqualTo(operation.id)
+        assertThat(event.amountKrw).isEqualTo(1000)
+        assertThat(f.store.orders[operation.id]?.status).isEqualTo("failed")
+        assertThat(f.store.orders[original.id]?.status).isEqualTo("paid")
+    }
+
+    @Test
     fun `환불은 원 결제가 아니라 환불 작업 주문의 실제 paid 전이를 알린다`() {
         val f = Fixture()
         val originalPayment = f.payment(f.now)
@@ -210,7 +243,6 @@ class TossBillingServiceTest {
         approved.gateway.payment = approved.payment(approved.now)
         val bestEffort =
             OperatorNotificationService(
-                true,
                 NotificationUserRepository(
                     User(approved.owner, "billing@example.test", approved.now, hasPassword = true),
                 ),
@@ -665,6 +697,7 @@ class TossBillingServiceTest {
     private class RecordingGateway : TossGateway by NeverGateway {
         var payment: TossPayment? = null
         var decline = false
+        var refundDeclines = false
         var charges = 0
         var lookups = 0
         var lastCard: Secret? = null
@@ -674,6 +707,15 @@ class TossBillingServiceTest {
         override fun revoke(billingKey: Secret) {
             if (revokeFails) throw TossUncertain()
             revoked.add(billingKey)
+        }
+
+        override fun refund(
+            paymentKey: Secret,
+            amount: Int,
+            operation: UUID,
+        ): TossPayment {
+            if (refundDeclines) throw TossDeclined()
+            error("gateway must not be called")
         }
 
         override fun issueCard(
