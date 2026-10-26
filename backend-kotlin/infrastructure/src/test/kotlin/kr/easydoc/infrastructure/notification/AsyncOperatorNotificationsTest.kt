@@ -107,7 +107,7 @@ class AsyncOperatorNotificationsTest {
     }
 
     @Test
-    fun `종료는 큐에 남은 이벤트를 비우고 그 뒤 제출은 조용히 버린다`() {
+    fun `종료는 큐에 남은 이벤트를 비우고 그 뒤 제출은 WARN 한 줄만 남기고 버린다`() {
         val gate = CountDownLatch(1)
         val received = ConcurrentLinkedQueue<OperatorNotificationEvent>()
         val delegate =
@@ -118,15 +118,24 @@ class AsyncOperatorNotificationsTest {
         val notifications = AsyncOperatorNotifications(delegate, QUEUE_CAPACITY, SHUTDOWN_TIMEOUT)
         val queued = listOf(signUp("one@example.test"), signUp("two@example.test"), signUp("three@example.test"))
 
-        queued.forEach(notifications::notify)
-        gate.countDown()
-        notifications.close()
+        val logs =
+            captureLogs {
+                queued.forEach(notifications::notify)
+                gate.countDown()
+                notifications.close()
 
-        assertThat(received).containsExactlyElementsOf(queued)
+                assertThat(received).containsExactlyElementsOf(queued)
 
-        notifications.notify(signUp("after-close@example.test"))
+                notifications.notify(signUp("after-close@example.test"))
+            }
 
         assertThat(received).hasSameSizeAs(queued)
+        assertThat(logs).singleElement().satisfies({
+            assertThat(it.level).isEqualTo(Level.WARN)
+            assertThat(it.formattedMessage).contains("member_signed_up")
+            assertThat(it.formattedMessage).doesNotContain("after-close@example.test")
+            assertThat(it.throwableProxy).isNull()
+        })
     }
 
     private fun signUp(email: String): OperatorNotificationEvent =
