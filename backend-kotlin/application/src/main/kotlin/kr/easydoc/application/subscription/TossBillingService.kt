@@ -862,7 +862,7 @@ class TossBillingService(
         order: BillingOrder,
         payment: TossPayment,
     ) {
-        if (order.environment == "toss_live" && payment.approvedAt == null) throw TossUncertain()
+        if (order.environment == PaymentEnvironments.TOSS_LIVE && payment.approvedAt == null) throw TossUncertain()
         if (payment.orderId != order.id || payment.amount != order.amount ||
             payment.remainingAmount !in 0..order.amount
         ) {

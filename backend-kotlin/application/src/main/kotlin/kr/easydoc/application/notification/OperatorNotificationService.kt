@@ -1,6 +1,7 @@
 package kr.easydoc.application.notification
 
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.subscription.PaymentEnvironments
 import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId
@@ -68,7 +69,7 @@ class OperatorNotificationService(
             }
         // 실결제 환경으로 확인된 값이 아니면 모두 테스트로 표시한다(fail-closed).
         val testPrefix =
-            if (event is OperatorNotificationEvent.Payment && event.environment != LIVE_ENVIRONMENT) {
+            if (event is OperatorNotificationEvent.Payment && event.environment != PaymentEnvironments.TOSS_LIVE) {
                 "[TEST] "
             } else {
                 ""
@@ -112,9 +113,6 @@ class OperatorNotificationService(
         }
 
     private companion object {
-        // 결제 환경 식별자는 주문·세션 행에 저장되는 고정 값이다(`toss_live`/`toss_test`/`stub`).
-        const val LIVE_ENVIRONMENT = "toss_live"
-
         val SEOUL_FORMATTER: DateTimeFormatter =
             DateTimeFormatter.ISO_ZONED_DATE_TIME.withZone(ZoneId.of("Asia/Seoul"))
     }
