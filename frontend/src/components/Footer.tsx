@@ -83,10 +83,10 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
         <p>{address}</p>
         <div className="flex flex-wrap items-center gap-x-4">
           <a href={`mailto:${supportEmail}`} className={POLICY_LINK_CLASS}>
-            고객지원 {supportEmail}
+            고객지원 이메일 : {supportEmail}
           </a>
+          {phoneNumber !== null && <span className={INFO_TEXT_CLASS}>전화 : {phoneNumber}</span>}
           <span className={INFO_TEXT_CLASS}>{businessHours}</span>
-          {phoneNumber !== null && <span className={INFO_TEXT_CLASS}>전화 {phoneNumber}</span>}
           <span className={`${INFO_TEXT_CLASS} sm:ml-auto`}>
             © {serviceLaunchYear} All rights reserved.
           </span>
