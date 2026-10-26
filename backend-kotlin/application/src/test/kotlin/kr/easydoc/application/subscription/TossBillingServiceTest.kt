@@ -210,7 +210,6 @@ class TossBillingServiceTest {
         approved.gateway.payment = approved.payment(approved.now)
         val bestEffort =
             OperatorNotificationService(
-                true,
                 NotificationUserRepository(
                     User(approved.owner, "billing@example.test", approved.now, hasPassword = true),
                 ),

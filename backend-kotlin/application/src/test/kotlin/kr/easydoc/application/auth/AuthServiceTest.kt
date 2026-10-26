@@ -125,7 +125,7 @@ class AuthServiceTest {
     fun `Telegram 준비 발송 실패 후에도 가입 결과가 유지된다`() {
         val world = World()
         val bestEffort =
-            OperatorNotificationService(true, world.users) {
+            OperatorNotificationService(world.users) {
                 throw IllegalStateException("sensitive provider failure")
             }
         val service = world.serviceWith(bestEffort)

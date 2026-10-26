@@ -6,15 +6,14 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/** 보낼 채널이 있을 때만 조립된다 — 발송 여부는 조립 지점이 정하고 이 서비스는 늘 보낸다. */
 class OperatorNotificationService(
-    private val enabled: Boolean,
     private val users: UserRepository,
     private val port: OperatorNotificationPort,
 ) : OperatorNotifications {
     private val log = LoggerFactory.getLogger(OperatorNotificationService::class.java)
 
     override fun notify(event: OperatorNotificationEvent) {
-        if (!enabled) return
         try {
             val email =
                 when (event) {
