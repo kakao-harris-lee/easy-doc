@@ -120,17 +120,21 @@ fun `회원과 결제 메시지는 마스킹 식별자 서울 시각과 테스�
 }
 
 @Test
-fun `비활성화면 사용자 조회 메시지 생성 발송과 로그를 모두 생략한다`() {
+fun `형식이 깨진 이메일은 발송하지 않고 정제된 WARN 한 줄만 남긴다`() {
     val users = NotificationUserRepository()
     var sends = 0
-    val service = OperatorNotificationService(false, users) { sends++ }
+    val service = OperatorNotificationService(users) { sends++ }
     val malformed = OperatorNotificationEvent.MemberSignedUp(UUID.randomUUID(), Instant.EPOCH, "not-an-email", "email")
 
     val logs = captureLogs { service.notify(malformed) }
 
     assertThat(users.findByIdCount).isZero()
     assertThat(sends).isZero()
-    assertThat(logs).isEmpty()
+    assertThat(logs).singleElement().satisfies({
+        assertThat(it.level).isEqualTo(Level.WARN)
+        assertThat(it.formattedMessage).contains("member_signed_up", "IllegalArgumentException")
+        assertThat(it.formattedMessage).doesNotContain("not-an-email")
+    })
 }
 
 @Test
@@ -175,6 +179,8 @@ private fun captureLogs(block: () -> Unit): List<ILoggingEvent> {
     return appender.list.toList()
 }
 ```
+
+> 주(PR #192): `OperatorNotificationService`의 `enabled` 플래그를 없애고 발송 여부를 조립 지점(`NotificationConfiguration` — 채널 포트가 있을 때만 서비스를 만든다)이 정하도록 바꿨다. 그래서 위 스니펫의 `OperatorNotificationService(enabled, users, port)` 서명은 `OperatorNotificationService(users, port)`가 됐고, `비활성화면 사용자 조회 메시지 생성 발송과 로그를 모두 생략한다` 테스트는 사라졌다. 그 자리를 위의 `형식이 깨진 이메일은 발송하지 않고 정제된 WARN 한 줄만 남긴다`가 대신한다.
 
 공유 대역은 다음 시그니처로 만든다. `NotificationUserRepository`의 나머지 명시적 abstract 메서드는 `error("not used")`로 구현하고 `findById`만 조회 횟수를 기록한다.
 
