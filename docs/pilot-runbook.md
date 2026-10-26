@@ -10,13 +10,30 @@
 
 공개 파일럿은 `compose.pilot.yml`을 반드시 함께 쓴다. 이 오버레이는 DB의 호스트 포트를
 닫고, 모든 컨테이너에 `restart: unless-stopped`를 적용하며 PostgreSQL 백업 서비스를
-추가한다. 현재 Toss test 결제가 `local` 프로필을 요구하므로 앱은 `local`을 유지하지만,
-공개 파일럿의 `EASYDOC_LLM_PROVIDER`는 반드시 실제 provider로 두고 `fake`를 사용하지 않는다.
-이 문서 뒤쪽의
+추가한다. API는 `--spring.profiles.active=api,production`, worker는
+`--spring.profiles.active=worker,production`으로 실행하고, worker의 기본 포함 프로필은
+`SPRING_PROFILES_INCLUDE=production`이다. 공개 파일럿의 `EASYDOC_LLM_PROVIDER`는 반드시
+실제 provider로 두고 `fake`를 사용하지 않는다. 이 문서 뒤쪽의
 `docker compose -f compose.yml ...` 운영 명령도 공개 서버에서는
 `docker compose -f compose.yml -f compose.pilot.yml ...`로 실행한다.
-파일럿 오버레이는 worker의 일회성 운영 프로필에도 `local`을 포함하므로,
-`admin-grant` 같은 관리 명령에도 파일럿용 결제 설정이 동일하게 적용된다.
+파일럿 오버레이는 worker의 일회성 운영 프로필에도 `production`을 포함하므로,
+`admin-grant` 같은 관리 명령에도 Production 결제 설정이 동일하게 적용된다.
+
+## Production Start 출시 게이트
+
+- [ ] PR 리뷰와 운영자 출시 승인이 완료됐고 현재 일자가 2026년 11월 1일 이후다.
+- [ ] `EASYDOC_PAYMENT_PROVIDER=toss_live`, `EASYDOC_PAYMENT_MOCK_ENABLED=false`다.
+- [ ] `EASYDOC_PAYMENT_PURCHASE_ENABLED=true`, `EASYDOC_PAYMENT_AUTO_CHARGE_ENABLED=true`다.
+- [ ] Toss 라이브 MID와 `live_ck_`·`live_sk_`가 같은 상점·환경이며 Secret으로만 주입됐다.
+- [ ] 공개 기준 URL과 `/api/payments/toss/billing/callback`이 같은 공개 HTTPS 출처다.
+- [ ] 라이브 `PAYMENT_STATUS_CHANGED`·`BILLING_DELETED` 웹훅과 SMTP 실제 수신을 운영자가 확인했다.
+- [ ] Start 99,000원·50크레딧과 2026년 11월 1일 약관·동의·스냅샷이 일치한다.
+- [ ] 최초 실결제·환불은 승인된 운영자만 수행하고 에이전트는 실행하지 않는다.
+
+장애 대응 시 `EASYDOC_PAYMENT_PURCHASE_ENABLED=false`와
+`EASYDOC_PAYMENT_AUTO_CHARGE_ENABLED=false`를 서로 독립적으로 설정해 신규 구매 또는 자동
+갱신만 중단할 수 있다. `stub`이나 `toss_test`로 provider를 바꾸는 우회는 사용하지 않는다.
+두 플래그를 꺼도 기존 결제 조회·환불·카드 삭제와 수동 복구 경로는 유지한다.
 
 worker는 lease를 집어 LLM 호출 → 결과 저장까지 실행한다(개인정보 마스킹은 2026-09-07에 제거됐다 — master-plan 3.2 「제품 전제」). 내보내기는
 `GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
