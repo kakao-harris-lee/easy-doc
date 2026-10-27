@@ -1,7 +1,6 @@
 package kr.easydoc.infrastructure.subscription
 
 import kr.easydoc.application.subscription.PaymentEnvironments
-import kr.easydoc.application.subscription.TossCallbackUrl
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.app.AppProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -93,15 +92,6 @@ class PaymentConfigurationTest {
                 AppProperties(),
             ),
         ).isInstanceOf(StubPaymentGateway::class.java)
-    }
-
-    @Test
-    fun `the guard reads the same callback URL the API hands out`() {
-        assertThat(TossCallbackUrl.from(productionApp.publicBaseUrl))
-            .isEqualTo("https://easydoc.kr" + TossCallbackUrl.PATH)
-        assertThat(TossCallbackUrl.from("https://easydoc.kr/")).isEqualTo("https://easydoc.kr" + TossCallbackUrl.PATH)
-        assertThat(configuration.paymentGateway(live, environment("production"), AppProperties("https://easydoc.kr/")))
-            .isInstanceOf(StubPaymentGateway::class.java)
     }
 
     @Test

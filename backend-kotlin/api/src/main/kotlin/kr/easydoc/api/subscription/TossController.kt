@@ -151,7 +151,8 @@ class TossController(
         }
     }
 
-    // 기동 검증(SubscriptionConfiguration)이 보는 식과 같은 조립을 쓴다.
+    // 콜백 경로와 기준 URL 조립은 `TossCallbackUrl` 한 곳에만 적는다. 기동 검증
+    // (SubscriptionConfiguration)은 그 조립이 공개 출처에 남도록 기준 URL 쪽을 본다.
     private fun callbackUrl(state: String): String = "${TossCallbackUrl.from(publicBaseUrl)}?state=$state"
 
     private fun resumeUrl(resume: String): String = "${publicBaseUrl.trimEnd('/')}/billing/callback?resume=$resume"

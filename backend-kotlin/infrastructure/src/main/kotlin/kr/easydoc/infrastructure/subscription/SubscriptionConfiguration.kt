@@ -6,7 +6,6 @@ import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.PaymentGateway
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.SubscriptionStore
-import kr.easydoc.application.subscription.TossCallbackUrl
 import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -122,14 +121,13 @@ class SubscriptionConfiguration {
         check(properties.tossSecretKey.reveal().startsWith(LIVE_SECRET_KEY_PREFIX)) {
             invalid("easydoc.payment.toss-secret-key", "live secret key is required", profiles)
         }
+        // API 는 이 기준 URL 뒤에 `TossCallbackUrl.PATH` 를 붙여 콜백을 만든다. 기준 URL 이 공개
+        // HTTPS(위 parsePublicUrl)이고 경로가 루트이면 그 콜백도 같은 공개 출처에 남는다 —
+        // 조립 결과를 다시 보는 검사는 같은 전제에서 유도되므로 항상 참이어서 두지 않는다.
+        // 조립식 자체는 `TossCallbackUrlTest` 가 고정한다.
         val publicUrl = parsePublicUrl(app.publicBaseUrl, profiles)
         check(publicUrl.path.isNullOrEmpty() || publicUrl.path == "/") {
             invalid("easydoc.app.public-base-url", "public URL path must be root", profiles)
-        }
-        // API 가 실제로 내보내는 콜백 URL 그대로를 본다. 같은 기준 URL 에서 다시 유도하면
-        // 무조건 통과하는 검사가 된다.
-        check(isPublicHttps(java.net.URI.create(TossCallbackUrl.from(app.publicBaseUrl)))) {
-            invalid("easydoc.app.public-base-url", "runtime callback URL must be public HTTPS", profiles)
         }
     }
 
