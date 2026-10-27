@@ -35,6 +35,17 @@
 
 ### Task 1: Payment Environment Startup Guards
 
+> **리뷰 후 변경(2026-10-27).** 아래 코드 스케치는 최초 구현 그대로이며 리뷰 지적 네 건이
+> 반영되기 전 상태다. 현재 구현은 `SubscriptionConfiguration.validatePaymentEnvironment`·
+> `validateLiveBilling` 이고, 스케치와 다른 점은 다음과 같다.
+> (1) `production` 과 `local`/`test` 동시 활성 조합을 가장 먼저 `spring.profiles.active`
+> 문제로 거부한다. (2) mock 금지·live 키 접두사·공개 HTTPS 규칙은 `production` 프로필이
+> 아니라 `provider == toss_live` 기준으로 검증한다. (3) 항상 참이던 `URI.resolve` 뒤
+> scheme·host·port 동일성 비교를 지우고, 콜백 조립을 `TossCallbackUrl` 한 곳으로 모아
+> `TossController` 와 같은 식을 쓴다(루트 경로 검사는 유지). (4) `toss_live` 에서
+> `allowedWorkspaces` 가 비어 있지 않으면 기동을 막는다. 또 환경 이름 리터럴은 main 의
+> `PaymentEnvironments` 상수를 쓴다.
+
 **Files:**
 - Modify: `backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription/SubscriptionConfiguration.kt`
 - Test: `backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/PaymentConfigurationTest.kt`
@@ -392,6 +403,13 @@ git commit -m "feat: open production Start purchases"
 
 ### Task 3: Separate Local and Production Compose Profiles
 
+> **운영자 결정 후 변경(2026-10-27).** 아래는 오버레이에 `api,production`·`worker,production`
+> 을 리터럴로 박는 안이다. 출시(2026-11-01)까지 파일럿은 toss_test/local 로 계속 돌아야
+> 하므로, 현재 구현은 런타임 프로필을 `EASYDOC_RUNTIME_PROFILE` 로 받고 기본값을
+> `production` 으로 둔다. 미설정 배포는 유료 결제 설정을 요구하고(= main 은 배포 가능),
+> 전환은 `.env` 의 `EASYDOC_RUNTIME_PROFILE`·`EASYDOC_WORKER_PROFILES_INCLUDE` 두 줄로
+> 한다. 실행서의 「런타임 프로필 전환」 절이 두 시점의 짝을 적는다.
+
 **Files:**
 - Modify: `compose.pilot.yml`
 - Modify: `.env.example`
@@ -628,6 +646,13 @@ git commit -m "feat: align production Start subscription UI"
 ---
 
 ### Task 5: Legal Consent, Guide, Snapshots, and Final Verification
+
+> **리뷰 후 변경(2026-10-27).** 아래 안은 `LEGAL_SNAPSHOT_VERSION` 과 시행 시각
+> (`2026-11-01T00:00:00+09:00`)을 저장소 안에 따로 적는다. 현재 구현은
+> `kr.easydoc.application.subscription.LegalSnapshot` 하나가 버전과 시행 시각을 모두 갖고
+> (`EFFECTIVE_AT` 은 버전 문자열에서 유도), 저장소는 거기서 읽는다. 또 시행 시각 전에는
+> `TossBillingService.purchaseAllowed` 가 주입된 `Clock` 으로 `toss_live` 구매를 거부한다 —
+> 스케치에는 없던 검사이며, 공개된 약관 없이 실결제가 열리는 것을 막는다.
 
 **Files:**
 - Modify: `frontend/src/components/subscription/TargetPlanCatalog.tsx`
