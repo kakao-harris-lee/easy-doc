@@ -10,13 +10,58 @@
 
 공개 파일럿은 `compose.pilot.yml`을 반드시 함께 쓴다. 이 오버레이는 DB의 호스트 포트를
 닫고, 모든 컨테이너에 `restart: unless-stopped`를 적용하며 PostgreSQL 백업 서비스를
-추가한다. 현재 Toss test 결제가 `local` 프로필을 요구하므로 앱은 `local`을 유지하지만,
-공개 파일럿의 `EASYDOC_LLM_PROVIDER`는 반드시 실제 provider로 두고 `fake`를 사용하지 않는다.
-이 문서 뒤쪽의
-`docker compose -f compose.yml ...` 운영 명령도 공개 서버에서는
-`docker compose -f compose.yml -f compose.pilot.yml ...`로 실행한다.
-파일럿 오버레이는 worker의 일회성 운영 프로필에도 `local`을 포함하므로,
-`admin-grant` 같은 관리 명령에도 파일럿용 결제 설정이 동일하게 적용된다.
+추가한다. 공개 파일럿의 `EASYDOC_LLM_PROVIDER`는 반드시 실제 provider로 두고 `fake`를
+사용하지 않는다. 이 문서 뒤쪽의 `docker compose -f compose.yml ...` 운영 명령도 공개
+서버에서는 `docker compose -f compose.yml -f compose.pilot.yml ...`로 실행한다.
+
+### 런타임 프로필 전환 (`EASYDOC_RUNTIME_PROFILE`)
+
+오버레이는 API를 `--spring.profiles.active=api,${EASYDOC_RUNTIME_PROFILE:-production}`,
+worker를 `--spring.profiles.active=worker,${EASYDOC_RUNTIME_PROFILE:-production}`으로
+실행하고, worker의 일회성 운영 프로필은 `SPRING_PROFILES_INCLUDE=${EASYDOC_WORKER_PROFILES_INCLUDE:-production}`으로
+포함한다. 두 변수는 반드시 같은 쪽을 가리켜야 한다 — 어긋나면 `admin-grant` 같은 일회성
+명령만 다른 결제 설정으로 돈다.
+
+| 시점 | `EASYDOC_RUNTIME_PROFILE` | `EASYDOC_WORKER_PROFILES_INCLUDE` | 결제 |
+| --- | --- | --- | --- |
+| 출시 전 파일럿(현재) | `local` | `local` | `toss_test` |
+| 출시(2026-11-01) 이후 | `production` | `production` | `toss_live` |
+
+기본값이 `production`이므로 두 변수를 비워 두고 배포하면 유료 결제 설정을 요구하며
+기동 검증이 막는다. 즉 `main`은 언제나 배포 가능한 상태이고, 전환 시점만 운영자가 `.env`
+두 줄로 정한다. `production`과 `local`/`test`를 함께 켜는 조합은 기동 단계에서 거부한다.
+Toss test 결제가 `local` 프로필을 요구하므로 출시 전까지 파일럿은 `local`을 유지한다.
+
+## Production Start 출시 게이트
+
+- [ ] PR 리뷰와 운영자 출시 승인이 완료됐고 현재 일자가 2026년 11월 1일 이후다.
+      (서버도 이 시각 전에는 `toss_live` 신규 구매를 열지 않는다 — 약관 시행일 기준.)
+- [ ] `.env`의 `EASYDOC_RUNTIME_PROFILE=production`과 `EASYDOC_WORKER_PROFILES_INCLUDE=production`이
+      함께 바뀌었다. 두 값이 어긋나면 일회성 운영 명령만 다른 결제 설정으로 돈다.
+- [ ] `EASYDOC_PAYMENT_PROVIDER=toss_live`, `EASYDOC_PAYMENT_MOCK_ENABLED=false`다.
+- [ ] `EASYDOC_PAYMENT_ALLOWED_WORKSPACES`가 비어 있다. 이 목록은 `toss_live`에서 무시되므로
+      값이 남아 있으면 기동 검증이 막는다(제한 출시로 착각하는 것을 막는다).
+- [ ] `EASYDOC_PAYMENT_PURCHASE_ENABLED=true`, `EASYDOC_PAYMENT_AUTO_CHARGE_ENABLED=true`다.
+- [ ] Toss 라이브 MID와 `live_ck_`·`live_sk_`가 같은 상점·환경이며 Secret으로만 주입됐다.
+- [ ] 공개 기준 URL과 `/api/payments/toss/billing/callback`이 같은 공개 HTTPS 출처다.
+- [ ] 라이브 `PAYMENT_STATUS_CHANGED`·`BILLING_DELETED` 웹훅과 SMTP 실제 수신을 운영자가 확인했다.
+- [ ] Start 99,000원·50크레딧과 2026년 11월 1일 약관·동의·스냅샷이 일치한다.
+- [ ] 최초 실결제·환불은 승인된 운영자만 수행하고 에이전트는 실행하지 않는다.
+- [ ] 카드 등록 콜백이 외부에서 공개 HTTPS로 도달함을 확인하고, 콜백의
+  `state`·`authKey`·`customerKey`·`resume` 같은 인증값이 로그에 남지 않음을 확인했다.
+- [ ] 운영자가 Start 99,000원 최초 실결제 1건을 수행하고 Toss 승인, 서버 승인 시각,
+  구독 기간, 50크레딧 지급, 원장, 카드 영수증, 알림을 대조했다.
+- [ ] 운영자가 같은 거래의 승인된 환불을 수행하고 Toss 환불 결과, 서버 환불 기록,
+  크레딧 회수·예약 확보 해제, 다음 갱신 중단, 알림을 대조했다.
+- [ ] 첫 갱신 전까지 미확정 주문·재시도·알림 상태를 관찰하고, 결과가 불명확하면 새
+  주문이나 추가 청구 없이 기존 주문을 조회했다.
+
+장애 대응 시 `EASYDOC_PAYMENT_PURCHASE_ENABLED=false`와
+`EASYDOC_PAYMENT_AUTO_CHARGE_ENABLED=false`를 서로 독립적으로 설정해 신규 구매 또는 자동
+갱신만 중단할 수 있다. `stub`이나 `toss_test`로 provider를 바꾸는 우회는 사용하지 않는다.
+두 플래그를 꺼도 기존 결제 조회·환불·카드 삭제와 수동 복구 경로는 유지한다. 롤백은
+라이브 거래와 현재 트랜잭션·DB 마이그레이션에 호환되는 수정 릴리스로만 수행하고,
+`stub`·테스트 전용 이미지로 대체하거나 호환되지 않는 이전 이미지로 되돌리지 않는다.
 
 worker는 lease를 집어 LLM 호출 → 결과 저장까지 실행한다(개인정보 마스킹은 2026-09-07에 제거됐다 — master-plan 3.2 「제품 전제」). 내보내기는
 `GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
@@ -55,10 +100,18 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
 EASYDOC_DEPLOYMENT_MODE=pilot
 SPRING_DATASOURCE_PASSWORD=<openssl rand -hex 32 결과>
 EASYDOC_APP_PUBLIC_BASE_URL=https://easydoc.kr
+# 출시 전까지는 두 줄 모두 local. 출시 시점에 둘을 함께 production으로 바꾼다.
+EASYDOC_RUNTIME_PROFILE=local
+EASYDOC_WORKER_PROFILES_INCLUDE=local
 EASYDOC_OAUTH_GOOGLE_REDIRECT_URIS=https://easydoc.kr/auth/google/callback,https://easydoc.kr/auth/google/link/callback
 EASYDOC_OAUTH_KAKAO_REDIRECT_URIS=https://easydoc.kr/auth/kakao/callback,https://easydoc.kr/auth/kakao/link/callback
 EASYDOC_OAUTH_NAVER_REDIRECT_URIS=https://easydoc.kr/auth/naver/callback,https://easydoc.kr/auth/naver/link/callback
 ```
+
+출시 시점에는 `EASYDOC_RUNTIME_PROFILE=production`과 `EASYDOC_WORKER_PROFILES_INCLUDE=production`을
+둘 다 명시한다. 오버레이 기본값이 `production`이라도 `.env.example`에서 복사한 `local` 값이
+fallback을 덮어쓰기 때문에, 한 줄만 바꾸면 상시 컨테이너와 `admin-grant` 같은 일회성 운영
+명령이 서로 다른 결제 설정으로 돈다. 위 「런타임 프로필 전환」 표가 두 시점의 짝이다.
 
 호스트 nginx 설정은 `ops/nginx/easydoc.kr.conf`를 기준으로 설치한다. 업로드 10MB 허용과
 OAuth·결제 query string 비기록이 기존 TLS 프록시에도 반영되어야 한다.
@@ -137,9 +190,15 @@ reload 또는 재생성하여 upstream 주소를 다시 읽게 한다. 문맥 �
 EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED=true
 EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED=true
 EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS=0
+EASYDOC_RUNTIME_PROFILE=local
 EASYDOC_WORKER_PROFILES_INCLUDE=local,illustration-suggestion-fake
 EASYDOC_ILLUSTRATIONS_ENABLED=false
 ```
+
+`illustration-suggestion-fake`는 `EASYDOC_WORKER_PROFILES_INCLUDE`의 첫 항목에 런타임
+프로필을 함께 적는다. 위 「런타임 프로필 전환」 표의 출시 전 파일럿 행과 짝이며,
+출시 뒤에 이 테스트를 다시 켤 때는 `local` 대신 `production`을 적는다 — `production`과
+`local`을 함께 켜는 조합은 기동 단계에서 거부된다.
 
 일반 문서 변환의 `EASYDOC_LLM_PROVIDER`는 그대로 둔다. 그림 제안 전용 fake runner만
 사용하며 외부 분석·이미지 생성 호출이나 크레딧 차감은 없다. 화면에도 테스트 예시임을 표시한다.

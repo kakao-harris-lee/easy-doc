@@ -111,6 +111,7 @@ export function TargetPlanCatalog({
           <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
             이용약관 및 환불 안내
           </a>
+          {live && <p>유료 서비스 적용일: 2026년 11월 1일</p>}
           {checkoutEnabled && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
               <input

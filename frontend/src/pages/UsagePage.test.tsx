@@ -102,6 +102,24 @@ describe('플랜과 사용량', () => {
     expect(createInvoiceRequest).not.toHaveBeenCalled()
   })
 
+  it('production purchase response shows only Start and no preparation heading', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({
+      mock_enabled: false,
+      toss_enabled: true,
+      billing_environment: 'toss_live',
+      purchase_enabled: true,
+      auto_charge_enabled: true,
+      plans: [{ id: 'start', name: 'Start', allowance: 50, monthly_price: 99_000 }],
+      subscription: null,
+      payments: [],
+    })
+    render(page())
+    expect(await screen.findByText('선택한 플랜 없음')).toBeInTheDocument()
+    expect(screen.queryByText('구독 서비스 준비 중')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Basic' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Pro' })).not.toBeInTheDocument()
+  })
+
   it('이용량 제한이 꺼지면 음수 잔액을 보여주지 않는다', async () => {
     vi.mocked(getWorkspaceCredits).mockResolvedValue(
       workspaceCredits({ enforced: false, balance: -11, available: -11 }),

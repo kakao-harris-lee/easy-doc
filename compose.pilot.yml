@@ -16,9 +16,15 @@ services:
     logging: *pilot-logging
 
   backend-api:
-    # 현재 파일럿 결제는 Toss test라 local profile이 필요하다. LLM provider는 .env에서
+    # Production startup guard가 라이브 결제 설정을 검증한다. LLM provider는 .env에서
     # 반드시 실제 provider(openai/anthropic)를 선택하고 fake로 두지 않는다.
-    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api,local"]
+    #
+    # 런타임 프로필은 .env의 EASYDOC_RUNTIME_PROFILE로 고른다. 기본값은 production이라
+    # 이 오버레이를 그대로 배포하면 유료 결제 설정을 요구한다. 출시(2026-11-01) 전까지
+    # 파일럿은 .env에 EASYDOC_RUNTIME_PROFILE=local과 EASYDOC_WORKER_PROFILES_INCLUDE=local을
+    # 두고 toss_test 설정으로 계속 돈다 — 즉 main은 배포 가능한 상태로 두고, 전환 시점만
+    # 운영자가 .env 두 줄로 정한다. 두 변수는 반드시 같은 쪽을 가리켜야 한다.
+    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api,${EASYDOC_RUNTIME_PROFILE:-production}"]
     environment:
       # 브라우저의 fetch POST는 같은 사이트 요청에도 Origin을 보낸다. API 컨테이너는
       # TLS 앞단 프록시 뒤에 있으므로 공개 Origin을 명시적으로 허용해야 한다.
@@ -44,10 +50,13 @@ services:
     logging: *pilot-logging
 
   backend-worker:
-    command: ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,local"]
+    # backend-api와 같은 EASYDOC_RUNTIME_PROFILE을 쓴다(기본값 production).
+    command: ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,${EASYDOC_RUNTIME_PROFILE:-production}"]
     environment:
-      # admin-grant 등 일회성 운영 프로필에도 파일럿 결제 설정을 포함한다.
-      SPRING_PROFILES_INCLUDE: ${EASYDOC_WORKER_PROFILES_INCLUDE:-local}
+      # admin-grant 등 일회성 운영 프로필에도 같은 결제 설정을 포함한다. 상시 worker의
+      # --spring.profiles.active와 어긋나면 일회성 명령만 다른 결제 설정으로 도므로
+      # EASYDOC_RUNTIME_PROFILE과 같은 값을 둔다.
+      SPRING_PROFILES_INCLUDE: ${EASYDOC_WORKER_PROFILES_INCLUDE:-production}
     # 호스트 earlyoom(/etc/default/earlyoom, --prefer '^(java)$')이 메모리 고갈 때 빌드·테스트 JVM보다 파일럿 JVM을 먼저
     # 고르지 않게 낮춘다(2026-09-24 WSL hang 재발 방지). 커널 OOM killer에도 같은 값이 적용된다.
     oom_score_adj: -500

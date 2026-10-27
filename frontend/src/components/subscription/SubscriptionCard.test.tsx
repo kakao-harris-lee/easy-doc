@@ -136,6 +136,26 @@ it('requires explicit live consent, hides other plans and failure simulation', a
   await user.click(button)
   expect(openTossBilling).toHaveBeenCalledWith('w1', 'start', false, 'purchase', 'start-monthly-v1')
 })
+it.each([true, false])('live availability follows purchase_enabled=%s', async (purchase) => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    purchase_enabled: purchase,
+  })
+  render(<SubscriptionCard workspaceId="w1" />)
+  if (purchase) {
+    expect(await screen.findByText('선택한 플랜 없음')).toBeInTheDocument()
+    expect(screen.queryByText('구독 서비스 준비 중')).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Basic' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Pro' })).not.toBeInTheDocument()
+  } else {
+    expect(await screen.findByText('구독 서비스 준비 중')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+  }
+})
+
 it('replaces a card without canceling the active subscription first', async () => {
   vi.mocked(getSubscription).mockResolvedValue({
     ...available,

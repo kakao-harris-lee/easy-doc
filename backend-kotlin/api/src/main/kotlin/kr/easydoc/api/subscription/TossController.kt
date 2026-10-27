@@ -8,6 +8,7 @@ import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.TossBillingCallbackService
 import kr.easydoc.application.subscription.TossBillingService
+import kr.easydoc.application.subscription.TossCallbackUrl
 import kr.easydoc.application.subscription.TossDeclined
 import kr.easydoc.application.subscription.TossUncertain
 import kr.easydoc.core.exceptions.ConflictException
@@ -150,8 +151,9 @@ class TossController(
         }
     }
 
-    private fun callbackUrl(state: String): String =
-        "${publicBaseUrl.trimEnd('/')}/api/payments/toss/billing/callback?state=$state"
+    // 콜백 경로와 기준 URL 조립은 `TossCallbackUrl` 한 곳에만 적는다. 기동 검증
+    // (SubscriptionConfiguration)은 그 조립이 공개 출처에 남도록 기준 URL 쪽을 본다.
+    private fun callbackUrl(state: String): String = "${TossCallbackUrl.from(publicBaseUrl)}?state=$state"
 
     private fun resumeUrl(resume: String): String = "${publicBaseUrl.trimEnd('/')}/billing/callback?resume=$resume"
 }

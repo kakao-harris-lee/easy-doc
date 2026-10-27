@@ -1,14 +1,11 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.EasyDocProperties
+import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.core.dictionary.DictionaryContextPolicy
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.auth.AuthProperties
-import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
-import kr.easydoc.infrastructure.auth.KakaoOAuthProperties
-import kr.easydoc.infrastructure.auth.NaverOAuthProperties
-import kr.easydoc.infrastructure.auth.OAuthProperties
 import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
 import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.credit.CreditsProperties
@@ -21,26 +18,16 @@ import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import kr.easydoc.infrastructure.mail.MailProperties
-import kr.easydoc.infrastructure.notification.OperatorNotificationProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
-import kr.easydoc.infrastructure.telegram.TelegramProperties
+import kr.easydoc.infrastructure.subscription.PaymentProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import org.springframework.boot.context.properties.bind.BindResult
-import org.springframework.boot.context.properties.bind.Bindable
-import org.springframework.boot.context.properties.bind.Binder
-import org.springframework.boot.context.properties.source.ConfigurationPropertySource
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource
 import org.springframework.boot.env.YamlPropertySourceLoader
-import org.springframework.core.convert.ConversionService
-import org.springframework.core.convert.support.DefaultConversionService
 import org.springframework.core.io.ClassPathResource
-import org.springframework.core.io.FileSystemResource
 import java.math.BigDecimal
-import java.nio.file.Files
-import java.nio.file.Path
 import java.time.Duration
 
 /** 설정 바인딩이 실제로 값을 싣는지 — 2026-08-19 실측으로 드러난 결함의 회귀 고정판. */
@@ -49,22 +36,22 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("설정 클래스 전부가 기본값과 **다른** 값을 실제로 바인딩한다")
     fun `설정이 기본값과 다른 값을 싣는다`() {
         val auth =
-            bind(
+            bindProperties(
                 "easydoc.auth",
                 AuthProperties::class.java,
                 mapOf(
-                    "easydoc.auth.jwt-secret" to SECRET_VALUE,
+                    "easydoc.auth.jwt-secret" to BINDING_SECRET_VALUE,
                     "easydoc.auth.jwt-expire-minutes" to "15",
                     "easydoc.auth.argon2.iterations" to "7",
                 ),
             )
-        assertThat(auth.jwtSecret.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(auth.jwtSecret.reveal()).isEqualTo(BINDING_SECRET_VALUE)
         assertThat(auth.jwtExpireMinutes).isEqualTo(15)
 
         assertThat(auth.argon2.iterations).isEqualTo(7)
 
         val easyDoc =
-            bind(
+            bindProperties(
                 "easydoc",
                 EasyDocProperties::class.java,
                 mapOf("easydoc.cors-origins[0]" to "https://example.test"),
@@ -72,13 +59,13 @@ class ConfigurationPropertiesBindingTest {
         assertThat(easyDoc.corsOrigins).containsExactly("https://example.test")
 
         val encryption =
-            bind(
+            bindProperties(
                 "easydoc.encryption",
                 EncryptionProperties::class.java,
                 mapOf(
                     "easydoc.encryption.write-key-version" to "3",
                     "easydoc.encryption.keys[0].version" to "3",
-                    "easydoc.encryption.keys[0].value" to SECRET_VALUE,
+                    "easydoc.encryption.keys[0].value" to BINDING_SECRET_VALUE,
                 ),
             )
         assertThat(encryption.writeKeyVersion).isEqualTo(3)
@@ -89,148 +76,20 @@ class ConfigurationPropertiesBindingTest {
                 .first()
                 .value
                 .reveal(),
-        ).isEqualTo(SECRET_VALUE)
-    }
-
-    @Test
-    @DisplayName("소셜 로그인 설정이 기본값과 다른 값을 싣는다 — backlog §1.4 P0-1")
-    fun `소셜 로그인 설정이 기본값과 다른 값을 싣는다`() {
-        val oauth =
-            bind(
-                "easydoc.oauth",
-                OAuthProperties::class.java,
-                mapOf("easydoc.oauth.state-ttl-minutes" to "3"),
-            )
-        assertThat(oauth.stateTtlMinutes).isEqualTo(3)
-
-        val google =
-            bind(
-                "easydoc.oauth.google",
-                GoogleOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.google.client-id" to "test-client-id",
-                    "easydoc.oauth.google.client-secret" to SECRET_VALUE,
-                    "easydoc.oauth.google.redirect-uris[0]" to "https://example.test/auth/google/callback",
-                    "easydoc.oauth.google.timeout-ms" to "5000",
-                ),
-            )
-        assertThat(google.clientId).isEqualTo("test-client-id")
-        assertThat(google.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
-        assertThat(google.redirectUris).containsExactly("https://example.test/auth/google/callback")
-        assertThat(google.timeoutMs).isEqualTo(5000L)
-    }
-
-    @Test
-    @DisplayName(
-        "redirect-uris 를 설정하지 않으면 로그인·연결 콜백 기본값 둘 다 실린다 " +
-            "(리뷰 후속 조치 — link/callback 을 빠뜨리면 oauthLinkStart 가 기본 구성에서 422 다)",
-    )
-    fun `구글 redirect_uri 기본값이 로그인과 연결 콜백을 모두 담는다`() {
-        val google =
-            bind(
-                "easydoc.oauth.google",
-                GoogleOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.google.client-id" to "test-client-id",
-                    "easydoc.oauth.google.client-secret" to SECRET_VALUE,
-                ),
-            )
-        assertThat(google.redirectUris)
-            .containsExactly(
-                GoogleOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
-                GoogleOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
-            )
-    }
-
-    @Test
-    @DisplayName("카카오 소셜 로그인 설정이 기본값과 다른 값을 싣는다 — backlog §1.4, 계약 2.13.0")
-    fun `카카오 설정이 기본값과 다른 값을 싣는다`() {
-        val kakao =
-            bind(
-                "easydoc.oauth.kakao",
-                KakaoOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.kakao.client-id" to "test-kakao-client-id",
-                    "easydoc.oauth.kakao.client-secret" to SECRET_VALUE,
-                    "easydoc.oauth.kakao.redirect-uris[0]" to "https://example.test/auth/kakao/callback",
-                    "easydoc.oauth.kakao.timeout-ms" to "6000",
-                ),
-            )
-        assertThat(kakao.clientId).isEqualTo("test-kakao-client-id")
-        assertThat(kakao.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
-        assertThat(kakao.redirectUris).containsExactly("https://example.test/auth/kakao/callback")
-        assertThat(kakao.timeoutMs).isEqualTo(6000L)
-    }
-
-    @Test
-    @DisplayName("카카오 redirect-uris 를 설정하지 않으면 로그인·연결 콜백 기본값 둘 다 실린다 — 구글과 같은 방침")
-    fun `카카오 redirect_uri 기본값이 로그인과 연결 콜백을 모두 담는다`() {
-        val kakao =
-            bind(
-                "easydoc.oauth.kakao",
-                KakaoOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.kakao.client-id" to "test-kakao-client-id",
-                    "easydoc.oauth.kakao.client-secret" to SECRET_VALUE,
-                ),
-            )
-        assertThat(kakao.redirectUris)
-            .containsExactly(
-                KakaoOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
-                KakaoOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
-            )
-    }
-
-    @Test
-    @DisplayName("네이버 소셜 로그인 설정이 기본값과 다른 값을 싣는다 — backlog §1.4, 계약 2.15.0")
-    fun `네이버 설정이 기본값과 다른 값을 싣는다`() {
-        val naver =
-            bind(
-                "easydoc.oauth.naver",
-                NaverOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.naver.client-id" to "test-naver-client-id",
-                    "easydoc.oauth.naver.client-secret" to SECRET_VALUE,
-                    "easydoc.oauth.naver.redirect-uris[0]" to "https://example.test/auth/naver/callback",
-                    "easydoc.oauth.naver.timeout-ms" to "7000",
-                ),
-            )
-        assertThat(naver.clientId).isEqualTo("test-naver-client-id")
-        assertThat(naver.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
-        assertThat(naver.redirectUris).containsExactly("https://example.test/auth/naver/callback")
-        assertThat(naver.timeoutMs).isEqualTo(7000L)
-    }
-
-    @Test
-    @DisplayName("네이버 redirect-uris 를 설정하지 않으면 로그인·연결 콜백 기본값 둘 다 실린다 — 구글·카카오와 같은 방침")
-    fun `네이버 redirect_uri 기본값이 로그인과 연결 콜백을 모두 담는다`() {
-        val naver =
-            bind(
-                "easydoc.oauth.naver",
-                NaverOAuthProperties::class.java,
-                mapOf(
-                    "easydoc.oauth.naver.client-id" to "test-naver-client-id",
-                    "easydoc.oauth.naver.client-secret" to SECRET_VALUE,
-                ),
-            )
-        assertThat(naver.redirectUris)
-            .containsExactly(
-                NaverOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
-                NaverOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
-            )
+        ).isEqualTo(BINDING_SECRET_VALUE)
     }
 
     @Test
     @DisplayName("LLM 설정이 기본값과 다른 값을 싣는다 — 출력 토큰 상한·모델별 단가 포함")
     fun `llm 설정이 기본값과 다른 값을 싣는다`() {
         val llm =
-            bind(
+            bindProperties(
                 "easydoc.llm",
                 LlmProperties::class.java,
                 mapOf(
                     "easydoc.llm.provider" to "anthropic",
                     "easydoc.llm.effort" to "high",
-                    "easydoc.llm.open-ai-api-key" to SECRET_VALUE,
+                    "easydoc.llm.open-ai-api-key" to BINDING_SECRET_VALUE,
                     "easydoc.llm.pricing.input-usd-per-million-tokens" to "2.00",
                     "easydoc.llm.pricing.output-usd-per-million-tokens" to "8.00",
                     "easydoc.llm.pricing.models.claude-sonnet-5.input-usd-per-million-tokens" to "2.00",
@@ -240,7 +99,7 @@ class ConfigurationPropertiesBindingTest {
             )
         assertThat(llm.provider).isEqualTo("anthropic")
         assertThat(llm.effort).isEqualTo("high")
-        assertThat(llm.openAiApiKey.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(llm.openAiApiKey.reveal()).isEqualTo(BINDING_SECRET_VALUE)
         assertThat(llm.pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
         assertThat(llm.pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
         assertThat(llm.pricing.models).containsKey("claude-sonnet-5")
@@ -268,7 +127,7 @@ class ConfigurationPropertiesBindingTest {
 
         // yml 기본값과 Kotlin 기본값이 갈라지면 두 경로가 서로 다른 사업자를 고른다.
         val llm =
-            bind(
+            bindProperties(
                 "easydoc.llm",
                 LlmProperties::class.java,
                 mapOf("easydoc.llm.effort" to "medium"),
@@ -283,7 +142,7 @@ class ConfigurationPropertiesBindingTest {
     )
     fun `read-timeout 은 초 단위로 바인딩된다`() {
         val explicit =
-            bind(
+            bindProperties(
                 "easydoc.llm",
                 LlmProperties::class.java,
                 mapOf("easydoc.llm.read-timeout" to "600"),
@@ -291,7 +150,7 @@ class ConfigurationPropertiesBindingTest {
         assertThat(explicit.readTimeout).isEqualTo(Duration.ofSeconds(600))
 
         val default =
-            bind(
+            bindProperties(
                 "easydoc.llm",
                 LlmProperties::class.java,
                 mapOf("easydoc.llm.provider" to "openai"),
@@ -303,7 +162,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("모델 id 자체에 점이 있으면(gpt-4.1) 대괄호 표기로 묶어야 한다 — 평평한 키에서 점은 중첩 구분자다")
     fun `점이 있는 모델 id는 대괄호로 묶는다`() {
         val llm =
-            bind(
+            bindProperties(
                 "easydoc.llm",
                 LlmProperties::class.java,
                 mapOf(
@@ -327,7 +186,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("보존 파기 설정이 기본값과 다른 값을 싣는다")
     fun `보존 설정이 기본값과 다른 값을 싣는다`() {
         val retention =
-            bind(
+            bindProperties(
                 "easydoc.retention",
                 RetentionProperties::class.java,
                 mapOf(
@@ -345,7 +204,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("키 회전 설정이 기본값과 다른 값을 싣는다 — 배치 크기")
     fun `키 회전 설정이 기본값과 다른 값을 싣는다`() {
         val rotation =
-            bind(
+            bindProperties(
                 "easydoc.encryption.rotation",
                 KeyRotationProperties::class.java,
                 mapOf("easydoc.encryption.rotation.batch-size" to "77"),
@@ -357,7 +216,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("피드백 설정이 기본값과 다른 값을 싣는다 — 편집 거리 셀 예산과 의견 보존 일수")
     fun `피드백 설정이 기본값과 다른 값을 싣는다`() {
         val feedback =
-            bind(
+            bindProperties(
                 "easydoc.feedback",
                 FeedbackProperties::class.java,
                 mapOf(
@@ -374,7 +233,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("사전 주입 설정이 기본값과 다른 값을 싣는다 — 플래그와 예산 다섯이 전부 운영 손잡이다")
     fun `사전 설정이 기본값과 다른 값을 싣는다`() {
         val dictionary =
-            bind(
+            bindProperties(
                 "easydoc.dictionary",
                 DictionaryProperties::class.java,
                 mapOf(
@@ -403,7 +262,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("사전 조회 설정이 기본값과 다른 값을 싣는다 — 남용 한도와 사전 단위 표기(P0-5 조각 4)")
     fun `사전 조회 설정이 기본값과 다른 값을 싣는다`() {
         val lookup =
-            bind(
+            bindProperties(
                 "easydoc.dictionary.lookup",
                 DictionaryLookupProperties::class.java,
                 mapOf(
@@ -423,7 +282,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("메일 발송 설정이 기본값과 다른 값을 싣는다 — smtp 하위 설정 포함")
     fun `메일 설정이 기본값과 다른 값을 싣는다`() {
         val mail =
-            bind(
+            bindProperties(
                 "easydoc.mail",
                 MailProperties::class.java,
                 mapOf(
@@ -434,7 +293,7 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.mail.smtp.port" to "465",
                     "easydoc.mail.smtp.ssl" to "true",
                     "easydoc.mail.smtp.username" to "pilot",
-                    "easydoc.mail.smtp.password" to SECRET_VALUE,
+                    "easydoc.mail.smtp.password" to BINDING_SECRET_VALUE,
                 ),
             )
         assertThat(mail.provider).isEqualTo("smtp")
@@ -444,14 +303,14 @@ class ConfigurationPropertiesBindingTest {
         assertThat(mail.smtp.port).isEqualTo(465)
         assertThat(mail.smtp.ssl).isTrue()
         assertThat(mail.smtp.username).isEqualTo("pilot")
-        assertThat(mail.smtp.password.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(mail.smtp.password.reveal()).isEqualTo(BINDING_SECRET_VALUE)
     }
 
     @Test
     @DisplayName("사용량 집계 설정이 기본값과 다른 값을 싣는다 — 시간대(U2)")
     fun `사용량 설정이 기본값과 다른 값을 싣는다`() {
         val usage =
-            bind(
+            bindProperties(
                 "easydoc.usage",
                 UsageProperties::class.java,
                 mapOf("easydoc.usage.zone" to "UTC"),
@@ -464,7 +323,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("크레딧 집행 설정이 기본값과 다른 값을 싣는다 — 스위치와 가입 부여")
     fun `크레딧 설정이 기본값과 다른 값을 싣는다`() {
         val credits =
-            bind(
+            bindProperties(
                 "easydoc.credits",
                 CreditsProperties::class.java,
                 mapOf(
@@ -480,19 +339,19 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("가입 부여 pepper 는 EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER 와 같은 이름으로 Secret 에 실린다")
     fun `가입 부여 pepper 가 Secret 에 실린다`() {
         val credits =
-            bind(
+            bindProperties(
                 "easydoc.credits",
                 CreditsProperties::class.java,
-                mapOf("easydoc.credits.signup-grant-pepper" to SECRET_VALUE),
+                mapOf("easydoc.credits.signup-grant-pepper" to BINDING_SECRET_VALUE),
             )
-        assertThat(credits.signupGrantPepper.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(credits.signupGrantPepper.reveal()).isEqualTo(BINDING_SECRET_VALUE)
     }
 
     @Test
     @DisplayName("청구 운영 설정이 기본값과 다른 값을 싣는다 — 운영자 알림 주소")
     fun `청구 설정이 기본값과 다른 값을 싣는다`() {
         val billing =
-            bind(
+            bindProperties(
                 "easydoc.billing",
                 BillingProperties::class.java,
                 mapOf("easydoc.billing.operator-email" to "billing@easydoc.kr"),
@@ -504,7 +363,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("휴대폰 인증 설정이 기본값과 다른 값을 싣는다 — 체험 크레딧과 지문 pepper 포함")
     fun `휴대폰 인증 설정이 기본값과 다른 값을 싣는다`() {
         val phoneVerification =
-            bind(
+            bindProperties(
                 "easydoc.phone-verification",
                 PhoneVerificationProperties::class.java,
                 mapOf(
@@ -512,28 +371,28 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.phone-verification.resend-cooldown-seconds" to "77",
                     "easydoc.phone-verification.max-attempts" to "3",
                     "easydoc.phone-verification.trial-credits" to "10",
-                    "easydoc.phone-verification.fingerprint-pepper" to SECRET_VALUE,
+                    "easydoc.phone-verification.fingerprint-pepper" to BINDING_SECRET_VALUE,
                 ),
             )
         assertThat(phoneVerification.codeTtlMinutes).isEqualTo(9)
         assertThat(phoneVerification.resendCooldownSeconds).isEqualTo(77)
         assertThat(phoneVerification.maxAttempts).isEqualTo(3)
         assertThat(phoneVerification.trialCredits).isEqualTo(10)
-        assertThat(phoneVerification.fingerprintPepper.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(phoneVerification.fingerprintPepper.reveal()).isEqualTo(BINDING_SECRET_VALUE)
     }
 
     @Test
     @DisplayName("SMS 발송 설정이 기본값과 다른 값을 싣는다 — provider 선택 포함")
     fun `SMS 설정이 기본값과 다른 값을 싣는다`() {
         val sms =
-            bind(
+            bindProperties(
                 "easydoc.sms",
                 SmsProperties::class.java,
                 mapOf(
                     "easydoc.sms.provider" to "sens",
                     "easydoc.sms.service-id" to "ncp-service-id",
                     "easydoc.sms.access-key" to "ncp-access-key",
-                    "easydoc.sms.secret-key" to SECRET_VALUE,
+                    "easydoc.sms.secret-key" to BINDING_SECRET_VALUE,
                     "easydoc.sms.from" to "01000000000",
                     "easydoc.sms.timeout-ms" to "9999",
                 ),
@@ -541,7 +400,7 @@ class ConfigurationPropertiesBindingTest {
         assertThat(sms.provider).isEqualTo("sens")
         assertThat(sms.serviceId).isEqualTo("ncp-service-id")
         assertThat(sms.accessKey).isEqualTo("ncp-access-key")
-        assertThat(sms.secretKey.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(sms.secretKey.reveal()).isEqualTo(BINDING_SECRET_VALUE)
         assertThat(sms.from).isEqualTo("01000000000")
         assertThat(sms.timeoutMs).isEqualTo(9999L)
     }
@@ -550,7 +409,7 @@ class ConfigurationPropertiesBindingTest {
     @DisplayName("공개 기준 URL 설정이 기본값과 다른 값을 싣는다")
     fun `공개 URL 설정이 기본값과 다른 값을 싣는다`() {
         val app =
-            bind(
+            bindProperties(
                 "easydoc.app",
                 AppProperties::class.java,
                 mapOf("easydoc.app.public-base-url" to "https://easydoc.kr"),
@@ -559,114 +418,22 @@ class ConfigurationPropertiesBindingTest {
     }
 
     @Test
-    fun `Telegram 설정과 두 실행 모듈의 환경변수 계약이 일치한다`() {
-        val properties =
-            bind(
-                "easydoc.telegram",
-                TelegramProperties::class.java,
+    fun `결제 제공자와 구매·갱신 스위치가 바인딩된다`() {
+        val payment =
+            bindProperties(
+                "easydoc.payment",
+                PaymentProperties::class.java,
                 mapOf(
-                    "easydoc.telegram.enabled" to "true",
-                    "easydoc.telegram.bot-token" to SECRET_VALUE,
-                    "easydoc.telegram.chat-id" to "-100999",
-                    "easydoc.telegram.connect-timeout" to "3",
-                    "easydoc.telegram.read-timeout" to "7",
+                    "easydoc.payment.provider" to PaymentEnvironments.TOSS_LIVE,
+                    "easydoc.payment.purchase-enabled" to "true",
+                    "easydoc.payment.auto-charge-enabled" to "true",
+                    "easydoc.payment.mock-enabled" to "false",
                 ),
             )
-        assertThat(properties.enabled).isTrue()
-        assertThat(properties.botToken.reveal()).isEqualTo(SECRET_VALUE)
-        assertThat(properties.chatId).isEqualTo("-100999")
-        assertThat(properties.connectTimeout).isEqualTo(Duration.ofSeconds(3))
-        assertThat(properties.readTimeout).isEqualTo(Duration.ofSeconds(7))
-
-        val block =
-            """
-            telegram:
-              enabled: ${'$'}{EASYDOC_TELEGRAM_ENABLED:false}
-              bot-token: ${'$'}{EASYDOC_TELEGRAM_BOT_TOKEN:}
-              chat-id: ${'$'}{EASYDOC_TELEGRAM_CHAT_ID:}
-              connect-timeout: ${'$'}{EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
-              read-timeout: ${'$'}{EASYDOC_TELEGRAM_READ_TIMEOUT:5}
-            """.trimIndent().prependIndent("  ")
-        val apiPath = Path.of("src/main/resources/application.yml")
-        val workerPath = Path.of("../worker/src/main/resources/application.yml")
-        assertThat(Files.readString(apiPath)).contains(block)
-        assertThat(Files.readString(workerPath)).contains(block)
-        listOf(apiPath, workerPath).forEach { path ->
-            val sources = YamlPropertySourceLoader().load(path.toString(), FileSystemResource(path))
-            assertThat(sources).allSatisfy { source ->
-                assertThat(source.getProperty("easydoc.telegram.base-url")).isNull()
-            }
-        }
-
-        val expected =
-            mapOf(
-                "EASYDOC_TELEGRAM_ENABLED" to "false",
-                "EASYDOC_TELEGRAM_BOT_TOKEN" to "",
-                "EASYDOC_TELEGRAM_CHAT_ID" to "",
-                "EASYDOC_TELEGRAM_CONNECT_TIMEOUT" to "2",
-                "EASYDOC_TELEGRAM_READ_TIMEOUT" to "5",
-            )
-        val assignments =
-            environmentAssignments(Path.of("../../.env.example"))
-                .filterKeys { it.startsWith("EASYDOC_TELEGRAM_") }
-        assertThat(assignments).containsExactlyInAnyOrderEntriesOf(expected)
-    }
-
-    @Test
-    fun `운영 알림 큐 설정과 두 실행 모듈의 환경변수 계약이 일치한다`() {
-        val properties =
-            bind(
-                "easydoc.notification",
-                OperatorNotificationProperties::class.java,
-                mapOf(
-                    "easydoc.notification.queue-capacity" to "7",
-                    "easydoc.notification.shutdown-timeout" to "9",
-                ),
-            )
-        assertThat(properties.queueCapacity).isEqualTo(7)
-        assertThat(properties.shutdownTimeout).isEqualTo(Duration.ofSeconds(9))
-
-        val block =
-            """
-            notification:
-              queue-capacity: ${'$'}{EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
-              shutdown-timeout: ${'$'}{EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
-            """.trimIndent().prependIndent("  ")
-        val apiPath = Path.of("src/main/resources/application.yml")
-        val workerPath = Path.of("../worker/src/main/resources/application.yml")
-        assertThat(Files.readString(apiPath)).contains(block)
-        assertThat(Files.readString(workerPath)).contains(block)
-
-        val expected =
-            mapOf(
-                "EASYDOC_NOTIFICATION_QUEUE_CAPACITY" to "100",
-                "EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT" to "10",
-            )
-        val assignments =
-            environmentAssignments(Path.of("../../.env.example"))
-                .filterKeys { it.startsWith("EASYDOC_NOTIFICATION_") }
-        assertThat(assignments).containsExactlyInAnyOrderEntriesOf(expected)
-    }
-
-    private fun environmentAssignments(path: Path): Map<String, String> {
-        val assignments =
-            Files
-                .readAllLines(path)
-                .map(String::trim)
-                .filter { it.isNotEmpty() && !it.startsWith("#") }
-                .map { line ->
-                    val separator = line.indexOf('=')
-                    check(separator > 0) { "환경 예시의 할당 형식이 아닙니다: $line" }
-                    line.substring(0, separator) to line.substring(separator + 1)
-                }
-        val duplicates =
-            assignments
-                .groupingBy { it.first }
-                .eachCount()
-                .filterValues { it > 1 }
-                .keys
-        check(duplicates.isEmpty()) { "환경 예시에 중복 변수가 있습니다: $duplicates" }
-        return assignments.toMap()
+        assertThat(payment.provider).isEqualTo(PaymentEnvironments.TOSS_LIVE)
+        assertThat(payment.purchaseEnabled).isTrue()
+        assertThat(payment.autoChargeEnabled).isTrue()
+        assertThat(payment.mockEnabled).isFalse()
     }
 
     /** 프로필 문서까지 포함해 api `application.yml` 이 선언한 값을 그대로 읽는다. */
@@ -675,25 +442,7 @@ class ConfigurationPropertiesBindingTest {
             .load(API_CONFIG_RESOURCE, ClassPathResource(API_CONFIG_RESOURCE))
             .mapNotNull { it.getProperty(key)?.toString() }
 
-    private fun <T : Any> bind(
-        prefix: String,
-        type: Class<T>,
-        values: Map<String, String>,
-    ): T {
-        val conversion = DefaultConversionService()
-
-        conversion.addConverter(String::class.java, Secret::class.java) { Secret(it) }
-        val sources: List<ConfigurationPropertySource> = listOf(MapConfigurationPropertySource(values))
-        val binder = Binder(sources, null, conversion as ConversionService)
-        val result: BindResult<T> = binder.bind(prefix, Bindable.of(type))
-        check(result.isBound) { "$prefix 바인딩이 아무 값도 싣지 못했다" }
-        return result.get()
-    }
-
     private companion object {
-        /** 기본값(빈 값)과 다르기만 하면 된다. 실제 키가 아니다. */
-        const val SECRET_VALUE = "binding-test-only-value-0123456789"
-
         const val API_CONFIG_RESOURCE = "application.yml"
         const val LLM_PROVIDER_KEY = "easydoc.llm.provider"
         const val LLM_PROVIDER_ENV = "EASYDOC_LLM_PROVIDER"

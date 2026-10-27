@@ -8,13 +8,15 @@ describe('개인정보처리방침 화면', () => {
     render(<PrivacyPolicyPage />)
 
     expect(screen.getByRole('heading', { name: '개인정보처리방침', level: 1 })).toBeInTheDocument()
-    expect(screen.getByText('privacy-2026-10-06')).toBeInTheDocument()
+    expect(screen.getByText('privacy-2026-11-01')).toBeInTheDocument()
   })
 
   it('유료 조건의 검토일과 적용일 공고 조건을 보여준다', () => {
     render(<PrivacyPolicyPage />)
 
-    expect(screen.getByText(/검토일: 2026-10-06/)).toBeInTheDocument()
+    expect(screen.getByText(/검토일: 2026-10-26/)).toBeInTheDocument()
+    expect(screen.getByText(/유료 거래 관련 변경 적용일: 2026년 11월 1일/)).toBeInTheDocument()
+    expect(screen.queryByText(/유료 거래 관련 변경 적용일: 출시 전 공고/)).not.toBeInTheDocument()
     expect(screen.queryByText(/이 문서는 초안이며 아직 게시하지 않았다/)).not.toBeInTheDocument()
     expect(screen.queryByText(/확인 필요/)).not.toBeInTheDocument()
   })
