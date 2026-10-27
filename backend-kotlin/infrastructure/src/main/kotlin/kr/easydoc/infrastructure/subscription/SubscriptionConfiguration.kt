@@ -6,6 +6,7 @@ import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.PaymentGateway
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.SubscriptionStore
+import kr.easydoc.application.subscription.TossCallbackUrl
 import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -51,25 +52,18 @@ class SubscriptionConfiguration {
         check(properties.provider in PaymentEnvironments.ALLOWED) { "Unknown payment provider" }
         if (properties.provider == PaymentEnvironments.TOSS_TEST) {
             check(
-                environment.activeProfiles.any { it in setOf("local", "test") } &&
-                    environment.activeProfiles.none { it in setOf("prod", "production") },
+                environment.activeProfiles.any { it in DEVELOPMENT_PROFILES } &&
+                    environment.activeProfiles.none { it in PRODUCTION_PROFILES },
             ) { "Toss test requires local/test" }
             check(
-                properties.tossClientKey.reveal().startsWith("test_ck_") &&
-                    properties.tossSecretKey.reveal().startsWith("test_sk_"),
+                properties.tossClientKey.reveal().startsWith(TEST_CLIENT_KEY_PREFIX) &&
+                    properties.tossSecretKey.reveal().startsWith(TEST_SECRET_KEY_PREFIX),
             ) { "Toss individual test keys are required" }
         }
-        if (properties.provider == PaymentEnvironments.TOSS_LIVE) {
-            check(
-                properties.tossClientKey.reveal().startsWith("live_ck_") &&
-                    properties.tossSecretKey.reveal().startsWith("live_sk_"),
-            ) { "Toss individual live keys are required" }
-            check(!properties.mockEnabled) { "Mock payments are forbidden with live billing" }
-        }
-        check(!properties.mockEnabled || environment.activeProfiles.any { it in setOf("local", "test") }) {
+        check(!properties.mockEnabled || environment.activeProfiles.any { it in DEVELOPMENT_PROFILES }) {
             "Mock payments require the local or test profile"
         }
-        check(!properties.mockEnabled || environment.activeProfiles.none { it in setOf("prod", "production") }) {
+        check(!properties.mockEnabled || environment.activeProfiles.none { it in PRODUCTION_PROFILES }) {
             "Mock payments are forbidden in production"
         }
         return StubPaymentGateway()
@@ -81,39 +75,61 @@ class SubscriptionConfiguration {
         app: AppProperties,
     ) {
         val profiles = environment.activeProfiles.toList()
-        val production = profiles.any { it == "production" || it == "prod" }
-        val development = profiles.any { it == "local" || it == "test" }
+        val production = profiles.any { it in PRODUCTION_PROFILES }
+        val development = profiles.any { it in DEVELOPMENT_PROFILES }
         check(properties.provider in PaymentEnvironments.ALLOWED) {
             invalid("easydoc.payment.provider", "unknown provider", profiles)
+        }
+        // 이 조합을 먼저 거른다. worker 의 `worker,production` 에 `local` 이 섞이면 아래
+        // 「local/test 금지」가 먼저 걸려 설정이 아니라 프로필이 문제라는 사실을 가린다.
+        check(!(production && development)) {
+            invalid(ACTIVE_PROFILES_PROPERTY, "production cannot be combined with local/test profiles", profiles)
         }
         check(!(development && properties.provider == PaymentEnvironments.TOSS_LIVE)) {
             invalid("easydoc.payment.provider", "live billing is forbidden in local/test", profiles)
         }
-        if (!production) return
-        check(properties.provider == PaymentEnvironments.TOSS_LIVE) {
+        check(!production || properties.provider == PaymentEnvironments.TOSS_LIVE) {
             invalid("easydoc.payment.provider", "production requires toss_live", profiles)
         }
+        if (properties.provider != PaymentEnvironments.TOSS_LIVE) return
+        validateLiveBilling(properties, app, profiles)
+    }
+
+    /**
+     * 실결제 설정은 프로필과 무관하게 같은 조건을 요구한다. `production` 이 붙지 않은 기동도
+     * 같은 라이브 상점을 호출하므로, 프로필 방향 검사(`production` → `toss_live`)와 별개로 둔다.
+     */
+    private fun validateLiveBilling(
+        properties: PaymentProperties,
+        app: AppProperties,
+        profiles: List<String>,
+    ) {
         check(!properties.mockEnabled) {
-            invalid("easydoc.payment.mock-enabled", "production forbids mock payments", profiles)
+            invalid("easydoc.payment.mock-enabled", "live billing forbids mock payments", profiles)
         }
-        check(properties.tossClientKey.reveal().startsWith("live_ck_")) {
+        // 실결제에서는 구매 가능 판정이 이 목록을 보지 않는다. 값이 남아 있으면 운영자는
+        // 제한 출시로 읽는데 실제로는 전체 공개이므로, 조용히 열지 않고 기동을 막는다.
+        check(properties.allowedWorkspaces.isEmpty()) {
+            invalid(
+                "easydoc.payment.allowed-workspaces",
+                "live billing ignores the allowed workspace list",
+                profiles,
+            )
+        }
+        check(properties.tossClientKey.reveal().startsWith(LIVE_CLIENT_KEY_PREFIX)) {
             invalid("easydoc.payment.toss-client-key", "live client key is required", profiles)
         }
-        check(properties.tossSecretKey.reveal().startsWith("live_sk_")) {
+        check(properties.tossSecretKey.reveal().startsWith(LIVE_SECRET_KEY_PREFIX)) {
             invalid("easydoc.payment.toss-secret-key", "live secret key is required", profiles)
         }
         val publicUrl = parsePublicUrl(app.publicBaseUrl, profiles)
         check(publicUrl.path.isNullOrEmpty() || publicUrl.path == "/") {
             invalid("easydoc.app.public-base-url", "public URL path must be root", profiles)
         }
-        val callback = publicUrl.resolve("/api/payments/toss/billing/callback")
-        check(
-            isPublicHttps(callback) &&
-                callback.scheme == publicUrl.scheme &&
-                callback.host == publicUrl.host &&
-                callback.port == publicUrl.port,
-        ) {
-            invalid("easydoc.app.public-base-url", "public and callback HTTPS origins must match", profiles)
+        // API 가 실제로 내보내는 콜백 URL 그대로를 본다. 같은 기준 URL 에서 다시 유도하면
+        // 무조건 통과하는 검사가 된다.
+        check(isPublicHttps(java.net.URI.create(TossCallbackUrl.from(app.publicBaseUrl)))) {
+            invalid("easydoc.app.public-base-url", "runtime callback URL must be public HTTPS", profiles)
         }
     }
 
@@ -233,3 +249,12 @@ private const val IPV4_PART_MAX_LENGTH = 3
 private const val IPV4_PART_MAX = 255
 private const val UNIQUE_LOCAL_IPV6_MASK = 0xfe
 private const val UNIQUE_LOCAL_IPV6_PREFIX = 0xfc
+
+/** Spring 프로필 이름과 Toss 개별 키 접두사 — 코드와 함께 바뀌는 불변식이라 한곳에서만 적는다. */
+private val PRODUCTION_PROFILES = setOf("production", "prod")
+private val DEVELOPMENT_PROFILES = setOf("local", "test")
+private const val ACTIVE_PROFILES_PROPERTY = "spring.profiles.active"
+private const val TEST_CLIENT_KEY_PREFIX = "test_ck_"
+private const val TEST_SECRET_KEY_PREFIX = "test_sk_"
+private const val LIVE_CLIENT_KEY_PREFIX = "live_ck_"
+private const val LIVE_SECRET_KEY_PREFIX = "live_sk_"

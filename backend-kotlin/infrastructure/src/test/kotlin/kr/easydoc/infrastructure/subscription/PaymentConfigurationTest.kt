@@ -1,18 +1,21 @@
 package kr.easydoc.infrastructure.subscription
 
+import kr.easydoc.application.subscription.PaymentEnvironments
+import kr.easydoc.application.subscription.TossCallbackUrl
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.app.AppProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.mock.env.MockEnvironment
+import java.util.UUID
 
 class PaymentConfigurationTest {
     private val configuration = SubscriptionConfiguration()
     private val productionApp = AppProperties("https://easydoc.kr")
     private val live =
         PaymentProperties(
-            provider = "toss_live",
+            provider = PaymentEnvironments.TOSS_LIVE,
             tossClientKey = Secret("live_ck_fixture"),
             tossSecretKey = Secret("live_sk_fixture"),
             purchaseEnabled = true,
@@ -20,6 +23,86 @@ class PaymentConfigurationTest {
         )
 
     private fun environment(vararg profiles: String) = MockEnvironment().apply { setActiveProfiles(*profiles) }
+
+    @Test
+    fun `production combined with local or test is rejected as a profile problem`() {
+        listOf("local", "test").forEach { profile ->
+            assertThatThrownBy {
+                configuration.paymentGateway(live, environment("worker", "production", profile), productionApp)
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("spring.profiles.active")
+                .hasMessageContaining("production cannot be combined with local/test profiles")
+                .hasMessageContaining("profiles=worker,production,$profile")
+                .hasMessageNotContaining("easydoc.payment.provider")
+                .hasMessageNotContaining("live_ck_fixture")
+                .hasMessageNotContaining("live_sk_fixture")
+        }
+    }
+
+    @Test
+    fun `live settings are validated without the production profile too`() {
+        assertThat(configuration.paymentGateway(live, environment("api"), productionApp))
+            .isInstanceOf(StubPaymentGateway::class.java)
+
+        listOf(
+            live.copy(mockEnabled = true) to "easydoc.payment.mock-enabled",
+            live.copy(tossClientKey = Secret("test_ck_fixture")) to "easydoc.payment.toss-client-key",
+            live.copy(tossSecretKey = Secret("test_sk_fixture")) to "easydoc.payment.toss-secret-key",
+        ).forEach { (properties, property) ->
+            assertThatThrownBy {
+                configuration.paymentGateway(properties, environment("api"), productionApp)
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining(property)
+                .hasMessageNotContaining("live_ck_fixture")
+                .hasMessageNotContaining("live_sk_fixture")
+                .hasMessageNotContaining("test_ck_fixture")
+                .hasMessageNotContaining("test_sk_fixture")
+        }
+
+        assertThatThrownBy {
+            configuration.paymentGateway(live, environment("api"), AppProperties("http://easydoc.kr"))
+        }.isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("easydoc.app.public-base-url")
+            .hasMessageNotContaining("http://easydoc.kr")
+    }
+
+    @Test
+    fun `live billing rejects a configured allowed workspace list without echoing the ids`() {
+        val workspace = UUID.randomUUID()
+        listOf(arrayOf("production"), arrayOf("api")).forEach { profiles ->
+            assertThatThrownBy {
+                configuration.paymentGateway(
+                    live.copy(allowedWorkspaces = setOf(workspace)),
+                    environment(*profiles),
+                    productionApp,
+                )
+            }.isInstanceOf(IllegalStateException::class.java)
+                .hasMessageContaining("easydoc.payment.allowed-workspaces")
+                .hasMessageNotContaining(workspace.toString())
+        }
+
+        assertThat(
+            configuration.paymentGateway(
+                PaymentProperties(
+                    provider = PaymentEnvironments.TOSS_TEST,
+                    tossClientKey = Secret("test_ck_fixture"),
+                    tossSecretKey = Secret("test_sk_fixture"),
+                    allowedWorkspaces = setOf(workspace),
+                ),
+                environment("local"),
+                AppProperties(),
+            ),
+        ).isInstanceOf(StubPaymentGateway::class.java)
+    }
+
+    @Test
+    fun `the guard reads the same callback URL the API hands out`() {
+        assertThat(TossCallbackUrl.from(productionApp.publicBaseUrl))
+            .isEqualTo("https://easydoc.kr" + TossCallbackUrl.PATH)
+        assertThat(TossCallbackUrl.from("https://easydoc.kr/")).isEqualTo("https://easydoc.kr" + TossCallbackUrl.PATH)
+        assertThat(configuration.paymentGateway(live, environment("production"), AppProperties("https://easydoc.kr/")))
+            .isInstanceOf(StubPaymentGateway::class.java)
+    }
 
     @Test
     fun `local and test reject live billing before gateway construction`() {
@@ -41,8 +124,8 @@ class PaymentConfigurationTest {
 
         val invalid =
             listOf(
-                live.copy(provider = "stub"),
-                live.copy(provider = "toss_test"),
+                live.copy(provider = PaymentEnvironments.STUB),
+                live.copy(provider = PaymentEnvironments.TOSS_TEST),
                 live.copy(mockEnabled = true),
                 live.copy(tossClientKey = Secret("test_ck_fixture")),
                 live.copy(tossSecretKey = Secret.EMPTY),
@@ -185,7 +268,7 @@ class PaymentConfigurationTest {
         val local = environment("local")
         val test =
             PaymentProperties(
-                provider = "toss_test",
+                provider = PaymentEnvironments.TOSS_TEST,
                 tossClientKey = Secret("test_ck_fixture"),
                 tossSecretKey = Secret("test_sk_fixture"),
             )
