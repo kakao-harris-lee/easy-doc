@@ -123,6 +123,49 @@ class TossBillingServiceTest {
     }
 
     @Test
+    fun `live purchases stay closed until the published terms take effect`() {
+        val justBefore = LegalSnapshot.EFFECTIVE_AT.minusSeconds(1)
+
+        val registration =
+            Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = true, now = justBefore)
+        registration.store.orders.clear()
+        registration.store.currentSession = null
+        assertThat(registration.service.purchaseAllowed(registration.workspace)).isFalse()
+        assertThat(registration.overview().purchaseEnabled).isFalse()
+        assertThatThrownBy {
+            registration.service.begin(
+                registration.owner,
+                registration.workspace,
+                "start",
+                consentVersion = "start-monthly-v1",
+            )
+        }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
+
+        val charge = Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = true, now = justBefore)
+        charge.service.process(charge.order.id)
+        assertThat(charge.gateway.charges).isZero()
+
+        val onEffective =
+            Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = true, now = LegalSnapshot.EFFECTIVE_AT)
+        assertThat(onEffective.service.purchaseAllowed(onEffective.workspace)).isTrue()
+        onEffective.service.process(onEffective.order.id)
+        assertThat(onEffective.gateway.charges).isEqualTo(1)
+    }
+
+    @Test
+    fun `test billing purchase rules are untouched by the legal effective instant`() {
+        val justBefore = LegalSnapshot.EFFECTIVE_AT.minusSeconds(1)
+
+        val review = Fixture(purchase = false, autoCharge = false, reviewWorkspace = true, now = justBefore)
+        assertThat(review.service.purchaseAllowed(review.workspace)).isTrue()
+        review.service.process(review.order.id)
+        assertThat(review.gateway.charges).isEqualTo(1)
+
+        val open = Fixture(purchase = true, now = justBefore)
+        assertThat(open.service.purchaseAllowed(open.workspace)).isTrue()
+    }
+
+    @Test
     fun `production keeps existing Start only plan validation`() {
         val f = Fixture(environment = PaymentEnvironments.TOSS_LIVE)
         f.store.orders.clear()
@@ -671,8 +714,14 @@ class TossBillingServiceTest {
         reviewWorkspace: Boolean = false,
         val environment: String = PaymentEnvironments.TOSS_TEST,
         val zone: java.time.ZoneId = ZoneOffset.UTC,
+        // 실결제 픽스처는 약관 시행 시각을 기본으로 둔다. 그 전의 toss_live 구매는 닫혀 있다.
+        val now: Instant =
+            if (environment == PaymentEnvironments.TOSS_LIVE) {
+                LegalSnapshot.EFFECTIVE_AT
+            } else {
+                Instant.parse("2026-03-05T00:00:00Z")
+            },
     ) {
-        val now: Instant = Instant.parse("2026-03-05T00:00:00Z")
         val owner: UUID = UUID.randomUUID()
         val workspace: UUID = UUID.randomUUID()
         val order =
@@ -771,9 +820,9 @@ class TossBillingServiceTest {
                     ): Boolean = error("stub gateway must not be called")
                 },
                 false,
-                Clock.fixed(now, ZoneOffset.UTC),
+                clock,
                 zone,
-                userRepository,
+                users,
                 service,
             ).read(owner, workspace)
 

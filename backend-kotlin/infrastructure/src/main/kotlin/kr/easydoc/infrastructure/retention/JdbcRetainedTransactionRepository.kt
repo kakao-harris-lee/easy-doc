@@ -13,6 +13,8 @@ import kr.easydoc.application.retention.RetainedTransactionPurgeStore
 import kr.easydoc.application.retention.RetainedTransactionSummary
 import kr.easydoc.application.subscription.BillingOrder
 import kr.easydoc.application.subscription.BillingSession
+import kr.easydoc.application.subscription.LegalSnapshot
+import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.TossPayment
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -587,7 +589,7 @@ class JdbcRetainedTransactionRepository(
         // version/time and stay quarantined until evidence is reviewed.
         val current =
             snapshotEligible && session.consentVersion == CURRENT_CONSENT_VERSION &&
-                occurredAt != null && !occurredAt.isBefore(Instant.parse("2026-11-01T00:00:00+09:00"))
+                occurredAt != null && !occurredAt.isBefore(LegalSnapshot.EFFECTIVE_AT)
         upsertRecord(
             id = id,
             type = RetainedRecordType.CONSENT,
@@ -603,9 +605,9 @@ class JdbcRetainedTransactionRepository(
                     "customer_email" to email,
                     "consent_version" to session.consentVersion,
                     "consent_at" to occurredAt?.toString(),
-                    "terms_snapshot" to if (current) legalResource("legal/terms-$LEGAL_SNAPSHOT_VERSION.md") else null,
+                    "terms_snapshot" to if (current) legalResource("legal/terms-${LegalSnapshot.VERSION}.md") else null,
                     "privacy_snapshot" to
-                        if (current) legalResource("legal/privacy-$LEGAL_SNAPSHOT_VERSION.md") else null,
+                        if (current) legalResource("legal/privacy-${LegalSnapshot.VERSION}.md") else null,
                 ),
         )
     }
@@ -1031,7 +1033,7 @@ class JdbcRetainedTransactionRepository(
         const val MAX_PAGE_SIZE = 100
         const val TRANSACTION_RETENTION_YEARS = 5L
         const val COMPLAINT_RETENTION_YEARS = 3L
-        const val LIVE_ENVIRONMENT = "toss_live"
+        const val LIVE_ENVIRONMENT = PaymentEnvironments.TOSS_LIVE
         val CHARGE_KINDS = setOf("charge", "renewal")
 
         fun supplyId(orderId: UUID): UUID = UUID.nameUUIDFromBytes("supply:$orderId".toByteArray())
@@ -1039,7 +1041,6 @@ class JdbcRetainedTransactionRepository(
         fun consentId(sessionId: UUID): UUID = UUID.nameUUIDFromBytes("consent:$sessionId".toByteArray())
 
         const val CURRENT_CONSENT_VERSION = "start-monthly-v1"
-        const val LEGAL_SNAPSHOT_VERSION = "2026-11-01"
 
         fun refundId(
             orderId: UUID,

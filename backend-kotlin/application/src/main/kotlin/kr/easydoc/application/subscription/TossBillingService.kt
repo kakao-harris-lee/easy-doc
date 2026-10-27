@@ -44,8 +44,17 @@ class TossBillingService(
 ) {
     private val log = LoggerFactory.getLogger(TossBillingService::class.java)
 
+    /**
+     * 실결제는 공개한 약관의 시행 시각([LegalSnapshot.EFFECTIVE_AT]) 전에는 열지 않는다. 그 전의
+     * 구매는 동의 기록이 가리킬 약관이 아직 효력이 없는 상태에서 돈을 받는 것이다. 검수
+     * allowlist 는 실결제에서 보지 않는다 — 실결제 여부는 설정 하나로만 정한다.
+     */
     fun purchaseAllowed(workspace: UUID): Boolean =
-        purchaseEnabled || (environment != PaymentEnvironments.TOSS_LIVE && workspace in allowedWorkspaces)
+        if (environment == PaymentEnvironments.TOSS_LIVE) {
+            purchaseEnabled && !clock.instant().isBefore(LegalSnapshot.EFFECTIVE_AT)
+        } else {
+            purchaseEnabled || workspace in allowedWorkspaces
+        }
 
     fun owns(workspace: UUID): Boolean =
         subscriptions.find(workspace)?.let {
