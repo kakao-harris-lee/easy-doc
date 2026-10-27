@@ -112,11 +112,13 @@ class TossBillingServiceTest {
             )
         }.isInstanceOf(kr.easydoc.core.exceptions.ConflictException::class.java)
 
-        val closedApproval = Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = false, reviewWorkspace = true)
+        val closedApproval =
+            Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = false, reviewWorkspace = true)
         closedApproval.service.process(closedApproval.order.id)
         assertThat(closedApproval.gateway.charges).isZero()
 
-        val otherWorkspace = Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = true, reviewWorkspace = false)
+        val otherWorkspace =
+            Fixture(environment = PaymentEnvironments.TOSS_LIVE, purchase = true, reviewWorkspace = false)
         assertThat(otherWorkspace.overview().purchaseEnabled).isTrue()
     }
 
