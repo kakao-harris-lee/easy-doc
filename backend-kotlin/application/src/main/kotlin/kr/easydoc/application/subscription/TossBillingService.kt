@@ -3,11 +3,15 @@ package kr.easydoc.application.subscription
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotifications
+import kr.easydoc.application.notification.OperatorPaymentKind
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
+import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -32,16 +36,21 @@ class TossBillingService(
     val clientKey: Secret = Secret.EMPTY,
     private val users: kr.easydoc.application.auth.UserRepository,
     private val timing: TossBillingTiming = TossBillingTiming(),
-    val environment: String = "toss_test",
+    val environment: String = PaymentEnvironments.TOSS_TEST,
     val purchaseEnabled: Boolean = enabled,
     val autoChargeEnabled: Boolean = enabled,
     val allowedWorkspaces: Set<UUID> = emptySet(),
+    private val operatorNotifications: OperatorNotifications,
 ) {
+    private val log = LoggerFactory.getLogger(TossBillingService::class.java)
+
     fun purchaseAllowed(workspace: UUID): Boolean =
-        purchaseEnabled || (environment != "toss_live" && workspace in allowedWorkspaces)
+        purchaseEnabled || (environment != PaymentEnvironments.TOSS_LIVE && workspace in allowedWorkspaces)
 
     fun owns(workspace: UUID): Boolean =
-        subscriptions.find(workspace)?.let { it.provider in listOf("toss_test", "toss_live") }
+        subscriptions.find(workspace)?.let {
+            it.provider in setOf(PaymentEnvironments.TOSS_TEST, PaymentEnvironments.TOSS_LIVE)
+        }
             ?: (enabled && store.session(workspace) != null)
 
     fun cardLastFour(workspace: UUID): String? =
@@ -199,38 +208,49 @@ class TossBillingService(
         owner: UUID,
         workspace: UUID,
     ) {
-        owned(owner, workspace) {
-            subscriptions.find(workspace)?.let { subscriptions.save(it.copy(status = "canceling")) }
-            store.stopScheduled(workspace)
-            store.session(workspace)?.let {
-                if (it.state == "issuing") conflict("카드 등록 결과를 먼저 확인하세요")
-                store.saveSession(
-                    it.copy(state = if (store.replacementBlocked(workspace)) "cancel_requested" else "revoking"),
-                )
+        val events =
+            owned(owner, workspace) {
+                val events =
+                    subscriptions.find(workspace)?.let { current ->
+                        val events = subscriptionEventsForTransition(current, "canceling")
+                        subscriptions.save(current.copy(status = "canceling"))
+                        events
+                    } ?: emptyList()
+                store.stopScheduled(workspace)
+                store.session(workspace)?.let {
+                    if (it.state == "issuing") conflict("카드 등록 결과를 먼저 확인하세요")
+                    store.saveSession(
+                        it.copy(state = if (store.replacementBlocked(workspace)) "cancel_requested" else "revoking"),
+                    )
+                }
+                events
             }
-        }
+        notifyAll(events)
     }
 
     fun cancel(
         owner: UUID,
         workspace: UUID,
     ) {
-        owned(owner, workspace) {
-            if (store.replacementBlocked(workspace)) conflict("처리 중인 결제 결과를 확인한 후 해지하세요")
-            store.stopScheduled(workspace)
-            val session = store.session(workspace)
-            if (session?.state == "issuing") {
-                conflict("처리 중인 카드 등록 결과를 확인한 후 해지하세요")
-            }
-            subscriptions.find(workspace)?.let {
-                if (it.status ==
-                    "active"
-                ) {
-                    subscriptions.save(it.copy(status = "canceling"))
+        val events =
+            owned(owner, workspace) {
+                if (store.replacementBlocked(workspace)) conflict("처리 중인 결제 결과를 확인한 후 해지하세요")
+                store.stopScheduled(workspace)
+                val session = store.session(workspace)
+                if (session?.state == "issuing") {
+                    conflict("처리 중인 카드 등록 결과를 확인한 후 해지하세요")
                 }
+                val events =
+                    subscriptions.find(workspace)?.let { current ->
+                        if (current.status != "active") return@let emptyList()
+                        val events = subscriptionEventsForTransition(current, "canceling")
+                        subscriptions.save(current.copy(status = "canceling"))
+                        events
+                    } ?: emptyList()
+                store.session(workspace)?.let { store.saveSession(it.copy(state = "revoking", authKey = null)) }
+                events
             }
-            store.session(workspace)?.let { store.saveSession(it.copy(state = "revoking", authKey = null)) }
-        }
+        notifyAll(events)
         revoke(workspace)
     }
 
@@ -361,31 +381,33 @@ class TossBillingService(
         }
         if (enabled) recoverAuthorizations()
         subscriptions.due(clock.instant()).filter { it.provider == environment }.forEach { candidate ->
-            owned(candidate.ownerId, candidate.workspaceId) {
-                val current = subscriptions.find(candidate.workspaceId) ?: return@owned
-                if (current.cycleEndsAt > clock.instant() || store.pending(current.workspaceId)) return@owned
-                if (current.status == "canceling") {
-                    expire(current, "expired")
-                    return@owned
+            val events =
+                owned(candidate.ownerId, candidate.workspaceId) {
+                    val current = subscriptions.find(candidate.workspaceId) ?: return@owned emptyList()
+                    if (current.cycleEndsAt > clock.instant() || store.pending(current.workspaceId)) {
+                        return@owned emptyList()
+                    }
+                    if (current.status == "canceling") return@owned expire(current, "expired")
+                    if (current.status != "active" || !enabled || !autoChargeEnabled) return@owned emptyList()
+                    val id = UUID.nameUUIDFromBytes("toss:${current.workspaceId}:${current.cycleEndsAt}".toByteArray())
+                    if (store.order(id) == null) {
+                        val now = clock.instant()
+                        store.saveOrder(
+                            BillingOrder(
+                                id,
+                                current.workspaceId,
+                                current.planId,
+                                current.monthlyPrice,
+                                now,
+                                now.atZone(zone).plusMonths(1).toInstant(),
+                                environment = environment,
+                                kind = "renewal",
+                            ),
+                        )
+                    }
+                    emptyList()
                 }
-                if (current.status != "active" || !enabled || !autoChargeEnabled) return@owned
-                val id = UUID.nameUUIDFromBytes("toss:${current.workspaceId}:${current.cycleEndsAt}".toByteArray())
-                if (store.order(id) == null) {
-                    val now = clock.instant()
-                    store.saveOrder(
-                        BillingOrder(
-                            id,
-                            current.workspaceId,
-                            current.planId,
-                            current.monthlyPrice,
-                            now,
-                            now.atZone(zone).plusMonths(1).toInstant(),
-                            environment = environment,
-                            kind = "renewal",
-                        ),
-                    )
-                }
-            }
+            notifyAll(events)
         }
         store.candidates(clock.instant()).forEach(::process)
         store.cleanupCandidates().forEach(::revoke)
@@ -440,21 +462,30 @@ class TossBillingService(
         owner: UUID,
     ): Boolean {
         if (existing.status != "scheduled" || store.session(existing.workspaceId)?.state != "needs_card") return false
-        owned(owner, existing.workspaceId) {
-            if (store.session(existing.workspaceId)?.state != "needs_card" ||
-                store.order(existing.id)?.status != "scheduled"
-            ) {
-                return@owned
+        val events =
+            owned(owner, existing.workspaceId) {
+                val current = store.order(existing.id) ?: return@owned emptyList()
+                if (store.session(existing.workspaceId)?.state != "needs_card" || current.status != "scheduled") {
+                    return@owned emptyList()
+                }
+                val first = current.firstFailureAt ?: current.createdAt
+                val suspendAt = first.plus(SUSPENSION_DELAY)
+                if (clock.instant() >= suspendAt) {
+                    val events =
+                        subscriptions
+                            .find(existing.workspaceId)
+                            ?.let { expire(it, "past_due") }
+                            .orEmpty()
+                            .toMutableList()
+                    failedOrderEvent(owner, current)?.let(events::add)
+                    store.saveOrder(current.copy(status = "failed"))
+                    events
+                } else {
+                    store.release(current.id, suspendAt)
+                    emptyList()
+                }
             }
-            val first = existing.firstFailureAt ?: existing.createdAt
-            val suspendAt = first.plus(SUSPENSION_DELAY)
-            if (clock.instant() >= suspendAt) {
-                subscriptions.find(existing.workspaceId)?.let { expire(it, "past_due") }
-                store.saveOrder(existing.copy(status = "failed"))
-            } else {
-                store.release(existing.id, suspendAt)
-            }
-        }
+        notifyAll(events)
         return true
     }
 
@@ -479,21 +510,28 @@ class TossBillingService(
         if (waitForCard(existing, owner)) return
         val order = owned(owner, existing.workspaceId) { store.claim(id, clock.instant()) } ?: return
         if (deferClaimedOrder(order)) return
+        // 알림은 결제 예외 처리와 섞이지 않도록 try 밖에서 한 번만 보낸다.
+        var suspended = emptyList<OperatorNotificationEvent.Payment>()
         try {
             if (order.status == "suspend_pending") {
-                owned(owner, order.workspaceId) {
-                    subscriptions.find(order.workspaceId)?.let { expire(it, "past_due") }
-                    store.saveOrder(order.copy(status = "failed"))
-                }
-                return
+                suspended =
+                    owned(owner, order.workspaceId) {
+                        val current = store.order(order.id) ?: return@owned emptyList()
+                        if (current.status != "suspend_pending") return@owned emptyList()
+                        val events = subscriptions.find(order.workspaceId)?.let { expire(it, "past_due") }.orEmpty()
+                        store.saveOrder(current.copy(status = "failed"))
+                        events
+                    }
+            } else {
+                val payment = if (order.kind == "refund") refundResult(order) else chargeResult(order)
+                finish(order, payment)
             }
-            val payment = if (order.kind == "refund") refundResult(order) else chargeResult(order)
-            finish(order, payment)
         } catch (failure: TossDeclined) {
             failed(order, failure.requiresCard)
         } catch (_: TossUncertain) {
             handleUncertain(owner, order)
         }
+        notifyAll(suspended)
     }
 
     private fun handleUncertain(
@@ -502,17 +540,20 @@ class TossBillingService(
     ) {
         // Serialize meaningful revision stamps with every other workspace billing writer.
         // Re-read after the provider call so a late uncertain result cannot overwrite a settled order.
-        owned(owner, order.workspaceId) {
-            val current = store.order(order.id) ?: return@owned
-            if (current.status in listOf("paid", "failed", "canceled")) return@owned
-            if (retryWindowElapsed(current.createdAt) &&
-                current.status in listOf("pending", "processing", "scheduled")
-            ) {
-                store.saveOrder(current.copy(status = "manual_review"))
-            } else {
-                store.release(order.id, clock.instant().plus(timing.retryInterval))
+        val events =
+            owned(owner, order.workspaceId) {
+                val current = store.order(order.id) ?: return@owned emptyList()
+                if (current.status in listOf("paid", "failed", "canceled")) return@owned emptyList()
+                if (retryWindowElapsed(current.createdAt) && current.status in FAILURE_SOURCE_STATUSES) {
+                    val saved = current.copy(status = "manual_review")
+                    store.saveOrder(saved)
+                    listOf(paymentEvent(owner, saved, OperatorPaymentKind.PAYMENT_MANUAL_REVIEW))
+                } else {
+                    store.release(order.id, clock.instant().plus(timing.retryInterval))
+                    emptyList()
+                }
             }
-        }
+        notifyAll(events)
     }
 
     private fun chargeAllowed(order: BillingOrder): Boolean =
@@ -564,51 +605,111 @@ class TossBillingService(
         return gateway.refund(payment.key, order.amount, order.id)
     }
 
-    @Suppress("ThrowsCount") // Ownership and persisted state are rechecked under the lock.
-    private fun finish(
+    private fun paymentEvent(
+        owner: UUID,
+        order: BillingOrder,
+        kind: OperatorPaymentKind,
+    ): OperatorNotificationEvent.Payment =
+        OperatorNotificationEvent.Payment(
+            userId = owner,
+            occurredAt = clock.instant(),
+            kind = kind,
+            workspaceId = order.workspaceId,
+            orderId = order.id,
+            planId = order.planId,
+            amountKrw = order.amount,
+            environment = order.environment,
+        )
+
+    private fun notifyAll(events: List<OperatorNotificationEvent.Payment>) {
+        events.forEach(operatorNotifications::notify)
+    }
+
+    // `waitForCard` 는 `scheduled` 주문만 이 함수로 넘기는데 환불 주문은 그 상태가 되지 않는다
+    // (`scheduled` 전이는 renewal 재시도에만 있다). 환불 실패는 `failed` 경로에서만 알린다.
+    private fun failedOrderEvent(
+        owner: UUID,
+        current: BillingOrder,
+    ): OperatorNotificationEvent.Payment? =
+        current.takeIf { it.status in FAILURE_SOURCE_STATUSES }?.let { failed ->
+            when (failed.kind) {
+                "charge" -> paymentEvent(owner, failed, OperatorPaymentKind.PAYMENT_FAILED)
+                "renewal" -> paymentEvent(owner, failed, OperatorPaymentKind.RENEWAL_FAILED)
+                "refund" -> paymentEvent(owner, failed, OperatorPaymentKind.REFUND_FAILED)
+                else -> null
+            }
+        }
+
+    private fun approvedKind(order: BillingOrder): OperatorPaymentKind =
+        when (order.kind) {
+            "charge" -> OperatorPaymentKind.PAYMENT_APPROVED
+            "renewal" -> OperatorPaymentKind.RENEWAL_APPROVED
+            else -> throw IllegalArgumentException("unsupported approval kind")
+        }
+
+    private fun originalForFinish(
         order: BillingOrder,
         payment: TossPayment,
-    ) {
+    ): BillingOrder {
         val original =
-            if (order.kind ==
-                "refund"
-            ) {
+            if (order.kind == "refund") {
                 store.order(requireNotNull(order.originalId)) ?: throw TossUncertain()
             } else {
                 order
             }
         validate(original, payment)
-        if (order.kind == "refund" &&
-            payment.remainingAmount != order.previousRemaining - order.amount
-        ) {
+        if (order.kind == "refund" && payment.remainingAmount != order.previousRemaining - order.amount) {
             throw TossUncertain()
         }
+        return original
+    }
+
+    @Suppress("ThrowsCount") // Ownership and persisted state are rechecked under the lock.
+    private fun finish(
+        order: BillingOrder,
+        payment: TossPayment,
+    ) {
+        val original = originalForFinish(order, payment)
         val owner = accounts.ownerOf(order.workspaceId) ?: throw TossUncertain()
-        owned(owner, order.workspaceId) {
-            val latest = store.order(original.id) ?: throw TossUncertain()
-            // Finalization is atomic with allowance replacement. Replays and webhooks cannot replenish credits.
-            if (latest.status in listOf("pending", "processing", "scheduled", "manual_review") &&
-                payment.status == "DONE"
-            ) {
-                grantApprovedPeriod(original, payment, owner)
+        val events =
+            owned(owner, order.workspaceId) {
+                val events = mutableListOf<OperatorNotificationEvent.Payment>()
+                val latestOriginal = store.order(original.id) ?: throw TossUncertain()
+                val effective =
+                    latestOriginal.payment?.takeIf { it.remainingAmount < payment.remainingAmount } ?: payment
+                val endsAt = (effective.approvedAt ?: clock.instant()).atZone(zone).plusMonths(1).toInstant()
+                val savedOriginal =
+                    latestOriginal.copy(
+                        status = "paid",
+                        payment = effective,
+                        cycleEndsAt = endsAt,
+                        nextAttemptAt = clock.instant().plus(Duration.ofDays(1)),
+                    )
+
+                if (order.kind in listOf("charge", "renewal") &&
+                    latestOriginal.status in UNSETTLED_ORDER_STATUSES && payment.status == "DONE"
+                ) {
+                    grantApprovedPeriod(original, payment, owner)
+                    events += paymentEvent(owner, savedOriginal, approvedKind(savedOriginal))
+                }
+
+                store.saveOrder(savedOriginal)
+                store.savePayment(original, effective)
+                store.session(order.workspaceId)?.takeIf { it.state == "cancel_requested" }?.let {
+                    store.saveSession(it.copy(state = "revoking", authKey = null))
+                }
+
+                if (order.kind == "refund") {
+                    val latestOperation = store.order(order.id) ?: throw TossUncertain()
+                    val savedOperation = latestOperation.copy(status = "paid", payment = payment)
+                    store.saveOrder(savedOperation)
+                    if (latestOperation.status in UNSETTLED_ORDER_STATUSES) {
+                        events += paymentEvent(owner, savedOperation, OperatorPaymentKind.REFUND_APPROVED)
+                    }
+                }
+                events
             }
-            // A slower status lookup must never undo a refund already reconciled in another transaction.
-            val effective = latest.payment?.takeIf { it.remainingAmount < payment.remainingAmount } ?: payment
-            val endsAt = (effective.approvedAt ?: clock.instant()).atZone(zone).plusMonths(1).toInstant()
-            store.saveOrder(
-                latest.copy(
-                    status = "paid",
-                    payment = effective,
-                    cycleEndsAt = endsAt,
-                    nextAttemptAt = clock.instant().plus(Duration.ofDays(1)),
-                ),
-            )
-            store.savePayment(original, effective)
-            store.session(order.workspaceId)?.takeIf { it.state == "cancel_requested" }?.let {
-                store.saveSession(it.copy(state = "revoking", authKey = null))
-            }
-            if (order.kind == "refund") store.saveOrder(order.copy(status = "paid", payment = payment))
-        }
+        notifyAll(events)
     }
 
     private fun grantApprovedPeriod(
@@ -651,59 +752,66 @@ class TossBillingService(
         requiresCard: Boolean,
     ) {
         val owner = accounts.ownerOf(order.workspaceId) ?: return
-        owned(owner, order.workspaceId) {
-            val current = store.order(order.id) ?: return@owned
-            if (current.status !in listOf("pending", "processing", "scheduled")) return@owned
-            store.saveOrder(current.copy(status = "failed"))
-            if (order.kind in listOf("charge", "renewal")) {
-                if (requiresCard) {
-                    store.session(order.workspaceId)?.let {
-                        store.saveSession(it.copy(state = "needs_card"))
+        val events =
+            owned(owner, order.workspaceId) {
+                val current = store.order(order.id) ?: return@owned emptyList()
+                if (current.status !in FAILURE_SOURCE_STATUSES) return@owned emptyList()
+                val event = failedOrderEvent(owner, current)
+                store.saveOrder(current.copy(status = "failed"))
+                if (order.kind in listOf("charge", "renewal")) {
+                    if (requiresCard) {
+                        store.session(order.workspaceId)?.let {
+                            store.saveSession(it.copy(state = "needs_card"))
+                        }
                     }
-                }
-                subscriptions.record(
-                    SubscriptionPayment(
-                        order.id,
-                        order.workspaceId,
-                        order.planId,
-                        order.amount,
-                        "failed",
-                        order.createdAt,
-                        order.simulateFailure,
-                        order.environment,
-                    ),
-                )
-                if (order.kind == "charge") {
-                    store.session(order.workspaceId)?.let {
-                        store.saveSession(it.copy(state = "revoking", authKey = null))
-                    }
-                    return@owned
-                }
-                val first = order.firstFailureAt ?: clock.instant()
-                val delays = RETRY_DELAYS
-                if (order.attempt < delays.size) {
-                    val next = first.plus(delays[order.attempt])
-                    store.saveOrder(
-                        order.copy(
-                            id = UUID.nameUUIDFromBytes("${order.cycleId}:${order.attempt + 1}".toByteArray()),
-                            status = "scheduled",
-                            payment = null,
-                            attempt = order.attempt + 1,
-                            firstFailureAt = first,
-                            createdAt = clock.instant(),
-                            nextAttemptAt = next,
+                    subscriptions.record(
+                        SubscriptionPayment(
+                            order.id,
+                            order.workspaceId,
+                            order.planId,
+                            order.amount,
+                            "failed",
+                            order.createdAt,
+                            order.simulateFailure,
+                            order.environment,
                         ),
                     )
-                } else {
-                    store.saveOrder(
-                        order.copy(
-                            status = "suspend_pending",
-                            firstFailureAt = first,
-                            nextAttemptAt = first.plus(SUSPENSION_DELAY),
-                        ),
-                    )
+                    if (order.kind == "charge") {
+                        store.session(order.workspaceId)?.let {
+                            store.saveSession(it.copy(state = "revoking", authKey = null))
+                        }
+                        return@owned listOfNotNull(event)
+                    }
+                    scheduleRenewalFailure(order)
                 }
+                listOfNotNull(event)
             }
+        notifyAll(events)
+    }
+
+    private fun scheduleRenewalFailure(order: BillingOrder) {
+        val first = order.firstFailureAt ?: clock.instant()
+        if (order.attempt < RETRY_DELAYS.size) {
+            val next = first.plus(RETRY_DELAYS[order.attempt])
+            store.saveOrder(
+                order.copy(
+                    id = UUID.nameUUIDFromBytes("${order.cycleId}:${order.attempt + 1}".toByteArray()),
+                    status = "scheduled",
+                    payment = null,
+                    attempt = order.attempt + 1,
+                    firstFailureAt = first,
+                    createdAt = clock.instant(),
+                    nextAttemptAt = next,
+                ),
+            )
+        } else {
+            store.saveOrder(
+                order.copy(
+                    status = "suspend_pending",
+                    firstFailureAt = first,
+                    nextAttemptAt = first.plus(SUSPENSION_DELAY),
+                ),
+            )
         }
     }
 
@@ -759,7 +867,7 @@ class TossBillingService(
         order: BillingOrder,
         payment: TossPayment,
     ) {
-        if (order.environment == "toss_live" && payment.approvedAt == null) throw TossUncertain()
+        if (order.environment == PaymentEnvironments.TOSS_LIVE && payment.approvedAt == null) throw TossUncertain()
         if (payment.orderId != order.id || payment.amount != order.amount ||
             payment.remainingAmount !in 0..order.amount
         ) {
@@ -773,10 +881,43 @@ class TossBillingService(
         }
     }
 
+    @Suppress("ReturnCount") // Unsupported and unchanged transitions are notification no-ops.
+    internal fun subscriptionEventsForTransition(
+        subscription: Subscription,
+        newStatus: String,
+    ): List<OperatorNotificationEvent.Payment> {
+        if (subscription.status == newStatus) return emptyList()
+        val kind =
+            when (newStatus) {
+                "canceling" -> OperatorPaymentKind.SUBSCRIPTION_CANCELING
+                "expired" -> OperatorPaymentKind.SUBSCRIPTION_EXPIRED
+                "past_due" -> OperatorPaymentKind.SUBSCRIPTION_PAST_DUE
+                "suspended" -> OperatorPaymentKind.SUBSCRIPTION_SUSPENDED
+                else -> return emptyList()
+            }
+        val latest = store.latestOrder(subscription.workspaceId)
+        if (latest == null) {
+            log.warn(
+                "구독 운영 알림의 기준 주문이 없어 알림을 생략한다: eventType={} userId={}",
+                kind.wireValue,
+                subscription.ownerId,
+            )
+            return emptyList()
+        }
+        val event =
+            paymentEvent(subscription.ownerId, latest, kind).copy(
+                planId = subscription.planId,
+                amountKrw = subscription.monthlyPrice,
+                environment = subscription.provider,
+            )
+        return listOf(event)
+    }
+
     private fun expire(
         subscription: Subscription,
         status: String,
-    ) {
+    ): List<OperatorNotificationEvent.Payment> {
+        val events = subscriptionEventsForTransition(subscription, status)
         subscriptions.save(subscription.copy(status = status))
         credits.setAllowance(
             subscription.workspaceId,
@@ -787,6 +928,7 @@ class TossBillingService(
             CreditReason.CYCLE_END,
             "Toss subscription ended",
         )
+        return events
     }
 
     private fun <T> owned(
@@ -812,6 +954,8 @@ class TossBillingService(
         const val SUSPENSION_DAYS = 14L
         const val SECOND_RETRY_DAYS = 3L
         const val THIRD_RETRY_DAYS = 7L
+        val UNSETTLED_ORDER_STATUSES = setOf("pending", "processing", "scheduled", "manual_review")
+        val FAILURE_SOURCE_STATUSES = setOf("pending", "processing", "scheduled")
         val SUSPENSION_DELAY: Duration = Duration.ofDays(SUSPENSION_DAYS)
         val RETRY_DELAYS: List<Duration> =
             listOf(Duration.ofHours(1), Duration.ofDays(SECOND_RETRY_DAYS), Duration.ofDays(THIRD_RETRY_DAYS))

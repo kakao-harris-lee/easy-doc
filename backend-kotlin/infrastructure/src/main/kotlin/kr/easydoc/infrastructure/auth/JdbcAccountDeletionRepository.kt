@@ -22,7 +22,7 @@ class JdbcAccountDeletionRepository(
     /** `SELECT … FOR UPDATE` — `JdbcUserRepository.lockForUpdate`와 같은 규약. */
     override fun lockForDeletion(userId: UUID): LockedAccount? =
         jdbc
-            .sql("SELECT is_admin, password_hash FROM users WHERE id = :userId FOR UPDATE")
+            .sql("SELECT email, is_admin, password_hash FROM users WHERE id = :userId FOR UPDATE")
             .param("userId", userId)
             .query { rs, _ -> toLockedAccount(rs) }
             .optional()
@@ -111,6 +111,7 @@ class JdbcAccountDeletionRepository(
 
     private fun toLockedAccount(rs: ResultSet): LockedAccount =
         LockedAccount(
+            email = rs.getString("email"),
             isAdmin = rs.getBoolean("is_admin"),
             passwordHash = rs.getString("password_hash")?.let(::PasswordHash),
         )

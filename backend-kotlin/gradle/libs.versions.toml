@@ -241,6 +241,7 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 # 가져온다 — 유스케이스 모듈은 파사드만 알아야 로그 백엔드 교체가 그 모듈에 닿지 않는다.
 # 버전은 Boot BOM 이 관리한다.
 slf4j-api = { module = "org.slf4j:slf4j-api" }
+logback-classic = { module = "ch.qos.logback:logback-classic" }
 
 # --- Kotlin 런타임 리플렉션 ---------------------------------------------------
 # **설정 바인딩의 전제다.** Spring 이 Kotlin 주 생성자를 찾는 경로가 이것을 요구하고,

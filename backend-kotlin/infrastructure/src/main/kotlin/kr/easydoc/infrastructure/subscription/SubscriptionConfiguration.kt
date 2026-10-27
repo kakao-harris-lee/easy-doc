@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.subscription
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.subscription.PaymentEnvironments
 import kr.easydoc.application.subscription.PaymentGateway
 import kr.easydoc.application.subscription.SubscriptionService
 import kr.easydoc.application.subscription.SubscriptionStore
@@ -20,7 +21,7 @@ import java.util.UUID
 
 @ConfigurationProperties("easydoc.payment")
 data class PaymentProperties(
-    val provider: String = "stub",
+    val provider: String = PaymentEnvironments.STUB,
     val mockEnabled: Boolean = false,
     val tossClientKey: kr.easydoc.core.security.Secret = kr.easydoc.core.security.Secret.EMPTY,
     val tossSecretKey: kr.easydoc.core.security.Secret = kr.easydoc.core.security.Secret.EMPTY,
@@ -47,8 +48,8 @@ class SubscriptionConfiguration {
         app: AppProperties,
     ): PaymentGateway {
         validatePaymentEnvironment(properties, environment, app)
-        check(properties.provider in setOf("stub", "toss_test", "toss_live")) { "Unknown payment provider" }
-        if (properties.provider == "toss_test") {
+        check(properties.provider in PaymentEnvironments.ALLOWED) { "Unknown payment provider" }
+        if (properties.provider == PaymentEnvironments.TOSS_TEST) {
             check(
                 environment.activeProfiles.any { it in setOf("local", "test") } &&
                     environment.activeProfiles.none { it in setOf("prod", "production") },
@@ -58,7 +59,7 @@ class SubscriptionConfiguration {
                     properties.tossSecretKey.reveal().startsWith("test_sk_"),
             ) { "Toss individual test keys are required" }
         }
-        if (properties.provider == "toss_live") {
+        if (properties.provider == PaymentEnvironments.TOSS_LIVE) {
             check(
                 properties.tossClientKey.reveal().startsWith("live_ck_") &&
                     properties.tossSecretKey.reveal().startsWith("live_sk_"),
@@ -82,14 +83,14 @@ class SubscriptionConfiguration {
         val profiles = environment.activeProfiles.toList()
         val production = profiles.any { it == "production" || it == "prod" }
         val development = profiles.any { it == "local" || it == "test" }
-        check(properties.provider in setOf("stub", "toss_test", "toss_live")) {
+        check(properties.provider in PaymentEnvironments.ALLOWED) {
             invalid("easydoc.payment.provider", "unknown provider", profiles)
         }
-        check(!(development && properties.provider == "toss_live")) {
+        check(!(development && properties.provider == PaymentEnvironments.TOSS_LIVE)) {
             invalid("easydoc.payment.provider", "live billing is forbidden in local/test", profiles)
         }
         if (!production) return
-        check(properties.provider == "toss_live") {
+        check(properties.provider == PaymentEnvironments.TOSS_LIVE) {
             invalid("easydoc.payment.provider", "production requires toss_live", profiles)
         }
         check(!properties.mockEnabled) {
@@ -172,7 +173,7 @@ class SubscriptionConfiguration {
             credits,
             transaction,
             gateway,
-            properties.mockEnabled && properties.provider == "stub",
+            properties.mockEnabled && properties.provider == PaymentEnvironments.STUB,
             Clock.systemUTC(),
             usage.zoneId(),
             users,

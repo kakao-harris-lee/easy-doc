@@ -185,8 +185,10 @@ class SensitiveToStringReachTest {
          * Billing DTOs, durable action models, issued card metadata and notification job (+10 net).
          * Admin notification request/command, feedback filters and recent payment event/domain DTO (+5).
          * Callback recovery (8), retained transaction domain/API/adapter models (17).
+         * Telegram configuration, operator events and account-deletion result (+5).
+         * Operator notification queue properties (+1).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 496
+        const val EXPECTED_SOURCE_DECLARATIONS = 502
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

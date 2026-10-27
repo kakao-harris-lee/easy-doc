@@ -1,6 +1,8 @@
 package kr.easydoc.application.auth
 
 import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.notification.OperatorNotificationEvent
+import kr.easydoc.application.notification.OperatorNotifications
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -19,6 +21,7 @@ class AuthService(
     private val transaction: TransactionRunner,
     private val emailVerification: PostSignupEmailVerification,
     private val credits: CreditAccountService,
+    private val operatorNotifications: OperatorNotifications,
 ) {
     private val log = LoggerFactory.getLogger(AuthService::class.java)
 
@@ -55,6 +58,14 @@ class AuthService(
         // 커밋 **뒤**에 발송한다 — 롤백될 수도 있는 계정에 메일을 먼저 보내지 않는다.
         // best-effort 다: 실패해도 가입 자체는 이미 성공했다(`EmailVerificationService`
         // KDoc).
+        operatorNotifications.notify(
+            OperatorNotificationEvent.MemberSignedUp(
+                userId = created.id,
+                occurredAt = created.createdAt,
+                email = created.email,
+                route = "email",
+            ),
+        )
         emailVerification.issueAfterSignup(created.id)
         return created
     }

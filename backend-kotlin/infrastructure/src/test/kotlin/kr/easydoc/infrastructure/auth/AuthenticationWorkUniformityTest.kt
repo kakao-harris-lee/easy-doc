@@ -69,6 +69,9 @@ class AuthenticationWorkUniformityTest {
                 // 발급 자체가 관심사가 아니므로 no-op 이면 충분하다.
                 emailVerification = PostSignupEmailVerification { },
                 credits = CreditAccountService(JdbcCreditAccountRepository(countingJdbc), enforced = false),
+                operatorNotifications =
+                    kr.easydoc.application.notification
+                        .OperatorNotifications { },
             )
     }
 

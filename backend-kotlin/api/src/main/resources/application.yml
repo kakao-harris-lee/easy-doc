@@ -49,6 +49,15 @@ server:
       enabled: false
 
 easydoc:
+  telegram:
+    enabled: ${EASYDOC_TELEGRAM_ENABLED:false}
+    bot-token: ${EASYDOC_TELEGRAM_BOT_TOKEN:}
+    chat-id: ${EASYDOC_TELEGRAM_CHAT_ID:}
+    connect-timeout: ${EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
+    read-timeout: ${EASYDOC_TELEGRAM_READ_TIMEOUT:5}
+  notification:
+    queue-capacity: ${EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
+    shutdown-timeout: ${EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   payment:

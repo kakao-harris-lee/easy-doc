@@ -22,6 +22,15 @@ spring:
     enabled: true
 
 easydoc:
+  telegram:
+    enabled: ${EASYDOC_TELEGRAM_ENABLED:false}
+    bot-token: ${EASYDOC_TELEGRAM_BOT_TOKEN:}
+    chat-id: ${EASYDOC_TELEGRAM_CHAT_ID:}
+    connect-timeout: ${EASYDOC_TELEGRAM_CONNECT_TIMEOUT:2}
+    read-timeout: ${EASYDOC_TELEGRAM_READ_TIMEOUT:5}
+  notification:
+    queue-capacity: ${EASYDOC_NOTIFICATION_QUEUE_CAPACITY:100}
+    shutdown-timeout: ${EASYDOC_NOTIFICATION_SHUTDOWN_TIMEOUT:10}
   table-relations:
     enabled: ${EASYDOC_TABLE_RELATIONS_ENABLED:false}
   review-history:
@@ -157,6 +166,14 @@ logging:
   level:
     root: INFO
     kr.easydoc: INFO
+    # 아래 로거는 요청·DB 값 유출을 막기 위해 DEBUG/TRACE로 내리지 않는다.
+    # 특히 텔레그램 봇 토큰은 요청 URI 경로에 들어가므로 org.springframework.web(.client 포함)을 INFO로 고정한다.
+    org.springframework.web: INFO
+    org.apache.coyote.http11.Http11InputBuffer: INFO
+    org.springframework.jdbc.core.StatementCreatorUtils: INFO
+    org.postgresql.core.v3.QueryExecutorImpl: INFO
+    org.springframework.security: INFO
+    org.flywaydb: INFO
 
 ---
 spring:
