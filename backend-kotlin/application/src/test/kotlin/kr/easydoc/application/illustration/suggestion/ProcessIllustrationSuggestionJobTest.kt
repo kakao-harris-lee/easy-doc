@@ -121,7 +121,31 @@ class ProcessIllustrationSuggestionJobTest {
     }
 
     @Test
-    @DisplayName("구조 위반·전량 탈락은 result_invalid 로 끝나고 이용량을 반환한다")
+    @DisplayName("전량 탈락 결과도 탈락 수와 함께 저장하고 이용량을 소비한다")
+    fun `전량 탈락도 소비한다`() {
+        queuedJob()
+        val empty = suggestionSet(count = 0).copy(droppedCount = 2)
+
+        val outcome =
+            process(runnerReturning(IllustrationSuggestionRunResult.Valid(completedRecord(), empty))).processNext()
+
+        assertThat(outcome).isEqualTo(IllustrationSuggestionJobOutcome.COMPLETED)
+        assertThat(credits.consumes).isEqualTo(1)
+        assertThat(credits.releases).isZero()
+        val stored =
+            IllustrationSuggestionStorageCodec.decode(
+                String(
+                    results.inserted
+                        .single()
+                        .payload.bytes,
+                ),
+            )
+        assertThat(stored.suggestions).isEmpty()
+        assertThat(stored.droppedCount).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("구조 위반은 result_invalid 로 끝나고 이용량을 반환한다")
     fun `쓸 수 없는 결과는 반환한다`() {
         queuedJob()
 

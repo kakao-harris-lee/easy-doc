@@ -565,7 +565,7 @@ test.describe('접근성 — 320px', () => {
     await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
-    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
     await page.getByRole('button', { name: '의견 보내기 (선택)', exact: true }).click()
     await expect(page.getByRole('button', { name: '그림 제안 확인', exact: true })).toBeVisible()
     overflow = await horizontalOverflow(page)
