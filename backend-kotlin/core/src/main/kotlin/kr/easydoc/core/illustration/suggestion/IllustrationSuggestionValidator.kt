@@ -100,7 +100,10 @@ internal object IllustrationSuggestionValidator {
             draft.sourceAnchors.all { isSourceAnchorSupported(it.sourceUnitIndexes, it.quote, sourceUnits) }
         if (!anchored) return false
         val evidence =
-            draft.sourceAnchors.flatMap { it.sourceUnitIndexes }.distinct().joinToString("\n") { sourceUnits[it] }
+            draft.sourceAnchors
+                .flatMap { it.sourceUnitIndexes }
+                .distinct()
+                .joinToString("\n") { sourceUnits[it] }
         val claimed = (draft.scenes + draft.preservedFacts + draft.altTextDraft).joinToString("\n")
         return findMissingFacts(claimed.replace(ORDINAL_BEON, " "), evidence).isEmpty()
     }

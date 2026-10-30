@@ -124,14 +124,15 @@ class IllustrationSuggestionParserTest {
     @Test
     fun `근거에 없는 기간과 금액은 장면 보존 사실 대체텍스트 각각에서 탈락한다`() {
         val source = listOf("요청일부터 원칙적으로 48시간 이내에 지원을 개시합니다.")
-        val invented = listOf(
-            example("procedure", "지원을 개시합니다", "14일 이내 지원", "48시간", "지원 순서"),
-            example("procedure", "지원을 개시합니다", "5만원 지급", "48시간", "지원 순서"),
-            example("procedure", "지원을 개시합니다", "지원 순서", "14일 이내 지급", "지원 순서"),
-            example("procedure", "지원을 개시합니다", "지원 순서", "5만원 지급", "지원 순서"),
-            example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "14일 이내 지급"),
-            example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "5만원 지급"),
-        )
+        val invented =
+            listOf(
+                example("procedure", "지원을 개시합니다", "14일 이내 지원", "48시간", "지원 순서"),
+                example("procedure", "지원을 개시합니다", "5만원 지급", "48시간", "지원 순서"),
+                example("procedure", "지원을 개시합니다", "지원 순서", "14일 이내 지급", "지원 순서"),
+                example("procedure", "지원을 개시합니다", "지원 순서", "5만원 지급", "지원 순서"),
+                example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "14일 이내 지급"),
+                example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "5만원 지급"),
+            )
         invented.forEach { draft ->
             val set =
                 validSetOf(IllustrationSuggestionParser.parseAndValidate(jsonWith(draft), source, listOf("합성 본문")))
@@ -156,12 +157,13 @@ class IllustrationSuggestionParserTest {
     @Test
     fun `비대면과 방문 비교 및 소득별 지원 금액은 원문 줄에 근거한다`() {
         // 003-주민등록-사실조사.json 및 089-청년내일저축계좌.json 발췌. 저장 본문은 합성 fixture다.
-        val source = listOf(
-            "가. 비대면 조사: 정부24 앱에서 세대주 본인 인증을 마친 후 세대원 정보를 확인하고 이상 유무를 기재하시면 됩니다.",
-            "나. 방문 조사: 비대면 조사에 참여하지 아니한 세대와 복지 확인이 필요한 세대는 조사원이 직접 방문합니다.",
-            "중위소득 50%초과~100%이하 : 10만원 정액 매칭",
-            "중위소득 50%이하 : 30만원 정액 매칭(3년간 통장유지, 근로활동 지속, 교육이수, 자금사용계획서 제출시 적립금 전액 지급)",
-        )
+        val source =
+            listOf(
+                "가. 비대면 조사: 정부24 앱에서 세대주 본인 인증을 마친 후 세대원 정보를 확인하고 이상 유무를 기재하시면 됩니다.",
+                "나. 방문 조사: 비대면 조사에 참여하지 아니한 세대와 복지 확인이 필요한 세대는 조사원이 직접 방문합니다.",
+                "중위소득 50%초과~100%이하 : 10만원 정액 매칭",
+                "중위소득 50%이하 : 30만원 정액 매칭(3년간 통장유지, 근로활동 지속, 교육이수, 자금사용계획서 제출시 적립금 전액 지급)",
+            )
         val comparison =
             example("comparison", "비대면 조사", "비대면 조사와 방문 조사를 비교", "비대면 미참여 세대 방문", "조사 방법 비교", "[0,1]")
         val matching = example("comparison", "정액 매칭", "10만원과 30만원 매칭 비교", "중위소득 50% 이하", "소득별 지원", indexes = "[2,3]")
@@ -169,11 +171,30 @@ class IllustrationSuggestionParserTest {
         val set =
             validSetOf(
                 IllustrationSuggestionParser.parseAndValidate(
-                    jsonWith(comparison, matching, invented), source, listOf("합성 본문"),
+                    jsonWith(comparison, matching, invented),
+                    source,
+                    listOf("합성 본문"),
                 ),
             )
         assertThat(set.suggestions).hasSize(2)
         assertThat(set.droppedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `숫자가 없는 다른 조사 경로는 원문에 없어도 사실 존재 검사로 판별하지 못한다`() {
+        // 003-주민등록-사실조사.json 발췌. 저장 본문은 합성 fixture다.
+        val source =
+            listOf(
+                "가. 비대면 조사: 정부24 앱에서 세대주 본인 인증을 마친 후 세대원 정보를 확인하고 이상 유무를 기재하시면 됩니다.",
+                "나. 방문 조사: 비대면 조사에 참여하지 아니한 세대와 복지 확인이 필요한 세대는 조사원이 직접 방문합니다.",
+            )
+        val invented = example("comparison", "비대면 조사", "비대면 조사와 전화 조사를 비교", "전화 조사로 응답", "조사 방법 비교")
+
+        val set =
+            validSetOf(IllustrationSuggestionParser.parseAndValidate(jsonWith(invented), source, listOf("합성 본문")))
+
+        assertThat(set.suggestions).hasSize(1)
+        assertThat(set.droppedCount).isZero()
     }
 
     @Suppress("LongParameterList") // 각 JSON 필드를 독립적으로 바꾸어 환각 검사를 확인한다.
