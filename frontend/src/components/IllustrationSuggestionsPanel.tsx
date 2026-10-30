@@ -42,12 +42,12 @@ const PURPOSE_LABELS: Record<IllustrationSuggestionPurpose, string> = {
 
 /**
  * 실패 코드별 문구. 세 코드는 사용자에게 서로 다른 사실을 말한다 — 모델이 응답을 주지
- * 못한 것, 응답이 원문 근거와 맞지 않은 것, 결과 자체를 확인하지 못한 것이다.
+ * 못한 것, 응답 형식에 문제가 있는 것, 결과 자체를 확인하지 못한 것이다.
  * 어느 쪽이든 예약한 이용량은 반환되므로(명세 §3) 차감 여부는 따로 적는다.
  */
 const FAILURE_TEXTS: Record<IllustrationSuggestionFailureCode, string> = {
   generation_failed: '그림 제안을 만들지 못했습니다.',
-  result_invalid: '분석 결과가 원문 근거와 맞지 않아 사용하지 않았습니다.',
+  result_invalid: '분석 결과의 형식에 문제가 있어 분석을 완료하지 못했습니다.',
   outcome_unknown: '분석 결과를 확인하지 못했습니다.',
 }
 
@@ -83,6 +83,7 @@ function SuggestionCard({
   disabledNoteId,
   testMode,
   testDisabled,
+  onTestStatusChange,
 }: {
   suggestion: IllustrationSuggestion
   index: number
@@ -90,6 +91,7 @@ function SuggestionCard({
   disabledNoteId: string
   testMode: boolean
   testDisabled: boolean
+  onTestStatusChange: (message: string) => void
 }) {
   const headingId = useId()
   const excerpt = bodyLines.slice(suggestion.body_range.start, suggestion.body_range.end + 1)
@@ -142,7 +144,7 @@ function SuggestionCard({
 
         {suggestion.preserved_facts.length > 0 && (
           <div>
-            <p className="text-sm font-semibold">그림이 바꾸면 안 되는 내용</p>
+            <p className="text-sm font-semibold">그림에도 그대로 유지해야 하는 정보</p>
             <ul className="mt-1 flex list-disc flex-col gap-1 pl-5">
               {suggestion.preserved_facts.map((fact, factIndex) => (
                 <li key={factIndex} className="text-sm">
@@ -163,6 +165,7 @@ function SuggestionCard({
             suggestion={suggestion}
             excerpt={excerpt.join('\n')}
             disabled={testDisabled}
+            onStatusChange={onTestStatusChange}
           />
         ) : (
           <div>
@@ -181,7 +184,7 @@ function SuggestionCard({
               className="cursor-not-allowed opacity-50"
               onClick={(event) => event.preventDefault()}
             >
-              이 내용으로 그림 만들기
+              그림 만들기(준비 중)
             </Button>
           </div>
         )}
@@ -220,6 +223,7 @@ export function IllustrationSuggestionsPanel({
   const [loadedConversionId, setLoadedConversionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [testStatus, setTestStatus] = useState('')
   const requestRef = useRef(false)
   const refreshControllerRef = useRef<AbortController | null>(null)
   const activeStatusRef = useRef<HTMLParagraphElement>(null)
@@ -246,8 +250,8 @@ export function IllustrationSuggestionsPanel({
       : loaded
         ? (jobs?.active_job ?? null)
         : null
-  const suggestions = loaded ? (resource?.suggestions ?? []) : []
   const status = loaded ? (resource?.status ?? null) : null
+  const suggestions = status === 'ready' || status === 'stale' ? (resource?.suggestions ?? []) : []
   const stale = status === 'stale'
   const requiredCredits = loaded ? (jobs?.required_credits ?? null) : null
   const availableCredits = jobs?.available_credits ?? 0
@@ -280,9 +284,11 @@ export function IllustrationSuggestionsPanel({
         if (disposed) return
         setError(null)
         setNotice(null)
+        setTestStatus('')
         setPendingCreate(null)
         setJob(null)
         setResource(nextResource)
+        setTestStatus('')
         setJobs(nextJobs)
         setPollingJobId(nextJobs.active_job?.job_id ?? null)
       } catch (caught) {
@@ -386,6 +392,7 @@ export function IllustrationSuggestionsPanel({
       ])
       if (controller.signal.aborted) return
       setResource(nextResource)
+      setTestStatus('')
       setJobs(nextJobs)
       setPollingJobId(nextJobs.active_job?.job_id ?? null)
       setJob(null)
@@ -489,7 +496,6 @@ export function IllustrationSuggestionsPanel({
           생성은 하지 않으며 크레딧을 차감하지 않습니다.
         </p>
       )}
-      {isLoading && <p role="status">그림 제안 상태를 불러오는 중…</p>}
 
       {!isLoading && error !== null && (
         <p role="alert" className="rounded-md bg-danger/10 p-3 text-sm text-danger">
@@ -503,11 +509,6 @@ export function IllustrationSuggestionsPanel({
         >
           이용량 화면으로 이동
         </a>
-      )}
-      {notice !== null && (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
       )}
 
       {!isLoading && jobs !== null && (
@@ -534,90 +535,93 @@ export function IllustrationSuggestionsPanel({
           )}
           {bodyConflict && <p className="text-sm">본문 충돌을 해결한 뒤 제안을 확인해 주세요.</p>}
 
-          {activeJob !== null ? (
-            <p ref={activeStatusRef} tabIndex={-1} role="status">
-              그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.
-            </p>
-          ) : (
-            canRequest && (
-              <div className="flex flex-wrap items-center gap-2">
-                {/* 결과를 모르는 요청이 남아 있는 동안에는 **같은 키의 재전송만** 내민다.
+          {activeJob === null && canRequest && (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* 결과를 모르는 요청이 남아 있는 동안에는 **같은 키의 재전송만** 내민다.
                     새 uuid를 보내는 기본 버튼을 나란히 두면 「같은 요청」이라는 안내와
                     달리 중복 접수·중복 예약을 만들 수 있다. */}
-                {pendingCreate !== null ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="min-h-11"
-                    disabled={busy}
-                    aria-describedby={costId}
-                    onClick={() => {
-                      void submitCreate(pendingCreate)
-                    }}
-                  >
-                    같은 요청 다시 보내기
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    className="min-h-11"
-                    disabled={busy || bodyDirty || bodyBusy || bodyConflict || insufficientCredits}
-                    // 차감량은 버튼 이름이 아니라 설명으로 붙인다 — 이름에 넣으면 상태가
-                    // 바뀔 때마다 버튼 이름이 달라져 같은 조작을 다른 것으로 읽게 된다.
-                    aria-describedby={costId}
-                    onClick={startCreate}
-                  >
-                    {analyzed ? '그림 제안 다시 확인' : '그림 제안 확인'}
-                  </Button>
-                )}
-              </div>
-            )
+              {pendingCreate !== null ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={busy}
+                  aria-describedby={costId}
+                  onClick={() => {
+                    void submitCreate(pendingCreate)
+                  }}
+                >
+                  같은 요청 다시 보내기
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  className="min-h-11"
+                  disabled={busy || bodyDirty || bodyBusy || bodyConflict || insufficientCredits}
+                  // 차감량은 버튼 이름이 아니라 설명으로 붙인다 — 이름에 넣으면 상태가
+                  // 바뀔 때마다 버튼 이름이 달라져 같은 조작을 다른 것으로 읽게 된다.
+                  aria-describedby={costId}
+                  onClick={startCreate}
+                >
+                  {analyzed ? '그림 제안 다시 확인' : '그림 제안 확인'}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       )}
 
-      {!isLoading && currentJob?.status === 'failed' && (
-        <p role="status" className="rounded-md bg-secondary p-3 text-sm">
-          {FAILURE_TEXTS[currentJob.failure_code ?? 'outcome_unknown']} 예약한 이용량은
-          반환됐습니다. 자동으로 다시 분석하지 않으며, 다시 확인하려면 새 요청이 필요합니다.
-        </p>
-      )}
-      {!isLoading && currentJob?.status === 'superseded' && (
-        <p role="status" className="rounded-md bg-secondary p-3 text-sm">
-          분석 중 본문이 바뀌어 이 작업은 사용할 수 없습니다. 예약한 이용량은 반환됐습니다.
-        </p>
-      )}
-
-      {!isLoading && stale && (
-        <p role="status" className="rounded-md bg-secondary p-3 text-sm">
-          이전 버전의 본문으로 만든 제안입니다. 내용은 그대로 볼 수 있지만 그림 만들기는 할 수
-          없습니다. 현재 본문으로 다시 확인해 주세요.
-        </p>
-      )}
-      {!isLoading && status === 'no_suggestions' && (
-        <div role="status" className="space-y-1">
-          <p>이 문서에서 추가 그림이 도움이 될 부분을 찾지 못했습니다.</p>
-          {/* 제안이 0건이어도 분석은 끝났고 이용량은 소비된다(명세 §3). 실패로 오인하지
-              않도록 「끝났다」와 「얼마를 썼다」를 함께 적는다. */}
-          <p className="text-sm text-muted-foreground">
-            분석은 정상적으로 끝났습니다.
-            {consumedCredits !== null &&
-              ` 이용량 ${formatCredits(consumedCredits)}크레딧을 사용했습니다.`}
+      <div role="status" className="space-y-1">
+        {isLoading ? (
+          <p>그림 제안 상태를 불러오는 중…</p>
+        ) : activeJob !== null ? (
+          <p ref={activeStatusRef} tabIndex={-1}>
+            그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.
           </p>
-        </div>
-      )}
-      {!isLoading && analyzed && (resource?.dropped_count ?? 0) > 0 && (
-        <p className="text-sm text-muted-foreground">
-          원문에서 근거를 확인하지 못한 제안 {resource?.dropped_count}건은 제외했습니다.
-        </p>
-      )}
+        ) : currentJob?.status === 'failed' ? (
+          <p className="rounded-md bg-secondary p-3 text-sm">
+            {FAILURE_TEXTS[currentJob.failure_code ?? 'outcome_unknown']} 예약한 이용량은
+            반환됐습니다. 자동으로 다시 분석하지 않으며, 다시 확인하려면 새 요청이 필요합니다.
+          </p>
+        ) : currentJob?.status === 'superseded' ? (
+          <p className="rounded-md bg-secondary p-3 text-sm">
+            분석 중 본문이 바뀌어 이 작업은 사용할 수 없습니다. 예약한 이용량은 반환됐습니다.
+          </p>
+        ) : stale ? (
+          <p className="rounded-md bg-secondary p-3 text-sm">
+            이전 버전의 본문으로 만든 제안입니다. 현재 본문으로 다시 확인해 주세요.
+          </p>
+        ) : status === 'no_suggestions' ? (
+          <>
+            <p>
+              {(resource?.dropped_count ?? 0) > 0
+                ? '제안된 내용의 원문 근거를 확인하지 못해 그림을 생성하지 않습니다.'
+                : '이 문서에서 그림으로 더 쉽게 설명할 문맥을 찾지 못했습니다. 그림을 생성하지 않습니다.'}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              분석은 정상적으로 끝났습니다.
+              {consumedCredits !== null
+                ? ` 이용량 ${formatCredits(consumedCredits)}크레딧을 사용했습니다.`
+                : currentJob?.status === 'succeeded' && currentJob.reserved_credits === 0
+                  ? ' 이 분석에는 이용량을 사용하지 않았습니다.'
+                  : ' 분석 결과가 저장되면 예약한 이용량을 사용합니다.'}
+            </p>
+          </>
+        ) : status === 'ready' && (resource?.dropped_count ?? 0) > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            원문 근거를 확인하지 못한 제안 {resource?.dropped_count}건은 제외했습니다.
+          </p>
+        ) : null}
+        {notice !== null && <p className="text-sm">{notice}</p>}
+        {testStatus && <span className="sr-only">{testStatus}</span>}
+      </div>
 
       {suggestions.length > 0 && (
         <>
           <p id={generationNoteId} className="text-sm text-muted-foreground">
             {requiredCredits === 0
               ? '제안을 확인한 뒤 테스트 그림을 만들어 미리보기·적용·제거를 체험할 수 있습니다.'
-              : '그림 만들기는 다음 단계에서 제공합니다. 지금은 제안 내용만 확인할 수 있습니다.'}
+              : '현재는 그림 제안만 확인할 수 있습니다.'}
           </p>
           <ul className="flex flex-col gap-3">
             {suggestions.map((item, index) => (
@@ -628,6 +632,7 @@ export function IllustrationSuggestionsPanel({
                 bodyLines={bodyLines}
                 disabledNoteId={generationNoteId}
                 testMode={requiredCredits === 0}
+                onTestStatusChange={setTestStatus}
                 testDisabled={
                   bodyDirty ||
                   bodyBusy ||

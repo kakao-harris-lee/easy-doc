@@ -3577,9 +3577,7 @@ describe('R7 그림 목록 작업 탭', () => {
 
     expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
     expect(getIllustrations).not.toHaveBeenCalled()
-    expect(
-      screen.queryByRole('button', { name: '그림으로 설명하기 (선택)' }),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '그림 제안 보기 (선택)' })).not.toBeInTheDocument()
   })
 
   it('기능이 켜져 있으면 그림 목록을 보이고 조회한다', async () => {
@@ -3592,12 +3590,12 @@ describe('R7 그림 목록 작업 탭', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '그림 제안 보기 (선택)' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
+    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
     await waitFor(() => expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal)))
   })
@@ -3643,12 +3641,12 @@ describe('ER-16 그림 배치', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '그림 제안 보기 (선택)' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     expect(screen.queryByRole('heading', { name: '그림 배치' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
+    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
     await waitFor(() =>
       expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
@@ -3809,12 +3807,12 @@ describe('ER-17 그림 제안', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '그림 제안 보기 (선택)' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
+    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 제안' })).toBeInTheDocument()
     await waitFor(() =>
       expect(getIllustrationSuggestions).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
@@ -3832,7 +3830,7 @@ describe('ER-17 그림 제안', () => {
       />,
     )
 
-    await user.click(screen.getByRole('button', { name: '그림으로 설명하기 (선택)' }))
+    await user.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
     await screen.findByRole('button', { name: '그림 제안 확인' })
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), '수정')
 

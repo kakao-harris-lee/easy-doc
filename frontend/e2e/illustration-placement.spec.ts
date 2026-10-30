@@ -66,7 +66,7 @@ test.describe('ER-16 그림 배치', () => {
     ])
     expect(placementsResponse.status()).toBe(ROUTES.illustrationPlacementsRead.ok)
 
-    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 배치' })
     await expect(panel.getByRole('heading', { name: '그림 배치' })).toBeVisible()
 

@@ -1856,7 +1856,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               aria-controls={`${editorId}-illustrations-panel`}
               onClick={() => setIllustrationsOpen((current) => !current)}
             >
-              {illustrationsOpen ? '그림 설명 접기' : '그림으로 설명하기 (선택)'}
+              {illustrationsOpen ? '그림 제안 접기' : '그림 제안 보기 (선택)'}
             </Button>
             <div
               id={`${editorId}-illustrations-panel`}

@@ -24,7 +24,7 @@ describe('무료 그림 테스트 흐름', () => {
     )
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(screen.getByText(/실제 AI가 그린 그림이 아닙니다/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '이 내용으로 그림 만들기' }))
+    await user.click(screen.getByRole('button', { name: '테스트 그림 만들어 보기' }))
     expect(screen.getByRole('status')).toHaveTextContent('만들고 있어요')
     expect(await screen.findByRole('img')).toHaveAccessibleName(suggestion.alt_text_draft)
     const apply = screen.getByRole('button', { name: '문서 미리보기에 추가' })
@@ -42,12 +42,29 @@ describe('무료 그림 테스트 흐름', () => {
     expect(screen.getByRole('button', { name: '문서 미리보기에 추가' })).toBeDisabled()
   })
 
+  it('테스트 SVG는 25자를 넘는 장면을 유니코드 기준으로 자른다', async () => {
+    const user = userEvent.setup()
+    const scene = '😀'.repeat(26)
+    render(
+      <IllustrationTestFlow
+        suggestion={{ ...suggestion, scenes: [scene] }}
+        excerpt="본문"
+        disabled={false}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: '테스트 그림 만들어 보기' }))
+    const picture = await screen.findByRole('img')
+    expect(picture.tagName.toLowerCase()).toBe('svg')
+    expect(picture).toHaveTextContent('😀'.repeat(25) + '…')
+    expect(picture).toHaveTextContent('실제 AI 생성 아님')
+  })
+
   it('본문 수정·충돌 중에는 그림을 숨기고 새 요청을 차단한다', async () => {
     const user = userEvent.setup()
     const view = render(
       <IllustrationTestFlow suggestion={suggestion} excerpt="본문" disabled={false} />,
     )
-    await user.click(screen.getByRole('button', { name: '이 내용으로 그림 만들기' }))
+    await user.click(screen.getByRole('button', { name: '테스트 그림 만들어 보기' }))
     await screen.findByRole('img')
     view.rerender(<IllustrationTestFlow suggestion={suggestion} excerpt="본문 수정" disabled />)
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
