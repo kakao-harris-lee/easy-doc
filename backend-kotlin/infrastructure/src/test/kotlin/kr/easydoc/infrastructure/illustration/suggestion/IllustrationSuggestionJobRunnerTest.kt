@@ -66,15 +66,27 @@ class IllustrationSuggestionJobRunnerTest {
     }
 
     @Test
-    @DisplayName("구조 위반·모든 제안 탈락·절단·빈 응답은 모두 Invalid 다")
+    @DisplayName("모든 제안이 탈락해도 빈 결과와 탈락 수를 반환한다")
+    fun `전량 탈락은 Valid 다`() {
+        val runner =
+            ProviderIllustrationSuggestionJobRunner(input, provider(validJson(quote = "원문에 없는 문장")), MAX_TOKENS)
+
+        val result = runner.prepare(job())!!.call()
+
+        assertThat(result).isInstanceOf(IllustrationSuggestionRunResult.Valid::class.java)
+        val set = (result as IllustrationSuggestionRunResult.Valid).suggestions
+        assertThat(set.suggestions).isEmpty()
+        assertThat(set.droppedCount).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("구조 위반·절단·빈 응답은 모두 Invalid 다")
     fun `쓸 수 없는 응답은 Invalid 다`() {
         val structural = provider("""{"schema_version":2,"suggestions":[]}""")
-        // 인용이 원문에 없으면 그 제안은 버려지고, 1건뿐이라 전량 탈락이다.
-        val unanchored = provider(validJson(quote = "원문에 없는 문장"))
         val truncated = provider(validJson(), finishReason = LlmFinishReason.MAX_TOKENS)
         val blank = provider("   ")
 
-        listOf(structural, unanchored, truncated, blank).forEach { provider ->
+        listOf(structural, truncated, blank).forEach { provider ->
             val result = ProviderIllustrationSuggestionJobRunner(input, provider, MAX_TOKENS).prepare(job())!!.call()
 
             assertThat(result)

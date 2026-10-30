@@ -143,7 +143,7 @@ class ProcessIllustrationSuggestionJob(
                         }
                         storeResult(job, result)
                         ledger.complete(job, executionId, result.record)
-                        // 제안 0건('제안 없음')도 정상 결과라 소비한다(명세 §3).
+                        // 전량 탈락을 포함한 제안 0건도 정상 결과라 소비한다(명세 §3).
                         credits.consume(job)
                         IllustrationSuggestionJobOutcome.COMPLETED
                     }

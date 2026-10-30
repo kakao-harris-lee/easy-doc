@@ -1,9 +1,9 @@
 package kr.easydoc.core.segment
 
 // 원문 앵커 규칙 — ER-06 행동 안내 후보(`ActionGuideCandidateValidator`)와 R7 ER-17 그림
-// 제안(`IllustrationSuggestionValidator`)이 **같은 규칙**을 쓴다
+// 제안(`IllustrationSuggestionValidator`)이 **같은 앵커 형식·일치 규칙**을 쓴다
 // (`docs/plans/2026-09-24-r7-er17-suggestion-spec.md` §2 마지막 문단). 두 기능의 앵커
-// **타입**은 각자의 것이고(공통화는 그 명세가 범위 밖으로 둔다) 판정과 상한만 공유한다.
+// **타입**은 각자의 것이고 판정과 상한만 공유한다. 사실 대조의 근거 범위는 각 기능에서 정한다.
 
 /**
  * 한 항목·제안이 달 수 있는 앵커 수 상한. 근거를 여러 줄에 걸쳐 달 수는 있어도, 문서

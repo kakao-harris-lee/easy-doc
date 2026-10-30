@@ -44,18 +44,14 @@ internal object IllustrationSuggestionValidator {
             return IllustrationSuggestionAnalysis.InvalidStructure
         }
         val kept = drafts.filter { isSupportedBySource(it, sourceUnits) }
-        return if (drafts.isNotEmpty() && kept.isEmpty()) {
-            IllustrationSuggestionAnalysis.AllDropped(drafts.size)
-        } else {
-            IllustrationSuggestionAnalysis.Valid(
-                IllustrationSuggestionSet(
-                    schemaVersion = SCHEMA_VERSION,
-                    analysisVersion = ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION,
-                    suggestions = kept.map { it.withId(suggestionIds.next()) },
-                    droppedCount = drafts.size - kept.size,
-                ),
-            )
-        }
+        return IllustrationSuggestionAnalysis.Valid(
+            IllustrationSuggestionSet(
+                schemaVersion = SCHEMA_VERSION,
+                analysisVersion = ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION,
+                suggestions = kept.map { it.withId(suggestionIds.next()) },
+                droppedCount = drafts.size - kept.size,
+            ),
+        )
     }
 
     private fun isStructurallyValid(
@@ -93,7 +89,8 @@ internal object IllustrationSuggestionValidator {
      * 사실 대조 대상은 `scenes`·`preserved_facts`·`alt_text_draft` 다(명세 §4) — `reason` 은
      * 그림이 왜 도움이 되는지를 적는 설명이라 원문 사실의 재진술이 아니다.
      * 행동 안내 후보와 같은 [findMissingFacts] 를 쓰며, 숫자·날짜·금액처럼 그 함수가 잡는
-     * 항목만 본다. 의미 오류 전부를 잡는다고 주장하지 않는다.
+     * 항목만 본다. 인용을 확인한 뒤 앵커의 원문 줄 전체를 근거로 쓰므로 같은 줄의 무관한
+     * 숫자도 근거가 될 수 있다. 사실의 존재만 확인하며 의미 관련성이나 오류 전부를 판정하지 않는다.
      */
     private fun isSupportedBySource(
         draft: IllustrationSuggestionDraft,
@@ -102,10 +99,13 @@ internal object IllustrationSuggestionValidator {
         val anchored =
             draft.sourceAnchors.all { isSourceAnchorSupported(it.sourceUnitIndexes, it.quote, sourceUnits) }
         if (!anchored) return false
-        val evidence = draft.sourceAnchors.joinToString("\n") { it.quote }
+        val evidence =
+            draft.sourceAnchors.flatMap { it.sourceUnitIndexes }.distinct().joinToString("\n") { sourceUnits[it] }
         val claimed = (draft.scenes + draft.preservedFacts + draft.altTextDraft).joinToString("\n")
-        return findMissingFacts(claimed, evidence).isEmpty()
+        return findMissingFacts(claimed.replace(ORDINAL_BEON, " "), evidence).isEmpty()
     }
+
+    private val ORDINAL_BEON = Regex("번(?=\\s*째)")
 }
 
 private fun IllustrationSuggestionDraft.withId(suggestionId: UUID): IllustrationSuggestion =
