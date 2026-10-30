@@ -23,7 +23,7 @@ import java.time.Clock
  * 다른 것을 확인하게 된다.
  *
  * 제안은 **원문의 첫 비어 있지 않은 줄**에 근거를 단다. 장면·대체텍스트에는 숫자·날짜를 쓰지
- * 않는다 — 인용으로 확인할 수 없는 사실이 있으면 검증기가 그 제안을 버리기 때문이다(명세 §4).
+ * 않는다 — 원문 근거로 확인할 수 없는 사실이 있으면 검증기가 그 제안을 버리기 때문이다(명세 §4).
  * 비어 있지 않은 줄이 하나도 없으면 근거를 달 수 없으므로 '제안 없음'(빈 배열)을 낸다.
  */
 class FakeIllustrationSuggestionJobRunner(
@@ -47,10 +47,6 @@ class FakeIllustrationSuggestionJobRunner(
         return when (analysis) {
             is IllustrationSuggestionAnalysis.Valid -> {
                 IllustrationSuggestionRunResult.Valid(record(), analysis.suggestions)
-            }
-
-            is IllustrationSuggestionAnalysis.AllDropped -> {
-                IllustrationSuggestionRunResult.Invalid(record())
             }
 
             IllustrationSuggestionAnalysis.InvalidStructure -> {
@@ -103,7 +99,7 @@ class FakeIllustrationSuggestionJobRunner(
 
         const val SCHEMA_VERSION = 1
 
-        // 숫자·날짜·금액을 쓰지 않는다 — 인용으로 확인할 수 없는 사실은 제안을 탈락시킨다.
+        // 숫자·날짜·금액을 쓰지 않는다 — 원문에서 확인할 수 없는 사실은 제안을 탈락시킨다.
         const val REASON = "행동 순서를 그림으로 보면 이해하기 쉬워집니다"
         const val SCENE = "안내문에서 해야 할 일을 차례대로 보여 주는 그림"
         const val ALT_TEXT = "해야 할 일을 차례대로 보여 주는 그림"

@@ -26,8 +26,8 @@ import java.util.concurrent.TimeUnit
  * 세 갈래로 끝난다.
  * - [IllustrationSuggestionRunResult.ProviderFailed]: 호출 자체가 실패했다.
  * - [IllustrationSuggestionRunResult.Invalid]: 응답은 받았지만 절단·빈 응답이거나, 구조가
- *   어긋났거나, 제안이 전부 원문 대조에서 탈락했다 — 셋 다 `result_invalid` 이고 반환한다.
- * - [IllustrationSuggestionRunResult.Valid]: 제안 0건('제안 없음')도 여기다 — 정상 결과라 소비한다.
+ *   어긋났다 — `result_invalid` 이고 반환한다.
+ * - [IllustrationSuggestionRunResult.Valid]: 전량 탈락을 포함한 제안 0건도 정상 결과라 소비한다.
  */
 class ProviderIllustrationSuggestionJobRunner(
     private val input: IllustrationSuggestionInputSource,
@@ -91,10 +91,6 @@ class ProviderIllustrationSuggestionJobRunner(
         ) {
             is IllustrationSuggestionAnalysis.Valid -> {
                 IllustrationSuggestionRunResult.Valid(record, analysis.suggestions)
-            }
-
-            is IllustrationSuggestionAnalysis.AllDropped -> {
-                IllustrationSuggestionRunResult.Invalid(record)
             }
 
             IllustrationSuggestionAnalysis.InvalidStructure -> {

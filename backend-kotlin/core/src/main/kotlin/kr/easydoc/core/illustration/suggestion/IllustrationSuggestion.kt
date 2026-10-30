@@ -113,7 +113,7 @@ object RandomIllustrationSuggestionIds : IllustrationSuggestionIdGenerator {
 /**
  * 분석 한 번의 판정. 호출부(ER-17-2 worker)가 이용량 소비·반환을 이 갈래로 정한다.
  *
- * 예외 대신 결과 타입을 쓰는 이유는 세 갈래가 모두 **정상 흐름**이기 때문이다 — LLM 이
+ * 예외 대신 결과 타입을 쓰는 이유는 두 갈래가 모두 **정상 흐름**이기 때문이다 — LLM 이
  * 형식을 어기는 것은 이 기능에서 예외 상황이 아니라 예상된 결과 중 하나다.
  */
 sealed interface IllustrationSuggestionAnalysis {
@@ -124,12 +124,6 @@ sealed interface IllustrationSuggestionAnalysis {
     data class Valid(val suggestions: IllustrationSuggestionSet) : IllustrationSuggestionAnalysis {
         override fun toString(): String = "Valid($suggestions)"
     }
-
-    /**
-     * LLM 이 제안을 1건 이상 냈는데 전부 의미 검사에서 탈락했다 — 호출부는 `result_invalid`
-     * 로 보고 이용량을 반환한다(명세 §4).
-     */
-    data class AllDropped(val droppedCount: Int) : IllustrationSuggestionAnalysis
 
     /** JSON 구조·상한 위반. 결과 전체가 `result_invalid` 다(명세 §4). */
     data object InvalidStructure : IllustrationSuggestionAnalysis

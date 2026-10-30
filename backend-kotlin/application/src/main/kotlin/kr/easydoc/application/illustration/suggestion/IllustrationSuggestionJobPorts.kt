@@ -234,9 +234,8 @@ interface IllustrationSuggestionLlmCallLedger {
 /**
  * 검증된 제안 집합과 호출 원장 결과를 함께 돌려줘 성공 정산과 결과 저장을 한 트랜잭션에 묶는다.
  *
- * [Invalid] 는 「응답은 받았지만 쓸 수 없다」다 — 구조 위반과 **모든 제안 탈락**이 같은 갈래로
- * 모인다(명세 §4: 둘 다 `result_invalid` 이고 이용량을 반환한다). 제안이 0건인 정상 결과
- * (`제안 없음`)는 [Valid] 다 — 그쪽은 소비한다.
+ * [Invalid] 는 「응답은 받았지만 형식이 잘못되었다」다 — `result_invalid` 로 이용량을 반환한다.
+ * 전량 탈락을 포함해 제안이 0건인 정상 결과 (`제안 없음`)는 [Valid] 다 — 그쪽은 소비한다.
  */
 sealed interface IllustrationSuggestionRunResult {
     val record: LlmCallRecord

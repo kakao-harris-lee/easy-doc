@@ -95,10 +95,11 @@ class IllustrationSuggestionParserTest {
     }
 
     @Test
-    fun `낸 제안이 모두 탈락하면 결과 전체가 무효다`() {
+    fun `낸 제안이 모두 탈락하면 빈 결과와 탈락 수를 저장한다`() {
         val result = analyze(jsonWith(factInventingSuggestion, factInventingSuggestion))
 
-        assertThat(result).isEqualTo(IllustrationSuggestionAnalysis.AllDropped(2))
+        assertThat(validSetOf(result).suggestions).isEmpty()
+        assertThat(validSetOf(result).droppedCount).isEqualTo(2)
     }
 
     @Test
@@ -106,9 +107,87 @@ class IllustrationSuggestionParserTest {
         val wrongQuote = procedureSuggestion.replace("주민센터에 제출합니다", "동사무소에 제출합니다")
         val wrongIndex = procedureSuggestion.replace("\"source_unit_indexes\":[1]", "\"source_unit_indexes\":[9]")
 
-        assertThat(analyze(jsonWith(wrongQuote))).isEqualTo(IllustrationSuggestionAnalysis.AllDropped(1))
-        assertThat(analyze(jsonWith(wrongIndex))).isEqualTo(IllustrationSuggestionAnalysis.AllDropped(1))
+        assertThat(validSetOf(analyze(jsonWith(wrongQuote))).droppedCount).isEqualTo(1)
+        assertThat(validSetOf(analyze(jsonWith(wrongIndex))).droppedCount).isEqualTo(1)
     }
+
+    @Test
+    fun `원문 앵커 줄의 숫자는 짧은 인용 밖에 있어도 근거로 인정한다`() {
+        // 005-긴급복지지원.json 발췌. 저장 본문은 실제 변환이 아닌 합성 fixture다.
+        val source = listOf("선지원 후처리 원칙에 따라 요청일부터 원칙적으로 48시간 이내에 지원을 개시합니다.")
+        val draft = example("procedure", "요청일부터 원칙적으로", "48시간 이내에 지원", "48시간", "지원 순서")
+        val set = validSetOf(IllustrationSuggestionParser.parseAndValidate(jsonWith(draft), source, listOf("합성 본문")))
+        assertThat(set.suggestions).hasSize(1)
+        assertThat(set.droppedCount).isZero()
+    }
+
+    @Test
+    fun `근거에 없는 기간과 금액은 장면 보존 사실 대체텍스트 각각에서 탈락한다`() {
+        val source = listOf("요청일부터 원칙적으로 48시간 이내에 지원을 개시합니다.")
+        val invented = listOf(
+            example("procedure", "지원을 개시합니다", "14일 이내 지원", "48시간", "지원 순서"),
+            example("procedure", "지원을 개시합니다", "5만원 지급", "48시간", "지원 순서"),
+            example("procedure", "지원을 개시합니다", "지원 순서", "14일 이내 지급", "지원 순서"),
+            example("procedure", "지원을 개시합니다", "지원 순서", "5만원 지급", "지원 순서"),
+            example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "14일 이내 지급"),
+            example("procedure", "지원을 개시합니다", "지원 순서", "48시간", "5만원 지급"),
+        )
+        invented.forEach { draft ->
+            val set =
+                validSetOf(IllustrationSuggestionParser.parseAndValidate(jsonWith(draft), source, listOf("합성 본문")))
+            assertThat(set.suggestions).isEmpty()
+            assertThat(set.droppedCount).isEqualTo(1)
+        }
+    }
+
+    @Test
+    fun `서수 두 번째는 허용하지만 근거 없는 창구 번호는 탈락한다`() {
+        val source = listOf("신청자는 안내를 받은 뒤 창구를 방문합니다.")
+        val ordinal = example("procedure", "창구를 방문합니다", "두 번째 창구를 방문", "안내를 받음", "두 번째 창구")
+        val invented = example("procedure", "창구를 방문합니다", "3번 창구를 방문", "안내를 받음", "창구 방문")
+        val set =
+            validSetOf(
+                IllustrationSuggestionParser.parseAndValidate(jsonWith(ordinal, invented), source, listOf("합성 본문")),
+            )
+        assertThat(set.suggestions).hasSize(1)
+        assertThat(set.droppedCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `비대면과 방문 비교 및 소득별 지원 금액은 원문 줄에 근거한다`() {
+        // 003-주민등록-사실조사.json 및 089-청년내일저축계좌.json 발췌. 저장 본문은 합성 fixture다.
+        val source = listOf(
+            "가. 비대면 조사: 정부24 앱에서 세대주 본인 인증을 마친 후 세대원 정보를 확인하고 이상 유무를 기재하시면 됩니다.",
+            "나. 방문 조사: 비대면 조사에 참여하지 아니한 세대와 복지 확인이 필요한 세대는 조사원이 직접 방문합니다.",
+            "중위소득 50%초과~100%이하 : 10만원 정액 매칭",
+            "중위소득 50%이하 : 30만원 정액 매칭(3년간 통장유지, 근로활동 지속, 교육이수, 자금사용계획서 제출시 적립금 전액 지급)",
+        )
+        val comparison =
+            example("comparison", "비대면 조사", "비대면 조사와 방문 조사를 비교", "비대면 미참여 세대 방문", "조사 방법 비교", "[0,1]")
+        val matching = example("comparison", "정액 매칭", "10만원과 30만원 매칭 비교", "중위소득 50% 이하", "소득별 지원", indexes = "[2,3]")
+        val invented = example("comparison", "정액 매칭", "5만원 매칭", "중위소득 50% 이하", "소득별 지원", indexes = "[2,3]")
+        val set =
+            validSetOf(
+                IllustrationSuggestionParser.parseAndValidate(
+                    jsonWith(comparison, matching, invented), source, listOf("합성 본문"),
+                ),
+            )
+        assertThat(set.suggestions).hasSize(2)
+        assertThat(set.droppedCount).isEqualTo(1)
+    }
+
+    @Suppress("LongParameterList") // 각 JSON 필드를 독립적으로 바꾸어 환각 검사를 확인한다.
+    private fun example(
+        purpose: String,
+        quote: String,
+        scene: String,
+        fact: String,
+        alt: String,
+        indexes: String = "[0]",
+    ): String =
+        """{"purpose":"$purpose","reason":"관계를 설명합니다","body_range":{"start":0,"end":0},
+           "source_anchors":[{"source_unit_indexes":$indexes,"quote":"$quote"}],
+           "scenes":["$scene"],"preserved_facts":["$fact"],"alt_text_draft":"$alt"}"""
 
     @Test
     @DisplayName("서버가 붙이는 값(suggestion_id·dropped_count·analysis_version)을 LLM 이 내면 무효다")
