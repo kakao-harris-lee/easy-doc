@@ -132,7 +132,14 @@ class ProcessIllustrationSuggestionJobTest {
         assertThat(outcome).isEqualTo(IllustrationSuggestionJobOutcome.COMPLETED)
         assertThat(credits.consumes).isEqualTo(1)
         assertThat(credits.releases).isZero()
-        val stored = IllustrationSuggestionStorageCodec.decode(String(results.inserted.single().payload.bytes))
+        val stored =
+            IllustrationSuggestionStorageCodec.decode(
+                String(
+                    results.inserted
+                        .single()
+                        .payload.bytes,
+                ),
+            )
         assertThat(stored.suggestions).isEmpty()
         assertThat(stored.droppedCount).isEqualTo(2)
     }
