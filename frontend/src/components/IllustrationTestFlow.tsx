@@ -8,10 +8,12 @@ export function IllustrationTestFlow({
   suggestion,
   excerpt,
   disabled,
+  onStatusChange,
 }: {
   suggestion: IllustrationSuggestion
   excerpt: string
   disabled: boolean
+  onStatusChange?: (message: string) => void
 }) {
   const id = useId()
   const [stage, setStage] = useState<'idle' | 'generating' | 'preview' | 'applied'>('idle')
@@ -23,6 +25,19 @@ export function IllustrationTestFlow({
     const timer = window.setTimeout(() => setStage('preview'), 300)
     return () => window.clearTimeout(timer)
   }, [stage, disabled])
+
+  useEffect(() => {
+    if (!onStatusChange) return
+    onStatusChange(
+      disabled
+        ? '본문을 저장하고 최신 제안을 확인한 뒤 그림을 테스트해 주세요.'
+        : stage === 'generating'
+          ? '테스트 그림을 만들고 있어요…'
+          : stage === 'applied'
+            ? '테스트 그림을 문서 미리보기에 추가했습니다.'
+            : '',
+    )
+  }, [disabled, onStatusChange, stage])
 
   const picture = (
     <svg
@@ -63,15 +78,19 @@ export function IllustrationTestFlow({
         적용은 이 화면의 미리보기에만 반영됩니다. 새로고침하거나 본문을 저장하면 사라집니다.
       </p>
       {disabled ? (
-        <p role="status">본문을 저장하고 최신 제안을 확인한 뒤 그림을 테스트해 주세요.</p>
+        <p role={onStatusChange ? undefined : 'status'}>
+          본문을 저장하고 최신 제안을 확인한 뒤 그림을 테스트해 주세요.
+        </p>
       ) : (
         <>
           {stage === 'idle' && (
             <Button type="button" onClick={() => setStage('generating')}>
-              이 내용으로 그림 만들기
+              테스트 그림 만들어 보기
             </Button>
           )}
-          {stage === 'generating' && <p role="status">테스트 그림을 만들고 있어요…</p>}
+          {stage === 'generating' && (
+            <p role={onStatusChange ? undefined : 'status'}>테스트 그림을 만들고 있어요…</p>
+          )}
           {stage === 'preview' && (
             <>
               <h4 className="font-semibold">그림 미리보기</h4>
@@ -120,7 +139,9 @@ export function IllustrationTestFlow({
           )}
           {stage === 'applied' && (
             <>
-              <p role="status">테스트 그림을 문서 미리보기에 추가했습니다.</p>
+              <p role={onStatusChange ? undefined : 'status'}>
+                테스트 그림을 문서 미리보기에 추가했습니다.
+              </p>
               <h4 className="font-semibold">문서 적용 미리보기</h4>
               <p className="whitespace-pre-wrap">{excerpt}</p>
               <figure className="space-y-2">

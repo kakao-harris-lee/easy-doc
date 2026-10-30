@@ -61,7 +61,7 @@ test.describe('R7 그림 목록', () => {
     expect(illustrationsResponse.status()).toBe(ROUTES.illustrationsRead.ok)
 
     // 패널 안으로 범위를 좁힌다 — section이 aria-labelledby를 가져 role=region이다.
-    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 목록' })
     await expect(panel.getByRole('heading', { name: '그림 목록' })).toBeVisible()
     // 본문 삽입·이미지 포함 출력이 지원되지 않는다는 안내문.

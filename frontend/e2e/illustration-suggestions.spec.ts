@@ -12,7 +12,7 @@ import { ROUTES } from './contract'
 import { API_BASE_URL, api, newAccount, signUpAndLand, verifyEmail } from './support/app'
 import { NetworkLog, signature } from './support/network'
 
-const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사를 방문하세요.'
+const SOURCE_TEXT = '국민건강보험료를 납부하려면 48시간 안에 가까운 지사를 방문하세요.'
 
 interface CreatedDocument {
   conversion_id: string
@@ -62,7 +62,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const jobsPath = `${conversionPath}/illustration-suggestion-jobs`
 
     // 1. 요청 전 — 무엇을 하는지·차감량·파일에 그림이 들어가지 않는다는 점을 먼저 읽힌다.
-    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
     const panel = page.getByRole('region', { name: '그림 제안' })
     await expect(panel.getByRole('heading', { name: '그림 제안' })).toBeVisible()
     await expect(panel.getByText(/이 단계에서는 그림을 만들지 않습니다/)).toBeVisible()
@@ -104,10 +104,21 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(panel.getByRole('heading', { name: '제안 1 · 절차' })).toBeVisible({
       timeout: 90_000,
     })
-    await expect(panel.getByText(/원문 1줄:/)).toBeVisible()
+    await expect(panel.getByText(/원문 1줄:.*48시간/)).toBeVisible()
+    await page.setViewportSize({ width: 320, height: 800 })
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    const card = panel.getByRole('heading', { name: '제안 1 · 절차' }).locator('..')
+    const button = panel.getByRole('button', { name: '테스트 그림 만들어 보기' })
+    const [cardBox, buttonBox] = await Promise.all([card.boundingBox(), button.boundingBox()])
+    expect(cardBox).not.toBeNull()
+    expect(buttonBox).not.toBeNull()
+    expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width)
+    await page.setViewportSize({ width: 1280, height: 720 })
     // 무료 테스트는 외부 호출 없이 생성·확인·적용·제거를 체험한다.
     await expect(panel.getByText(/무료 테스트 모드:/)).toBeVisible()
-    await panel.getByRole('button', { name: '이 내용으로 그림 만들기' }).click()
+    await panel.getByRole('button', { name: '테스트 그림 만들어 보기' }).click()
     await expect(panel.getByRole('img')).toBeVisible()
     const apply = panel.getByRole('button', { name: '문서 미리보기에 추가' })
     await expect(apply).toBeDisabled()
@@ -124,7 +135,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
-    await page.getByRole('button', { name: '그림으로 설명하기 (선택)', exact: true }).click()
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
     await expect(panel.getByRole('heading', { name: '제안 1 · 절차' })).toBeVisible({
       timeout: 90_000,
     })
@@ -169,7 +180,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const staleResource = (await staleResponse.json()) as IllustrationSuggestionsResource
     expect(staleResource.status).toBe('stale')
     await expect(panel.getByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeVisible()
-    await expect(panel.getByRole('button', { name: '이 내용으로 그림 만들기' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '테스트 그림 만들어 보기' })).toHaveCount(0)
     await expect(panel.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 })
