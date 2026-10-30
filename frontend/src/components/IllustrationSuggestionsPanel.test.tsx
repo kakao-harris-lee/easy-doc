@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -578,6 +578,123 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
         '분석은 정상적으로 끝났습니다. 이 분석에는 이용량을 사용하지 않았습니다.',
       ),
     ).toBeInTheDocument()
+  })
+
+  it.each(['failed', 'superseded'] as const)(
+    '이전 결과와 %s 작업을 한 상태 영역에서 함께 알린다',
+    async (jobStatus) => {
+      vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+        ...ready,
+        status: 'stale',
+        content_revision: 2,
+      })
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+        ...jobs,
+        latest_job: {
+          ...job,
+          status: jobStatus,
+          failure_code: jobStatus === 'failed' ? 'result_invalid' : null,
+        },
+      })
+      show({ contentRevision: 2 })
+      const status = await screen.findByRole('status')
+      await waitFor(() => expect(status).toHaveTextContent('이전 버전의 본문으로 만든 제안입니다'))
+      expect(status).toHaveTextContent(
+        jobStatus === 'failed' ? '분석 결과의 형식에 문제가 있어' : '분석 중 본문이 바뀌어',
+      )
+      expect(screen.getAllByRole('status')).toHaveLength(1)
+      expect(screen.getByRole('heading', { name: '제안 1 · 절차' })).toBeInTheDocument()
+    },
+  )
+
+  it('폴링으로 빈 결과가 되면 제거된 카드의 테스트 상태를 더 이상 읽지 않는다', async () => {
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
+    vi.mocked(createIllustrationSuggestionJob).mockResolvedValue({ job, creditBalance: 6.4 })
+    show()
+    await screen.findByRole('button', { name: '그림 제안 다시 확인' })
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByRole('button', { name: '그림 제안 다시 확인' }))
+      await act(async () => {
+        await Promise.resolve()
+      })
+      expect(screen.getByRole('status')).toHaveTextContent('본문을 저장하고 최신 제안을 확인한 뒤')
+      vi.mocked(getIllustrationSuggestionJob).mockResolvedValue({ ...job, status: 'succeeded' })
+      vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+        ...ready,
+        status: 'no_suggestions',
+        suggestions: [],
+      })
+      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+        ...jobs,
+        required_credits: 0,
+        latest_job: { ...job, status: 'succeeded', reserved_credits: 0 },
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(screen.getByRole('status')).toHaveTextContent('문맥을 찾지 못했습니다')
+      expect(screen.getByRole('status')).not.toHaveTextContent(
+        '본문을 저장하고 최신 제안을 확인한 뒤',
+      )
+      expect(screen.queryByRole('heading', { name: '제안 1 · 절차' })).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('다른 카드의 상태가 끝나도 마지막으로 알린 카드의 상태를 지우지 않는다', async () => {
+    const user = userEvent.setup()
+    const second = { ...suggestion, suggestion_id: 'suggestion-2' }
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      ...ready,
+      suggestions: [suggestion, second],
+    })
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
+    show()
+    const firstCard = await screen.findByRole('region', { name: '제안 1 · 절차' })
+    const secondCard = screen.getByRole('region', { name: '제안 2 · 절차' })
+    await user.click(within(firstCard).getByRole('button', { name: '테스트 그림 만들어 보기' }))
+    await within(firstCard).findByRole('img')
+    await user.click(within(secondCard).getByRole('button', { name: '테스트 그림 만들어 보기' }))
+    await within(secondCard).findByRole('img')
+    await user.click(within(secondCard).getByRole('checkbox'))
+    await user.click(within(secondCard).getByRole('button', { name: '문서 미리보기에 추가' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '테스트 그림을 문서 미리보기에 추가했습니다',
+    )
+    await user.click(within(firstCard).getByRole('button', { name: '그림 버리기' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '테스트 그림을 문서 미리보기에 추가했습니다',
+    )
+  })
+
+  it('다른 카드가 사라져도 남은 카드의 테스트 상태는 지우지 않는다', async () => {
+    const user = userEvent.setup()
+    const second = { ...suggestion, suggestion_id: 'suggestion-2' }
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      ...ready,
+      suggestions: [suggestion, second],
+    })
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
+    show()
+    const card = await screen.findByRole('region', { name: '제안 2 · 절차' })
+    await user.click(within(card).getByRole('button', { name: '테스트 그림 만들어 보기' }))
+    await within(card).findByRole('img')
+    await user.click(within(card).getByRole('checkbox'))
+    await user.click(within(card).getByRole('button', { name: '문서 미리보기에 추가' }))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '테스트 그림을 문서 미리보기에 추가했습니다',
+    )
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({ ...ready, suggestions: [second] })
+    await user.click(screen.getByRole('button', { name: '상태 새로고침' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('heading', { name: '제안 2 · 절차' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '테스트 그림을 문서 미리보기에 추가했습니다',
+    )
   })
 
   it('stale 결과는 이전 버전으로 표시하고 그림 만들기를 막은 채 재분석을 권한다', async () => {
