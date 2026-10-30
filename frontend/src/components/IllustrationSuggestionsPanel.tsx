@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 
 import {
   ApiError,
@@ -79,6 +79,7 @@ function bodyRangeLabel(start: number, end: number): string {
 function SuggestionCard({
   suggestion,
   index,
+  statusOwner,
   bodyLines,
   disabledNoteId,
   testMode,
@@ -87,13 +88,18 @@ function SuggestionCard({
 }: {
   suggestion: IllustrationSuggestion
   index: number
+  statusOwner: string
   bodyLines: readonly string[]
   disabledNoteId: string
   testMode: boolean
   testDisabled: boolean
-  onTestStatusChange: (message: string) => void
+  onTestStatusChange: (owner: string, message: string) => void
 }) {
   const headingId = useId()
+  const reportTestStatus = useCallback(
+    (message: string) => onTestStatusChange(statusOwner, message),
+    [onTestStatusChange, statusOwner],
+  )
   const excerpt = bodyLines.slice(suggestion.body_range.start, suggestion.body_range.end + 1)
 
   return (
@@ -165,7 +171,7 @@ function SuggestionCard({
             suggestion={suggestion}
             excerpt={excerpt.join('\n')}
             disabled={testDisabled}
-            onStatusChange={onTestStatusChange}
+            onStatusChange={reportTestStatus}
           />
         ) : (
           <div>
@@ -223,7 +229,12 @@ export function IllustrationSuggestionsPanel({
   const [loadedConversionId, setLoadedConversionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [testStatus, setTestStatus] = useState('')
+  const [testStatus, setTestStatus] = useState<{ owner: string; message: string } | null>(null)
+  const onTestStatusChange = useCallback((owner: string, message: string) => {
+    setTestStatus((current) =>
+      message ? { owner, message } : current?.owner === owner ? null : current,
+    )
+  }, [])
   const requestRef = useRef(false)
   const refreshControllerRef = useRef<AbortController | null>(null)
   const activeStatusRef = useRef<HTMLParagraphElement>(null)
@@ -271,6 +282,14 @@ export function IllustrationSuggestionsPanel({
   // 이용량 단가가 없으면 접수 자체가 503이다(계약 `IllustrationSuggestionJobCollectionResponse`).
   // 누를 수 없는 버튼 대신 이유를 적는다.
   const canRequest = requiredCredits !== null
+  const suggestionOwner = (suggestionId: string) =>
+    `${conversionId}:${contentRevision}:${status}:${suggestionId}`
+  const currentTestStatus =
+    requiredCredits === 0 &&
+    testStatus !== null &&
+    suggestions.some((item) => suggestionOwner(item.suggestion_id) === testStatus.owner)
+      ? testStatus.message
+      : ''
 
   useEffect(() => {
     let disposed = false
@@ -284,11 +303,9 @@ export function IllustrationSuggestionsPanel({
         if (disposed) return
         setError(null)
         setNotice(null)
-        setTestStatus('')
         setPendingCreate(null)
         setJob(null)
         setResource(nextResource)
-        setTestStatus('')
         setJobs(nextJobs)
         setPollingJobId(nextJobs.active_job?.job_id ?? null)
       } catch (caught) {
@@ -392,7 +409,6 @@ export function IllustrationSuggestionsPanel({
       ])
       if (controller.signal.aborted) return
       setResource(nextResource)
-      setTestStatus('')
       setJobs(nextJobs)
       setPollingJobId(nextJobs.active_job?.job_id ?? null)
       setJob(null)
@@ -587,10 +603,6 @@ export function IllustrationSuggestionsPanel({
           <p className="rounded-md bg-secondary p-3 text-sm">
             분석 중 본문이 바뀌어 이 작업은 사용할 수 없습니다. 예약한 이용량은 반환됐습니다.
           </p>
-        ) : stale ? (
-          <p className="rounded-md bg-secondary p-3 text-sm">
-            이전 버전의 본문으로 만든 제안입니다. 현재 본문으로 다시 확인해 주세요.
-          </p>
         ) : status === 'no_suggestions' ? (
           <>
             <p>
@@ -612,8 +624,13 @@ export function IllustrationSuggestionsPanel({
             원문 근거를 확인하지 못한 제안 {resource?.dropped_count}건은 제외했습니다.
           </p>
         ) : null}
+        {!isLoading && stale && (
+          <p className="rounded-md bg-secondary p-3 text-sm">
+            이전 버전의 본문으로 만든 제안입니다. 현재 본문으로 다시 확인해 주세요.
+          </p>
+        )}
         {notice !== null && <p className="text-sm">{notice}</p>}
-        {testStatus && <span className="sr-only">{testStatus}</span>}
+        {currentTestStatus && <span className="sr-only">{currentTestStatus}</span>}
       </div>
 
       {suggestions.length > 0 && (
@@ -626,13 +643,14 @@ export function IllustrationSuggestionsPanel({
           <ul className="flex flex-col gap-3">
             {suggestions.map((item, index) => (
               <SuggestionCard
-                key={`${conversionId}:${contentRevision}:${status}:${item.suggestion_id}`}
+                key={suggestionOwner(item.suggestion_id)}
+                statusOwner={suggestionOwner(item.suggestion_id)}
                 suggestion={item}
                 index={index}
                 bodyLines={bodyLines}
                 disabledNoteId={generationNoteId}
                 testMode={requiredCredits === 0}
-                onTestStatusChange={setTestStatus}
+                onTestStatusChange={onTestStatusChange}
                 testDisabled={
                   bodyDirty ||
                   bodyBusy ||

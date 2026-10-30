@@ -37,6 +37,7 @@ export function IllustrationTestFlow({
             ? '테스트 그림을 문서 미리보기에 추가했습니다.'
             : '',
     )
+    return () => onStatusChange('')
   }, [disabled, onStatusChange, stage])
 
   const picture = (
