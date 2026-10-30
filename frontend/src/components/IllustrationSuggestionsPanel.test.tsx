@@ -743,6 +743,24 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(screen.getByRole('heading', { name: '제안 1 · 절차' })).toBeInTheDocument()
     expect(screen.getAllByRole('status')).toHaveLength(1)
   })
+
+  it('이전 버전 제안에도 버려진 제안 수를 함께 보여 준다', async () => {
+    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      ...ready,
+      status: 'stale',
+      content_revision: 2,
+      dropped_count: 2,
+    })
+
+    show({ contentRevision: 2 })
+
+    expect(
+      await screen.findByText('원문 근거를 확인하지 못한 제안 2건은 제외했습니다.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '제안 1 · 절차' })).toBeInTheDocument()
+    expect(screen.getByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeInTheDocument()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+  })
 })
 
 describe('ER-17 그림 제안 패널 — 오류', () => {

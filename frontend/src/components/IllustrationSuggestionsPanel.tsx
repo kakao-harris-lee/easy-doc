@@ -619,7 +619,7 @@ export function IllustrationSuggestionsPanel({
                   : ' 분석 결과가 저장되면 예약한 이용량을 사용합니다.'}
             </p>
           </>
-        ) : status === 'ready' && (resource?.dropped_count ?? 0) > 0 ? (
+        ) : (status === 'ready' || status === 'stale') && (resource?.dropped_count ?? 0) > 0 ? (
           <p className="text-sm text-muted-foreground">
             원문 근거를 확인하지 못한 제안 {resource?.dropped_count}건은 제외했습니다.
           </p>

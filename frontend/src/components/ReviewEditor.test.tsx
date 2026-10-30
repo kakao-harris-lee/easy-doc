@@ -3577,27 +3577,43 @@ describe('R7 그림 목록 작업 탭', () => {
 
     expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
     expect(getIllustrations).not.toHaveBeenCalled()
-    expect(screen.queryByRole('button', { name: '그림 제안 보기 (선택)' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '그림 목록·배치 보기 (선택)' }),
+    ).not.toBeInTheDocument()
   })
 
-  it('기능이 켜져 있으면 그림 목록을 보이고 조회한다', async () => {
+  it('기능이 켜져 있으면 그림 목록과 배치 패널을 보이고 조회한다', async () => {
     vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      placements_content_revision: null,
+      stale: false,
+      placements: [],
+    })
 
     render(
       <ReviewEditor
-        conversion={conversion({ review_capabilities: capabilities })}
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
         source={sourceReady('원문')}
       />,
     )
 
-    expect(screen.getByRole('button', { name: '그림 제안 보기 (선택)' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
+    const toggle = screen.getByRole('button', { name: '그림 목록·배치 보기 (선택)' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
+    expect(screen.queryByRole('heading', { name: '그림 배치' })).not.toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: '그림 목록·배치 접기' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
-    await waitFor(() => expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal)))
+    expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal))
+      expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal))
+    })
   })
 })
 
@@ -3641,12 +3657,12 @@ describe('ER-16 그림 배치', () => {
       />,
     )
 
-    expect(screen.getByRole('button', { name: '그림 제안 보기 (선택)' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: '그림 목록·배치 보기 (선택)' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
     expect(screen.queryByRole('heading', { name: '그림 배치' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
+    fireEvent.click(screen.getByRole('button', { name: '그림 목록·배치 보기 (선택)' }))
     expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
     await waitFor(() =>
       expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
@@ -3797,6 +3813,38 @@ describe('ER-17 그림 제안', () => {
 
     expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
     expect(getIllustrationSuggestions).not.toHaveBeenCalled()
+  })
+
+  it('두 기능이 켜져 있으면 기존 제안 토글로 모든 그림 패널을 연다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      placements_content_revision: null,
+      stale: false,
+      placements: [],
+    })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          content_revision: 1,
+          review_capabilities: { ...capabilities, illustrations: true },
+        })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '그림 제안 보기 (선택)' }))
+
+    expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '그림 제안' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal))
+      expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal))
+      expect(getIllustrationSuggestions).toHaveBeenCalledWith('c1', expect.any(AbortSignal))
+    })
   })
 
   it('기능이 켜져 있으면 제안 패널을 보이고 조회하되 분석을 자동 요청하지 않는다', async () => {
