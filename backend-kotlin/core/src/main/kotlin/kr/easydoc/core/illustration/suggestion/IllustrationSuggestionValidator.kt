@@ -15,6 +15,8 @@ import java.util.UUID
  *   틀렸는지를 LLM 출력의 나머지로 추정하지 않는다.
  * - **의미**(앵커가 원문과 맞는가, 근거에 없는 사실을 더했는가): **제안 단위**로 버리고
  *   개수만 센다.
+ *
+ * 숫자-only 원문 가드는 구조 검증 뒤 모든 제안을 버리는 좁은 입력 형태 검사다.
  */
 internal object IllustrationSuggestionValidator {
     /** 계약이 고정한 불변식 — 저장된 결과의 해석이 달라지므로 구성값이 아니다. */
@@ -43,7 +45,12 @@ internal object IllustrationSuggestionValidator {
         if (drafts.size > MAX_SUGGESTIONS || drafts.any { !isStructurallyValid(it, savedBodyUnits.size) }) {
             return IllustrationSuggestionAnalysis.InvalidStructure
         }
-        val kept = drafts.filter { isSupportedBySource(it, sourceUnits) }
+        val kept =
+            if (isNumericOnlySource(sourceUnits)) {
+                emptyList()
+            } else {
+                drafts.filter { isSupportedBySource(it, sourceUnits) }
+            }
         return IllustrationSuggestionAnalysis.Valid(
             IllustrationSuggestionSet(
                 schemaVersion = SCHEMA_VERSION,

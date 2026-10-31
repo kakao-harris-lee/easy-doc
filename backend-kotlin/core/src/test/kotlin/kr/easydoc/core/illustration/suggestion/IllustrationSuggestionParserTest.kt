@@ -53,7 +53,7 @@ class IllustrationSuggestionParserTest {
 
         val set = validSetOf(result)
         assertThat(set.schemaVersion).isEqualTo(1)
-        assertThat(set.analysisVersion).isEqualTo(ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION)
+        assertThat(set.analysisVersion).isEqualTo("r7-illustration-suggestion-2")
         assertThat(set.droppedCount).isZero()
         val suggestion = set.suggestions.single()
         assertThat(suggestion.suggestionId).isEqualTo(FIRST_ID)
@@ -92,6 +92,77 @@ class IllustrationSuggestionParserTest {
 
         assertThat(set.suggestions).isEmpty()
         assertThat(set.droppedCount).isZero()
+    }
+
+    @Test
+    fun `숫자와 구분 기호만 있는 원문의 제안은 모두 버리고 정상 결과로 저장한다`() {
+        val numericSources =
+            listOf("170", "1\n2\n3", "1,234", "2026-10-30", "１２３", "١٢٣", "②", "Ⅻ", "²", "---")
+
+        numericSources.forEach { source ->
+            val sourceLines = source.split("\n")
+            val draft =
+                example(
+                    "procedure",
+                    sourceLines.first(),
+                    "절차를 보여 주는 그림",
+                    "안내를 따름",
+                    "절차 그림",
+                )
+            val set =
+                validSetOf(
+                    IllustrationSuggestionParser.parseAndValidate(
+                        jsonWith(draft),
+                        sourceLines,
+                        listOf("합성 본문"),
+                    ),
+                )
+
+            assertThat(set.suggestions).describedAs(source).isEmpty()
+            assertThat(set.droppedCount).describedAs(source).isEqualTo(1)
+        }
+    }
+
+    @Test
+    fun `빈 원문은 숫자-only가 아니다`() {
+        assertThat(isNumericOnlySource(emptyList())).isFalse()
+        assertThat(isNumericOnlySource(listOf("", " ", "\t"))).isFalse()
+    }
+
+    @Test
+    fun `숫자에 일반 문자나 문장이 섞인 원문은 숫자-only로 차단하지 않는다`() {
+        val mixedSources =
+            listOf(
+                Triple("170번", "170번", "[0]"),
+                Triple("제1조", "제1조", "[0]"),
+                Triple("170\n신청서를 제출합니다", "신청서를 제출합니다", "[1]"),
+                Triple("2026-10-30에 신청서를 제출합니다", "2026-10-30에 신청서를 제출합니다", "[0]"),
+            )
+
+        mixedSources.forEach { (source, quote, indexes) ->
+            val draft = example("procedure", quote, "절차를 보여 주는 그림", "안내를 따름", "절차 그림", indexes)
+            val set =
+                validSetOf(
+                    IllustrationSuggestionParser.parseAndValidate(
+                        jsonWith(draft),
+                        source.split("\n"),
+                        listOf("합성 본문"),
+                    ),
+                )
+
+            assertThat(set.suggestions).describedAs(source).hasSize(1)
+            assertThat(set.droppedCount).describedAs(source).isZero()
+        }
+    }
+
+    @Test
+    fun `숫자-only 원문이라도 구조 위반은 결과 전체가 무효다`() {
+        val draft = example("procedure", "170", "절차를 보여 주는 그림", "안내를 따름", "절차 그림")
+        val invalidJson = jsonWith(draft).replace("\"scenes\":[\"절차를 보여 주는 그림\"]", "\"scenes\":[]")
+
+        val result = IllustrationSuggestionParser.parseAndValidate(invalidJson, listOf("170"), listOf("합성 본문"))
+
+        assertThat(result).isEqualTo(IllustrationSuggestionAnalysis.InvalidStructure)
     }
 
     @Test
