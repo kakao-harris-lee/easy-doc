@@ -110,6 +110,13 @@ easydoc:
     # .insert`). worker yml 에만 두면 운영자가 값을 올려도 api 프로세스는 기본값 3을 계속 쓴다 —
     # 같은 키·환경변수·기본값을 양쪽에 선언해 두 프로세스가 한 값을 본다.
     max-provider-attempts-per-conversion: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_PROVIDER_ATTEMPTS:3}
+  # R7 ER-18 요청형 이미지 생성. 제안·카탈로그와 독립이며 가격 없이는 접수하지 않는다.
+  illustration-generation:
+    enabled: ${EASYDOC_ILLUSTRATION_GENERATION_ENABLED:false}
+    worker-enabled: ${EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED:false}
+    credits-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE:}
+    provider-cost-usd-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_PROVIDER_COST_USD_PER_IMAGE:}
+    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-1}
   prompt:
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
     context-explanation-version: ${EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION:BASELINE}

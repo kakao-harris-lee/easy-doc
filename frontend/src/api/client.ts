@@ -16,7 +16,12 @@ import type {
   ConversionResponse,
   ConversionReviewRequest,
   CreateActionGuideJobRequest,
+  CreateIllustrationGenerationJobRequest,
   CreateIllustrationSuggestionJobRequest,
+  GeneratedIllustration,
+  GeneratedIllustrationCollection,
+  IllustrationGenerationJob,
+  IllustrationGenerationJobCollection,
   IllustrationSuggestionJob,
   IllustrationSuggestionJobCollection,
   IllustrationSuggestionsResource,
@@ -35,6 +40,7 @@ import type {
   ReviewSupportResponse,
   ReadingLevel,
   SaveActionGuideRequest,
+  UpdateGeneratedIllustrationApplicationRequest,
   UpdateReviewItemRequest,
   UpdateReviewItemsRequest,
   WorkspaceListResponse,
@@ -648,6 +654,95 @@ export function getIllustrationSuggestions(
     `/conversions/${conversionId}/illustration-suggestions`,
     { signal },
   )
+}
+
+export function listIllustrationGenerationJobs(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationGenerationJobCollection> {
+  return requestJson<IllustrationGenerationJobCollection>(
+    `/conversions/${conversionId}/illustration-generation-jobs`,
+    { signal },
+  )
+}
+
+export function getIllustrationGenerationJob(
+  conversionId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<IllustrationGenerationJob> {
+  return requestJson<IllustrationGenerationJob>(
+    `/conversions/${conversionId}/illustration-generation-jobs/${jobId}`,
+    { signal },
+  )
+}
+
+export interface IllustrationGenerationJobCreationResult {
+  job: IllustrationGenerationJob
+  creditBalance: number | null
+}
+
+export async function createIllustrationGenerationJob(
+  conversionId: string,
+  body: CreateIllustrationGenerationJobRequest,
+): Promise<IllustrationGenerationJobCreationResult> {
+  const response = await send(`/conversions/${conversionId}/illustration-generation-jobs`, {
+    method: 'POST',
+    body,
+  })
+  return {
+    job: (await response.json()) as IllustrationGenerationJob,
+    creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
+  }
+}
+
+export function getGeneratedIllustrations(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<GeneratedIllustrationCollection> {
+  return requestJson<GeneratedIllustrationCollection>(
+    `/conversions/${conversionId}/generated-illustrations`,
+    { signal },
+  )
+}
+
+export function updateGeneratedIllustrationApplication(
+  conversionId: string,
+  assetId: string,
+  body: UpdateGeneratedIllustrationApplicationRequest,
+): Promise<GeneratedIllustration> {
+  return requestJson<GeneratedIllustration>(
+    `/conversions/${conversionId}/generated-illustrations/${assetId}/application`,
+    { method: 'PUT', body },
+  )
+}
+
+/** Bearer 헤더를 붙여 비공개 PNG를 Blob으로 받는다. 공개 URL에 토큰을 싣지 않는다. */
+export async function getGeneratedIllustrationImage(
+  conversionId: string,
+  assetId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await send(
+    `/conversions/${conversionId}/generated-illustrations/${assetId}/image`,
+    { signal },
+  )
+  return response.blob()
+}
+
+export async function downloadGeneratedIllustration(
+  conversionId: string,
+  assetId: string,
+): Promise<DownloadedFile> {
+  const response = await send(
+    `/conversions/${conversionId}/generated-illustrations/${assetId}/download`,
+    {},
+  )
+  return {
+    blob: await response.blob(),
+    filename:
+      parseFilename(response.headers.get('Content-Disposition')) ?? `illustration-${assetId}.png`,
+  }
 }
 
 /**

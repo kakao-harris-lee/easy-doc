@@ -34,6 +34,7 @@ data class IllustrationSuggestionResultView(
     val requiredCredits: BigDecimal?,
     val suggestions: List<IllustrationSuggestion>,
     val droppedCount: Int,
+    val analysisVersion: String? = null,
 )
 
 /**
@@ -87,6 +88,7 @@ class IllustrationSuggestionResultService(
                 requiredCredits = required,
                 suggestions = decoded.suggestions,
                 droppedCount = decoded.droppedCount,
+                analysisVersion = decoded.analysisVersion,
             )
         }
     }

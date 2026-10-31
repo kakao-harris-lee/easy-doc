@@ -104,8 +104,10 @@ data class ReviewCapabilities(
      * (명세 §3·§6) — 단가가 없으면 접수가 503 이라 기능을 노출하는 것이 거짓말이 된다.
      */
     val illustrationSuggestions: Boolean,
+    /** R7 ER-18 요청형 실제 이미지 생성. 제안·카탈로그 토글과 독립이다. */
+    val illustrationGeneration: Boolean = false,
 ) {
     companion object {
-        val NONE = ReviewCapabilities(false, false, false, false, false, false, false, false)
+        val NONE = ReviewCapabilities(false, false, false, false, false, false, false, false, false)
     }
 }

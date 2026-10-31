@@ -23,7 +23,7 @@ enum class LlmCallPurpose(
     /** R7 ER-17 문맥 기반 그림 제안 분석 1회(V35 CHECK 확장과 같은 어휘). */
     ILLUSTRATION_SUGGESTION("illustration_suggestion"),
 
-    /** R7 ER-18-1 그림 생성 provider 경계. DB·공개 사용량 어휘 연결은 후속 단계다. */
+    /** R7 ER-18 그림 생성 1회(V51 작업·호출 원장과 같은 어휘). */
     ILLUSTRATION_GENERATION("illustration_generation"),
 }
 

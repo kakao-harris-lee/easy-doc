@@ -290,6 +290,8 @@ export interface ReviewCapabilities {
   focused_review: boolean
   /** 토글이 켜져 있고 이용량 단가가 설정돼 있을 때만 true다. */
   illustration_suggestions: boolean
+  /** 독립 토글·provider 가격·고객 차감량이 모두 유효할 때만 true다. */
+  illustration_generation: boolean
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
@@ -681,6 +683,7 @@ export interface IllustrationSuggestionAnchor {
 export interface IllustrationSuggestion {
   /** 서버가 부여한다. */
   suggestion_id: string
+  configuration_revision: string
   purpose: IllustrationSuggestionPurpose
   reason: string
   body_range: IllustrationSuggestionBodyRange
@@ -693,6 +696,7 @@ export interface IllustrationSuggestion {
 export type IllustrationSuggestionStatus = 'not_analyzed' | 'ready' | 'no_suggestions' | 'stale'
 
 export interface IllustrationSuggestionsResource {
+  analysis_version: string | null
   status: IllustrationSuggestionStatus
   content_revision: number
   /** 아직 분석하지 않았으면 null이다. */
@@ -702,6 +706,83 @@ export interface IllustrationSuggestionsResource {
   suggestions: IllustrationSuggestion[]
   /** 원문 대조에서 버려진 제안 수. 버린 내용은 저장되지 않는다. */
   dropped_count: number
+}
+
+export interface IllustrationGenerationConfiguration {
+  scenes: string[]
+  preserved_facts: string[]
+  alt_text: string
+}
+
+export interface CreateIllustrationGenerationJobRequest {
+  request_id: string
+  expected_content_revision: number
+  suggestion_id: string
+  analysis_version: string
+  /** 서버가 configuration의 정규 직렬화에서 계산하는 SHA-256 소문자 hex다. */
+  configuration_revision: string
+  configuration: IllustrationGenerationConfiguration
+}
+
+export type IllustrationGenerationJobStatus =
+  'queued' | 'running' | 'succeeded' | 'failed' | 'superseded'
+export type IllustrationGenerationFailureCode =
+  'generation_failed' | 'result_invalid' | 'outcome_unknown'
+
+export interface IllustrationGenerationJob {
+  job_id: string
+  request_id: string
+  status: IllustrationGenerationJobStatus
+  suggestion_id: string
+  analysis_version: string
+  configuration_revision: string
+  based_on_content_revision: number
+  reserved_credits: number
+  failure_code: IllustrationGenerationFailureCode | null
+  created_at: string
+  updated_at: string
+}
+
+export interface IllustrationGenerationJobCollection {
+  enabled: boolean
+  active_job: IllustrationGenerationJob | null
+  latest_job: IllustrationGenerationJob | null
+  required_credits: number | null
+  available_credits: number
+}
+
+export interface GeneratedIllustration {
+  provenance: 'fake' | 'provider'
+  asset_id: string
+  job_id: string
+  suggestion_id: string
+  analysis_version: string
+  configuration_revision: string
+  based_on_content_revision: number
+  stale: boolean
+  applied: boolean
+  asset_revision: number
+  purpose: IllustrationSuggestionPurpose
+  reason: string
+  body_range: IllustrationSuggestionBodyRange
+  source_anchors: IllustrationSuggestionAnchor[]
+  scenes: string[]
+  preserved_facts: string[]
+  alt_text: string
+  image_url: string
+  download_url: string
+  created_at: string
+}
+
+export interface GeneratedIllustrationCollection {
+  content_revision: number
+  assets: GeneratedIllustration[]
+}
+
+export interface UpdateGeneratedIllustrationApplicationRequest {
+  expected_content_revision: number
+  expected_asset_revision: number
+  applied: boolean
 }
 
 /** 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). */
@@ -768,6 +849,8 @@ export type UsagePurpose =
   | 'action_guide'
   /** 문맥 기반 그림 제안 분석. */
   | 'illustration_suggestion'
+  /** 사용자 요청으로 시작한 그림 생성. */
+  | 'illustration_generation'
 
 /**
  * `WorkspaceUsageResponse.by_purpose` 항목. 계약
@@ -832,6 +915,8 @@ export type CreditReason =
   | 'action_guide'
   /** 제안 분석 1건의 예약·소비·해제. */
   | 'illustration_suggestion'
+  /** 그림 생성 1건의 예약·소비·해제. */
+  | 'illustration_generation'
   | 'cycle_end'
 
 /**

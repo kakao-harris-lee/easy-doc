@@ -155,6 +155,15 @@ enum class EncryptedField(val wireName: String) {
      * 받으며 결과 행 id 에 결속한다(작업 1건에 결과 1행).
      */
     ILLUSTRATION_SUGGESTION_RESULT("illustration_suggestion_results.payload_encrypted"),
+
+    /** R7 ER-18 생성 요청의 서버 확정 프롬프트·구성. 작업 ID에 결속한다. */
+    ILLUSTRATION_GENERATION_JOB_INPUT("illustration_generation_jobs.input_payload_encrypted"),
+
+    /** 생성 자산의 원문 근거·장면·대체텍스트·최종 프롬프트. 자산 ID에 결속한다. */
+    ILLUSTRATION_GENERATION_ASSET_METADATA("generated_illustration_assets.metadata_encrypted"),
+
+    /** 생성 PNG 원 바이트. 메타데이터와 다른 AAD를 사용한다. */
+    ILLUSTRATION_GENERATION_ASSET_PNG("generated_illustration_assets.png_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

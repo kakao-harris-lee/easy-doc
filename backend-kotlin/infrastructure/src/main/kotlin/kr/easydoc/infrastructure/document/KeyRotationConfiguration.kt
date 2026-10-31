@@ -8,6 +8,7 @@ import kr.easydoc.application.document.KeyRotationPolicy
 import kr.easydoc.application.document.LoggingKeyRotationObserver
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.infrastructure.actionguide.ActionGuideContentKeyRotation
+import kr.easydoc.infrastructure.illustration.generation.IllustrationGenerationKeyRotation
 import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionResultKeyRotation
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -75,6 +76,20 @@ class KeyRotationConfiguration {
         properties: KeyRotationProperties,
     ): IllustrationSuggestionResultKeyRotation =
         IllustrationSuggestionResultKeyRotation(
+            jdbcClient,
+            cipher,
+            TransactionTemplate(transactionManager),
+            properties.batchSize,
+        )
+
+    @Bean
+    fun illustrationGenerationKeyRotation(
+        jdbcClient: JdbcClient,
+        cipher: ContentCipher,
+        transactionManager: PlatformTransactionManager,
+        properties: KeyRotationProperties,
+    ): IllustrationGenerationKeyRotation =
+        IllustrationGenerationKeyRotation(
             jdbcClient,
             cipher,
             TransactionTemplate(transactionManager),

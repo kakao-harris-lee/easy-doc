@@ -12,9 +12,8 @@ import org.junit.jupiter.api.Test
  * 조회 응답에 그대로 나간다. 새 목적·새 사유를 코드에만 더하면 계약이 선언하지 않은 값이 응답에
  * 실리고, 그 값을 모르는 클라이언트는 조용히 빈 칸으로 그린다.
  *
- * Kotlin enum 의 `wireName` 이 정본이다. 아직 작업·계약에 연결하지 않은 provider 전용 목적만
- * 명시적으로 제외하므로 새 공개 목적·사유가 계약에 없으면 **자동으로** 빨개진다. 그림 생성도
- * 후속 작업에서 공개 응답에 연결할 때 provider 전용 예외를 제거하고 계약을 함께 확장해야 한다.
+ * Kotlin enum 의 `wireName` 이 정본이다. 새 공개 목적·사유가 계약에 없으면 **자동으로**
+ * 빨개진다. ER-18 그림 생성은 V51 작업·원장과 공개 사용량 응답에 함께 연결한다.
  */
 class LedgerVocabularyContractTest {
     @Test
@@ -56,10 +55,12 @@ class LedgerVocabularyContractTest {
     }
 
     @Test
-    fun `그림 생성 목적은 작업과 계약을 연결하기 전까지 공개 사용량 어휘에서 제외한다`() {
-        assertThat(PROVIDER_ONLY_PURPOSES).containsExactly(GENERATION_WIRE_NAME)
+    fun `그림 생성 목적과 사유가 작업과 공개 사용량 계약에 함께 있다`() {
+        assertThat(PROVIDER_ONLY_PURPOSES).isEmpty()
         assertThat(LlmCallPurpose.ILLUSTRATION_GENERATION.wireName).isEqualTo(GENERATION_WIRE_NAME)
-        assertThat(ContractSpec.schemaEnum(USAGE_PURPOSE_SCHEMA)).doesNotContain(GENERATION_WIRE_NAME)
+        assertThat(CreditReason.ILLUSTRATION_GENERATION.wireName).isEqualTo(GENERATION_WIRE_NAME)
+        assertThat(ContractSpec.schemaEnum(USAGE_PURPOSE_SCHEMA)).contains(GENERATION_WIRE_NAME)
+        assertThat(ContractSpec.schemaEnum(CREDIT_REASON_SCHEMA)).contains(GENERATION_WIRE_NAME)
     }
 
     private companion object {
@@ -67,6 +68,6 @@ class LedgerVocabularyContractTest {
         const val CREDIT_REASON_SCHEMA = "CreditReason"
         const val SUGGESTION_WIRE_NAME = "illustration_suggestion"
         const val GENERATION_WIRE_NAME = "illustration_generation"
-        val PROVIDER_ONLY_PURPOSES = setOf(GENERATION_WIRE_NAME)
+        val PROVIDER_ONLY_PURPOSES = emptySet<String>()
     }
 }

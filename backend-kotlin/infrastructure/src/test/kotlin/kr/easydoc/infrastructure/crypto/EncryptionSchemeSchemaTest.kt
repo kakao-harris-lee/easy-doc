@@ -37,6 +37,8 @@ class EncryptionSchemeSchemaTest {
             // R7 ER-17 결과(V35). 새 봉인 표가 방식 이름을 자기 CHECK 로 고정하는지 함께 본다
             // (명세 §7) — 이름만 `EncryptedField` 에 올리고 표 제약을 빠뜨리면 이 대조가 잡는다.
             "ck_illustration_suggestion_results_scheme",
+            "ck_illustration_generation_jobs_input_envelope",
+            "ck_generated_illustration_assets_scheme",
             "retained_transaction_records_encryption_scheme_check",
             "retained_transaction_decisions_encryption_scheme_check",
             "toss_billing_callbacks_encryption_scheme_check",
@@ -133,11 +135,17 @@ class EncryptionSchemeSchemaTest {
     }
 
     @Test
-    @DisplayName("R7 ER-17 결과 표가 키 세대 하한도 자기 CHECK 로 진다")
+    @DisplayName("R7 결과·생성 입력·생성 자산 표가 키 세대 하한도 자기 CHECK 로 진다")
     fun `새 봉인 표가 키 세대 하한을 진다`() {
-        assertThat(constraintDefinition("ck_illustration_suggestion_results_key_version"))
-            .describedAs("결과 표가 key_version 하한을 걸지 않는다 — 0·음수 세대가 들어가면 그 행은 열리지 않는다")
-            .contains("key_version")
+        listOf(
+            "ck_illustration_suggestion_results_key_version",
+            "ck_illustration_generation_jobs_input_envelope",
+            "ck_generated_illustration_assets_key_version",
+        ).forEach { name ->
+            assertThat(constraintDefinition(name))
+                .describedAs("%s 가 key_version 하한을 걸지 않는다", name)
+                .contains("key_version")
+        }
     }
 
     /** `public` 스키마의 모든 bytea 컬럼을 `테이블.컬럼` 으로. 열거하지 않고 DB 에서 읽는다. */

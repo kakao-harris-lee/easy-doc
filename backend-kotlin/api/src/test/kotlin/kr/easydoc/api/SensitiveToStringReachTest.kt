@@ -188,8 +188,9 @@ class SensitiveToStringReachTest {
          * Telegram configuration, operator events and account-deletion result (+5).
          * Operator notification queue properties (+1).
          * IllustrationSuggestionAnalysis.AllDropped removed (-1).
+         * ER-18 generation job/asset ports, views, configuration and HTTP DTOs (+31).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 504
+        const val EXPECTED_SOURCE_DECLARATIONS = 535
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

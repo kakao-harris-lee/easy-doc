@@ -136,6 +136,9 @@ enum class CreditReason(val wireName: String) {
     /** R7 ER-17 그림 제안 분석 작업 1건의 예약·소비·해제(V35). */
     ILLUSTRATION_SUGGESTION("illustration_suggestion"),
 
+    /** R7 ER-18 그림 생성 작업 1건의 예약·소비·해제(V51). */
+    ILLUSTRATION_GENERATION("illustration_generation"),
+
     /**
      * 갱신 없이 주기가 닫혔다(`cycle_renews = false`) — `kind`는 갱신과 똑같이
      * `cycle_reset`이지만, **왜** 닫혔는지는 이 사유가 말한다(무엇을 했는지는 `kind`,

@@ -8,13 +8,17 @@ import {
   createActionGuideJob,
   createDocumentFromFile,
   createDocumentFromText,
+  createIllustrationGenerationJob,
   createIllustrationSuggestionJob,
+  downloadGeneratedIllustration,
   downloadExport,
   downloadActionGuide,
   downloadReviewHistory,
   getActionGuide,
   getActionGuideJob,
   getExplanations,
+  getGeneratedIllustrationImage,
+  getGeneratedIllustrations,
   getIllustrationPlacements,
   getIllustrationSuggestionJob,
   getIllustrationSuggestions,
@@ -643,6 +647,61 @@ describe('illustration suggestion API (R7 ER-17)', () => {
     // 단가 미설정은 0(무과금)이 아니라 null이다 — 화면이 두 경우를 구분한다.
     expect(resource.required_credits).toBeNull()
     expect(resource.suggestions).toEqual([])
+  })
+})
+
+describe('ER-18 그림 생성 API', () => {
+  it('sends the validated suggestion, configuration and revisions when creating a job', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ job_id: 'job-9' }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json', 'X-Credit-Balance': '3.5' },
+      }),
+    )
+    const body = {
+      request_id: 'request-9',
+      expected_content_revision: 7,
+      suggestion_id: 'suggestion-9',
+      analysis_version: 'r7-illustration-suggestion-2',
+      configuration_revision: 'a'.repeat(64),
+      configuration: { scenes: ['신청 장면'], preserved_facts: [], alt_text: '신청 그림' },
+    }
+
+    const result = await createIllustrationGenerationJob('c1', body)
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/illustration-generation-jobs`)
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual(body)
+    expect(result.creditBalance).toBe(3.5)
+  })
+
+  it('자산 목록과 비공개 PNG·다운로드 경로를 구분한다', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { content_revision: 7, assets: [] }))
+    fetchMock.mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { status: 200 }))
+    fetchMock.mockResolvedValueOnce(
+      new Response(new Uint8Array([4, 5]), {
+        status: 200,
+        headers: { 'Content-Disposition': "attachment; filename*=UTF-8''illustration-a1.png" },
+      }),
+    )
+
+    const collection = await getGeneratedIllustrations('c1')
+    const image = await getGeneratedIllustrationImage('c1', 'a1')
+    const download = await downloadGeneratedIllustration('c1', 'a1')
+
+    expect(collection.content_revision).toBe(7)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/generated-illustrations`,
+    )
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/generated-illustrations/a1/image`,
+    )
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/generated-illustrations/a1/download`,
+    )
+    expect(await image.arrayBuffer()).toEqual(new Uint8Array([1, 2, 3]).buffer)
+    expect(download.filename).toBe('illustration-a1.png')
   })
 })
 

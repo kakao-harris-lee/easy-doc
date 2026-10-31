@@ -2878,6 +2878,7 @@ describe('R1 검수 지원 패널', () => {
     illustrations: false,
     focused_review: false,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   it('capability가 없는 옛 응답에는 검수 패널을 노출하지 않는다', () => {
@@ -3154,6 +3155,7 @@ describe('ER-25 결과 문단 집중 검토', () => {
     illustrations: false,
     focused_review: true,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   function focusedResponse(items: ReviewItem[], reviewRevision = 1): ReviewSupportResponse {
@@ -3352,6 +3354,7 @@ describe('쉬운 글 중심 결과 화면', () => {
             illustrations: false,
             focused_review: false,
             illustration_suggestions: false,
+            illustration_generation: false,
             action_guide: true,
             action_guide_workflow: true,
             action_guide_workflow_read: true,
@@ -3389,6 +3392,7 @@ describe('R4 표 관계와 접힌 수정 기록', () => {
     illustrations: false,
     focused_review: false,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   it('기능 플래그가 없으면 표 관계와 검수 기록을 모두 숨긴다', () => {
@@ -3532,6 +3536,7 @@ describe('R6 용어 설명 작업 탭', () => {
     illustrations: false,
     focused_review: false,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   it('기능 플래그가 없으면 용어 설명을 숨긴다', () => {
@@ -3570,6 +3575,7 @@ describe('R7 그림 목록 작업 탭', () => {
     illustrations: true,
     focused_review: false,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   it('기능 플래그가 없으면 그림 목록을 숨긴다', () => {
@@ -3627,6 +3633,7 @@ describe('ER-16 그림 배치', () => {
     illustrations: true,
     focused_review: false,
     illustration_suggestions: false,
+    illustration_generation: false,
   }
 
   function emptyPlacements(revision: number) {
@@ -3759,11 +3766,13 @@ describe('ER-17 그림 제안', () => {
     explanations: false,
     illustrations: false,
     illustration_suggestions: true,
+    illustration_generation: false,
     focused_review: false,
   }
 
   beforeEach(() => {
     vi.mocked(getIllustrationSuggestions).mockResolvedValue({
+      analysis_version: null,
       status: 'not_analyzed',
       content_revision: 1,
       based_on_content_revision: null,
@@ -3805,6 +3814,7 @@ describe('ER-17 그림 제안', () => {
             ...capabilities,
             illustrations: true,
             illustration_suggestions: false,
+            illustration_generation: false,
           },
         })}
         source={sourceReady('원문')}

@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.KeyRotationBatch
 import kr.easydoc.infrastructure.actionguide.ActionGuideContentKeyRotation
+import kr.easydoc.infrastructure.illustration.generation.IllustrationGenerationKeyRotation
 import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionResultKeyRotation
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
@@ -21,12 +22,14 @@ import org.springframework.stereotype.Component
  */
 @Component
 @Profile(ROTATE_KEYS_PROFILE)
+@Suppress("LongParameterList")
 class KeyRotationRunner(
     private val batch: KeyRotationBatch,
     private val actionGuideContent: ActionGuideContentKeyRotation,
     private val tableStructure: TableStructureKeyRotation,
     private val reviewHistory: ReviewHistoryKeyRotation,
     private val illustrationSuggestions: IllustrationSuggestionResultKeyRotation,
+    private val illustrationGeneration: IllustrationGenerationKeyRotation,
     private val guideDrafts: kr.easydoc.infrastructure.actionguide.GuideDraftApplyKeyRotation? = null,
 ) : ApplicationRunner,
     ExitCodeGenerator {
@@ -51,6 +54,8 @@ class KeyRotationRunner(
                     "키 회전 [illustration_suggestion_results]: rotated={}",
                     illustrationSuggestions.run(),
                 )
+                log.info("키 회전 [illustration_generation_jobs]: rotated={}", illustrationGeneration.runJobs())
+                log.info("키 회전 [generated_illustration_assets]: rotated={}", illustrationGeneration.runAssets())
                 SUCCESS
             } catch (failure: RuntimeException) {
                 // 메시지만 남긴다 — 도메인 예외는 개수만 말하고 행 식별자·본문을 담지 않는다.

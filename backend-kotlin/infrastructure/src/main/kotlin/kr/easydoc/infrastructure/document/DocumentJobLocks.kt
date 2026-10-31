@@ -16,9 +16,9 @@ import java.util.UUID
  * 시점에는 배치의 모든 작업 행을 이미 들고 있으므로 trigger 가 중간에 새로 기다릴 일이 없다.
  * `ORDER BY id` 는 배치끼리도 같은 순서로 잡게 해 파기 배치 두 개가 엇갈리지 않게 한다.
  *
- * 잠그는 표는 행동 안내와 그림 제안 **둘 다**이고 순서는 V35 의 합친 trigger
- * (`settle_document_jobs_before_delete`)와 같은 표 이름 순이다 — 한 문서에 두 가족이 동시에
- * 활성일 수 있어 한쪽만 잠그면 나머지 가족을 정산 중인 worker 와 같은 교착이 남는다. 「어떤 작업
+ * 잠그는 표는 행동 안내·그림 생성·그림 제안 **셋 모두**이고 순서는 V51 의 합친 trigger
+ * (`settle_document_jobs_before_delete`)와 같은 표 이름 순이다 — 한 문서에 세 가족이 동시에
+ * 활성일 수 있어 하나라도 빼면 나머지 가족을 정산 중인 worker 와 같은 교착이 남는다. 「어떤 작업
  * 표를 미리 잠가야 하는가」를 한곳에 모으는 것이 이 클래스의 존재 이유다.
  *
  * 문서 한 건만 지우는 경로(`DocumentService.delete`)는 trigger 가 그 한 행을 스스로 먼저
@@ -26,7 +26,7 @@ import java.util.UUID
  */
 class DocumentJobLocks(private val jdbc: JdbcClient) {
     /**
-     * [documentIds] 에 걸린 `queued`/`running` 작업 행을 두 가족 모두, 표 이름 순서와 id 순서로
+     * [documentIds] 에 걸린 `queued`/`running` 작업 행을 세 가족 모두, 표 이름 순서와 id 순서로
      * 잠근다. 비어 있으면 아무것도 하지 않는다.
      */
     fun lockActiveJobs(documentIds: List<UUID>) {
@@ -47,10 +47,11 @@ class DocumentJobLocks(private val jdbc: JdbcClient) {
 
     private companion object {
         /**
-         * 잠글 작업 표와 그 순서. V35 의 `settle_document_jobs_before_delete` 가 도는 순서와 같게
+         * 잠글 작업 표와 그 순서. V51 의 `settle_document_jobs_before_delete` 가 도는 순서와 같게
          * 둔다 — 두 파기·탈퇴 배치가 엇갈리지 않으려면 방향이 하나여야 한다.
          */
-        val JOB_TABLES = listOf("action_guide_jobs", "illustration_suggestion_jobs")
+        val JOB_TABLES =
+            listOf("action_guide_jobs", "illustration_generation_jobs", "illustration_suggestion_jobs")
 
         fun idParam(index: Int): String = "id$index"
 
