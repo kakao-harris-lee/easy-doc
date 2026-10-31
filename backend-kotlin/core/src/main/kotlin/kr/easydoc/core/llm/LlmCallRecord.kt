@@ -22,6 +22,9 @@ enum class LlmCallPurpose(
 
     /** R7 ER-17 문맥 기반 그림 제안 분석 1회(V35 CHECK 확장과 같은 어휘). */
     ILLUSTRATION_SUGGESTION("illustration_suggestion"),
+
+    /** R7 ER-18-1 그림 생성 provider 경계. DB·공개 사용량 어휘 연결은 후속 단계다. */
+    ILLUSTRATION_GENERATION("illustration_generation"),
 }
 
 /**
@@ -34,16 +37,12 @@ enum class LlmCallPurpose(
  * 「실패 호출 원장 추적」, 2026-09-08). 실패 호출은 토큰이 0이고 비용은 `null` 이다 —
  * 알 수 없는 사용량을 0으로 보고하지 않는다(CLAUDE.md 「미설정은 null」).
  *
- * **오늘 실제로 던져지는 것은 `LlmProviderException`(기반 클래스) 뿐이다.**
- * `LlmTruncatedException`·`LlmEmptyResultException`은 `OpenAiProvider`·`AnthropicProvider`
- * 어느 쪽도 던지지 않는다 — 두 어댑터는 실패를 전부 `LlmProviderException(message)`로
- * 던진다(`failure()` 헬퍼). 절단·빈 결과는 예외가 아니라 **받은 완성 응답**을
- * `ConvertDocumentUseCase`의 `classify(completion: LlmCompletion)`이 값(`finishReason`·
- * 빈 본문)으로 분류한 것이고, 이 갈래는 [PROVIDER_ERROR]가 아니라 [COMPLETED]로
- * 남는다(완성 자체는 받았다). `ConversionFailureKind.failureKind(exc)`의
- * `is LlmTruncatedException`·`is LlmEmptyResultException` 분기는 어댑터가 그 서브타입을
- * 던지기 시작하기 전까지는 도달하지 않는다 — 죽은 코드가 아니라 **아직 쓰이지 않는
- * 확장점**이다(새 provider가 세분화된 실패를 던지고 싶을 때 쓴다).
+ * 텍스트 `OpenAiProvider`·`AnthropicProvider`는 실패를 전부 기반 클래스로 던지고,
+ * `LlmTruncatedException`·`LlmEmptyResultException`은 던지지 않는다. 절단·빈 결과는
+ * **받은 완성 응답**을 `ConvertDocumentUseCase`의 `classify(completion: LlmCompletion)`이
+ * 값으로 분류하므로 [COMPLETED]로 남는다. 이미지 생성 adapter는 HTTP 거절·결과 형식·
+ * timeout·I/O를 구분하는 `LlmProviderException` 하위 타입을 던지며, 후속 작업 경계가
+ * `failureClass`에 그 단순 이름을 기록할 수 있다.
  */
 enum class LlmCallOutcome(
     /** `llm_calls.outcome` 컬럼에 그대로 들어가는 값(V18 CHECK 제약과 같은 어휘). */
@@ -68,17 +67,19 @@ enum class LlmCallOutcome(
  * 어느 것에도 이 타입의 필드 이름이 걸리지 않는다 — `provider`·`model` 은 벤더 식별자이지
  * 사용자 콘텐츠가 아니다).
  *
- * [latencyMs]·[estimatedCostUsd]·[pricingInputUsdPerMtok]·[pricingOutputUsdPerMtok] 는
- * [LlmCompletion] 의 같은 이름 필드에서 그대로 옮겨 온 값이다 — `MetricsLlmProviderDecorator`
- * 가 이미 계산해 채운 스냅샷을 재계산하지 않는다. 단가가 미설정이면 [estimatedCostUsd] 와
- * 단가 스냅샷 둘 다 `null` 이다(0 이 아니다 — 프로젝트 CLAUDE.md 「미설정은 null」).
+ * 텍스트 완성의 [latencyMs]·[estimatedCostUsd]·[pricingInputUsdPerMtok]·
+ * [pricingOutputUsdPerMtok] 는 [LlmCompletion] 의 같은 이름 필드에서 그대로 옮겨 온다.
+ * 이미지 생성 adapter도 같은 필드에 측정값과 비용 스냅샷을 담는다. 단가가 미설정이면
+ * [estimatedCostUsd] 와 단가 스냅샷 둘 다 `null` 이다(0 이 아니다 — 프로젝트 CLAUDE.md
+ * 「미설정은 null」). 네트워크가 없는 fake만 비용 0을 명시한다.
  */
 data class LlmCallRecord(
     val purpose: LlmCallPurpose,
     val provider: String,
     /**
-     * **응답이 보고한** 모델 이름 — [outcome] 이 [LlmCallOutcome.PROVIDER_ERROR] 면 응답
-     * 자체가 없었으므로 `null` 이다(`LlmAttribution.model` 과 같은 규약).
+     * 텍스트 완성은 **응답이 보고한** 모델 이름을 쓴다. Images API처럼 모델을 응답에 포함하지
+     * 않는 provider는 호출에 사용한 구성 모델을 기록한다. [outcome] 이
+     * [LlmCallOutcome.PROVIDER_ERROR] 면 응답 자체가 없었으므로 `null` 이다.
      */
     val model: String?,
     val inputTokens: Int,
@@ -115,13 +116,10 @@ data class LlmCallRecord(
     val outcome: LlmCallOutcome = LlmCallOutcome.COMPLETED,
     /**
      * [outcome] 이 [LlmCallOutcome.PROVIDER_ERROR] 일 때만 값이 있다 — 예외 클래스의
-     * 단순 이름이다. **오늘은 항상 `"LlmProviderException"`** 이다(위 [LlmCallOutcome]
-     * KDoc 「오늘 실제로 던져지는 것은…」) — `LlmTruncatedException`·
-     * `LlmEmptyResultException` 서브타입은 아직 어느 adapter 도 던지지 않는다. 그래도 값을
-     * `exc.javaClass.simpleName`(호출부, `ConvertDocumentUseCase.Pass.recordFailure`)로
-     * 그대로 읽어 두는 것은 새 provider 가 세분화된 서브타입을 던지기 시작하면 코드 변경
-     * 없이 그 이름이 그대로 실리기 때문이다. **예외 메시지를 담지 않는다** — 벤더 응답
-     * 문구가 새어 들 수 있다(CLAUDE.md 「예외 메시지를 로그에 남기지 않는다」와 같은 이유).
+     * 단순 이름이다. 호출부가 `exc.javaClass.simpleName`을 그대로 읽으므로 이미지 생성의
+     * 세분화된 하위 타입도 메시지 없이 구분할 수 있다. **예외 메시지를 담지 않는다** —
+     * 벤더 응답 문구가 새어 들 수 있다(CLAUDE.md 「예외 메시지를 로그에 남기지 않는다」와
+     * 같은 이유).
      */
     val failureClass: String? = null,
 ) {

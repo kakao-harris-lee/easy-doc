@@ -189,7 +189,7 @@ class SensitiveToStringReachTest {
          * Operator notification queue properties (+1).
          * IllustrationSuggestionAnalysis.AllDropped removed (-1).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 501
+        const val EXPECTED_SOURCE_DECLARATIONS = 504
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
