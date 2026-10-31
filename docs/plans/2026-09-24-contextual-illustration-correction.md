@@ -88,8 +88,8 @@ ER-17 → ER-18 → ER-19 → ER-20 순서다. ER-17 세부는 [ER-17 구현 명
 |---|---|
 | 분석 시점 | **별도 요청 분석으로 통일.** 신규·기존 문서 모두 명시적 ‘그림 제안 확인’으로 한 번 분석한다. 기본 변환 프롬프트·출력은 바꾸지 않는다. 변환 호출 통합은 ER-20 평가 뒤 재검토 |
 | 고객 이용량 | 예약→소비→반환 흐름은 구현하되 차감량은 구성값. 실제 provider 모드에서 미설정이면 접수 거부, fake 모드에서만 0 허용. 산식은 D10에서 확정 |
-| 이미지 provider | **OpenAI Images API adapter와 fake adapter를 구현.** 모델 기본값은 `gpt-image-1`이며 구성 가능하다. 운영 base URL은 `https://api.openai.com`으로 고정하고 stub 주소는 테스트에만 주입한다. Spring 조립과 운영 활성화는 후속 단계 |
-| 이미지 요청·검증 | 서버가 만든 최종 프롬프트를 받아 요청당 `n=1`, `1024x1024`, `output_format=png`로 provider를 한 번만 시작하고 자동 재시도하지 않는다. `data` 정확히 1건의 `b64_json`만 허용하고 base64·평문 8MiB·PNG signature·ImageIO 디코딩·해상도를 OpenAI/fake 공통 검증기로 검사한다 |
+| 이미지 provider | **OpenAI Images API adapter와 fake adapter를 구현.** 모델 기본값은 `gpt-image-2.5-sunburst`이며 구성 가능하다. 기존 `gpt-image-1`은 2026-10-23 종료됐다. 기존 환경변수로 모델을 지정한 배포는 설정을 별도 확인해야 한다. 운영 base URL은 `https://api.openai.com`으로 고정하고 stub 주소는 테스트에만 주입한다. [OpenAI 모델 안내](https://developers.openai.com/api/docs/models/gpt-image-1) |
+| 이미지 요청·검증 | 서버가 만든 최종 프롬프트를 받아 요청당 `n=1`, `1024x1024`, `quality=medium`, `output_format=png`로 provider를 한 번만 시작하고 자동 재시도하지 않는다. `data` 정확히 1건의 `b64_json`만 허용하고 base64·평문 8MiB·PNG signature·ImageIO 디코딩·해상도를 OpenAI/fake 공통 검증기로 검사한다. `medium`은 지원되는 GPT 이미지 모델의 품질 설정이며 지정된 단가 추정만으로 실제 청구 금액이나 달러 상한 집행을 증명하지 않는다. [OpenAI Images API](https://developers.openai.com/api/reference/resources/images/methods/generate) |
 | 진행 범위 | ER-17 → ER-18 → ER-19를 fake 기준으로 연속 진행, PR마다 리뷰 후 머지. ER-20은 별도 승인 |
 
 fake는 JDK `BufferedImage`/`ImageIO`로 결정적 PNG를 만들고 비용 0의 호출 기록을 반환한다. DB·크레딧·작업 상태는 provider 경계가 알지 못한다. 실제 OpenAI 호출 기록의 비용은 가격 승인 전까지 미설정(`null`)이며 fake의 0과 구분한다. **실제 가격·고객 차감량·운영 활성화와 실제 이미지 품질 평가는 후속 작업 및 별도 승인 대상이다.** R2 평가의 US$50 승인은 이미지 평가로 전용하지 않는다. 그림이 불필요한 사례를 포함한 기존 공개 문서 표본에서 제안 적절성과 생성 결과를 분리 평가하고, fake 성공을 문맥 이해·독자 이해도 개선의 증거로 표시하지 않는다.

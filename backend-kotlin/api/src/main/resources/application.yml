@@ -116,7 +116,7 @@ easydoc:
     worker-enabled: ${EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED:false}
     credits-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE:}
     provider-cost-usd-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_PROVIDER_COST_USD_PER_IMAGE:}
-    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-1}
+    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-2.5-sunburst}
   prompt:
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
     context-explanation-version: ${EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION:BASELINE}

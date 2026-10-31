@@ -72,7 +72,7 @@ easydoc:
     poll-interval-ms: ${EASYDOC_ILLUSTRATION_GENERATION_POLL_INTERVAL_MS:500}
     credits-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE:}
     provider-cost-usd-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_PROVIDER_COST_USD_PER_IMAGE:}
-    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-1}
+    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-2.5-sunburst}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   prompt:

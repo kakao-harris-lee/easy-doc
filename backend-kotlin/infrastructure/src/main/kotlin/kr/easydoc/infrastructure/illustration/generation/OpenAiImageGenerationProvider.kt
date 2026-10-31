@@ -33,7 +33,7 @@ import java.time.Duration
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-const val DEFAULT_OPENAI_IMAGE_MODEL: String = "gpt-image-1"
+const val DEFAULT_OPENAI_IMAGE_MODEL: String = "gpt-image-2.5-sunburst"
 
 internal const val OPENAI_IMAGES_BASE_URL: String = "https://api.openai.com"
 internal const val OPENAI_IMAGES_PATH: String = "/v1/images/generations"
@@ -96,6 +96,7 @@ class OpenAiImageGenerationProvider internal constructor(
                 put("prompt", request.finalPrompt)
                 put("n", 1)
                 put("size", "$ILLUSTRATION_GENERATION_SIZE$SIZE_SEPARATOR$ILLUSTRATION_GENERATION_SIZE")
+                put("quality", "medium")
                 put("output_format", "png")
             },
         )
