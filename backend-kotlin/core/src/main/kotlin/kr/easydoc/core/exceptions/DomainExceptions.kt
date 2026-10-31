@@ -15,6 +15,18 @@ class LlmTruncatedException(message: String) : LlmProviderException(message)
 /** 응답이 비었거나 후처리 후 본문이 남지 않았다. */
 class LlmEmptyResultException(message: String) : LlmProviderException(message)
 
+/** 이미지 provider가 HTTP 상태로 요청을 거절했다. */
+class IllustrationProviderRejectedException(message: String) : LlmProviderException(message)
+
+/** 이미지 응답은 받았지만 필수 형식·PNG 검증에 실패했다. */
+class IllustrationResultException(message: String) : LlmProviderException(message)
+
+/** 이미지 provider 호출이 시간 안에 끝나지 않았다. */
+class IllustrationProviderTimeoutException(message: String) : LlmProviderException(message)
+
+/** 이미지 provider 호출 중 timeout이 아닌 I/O 실패가 났다. */
+class IllustrationProviderIoException(message: String) : LlmProviderException(message)
+
 /** 사용자 입력이 도메인 규칙을 위반했다 (형식·길이 등). */
 class InvalidInputException(message: String) : EasyDocException(message)
 

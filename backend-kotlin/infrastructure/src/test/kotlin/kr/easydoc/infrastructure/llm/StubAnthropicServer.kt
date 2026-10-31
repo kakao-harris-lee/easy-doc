@@ -12,7 +12,7 @@ internal class StubLlmServer : AutoCloseable {
 
     private val recorded = mutableListOf<RecordedRequest>()
 
-    private var reply: StubReply = StubReply(status = 200, body = "{}")
+    private var reply: StubReply = StubReply(status = 200, body = "{}".toByteArray(StandardCharsets.UTF_8))
 
     init {
         server.createContext("/") { exchange -> handle(exchange) }
@@ -31,8 +31,15 @@ internal class StubLlmServer : AutoCloseable {
         status: Int = 200,
         body: String,
         delay: Duration = Duration.ZERO,
+    ) = replyWith(status, body.toByteArray(StandardCharsets.UTF_8), delay)
+
+    fun replyWith(
+        status: Int = 200,
+        body: ByteArray,
+        delay: Duration = Duration.ZERO,
+        chunked: Boolean = false,
     ) {
-        reply = StubReply(status = status, body = body, delay = delay)
+        reply = StubReply(status = status, body = body, delay = delay, chunked = chunked)
     }
 
     private fun handle(exchange: HttpExchange) {
@@ -49,10 +56,9 @@ internal class StubLlmServer : AutoCloseable {
                 Thread.sleep(reply.delay.toMillis())
             }
 
-            val payload = reply.body.toByteArray(StandardCharsets.UTF_8)
             exchange.responseHeaders.add("Content-Type", "application/json")
-            exchange.sendResponseHeaders(reply.status, payload.size.toLong())
-            exchange.responseBody.write(payload)
+            exchange.sendResponseHeaders(reply.status, if (reply.chunked) 0 else reply.body.size.toLong())
+            reply.body.inputStream().copyTo(exchange.responseBody)
         }
     }
 
@@ -62,8 +68,9 @@ internal class StubLlmServer : AutoCloseable {
 
     private data class StubReply(
         val status: Int,
-        val body: String,
+        val body: ByteArray,
         val delay: Duration = Duration.ZERO,
+        val chunked: Boolean = false,
     )
 
     private companion object {
