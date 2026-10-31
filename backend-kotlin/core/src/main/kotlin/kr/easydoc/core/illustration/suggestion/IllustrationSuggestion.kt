@@ -20,7 +20,7 @@ import java.util.UUID
  * 값을 함께 올린다. 상수가 프롬프트가 아니라 제안 패키지에 있는 이유는 이 값을 읽는 쪽이
  * 검증기·저장이기 때문이다 — 도메인 규칙이 프롬프트 생성기에 의존하게 두지 않는다.
  */
-const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-1"
+const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-2"
 
 /** 제안 한 건이 그림으로 설명하려는 것. 계약 wire 값과 1:1 이다(명세 §4). */
 enum class IllustrationSuggestionPurpose(val wireName: String) {

@@ -138,13 +138,30 @@ class IllustrationSuggestionJobRunnerTest {
     }
 
     @Test
-    @DisplayName("fake runner 는 원문 첫 비어 있지 않은 줄에 근거를 단 절차 제안 1건을 낸다")
+    @DisplayName("숫자-only 원문에서는 provider 의 제안도 전량 탈락한 Valid 결과가 된다")
+    fun `provider 의 숫자-only 제안을 최종 차단한다`() {
+        val numericInput =
+            IllustrationSuggestionInputSource { IllustrationSuggestionGenerationInput("170", savedBody) }
+        val runner =
+            ProviderIllustrationSuggestionJobRunner(numericInput, provider(validJson(quote = "170")), MAX_TOKENS)
+
+        val result = runner.prepare(job())!!.call()
+
+        val set = (result as IllustrationSuggestionRunResult.Valid).suggestions
+        assertThat(set.suggestions).isEmpty()
+        assertThat(set.droppedCount).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("fake runner 는 원문과 저장 본문의 정해진 절차 표현에 근거를 단 제안 1건을 낸다")
     fun `fake runner 가 결정적인 제안을 낸다`() {
         val result = FakeIllustrationSuggestionJobRunner(input).prepare(job())!!.call()
 
         assertThat(result).isInstanceOf(IllustrationSuggestionRunResult.Valid::class.java)
         val suggestion = (result as IllustrationSuggestionRunResult.Valid).suggestions.suggestions.single()
         assertThat(suggestion.purpose).isEqualTo(IllustrationSuggestionPurpose.PROCEDURE)
+        assertThat(suggestion.bodyRange.start).isZero()
+        assertThat(suggestion.bodyRange.end).isZero()
         assertThat(suggestion.sourceAnchors.single().sourceUnitIndexes).containsExactly(0)
         assertThat(suggestion.sourceAnchors.single().quote).isEqualTo("신청서를 제출합니다")
         assertThat(result.record.provider).isEqualTo("fake")
@@ -152,44 +169,99 @@ class IllustrationSuggestionJobRunnerTest {
     }
 
     @Test
-    fun `fake runner 는 긴 원문도 유니코드 문자를 자르지 않고 근거를 인용한다`() {
-        val source = "📄".repeat(1_100)
-        val longInput = IllustrationSuggestionInputSource { IllustrationSuggestionGenerationInput(source, savedBody) }
+    fun `fake runner 는 기존 E2E 절차 fixture 의 제안을 유지한다`() {
+        val valid =
+            fakeResult(
+                "국민건강보험료를 납부하려면 48시간 안에 가까운 지사를 방문하세요.",
+                "오늘 서류를 내세요.",
+            )
 
-        val result = FakeIllustrationSuggestionJobRunner(longInput).prepare(job())!!.call()
+        assertThat(valid.suggestions.suggestions).hasSize(1)
+    }
 
-        assertThat(result).isInstanceOf(IllustrationSuggestionRunResult.Valid::class.java)
-        val valid = result as IllustrationSuggestionRunResult.Valid
-        assertThat(
-            valid.suggestions.suggestions
+    @Test
+    fun `fake runner 는 긴 절차 원문도 유니코드 문자를 자르지 않고 근거를 인용한다`() {
+        val prefix = "신청서를 제출합니다"
+        val source = prefix + "📄".repeat(1_100)
+
+        val valid = fakeResult(source)
+        val quote =
+            valid
+                .suggestions
+                .suggestions
                 .single()
                 .sourceAnchors
                 .single()
-                .quote,
-        ).isEqualTo("📄".repeat(1_000))
+                .quote
+
+        assertThat(quote).isEqualTo(prefix + "📄".repeat(1_000 - prefix.codePointCount(0, prefix.length)))
+        assertThat(quote.codePointCount(0, quote.length)).isEqualTo(1_000)
+    }
+
+    @Test
+    fun `fake runner 는 숫자 연락처 이모지와 절차 없는 문장을 제안하지 않는다`() {
+        val sources =
+            listOf(
+                "170",
+                "1\n2\n3",
+                "1,234",
+                "2026-10-30",
+                "②",
+                "Ⅻ",
+                "²",
+                "---",
+                "170번",
+                "제1조",
+                "문의 02-1234-5678",
+                "방문 문의: 02-1234-5678",
+                "제출처: 02-1234-5678",
+                "📄".repeat(1_100),
+                "숫자 170과 일반 문장",
+            )
+
+        sources.forEach { source ->
+            val set = fakeResult(source).suggestions
+            assertThat(set.suggestions).describedAs(source).isEmpty()
+            assertThat(set.droppedCount).describedAs(source).isZero()
+        }
+    }
+
+    @Test
+    fun `fake runner 는 숫자와 절차 문장이 섞인 원문은 차단하지 않고 선택한 본문 줄을 가리킨다`() {
+        val valid = fakeResult("170\n신청서를 제출합니다", "2026-10-30\n신청서를 냅니다.")
+        val suggestion = valid.suggestions.suggestions.single()
+
+        assertThat(suggestion.sourceAnchors.single().sourceUnitIndexes).containsExactly(1)
+        assertThat(suggestion.bodyRange.start).isEqualTo(1)
+        assertThat(suggestion.bodyRange.end).isEqualTo(1)
     }
 
     @Test
     @DisplayName("fake runner 는 원문 앞의 빈 줄을 건너뛰고, 근거로 삼을 줄이 없으면 '제안 없음'이다")
     fun `fake runner 가 빈 원문을 다룬다`() {
-        val leadingBlank =
-            IllustrationSuggestionInputSource {
-                IllustrationSuggestionGenerationInput("\n\n신청서를 제출합니다", savedBody)
-            }
-        val allBlank = IllustrationSuggestionInputSource { IllustrationSuggestionGenerationInput("\n \n", savedBody) }
-
-        val skipped = FakeIllustrationSuggestionJobRunner(leadingBlank).prepare(job())!!.call()
-        val empty = FakeIllustrationSuggestionJobRunner(allBlank).prepare(job())!!.call()
+        val skipped = fakeResult("\n\n신청서를 제출합니다")
+        val empty = fakeResult("\n \n")
 
         assertThat(
-            (skipped as IllustrationSuggestionRunResult.Valid)
-                .suggestions.suggestions
+            skipped
+                .suggestions
+                .suggestions
                 .single()
                 .sourceAnchors,
         ).singleElement()
             .extracting { it.sourceUnitIndexes }
             .isEqualTo(listOf(2))
-        assertThat((empty as IllustrationSuggestionRunResult.Valid).suggestions.suggestions).isEmpty()
+        assertThat(empty.suggestions.suggestions).isEmpty()
+    }
+
+    private fun fakeResult(
+        sourceText: String,
+        savedBody: String = this.savedBody,
+    ): IllustrationSuggestionRunResult.Valid {
+        val fakeInput =
+            IllustrationSuggestionInputSource { IllustrationSuggestionGenerationInput(sourceText, savedBody) }
+        return FakeIllustrationSuggestionJobRunner(fakeInput).prepare(job())!!.call()
+            as IllustrationSuggestionRunResult.Valid
     }
 
     private fun validJson(quote: String = "신청서를 제출합니다"): String =
