@@ -1,6 +1,6 @@
 # 요청형 이미지 생성 후속 구현·검증 계획
 
-작성일: 2026-11-01 · 상태: **구현 재개, 최종 검증·리뷰 전**.
+작성일: 2026-11-01 · 갱신일: 2026-11-02 · 상태: **후속 구현·로컬 표준 검증·fake E2E 완료, 최종 변경의 리뷰·PR 반영 확인 중**.
 
 이전 장비의 Git 저장소 밖에 있던 Kimi 원본 계획은 확보하지 못했다. 이 문서는
 [PR #197](https://github.com/kakao-harris-lee/easy-doc/pull/197)의 `dee97546`·`6569cbe3`,
@@ -89,3 +89,36 @@ PR 병합과 운영 배포는 이번 실행 범위에 포함하지 않는다.
 provider 비용과 구분한다. 기존 텍스트 평가의 US$50 승인도 이번 이미지 평가에 전용하지 않는다.
 기능 토글의 기본 OFF와 유료 실행 조건을 유지하며, fake 통과를 실측 이미지 품질이나
 독자 이해 효과의 근거로 보고하지 않는다.
+
+## 6. 2026-11-02 로컬 검증 결과
+
+코드·테스트 기준은 통합 브랜치의 `62c25dba60483811e4b17ef0d52f41a86232f741`다.
+아래 결과 기록만 추가한 뒤 제품 코드와 테스트는 바꾸지 않는다. 결과 기록 이후 변경이 생기면
+그 변경과 같은 diff에서 다시 검증·리뷰한다. 시간은 KST 기준이다.
+
+| 검증 | 실제 결과 |
+|---|---|
+| `cd backend-kotlin && ./gradlew build` | 00:19경 완료, 16분 21초. BUILD SUCCESSFUL. XML 합계 3,882건, 실패·오류·건너뜀 0건 |
+| 백엔드 모듈별 XML | core 844, application 771, infrastructure 1,370, api 827, worker 70. 변경 없는 태스크의 up-to-date 결과를 포함한다 |
+| `cd frontend && npm ci && npm run check && npm run test -- --run && npm run build` | 검사·89파일/1,107테스트·클라이언트/SSR 빌드·prerender 통과 |
+| `docker compose -p easydoc-illustration-integration-20261101 config --quiet` 및 같은 project의 `-f compose.yml -f compose.e2e.yml config --quiet` | 새 worktree에서 `.env.example`만 복사한 ignored `.env`로 모델 검증 통과. Compose 서비스 기동 없음 |
+| `bash -n frontend/e2e/run-local.sh` | 통과 |
+| 기존 local runner의 관련 Playwright 4개 spec | `illustration-suggestions.spec.ts illustration-placement.spec.ts illustrations.spec.ts a11y.spec.ts`, 14건 통과·실패/건너뜀 0건, 2.0분 |
+| 독립 코드 리뷰 | 제품 코드 기준 `d4defae7`에 APPROVE, blocking 0. 이후 변경은 E2E/회귀 fixture·가드와 문서이며 최종 delta 리뷰·원격 반영 결과는 PR #197에서 확인한다 |
+
+첫 full build는 새 회귀 fixture가 암호문만 UPDATE하고 봉투 열과 가드 census를 갱신하지 않아
+`EnvelopeColumnWriteGuardTest` 2건이 실패했다. fixture의 `encryption_scheme`·`key_version`을
+함께 쓰고 census를 맞춘 뒤 필터 없는 전체 build를 다시 실행해 위 결과를 얻었다. 가드를
+약화하거나 실패 테스트를 제외하지 않았다.
+
+fake E2E는 환경을 초기화하고 LLM·메일·SMS를 fake, 결제를 stub으로 지정한 일회용 스택에서
+실행했다. `E2E_SKIP_BUILD=1`로 위 build의 API·worker jar를 재사용했고 API 18197,
+PG 55197, `E2E_PG_CONTAINER=easydoc-illustration-20261101-integration-pg`,
+`E2E_FRONTEND_ORIGIN=http://localhost:5173`을 사용했다. 생성 API·worker는
+`illustration-generation-fake`와 이미지당 0크레딧으로 실행했다. 생성 전 수정한 한국어
+대체텍스트의 서버 수락을 확인했고, emoji의 UTF-16 길이·hash는 단위 테스트로 확인했다. 생성 PNG, 본문 문맥 옆 적용, 새로고침 복구, 제거·stale, 기존 카탈로그·배치,
+키보드·320px/44px·여러 화면 폭·모션 회귀를 확인했다. 종료 뒤 전용 PG 컨테이너와 세 포트의
+리스너가 사라졌음을 확인했다. 운영 `.env`·서비스는 변경하지 않았다.
+
+실제 유료 API 호출은 0회이며 모델의 실측 품질·비용·지연·대상 계정 권한, 생성 후 대체텍스트 편집,
+DOCX/HWPX 그림 삽입, 운영 배포는 위 통과 결과에 포함되지 않는다. Kimi 원본 계획도 아직 미확보다.
