@@ -2,31 +2,48 @@
 
 package kr.easydoc.infrastructure.illustration.generation
 
+import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.illustration.generation.IllustrationGenerationJobAcquire
 import kr.easydoc.application.illustration.generation.IllustrationGenerationJobInsert
 import kr.easydoc.application.illustration.generation.IllustrationGenerationJobLease
+import kr.easydoc.application.illustration.generation.IllustrationGenerationJobOutcome
+import kr.easydoc.application.illustration.generation.IllustrationGenerationJobWorkerPolicy
+import kr.easydoc.application.illustration.generation.IllustrationGenerationProvider
+import kr.easydoc.application.illustration.generation.ProcessIllustrationGenerationJob
 import kr.easydoc.application.illustration.generation.StoredGeneratedIllustrationAsset
 import kr.easydoc.application.illustration.generation.StoredIllustrationGenerationJob
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedContent
+import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.exceptions.IllustrationProviderIoException
+import kr.easydoc.core.exceptions.IllustrationProviderRejectedException
+import kr.easydoc.core.exceptions.IllustrationProviderTimeoutException
 import kr.easydoc.core.illustration.generation.IllustrationGenerationJobFailureCode
 import kr.easydoc.core.illustration.generation.IllustrationGenerationJobStatus
+import kr.easydoc.core.illustration.generation.IllustrationGenerationRequest
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
+import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
+import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -210,6 +227,67 @@ class JdbcIllustrationGenerationJobFlowTest {
         assertThat(jobs.lockIfHeld(first)).isNull()
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ["timeout", "io", "rejected"])
+    fun `응답 불명확과 명시적 거절을 구분하고 비용 미확정과 예약 반환을 한 번만 기록한다`(failure: String) {
+        val fixture = seed()
+        val job = fixture.job()
+        insertReserved(fixture, job)
+        val cipher = generationInput(job)
+        var calls = 0
+        val provider =
+            object : IllustrationGenerationProvider {
+                override val name = "openai"
+
+                override fun generate(request: IllustrationGenerationRequest): Nothing {
+                    calls++
+                    when (failure) {
+                        "timeout" -> throw IllustrationProviderTimeoutException("test timeout")
+                        "io" -> throw IllustrationProviderIoException("test I/O failure")
+                        else -> throw IllustrationProviderRejectedException("test rejection")
+                    }
+                }
+            }
+        val process =
+            ProcessIllustrationGenerationJob(
+                jobs,
+                credits,
+                ledger,
+                assets,
+                cipher,
+                ProviderIllustrationGenerationJobRunner(cipher, provider, BigDecimal("0.25")),
+                SpringTransactionRunner(tx),
+                IllustrationGenerationJobWorkerPolicy("worker-test", Duration.ofSeconds(120), 5),
+            )
+
+        assertThat(process.processNext()).isEqualTo(IllustrationGenerationJobOutcome.FAILED)
+        assertThat(process.processNext()).isEqualTo(IllustrationGenerationJobOutcome.IDLE)
+
+        val unknown = failure != "rejected"
+        assertThat(calls).isEqualTo(1)
+        assertThat(
+            scalar("SELECT status || ',' || settlement FROM illustration_generation_jobs WHERE id = '${job.jobId}'"),
+        ).isEqualTo("failed,released")
+        assertThat(scalar("SELECT failure_code FROM illustration_generation_jobs WHERE id = '${job.jobId}'"))
+            .isEqualTo(if (unknown) "outcome_unknown" else "generation_failed")
+        assertThat(scalar("SELECT outcome FROM llm_calls WHERE illustration_generation_job_id = '${job.jobId}'"))
+            .isEqualTo(if (unknown) "outcome_unknown" else "provider_error")
+        assertThat(
+            scalar(
+                "SELECT estimated_cost_usd IS NULL FROM llm_calls WHERE illustration_generation_job_id = '${job.jobId}'",
+            ),
+        ).isEqualTo("t")
+        assertThat(count("llm_calls", "illustration_generation_job_id", job.jobId)).isEqualTo(1)
+        assertThat(count("credit_transactions", "illustration_generation_job_id", job.jobId, "release")).isEqualTo(1)
+        assertThat(count("credit_transactions", "illustration_generation_job_id", job.jobId, "consume")).isZero()
+        assertThat(
+            scalar(
+                "SELECT reserved = 0 AND balance = 10 FROM workspace_credit_accounts WHERE workspace_id = '${fixture.workspaceId}'",
+            ),
+        ).isEqualTo("t")
+        assertThat(assets.listOwned(fixture.ownerId, fixture.conversionId)).isEmpty()
+    }
+
     @Test
     fun `적용과 제거는 본문과 자산 revision을 CAS로 검사하고 stale 적용을 거부한다`() {
         val fixture = seed()
@@ -306,6 +384,28 @@ class JdbcIllustrationGenerationJobFlowTest {
             tx.execute { jobs.acquire("worker-a", java.time.Duration.ofSeconds(120), 5) }
                 as IllustrationGenerationJobAcquire.Held
         ).lease
+
+    private fun generationInput(job: StoredIllustrationGenerationJob): ContentCipher {
+        val cipher =
+            AesGcmContentCipher(
+                mapOf(1 to Secret(Base64.getEncoder().encodeToString(ByteArray(32) { 7 }))),
+                writeKeyVersion = 1,
+            )
+        val plaintext =
+            """
+            {"final_prompt":"Show the application steps.","execution_mode":"provider","metadata":{
+            "suggestion_id":"${job.suggestionId}","analysis_version":"${job.analysisVersion}",
+            "configuration_revision":"${job.configurationRevision}","purpose":"procedure","reason":"r",
+            "body_range":{"start":0,"end":0},"source_anchors":[],"scenes":["s"],"preserved_facts":[],"alt_text":"a"}}
+            """.trimIndent()
+        val input = cipher.encrypt(PlainBody(plaintext), job.jobId, EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT)
+        jdbc
+            .sql("UPDATE illustration_generation_jobs SET input_payload_encrypted = :input WHERE id = :id")
+            .param("input", input.bytes)
+            .param("id", job.jobId)
+            .update()
+        return cipher
+    }
 
     private fun seed(): Fixture {
         val fixture = Fixture()

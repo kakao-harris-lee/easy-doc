@@ -54,7 +54,7 @@ enum class LlmCallOutcome(
     /** provider 호출 시작을 영속화했지만 아직 결과를 받지 못했다. */
     IN_PROGRESS("in_progress"),
 
-    /** 호출 시작 뒤 worker가 사라져 응답·사용량을 확정할 수 없다. */
+    /** 호출 시작 뒤 worker 중단이나 이미지 전송 timeout·I/O 실패로 응답·사용량을 확정할 수 없다. */
     OUTCOME_UNKNOWN("outcome_unknown"),
 }
 

@@ -7,6 +7,8 @@ import kr.easydoc.application.illustration.generation.IllustrationGenerationProv
 import kr.easydoc.application.illustration.generation.IllustrationGenerationRunResult
 import kr.easydoc.application.illustration.generation.StoredIllustrationGenerationJob
 import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.exceptions.IllustrationProviderIoException
+import kr.easydoc.core.exceptions.IllustrationProviderTimeoutException
 import kr.easydoc.core.exceptions.IllustrationResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.illustration.generation.IllustrationGenerationInput
@@ -46,6 +48,11 @@ class ProviderIllustrationGenerationJobRunner(
                 }
             IllustrationGenerationRunResult.Succeeded(generated, input)
         } catch (failure: LlmProviderException) {
+            // 전송 중단 뒤에는 provider의 생성·청구 결과를 확정할 수 없다.
+            // worker의 기존 outcome_unknown 정산으로 넘겨 비용 null과 재호출 금지를 유지한다.
+            if (failure is IllustrationProviderTimeoutException || failure is IllustrationProviderIoException) {
+                throw failure
+            }
             IllustrationGenerationRunResult.Failed(
                 LlmCallRecord(
                     purpose = LlmCallPurpose.ILLUSTRATION_GENERATION,
