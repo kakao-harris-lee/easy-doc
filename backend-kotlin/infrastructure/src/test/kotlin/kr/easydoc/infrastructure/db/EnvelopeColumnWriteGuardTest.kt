@@ -492,6 +492,9 @@ class EnvelopeColumnWriteGuardTest {
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
                 // 함께 쓴다(`completeConversion`).
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/KeyRotationBatchTest.kt",
+                // ER-18 전송 실패 회귀도 실제 암호화 입력과 봉투 메타데이터를 함께 심는다.
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/illustration/generation/" +
+                    "JdbcIllustrationGenerationJobFlowTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/TossStoreTest.kt",
             )
 
@@ -564,7 +567,8 @@ class EnvelopeColumnWriteGuardTest {
          * 문장에서 쓴다. consent retention 갱신은 암호문을 쓰지 않아 이 가드의 분모에는
          * 들어오지 않는다.
          * 52 -> 54: ER-18 생성 입력 한 문장과 자산 metadata/PNG 원자 회전 한 문장.
+         * 54 -> 55: ER-18 전송 실패 회귀 fixture의 입력 암호문과 봉투 메타데이터 갱신 한 문장.
          */
-        const val EXPECTED_STATEMENTS = 54
+        const val EXPECTED_STATEMENTS = 55
     }
 }

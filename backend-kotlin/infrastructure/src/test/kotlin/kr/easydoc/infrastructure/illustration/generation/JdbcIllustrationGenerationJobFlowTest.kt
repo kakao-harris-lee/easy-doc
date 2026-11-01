@@ -400,8 +400,15 @@ class JdbcIllustrationGenerationJobFlowTest {
             """.trimIndent()
         val input = cipher.encrypt(PlainBody(plaintext), job.jobId, EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT)
         jdbc
-            .sql("UPDATE illustration_generation_jobs SET input_payload_encrypted = :input WHERE id = :id")
-            .param("input", input.bytes)
+            .sql(
+                """
+                UPDATE illustration_generation_jobs
+                SET input_payload_encrypted = :input, encryption_scheme = :scheme, key_version = :keyVersion
+                WHERE id = :id
+                """.trimIndent(),
+            ).param("input", input.bytes)
+            .param("scheme", input.scheme)
+            .param("keyVersion", input.keyVersion)
             .param("id", job.jobId)
             .update()
         return cipher
