@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -16,7 +16,10 @@ import type {
   IllustrationGenerationJob,
   IllustrationSuggestion,
 } from '../api/types'
+import { illustrationConfigurationRevision } from '../api/illustrationConfiguration'
 import { IllustrationGenerationPanel } from './IllustrationGenerationPanel'
+
+vi.mock('../api/illustrationConfiguration', () => ({ illustrationConfigurationRevision: vi.fn() }))
 
 vi.mock('../api/client', async (original) => ({
   ...(await original<typeof import('../api/client')>()),
@@ -92,6 +95,7 @@ const props = {
 }
 
 beforeEach(() => {
+  vi.mocked(illustrationConfigurationRevision).mockReset().mockResolvedValue('b'.repeat(64))
   vi.mocked(listIllustrationGenerationJobs).mockReset().mockResolvedValue(jobs)
   vi.mocked(getGeneratedIllustrations)
     .mockReset()
@@ -174,10 +178,11 @@ describe('그림 생성과 적용', () => {
     expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
   })
 
-  it('요청 응답이 불명확하면 같은 요청 ID만 재전송한다', async () => {
+  it.each([0, 502, 504])('요청 응답이 불명확하면 같은 요청 ID만 재전송한다: %s', async (status) => {
     const user = userEvent.setup()
+    const uuid = vi.spyOn(crypto, 'randomUUID')
     vi.mocked(createIllustrationGenerationJob)
-      .mockRejectedValueOnce(new ApiError(0, 'network'))
+      .mockRejectedValueOnce(new ApiError(status, 'network'))
       .mockResolvedValueOnce({ job, creditBalance: 2 })
     render(<IllustrationGenerationPanel {...props} />)
     await user.click(await screen.findByRole('button', { name: '그림 만들기' }))
@@ -186,6 +191,7 @@ describe('그림 생성과 적용', () => {
     expect(vi.mocked(createIllustrationGenerationJob).mock.calls[1]?.[1]).toEqual(
       vi.mocked(createIllustrationGenerationJob).mock.calls[0]?.[1],
     )
+    expect(uuid).toHaveBeenCalledTimes(1)
   })
 
   it('기능이 꺼졌으면 자산을 읽지 않고 생성도 제공하지 않는다', async () => {
@@ -337,4 +343,60 @@ describe('그림 생성과 적용', () => {
     expect(screen.getByRole('button', { name: '그림 만들기' })).toBeDisabled()
     expect(screen.getByRole('status')).toHaveTextContent('그림을 만들고 있습니다')
   }, 8000)
+})
+
+it('수정한 대체텍스트의 구성 지문을 보내고 불명확한 요청을 그대로 재전송한다', async () => {
+  const user = userEvent.setup()
+  vi.mocked(createIllustrationGenerationJob)
+    .mockRejectedValueOnce(new ApiError(0, 'network'))
+    .mockResolvedValueOnce({ job, creditBalance: 2 })
+  render(<IllustrationGenerationPanel {...props} />)
+  const input = await screen.findByLabelText('그림 대체텍스트')
+  await user.clear(input)
+  expect(screen.getByRole('button', { name: '그림 만들기' })).toBeDisabled()
+  await user.type(input, '신청하는 사람')
+  await user.click(screen.getByRole('button', { name: '그림 만들기' }))
+  expect(illustrationConfigurationRevision).toHaveBeenCalledWith({
+    scenes: ['신청'],
+    preserved_facts: [],
+    alt_text: '신청하는 사람',
+  })
+  expect(createIllustrationGenerationJob).toHaveBeenCalledWith(
+    'c1',
+    expect.objectContaining({
+      configuration_revision: 'b'.repeat(64),
+      configuration: expect.objectContaining({ alt_text: '신청하는 사람' }),
+    }),
+  )
+  expect(input).toBeDisabled()
+  await user.click(await screen.findByRole('button', { name: '같은 그림 요청 다시 보내기' }))
+  expect(vi.mocked(createIllustrationGenerationJob).mock.calls[1]?.[1]).toEqual(
+    vi.mocked(createIllustrationGenerationJob).mock.calls[0]?.[1],
+  )
+})
+
+it('구성 지문 계산 중 본문이 수정되면 생성을 보내지 않는다', async () => {
+  const user = userEvent.setup()
+  let resolve!: (value: string) => void
+  vi.mocked(illustrationConfigurationRevision).mockReturnValue(
+    new Promise((done) => {
+      resolve = done
+    }),
+  )
+  const view = render(<IllustrationGenerationPanel {...props} />)
+  await user.type(await screen.findByLabelText('그림 대체텍스트'), ' 수정')
+  await user.click(screen.getByRole('button', { name: '그림 만들기' }))
+  view.rerender(<IllustrationGenerationPanel {...props} disabled />)
+  await act(async () => resolve('b'.repeat(64)))
+  expect(createIllustrationGenerationJob).not.toHaveBeenCalled()
+})
+
+it('대체텍스트는 서버와 같은 UTF-16 300자 한도를 따른다', async () => {
+  render(<IllustrationGenerationPanel {...props} />)
+  const input = await screen.findByLabelText('그림 대체텍스트')
+  expect(input).toHaveAttribute('maxlength', '300')
+  fireEvent.change(input, { target: { value: '😀'.repeat(150) } })
+  expect(screen.getByRole('button', { name: '그림 만들기' })).toBeEnabled()
+  fireEvent.change(input, { target: { value: '😀'.repeat(151) } })
+  expect(screen.getByRole('button', { name: '그림 만들기' })).toBeDisabled()
 })

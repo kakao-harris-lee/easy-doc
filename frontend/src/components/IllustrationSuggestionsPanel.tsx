@@ -9,6 +9,7 @@ import {
 } from '../api/client'
 import type {
   CreateIllustrationSuggestionJobRequest,
+  GeneratedIllustration,
   IllustrationSuggestion,
   IllustrationSuggestionFailureCode,
   IllustrationSuggestionJob,
@@ -29,6 +30,7 @@ export interface IllustrationSuggestionsPanelProps {
   bodyConflict: boolean
   /** 저장된 본문. 제안이 가리키는 줄 범위를 이 본문에서 발췌한다. */
   savedBody: string
+  onGeneratedAssetsChange?: (assets: GeneratedIllustration[]) => void
 }
 
 /** R2 행동 안내 작업과 같은 주기다 — 같은 lease 작업 큐를 읽는다. */
@@ -167,6 +169,7 @@ export function IllustrationSuggestionsPanel({
   bodyBusy,
   bodyConflict,
   savedBody,
+  onGeneratedAssetsChange,
 }: IllustrationSuggestionsPanelProps) {
   const headingId = useId()
   const costId = useId()
@@ -586,6 +589,7 @@ export function IllustrationSuggestionsPanel({
           key={`${conversionId}:${contentRevision}`}
           conversionId={conversionId}
           contentRevision={contentRevision}
+          onAssetsChange={onGeneratedAssetsChange}
           analysisVersion={resource?.analysis_version ?? null}
           suggestions={status === 'ready' ? suggestions : []}
           removeDisabled={bodyDirty || bodyBusy || bodyConflict}

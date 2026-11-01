@@ -4,7 +4,6 @@ import {
   ApiError,
   createIllustrationGenerationJob,
   downloadGeneratedIllustration,
-  getGeneratedIllustrationImage,
   getGeneratedIllustrations,
   getIllustrationGenerationJob,
   listIllustrationGenerationJobs,
@@ -17,8 +16,10 @@ import type {
   IllustrationGenerationJobCollection,
   IllustrationSuggestion,
 } from '../api/types'
+import { illustrationConfigurationRevision } from '../api/illustrationConfiguration'
 import { formatCredits } from '../lib/credits'
 import { Button } from './ui/Button'
+import { GeneratedIllustrationImage } from './GeneratedIllustrationImage'
 
 const POLL_INTERVAL_MS = 2500
 
@@ -29,63 +30,11 @@ type Props = {
   suggestions: IllustrationSuggestion[]
   disabled: boolean
   removeDisabled: boolean
+  onAssetsChange?: (assets: GeneratedIllustration[]) => void
 }
 
 function isActive(job: IllustrationGenerationJob | null): boolean {
   return job?.status === 'queued' || job?.status === 'running'
-}
-
-function AssetImage({
-  conversionId,
-  asset,
-}: {
-  conversionId: string
-  asset: GeneratedIllustration
-}) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    const controller = new AbortController()
-    let objectUrl: string | null = null
-    void getGeneratedIllustrationImage(conversionId, asset.asset_id, controller.signal)
-      .then((blob) => {
-        if (controller.signal.aborted) return
-        objectUrl = URL.createObjectURL(blob)
-        setUrl(objectUrl)
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true)
-      })
-    return () => {
-      controller.abort()
-      if (objectUrl !== null) URL.revokeObjectURL(objectUrl)
-    }
-  }, [conversionId, asset.asset_id, attempt])
-  if (failed)
-    return (
-      <div>
-        <p>그림 미리보기를 불러오지 못했습니다.</p>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setFailed(false)
-            setAttempt((value) => value + 1)
-          }}
-        >
-          미리보기 다시 불러오기
-        </Button>
-      </div>
-    )
-  if (url === null) return <p>그림을 불러오는 중…</p>
-  return (
-    <img
-      src={url}
-      alt={asset.alt_text}
-      className="w-full max-w-lg rounded-lg border border-border"
-    />
-  )
 }
 
 export function IllustrationGenerationPanel({
@@ -95,19 +44,33 @@ export function IllustrationGenerationPanel({
   suggestions,
   disabled,
   removeDisabled,
+  onAssetsChange,
 }: Props) {
   const id = useId()
   const [collection, setCollection] = useState<IllustrationGenerationJobCollection | null>(null)
   const [job, setJob] = useState<IllustrationGenerationJob | null>(null)
   const [assets, setAssets] = useState<GeneratedIllustration[]>([])
   const [selected, setSelected] = useState('')
+  const [altTexts, setAltTexts] = useState<Record<string, string>>({})
   const [reviewed, setReviewed] = useState<Record<string, boolean>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState<CreateIllustrationGenerationJobRequest | null>(null)
   const [reload, setReload] = useState(0)
+  useEffect(() => {
+    onAssetsChange?.(assets)
+  }, [assets, onAssetsChange])
+  useEffect(() => () => onAssetsChange?.([]), [onAssetsChange])
+
   const requestRef = useRef(false)
   const versionRef = useRef(0)
+  const submissionScopeRef = useRef({})
+  useEffect(() => {
+    submissionScopeRef.current = {}
+    return () => {
+      submissionScopeRef.current = {}
+    }
+  }, [disabled, analysisVersion, contentRevision, conversionId])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -137,6 +100,7 @@ export function IllustrationGenerationPanel({
       .catch(() => {
         if (!controller.signal.aborted && version === versionRef.current) {
           setCollection(null)
+          setAssets([])
           setError('그림 생성 상태를 불러오지 못했습니다. 다시 확인해 주세요.')
         }
       })
@@ -210,7 +174,12 @@ export function IllustrationGenerationPanel({
   }, [conversionId, currentJobId, reload])
 
   const suggestion = suggestions.find((item) => item.suggestion_id === selected) ?? suggestions[0]
+  const altText = suggestion
+    ? (altTexts[suggestion.suggestion_id] ?? suggestion.alt_text_draft)
+    : ''
+  const invalidAltText = altText.trim().length === 0 || altText.length > 300
   const blocked =
+    invalidAltText ||
     disabled ||
     busy ||
     isActive(job) ||
@@ -219,6 +188,40 @@ export function IllustrationGenerationPanel({
     collection.required_credits > collection.available_credits ||
     !analysisVersion ||
     !suggestion?.configuration_revision
+
+  async function create() {
+    if (blocked || !suggestion || !analysisVersion || requestRef.current) return
+    requestRef.current = true
+    setBusy(true)
+    const scope = submissionScopeRef.current
+    const configuration = {
+      scenes: suggestion.scenes,
+      preserved_facts: suggestion.preserved_facts,
+      alt_text: altText,
+    }
+    try {
+      const revision =
+        altText === suggestion.alt_text_draft
+          ? suggestion.configuration_revision
+          : await illustrationConfigurationRevision(configuration)
+      if (scope !== submissionScopeRef.current) return
+      requestRef.current = false
+      await submit({
+        request_id: crypto.randomUUID(),
+        expected_content_revision: contentRevision,
+        suggestion_id: suggestion.suggestion_id,
+        analysis_version: analysisVersion,
+        configuration_revision: revision,
+        configuration,
+      })
+    } catch {
+      if (scope === submissionScopeRef.current)
+        setError('그림 구성을 확인하지 못했습니다. 다시 시도해 주세요.')
+    } finally {
+      requestRef.current = false
+      setBusy(false)
+    }
+  }
 
   async function submit(body: CreateIllustrationGenerationJobRequest) {
     if (requestRef.current) return
@@ -244,7 +247,13 @@ export function IllustrationGenerationPanel({
       if (!isActive(created.job)) setReload((value) => value + 1)
     } catch (caught) {
       ++versionRef.current
-      if (caught instanceof ApiError && caught.status !== 0) setPending(null)
+      if (
+        caught instanceof ApiError &&
+        caught.status >= 400 &&
+        caught.status < 500 &&
+        caught.status !== 408
+      )
+        setPending(null)
       setError(
         caught instanceof ApiError &&
           caught.status === 409 &&
@@ -281,6 +290,7 @@ export function IllustrationGenerationPanel({
       setReviewed((current) => ({ ...current, [asset.asset_id]: false }))
     } catch (caught) {
       ++versionRef.current
+      if (caught instanceof ApiError && caught.status === 409) setAssets([])
       setError(
         caught instanceof ApiError && caught.status === 409
           ? '본문이나 그림 상태가 바뀌었습니다. 최신 상태를 확인해 주세요.'
@@ -356,7 +366,25 @@ export function IllustrationGenerationPanel({
                   </option>
                 ))}
               </select>
-              <p className="text-sm">생성할 대체텍스트: {suggestion?.alt_text_draft}</p>
+              <label htmlFor={id + '-alt-text'}>그림 대체텍스트</label>
+              <textarea
+                id={id + '-alt-text'}
+                className="block min-h-20 w-full max-w-full rounded-md border border-border bg-background p-2"
+                maxLength={300}
+                value={altText}
+                disabled={disabled || busy || isActive(job) || pending !== null}
+                aria-describedby={id + '-alt-help'}
+                onChange={(event) => {
+                  if (suggestion)
+                    setAltTexts((current) => ({
+                      ...current,
+                      [suggestion.suggestion_id]: event.target.value,
+                    }))
+                }}
+              />
+              <p id={id + '-alt-help'} className="text-sm">
+                원문 근거에 맞게 1~300자로 확인·수정해 주세요. 생성한 뒤에는 수정할 수 없습니다.
+              </p>
               {pending ? (
                 <Button
                   type="button"
@@ -372,25 +400,7 @@ export function IllustrationGenerationPanel({
                   type="button"
                   disabled={blocked}
                   onClick={() => {
-                    if (
-                      blocked ||
-                      !suggestion ||
-                      !analysisVersion ||
-                      !suggestion.configuration_revision
-                    )
-                      return
-                    void submit({
-                      request_id: crypto.randomUUID(),
-                      expected_content_revision: contentRevision,
-                      suggestion_id: suggestion.suggestion_id,
-                      analysis_version: analysisVersion,
-                      configuration_revision: suggestion.configuration_revision,
-                      configuration: {
-                        scenes: suggestion.scenes,
-                        preserved_facts: suggestion.preserved_facts,
-                        alt_text: suggestion.alt_text_draft,
-                      },
-                    })
+                    void create()
                   }}
                 >
                   그림 만들기
@@ -422,7 +432,7 @@ export function IllustrationGenerationPanel({
           {asset.stale && (
             <p>이전 버전 본문으로 만든 그림입니다. 현재 본문에는 적용할 수 없습니다.</p>
           )}
-          <AssetImage conversionId={conversionId} asset={asset} />
+          <GeneratedIllustrationImage conversionId={conversionId} asset={asset} />
           <p>대체텍스트: {asset.alt_text}</p>
           <p>원문 근거: {asset.source_anchors.map((anchor) => anchor.quote).join(' / ')}</p>
           {!asset.applied && (

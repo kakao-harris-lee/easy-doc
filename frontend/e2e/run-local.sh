@@ -164,14 +164,18 @@ else
   # 전용이며 이용량 거래 행을 만들지 않는다(명세 §3). 미설정(null)과는 다르다.
   export EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED="${EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED:-true}"
   export EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS="${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:-0}"
+  # 생성 작업도 fake PNG로만 검증한다. worker의 전용 fake profile로 외부 호출을 막는다.
+  export EASYDOC_ILLUSTRATION_GENERATION_ENABLED=true
+  export EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED=true
+  export EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE=0
   # 사전 팝업 E19도 compose.e2e.yml과 같은 조건에서만 열린다(제품 기본값은 꺼짐).
   export EASYDOC_DICTIONARY_LOOKUP_ENABLED="${EASYDOC_DICTIONARY_LOOKUP_ENABLED:-true}"
   export EASYDOC_LLM_PROVIDER=fake
   # 행동 안내의 예약/차감을 실제 API에서 검증하되 일회용 계정에만 합성 크레딧을 부여한다.
   export EASYDOC_CREDITS_SIGNUP_GRANT=1000
   export EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER=e2e-only-pepper-not-a-secret
-  log "Kotlin API 기동 (profile=${E2E_API_PROFILES:-api,local,e2e}, ${API_BASE_URL})"
-  java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api,local,e2e}" >"${LOG_DIR}/backend-api.log" 2>&1 &
+  log "Kotlin API 기동 (profile=${E2E_API_PROFILES:-api,local,e2e,illustration-generation-fake}, ${API_BASE_URL})"
+  java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api,local,e2e,illustration-generation-fake}" >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!
 
   healthy=0
@@ -197,8 +201,8 @@ else
   # 프로필에서만 조립되므로 worker,local 을 켠다.
   export EASYDOC_ACTION_GUIDE_WORKER_ENABLED=true
   export EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED="${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED:-true}"
-  log "Kotlin worker 기동 (profile=worker,local,action-guide-fake,illustration-suggestion-fake, fake LLM)"
-  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake >"${LOG_DIR}/backend-worker.log" 2>&1 &
+  log "Kotlin worker 기동 (profile=worker,local,action-guide-fake,illustration-suggestion-fake,illustration-generation-fake, fake LLM)"
+  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake,illustration-generation-fake >"${LOG_DIR}/backend-worker.log" 2>&1 &
   worker_pid=$!
   sleep 2
   if ! kill -0 "$worker_pid" 2>/dev/null; then

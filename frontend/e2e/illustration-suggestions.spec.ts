@@ -120,6 +120,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     // fake worker도 실제 작업 API와 비공개 PNG 경로를 사용한다.
     const generation = panel.getByRole('region', { name: '그림 생성과 적용' })
     await expect(generation.getByText(/그림 한 장 필요 이용량: 0크레딧/)).toBeVisible()
+    const documentPreview = page.getByRole('region', { name: '그림을 적용한 문서 미리보기' })
+    await expect(documentPreview).toHaveCount(0)
     await button.click()
     await expect(generation.getByRole('img', { name: /.+/ })).toBeVisible({ timeout: 90_000 })
     await expect(generation.getByText(/테스트 그림입니다/)).toBeVisible()
@@ -127,6 +129,12 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(apply).toBeDisabled()
     await generation.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
     await apply.click()
+    await expect(documentPreview.getByRole('img')).toBeVisible()
+    await page.setViewportSize({ width: 320, height: 800 })
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    await page.setViewportSize({ width: 1280, height: 720 })
     await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -146,7 +154,9 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     })
     await expect(generation.getByRole('img', { name: /.+/ })).toBeVisible({ timeout: 90_000 })
     await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
+    await expect(documentPreview.getByRole('img')).toBeVisible()
     await generation.getByRole('button', { name: '문서에서 그림 제거' }).click()
+    await expect(documentPreview).toHaveCount(0)
     await expect(generation.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
     const recoveredCalls = (await log.apiCalls()).slice(callsBeforeReload).map(signature)
     expect(recoveredCalls).toContain(
