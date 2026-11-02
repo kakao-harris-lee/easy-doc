@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import {
   ApiError,
@@ -9,6 +9,7 @@ import {
 } from '../api/client'
 import type {
   CreateIllustrationSuggestionJobRequest,
+  GeneratedIllustration,
   IllustrationSuggestion,
   IllustrationSuggestionFailureCode,
   IllustrationSuggestionJob,
@@ -19,7 +20,7 @@ import type {
 import { formatCredits } from '../lib/credits'
 import { USAGE_PATH } from '../routes/paths'
 import { Button } from './ui/Button'
-import { IllustrationTestFlow } from './IllustrationTestFlow'
+import { IllustrationGenerationPanel } from './IllustrationGenerationPanel'
 
 export interface IllustrationSuggestionsPanelProps {
   conversionId: string
@@ -29,6 +30,7 @@ export interface IllustrationSuggestionsPanelProps {
   bodyConflict: boolean
   /** 저장된 본문. 제안이 가리키는 줄 범위를 이 본문에서 발췌한다. */
   savedBody: string
+  onGeneratedAssetsChange?: (assets: GeneratedIllustration[]) => void
 }
 
 /** R2 행동 안내 작업과 같은 주기다 — 같은 lease 작업 큐를 읽는다. */
@@ -75,31 +77,17 @@ function bodyRangeLabel(start: number, end: number): string {
   return start === end ? `본문 ${start + 1}줄` : `본문 ${start + 1}–${end + 1}줄`
 }
 
-/** 제안 근거와 구성. 무료 테스트일 때만 별도 미리보기 흐름을 연다. */
+/** 제안의 근거와 그림 구성을 확인한다. */
 function SuggestionCard({
   suggestion,
   index,
-  statusOwner,
   bodyLines,
-  disabledNoteId,
-  testMode,
-  testDisabled,
-  onTestStatusChange,
 }: {
   suggestion: IllustrationSuggestion
   index: number
-  statusOwner: string
   bodyLines: readonly string[]
-  disabledNoteId: string
-  testMode: boolean
-  testDisabled: boolean
-  onTestStatusChange: (owner: string, message: string) => void
 }) {
   const headingId = useId()
-  const reportTestStatus = useCallback(
-    (message: string) => onTestStatusChange(statusOwner, message),
-    [onTestStatusChange, statusOwner],
-  )
   const excerpt = bodyLines.slice(suggestion.body_range.start, suggestion.body_range.end + 1)
 
   return (
@@ -165,45 +153,14 @@ function SuggestionCard({
           <p className="text-sm font-semibold">대체텍스트 초안</p>
           <p className="mt-1 text-sm">{suggestion.alt_text_draft}</p>
         </div>
-
-        {testMode ? (
-          <IllustrationTestFlow
-            suggestion={suggestion}
-            excerpt={excerpt.join('\n')}
-            disabled={testDisabled}
-            onStatusChange={reportTestStatus}
-          />
-        ) : (
-          <div>
-            {/*
-            ER-18 이전에는 누를 수 없다. 버튼을 숨기지 않는 이유는 다음 단계가 무엇인지
-            화면에서 읽히게 하기 위해서다.
-
-            `disabled`가 아니라 `aria-disabled`를 쓴다 — `disabled` 버튼은 초점을 받지
-            못해 낭독기 사용자가 «왜 못 누르는지»를 적어 둔 설명(`aria-describedby`)에
-            영영 닿지 못한다. 보이는 모양은 그대로 두고, 눌러도 아무 일도 하지 않는다.
-          */}
-            <Button
-              type="button"
-              aria-disabled="true"
-              aria-describedby={disabledNoteId}
-              className="cursor-not-allowed opacity-50"
-              onClick={(event) => event.preventDefault()}
-            >
-              그림 만들기(준비 중)
-            </Button>
-          </div>
-        )}
       </section>
     </li>
   )
 }
 
 /**
- * R7 ER-17 — 저장된 본문에서 그림으로 설명하면 도움이 될 문맥을 **텍스트 제안**으로만
- * 보여 준다. 이 화면은 이미지를 만들지 않고(ER-18), 분석을 자동으로 요청하지도 않는다
- * (명세 §1). 제안은 요청 → 작업 폴링 → 결과 조회의 세 단계로 나뉘며 R2 행동 안내와
- * 같은 작업 패턴을 쓴다.
+ * 저장된 본문의 그림 제안을 보여 주고 사용자가 명시적으로 그림 생성을 요청할 수 있다.
+ * 제안 분석과 그림 생성은 각각 요청, 작업 폴링, 결과 조회로 진행된다.
  */
 export function IllustrationSuggestionsPanel({
   conversionId,
@@ -212,9 +169,9 @@ export function IllustrationSuggestionsPanel({
   bodyBusy,
   bodyConflict,
   savedBody,
+  onGeneratedAssetsChange,
 }: IllustrationSuggestionsPanelProps) {
   const headingId = useId()
-  const generationNoteId = useId()
   const costId = useId()
   const [resource, setResource] = useState<IllustrationSuggestionsResource | null>(null)
   const [jobs, setJobs] = useState<IllustrationSuggestionJobCollection | null>(null)
@@ -229,12 +186,6 @@ export function IllustrationSuggestionsPanel({
   const [loadedConversionId, setLoadedConversionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [testStatus, setTestStatus] = useState<{ owner: string; message: string } | null>(null)
-  const onTestStatusChange = useCallback((owner: string, message: string) => {
-    setTestStatus((current) =>
-      message ? { owner, message } : current?.owner === owner ? null : current,
-    )
-  }, [])
   const requestRef = useRef(false)
   const refreshControllerRef = useRef<AbortController | null>(null)
   const activeStatusRef = useRef<HTMLParagraphElement>(null)
@@ -284,12 +235,6 @@ export function IllustrationSuggestionsPanel({
   const canRequest = requiredCredits !== null
   const suggestionOwner = (suggestionId: string) =>
     `${conversionId}:${contentRevision}:${status}:${suggestionId}`
-  const currentTestStatus =
-    requiredCredits === 0 &&
-    testStatus !== null &&
-    suggestions.some((item) => suggestionOwner(item.suggestion_id) === testStatus.owner)
-      ? testStatus.message
-      : ''
 
   useEffect(() => {
     let disposed = false
@@ -506,13 +451,6 @@ export function IllustrationSuggestionsPanel({
         있습니다.
       </p>
 
-      {requiredCredits === 0 && (
-        <p className="rounded-md bg-secondary p-3 text-sm font-medium">
-          무료 테스트 모드: 제안과 그림은 화면 흐름 확인용 예시입니다. 실제 AI 문맥 분석이나 이미지
-          생성은 하지 않으며 크레딧을 차감하지 않습니다.
-        </p>
-      )}
-
       {!isLoading && error !== null && (
         <p role="alert" className="rounded-md bg-danger/10 p-3 text-sm text-danger">
           {error}
@@ -630,40 +568,41 @@ export function IllustrationSuggestionsPanel({
           </p>
         )}
         {notice !== null && <p className="text-sm">{notice}</p>}
-        {currentTestStatus && <span className="sr-only">{currentTestStatus}</span>}
       </div>
 
       {suggestions.length > 0 && (
         <>
-          <p id={generationNoteId} className="text-sm text-muted-foreground">
-            {requiredCredits === 0
-              ? '제안을 확인한 뒤 테스트 그림을 만들어 미리보기·적용·제거를 체험할 수 있습니다.'
-              : '현재는 그림 제안만 확인할 수 있습니다.'}
-          </p>
           <ul className="flex flex-col gap-3">
             {suggestions.map((item, index) => (
               <SuggestionCard
                 key={suggestionOwner(item.suggestion_id)}
-                statusOwner={suggestionOwner(item.suggestion_id)}
                 suggestion={item}
                 index={index}
                 bodyLines={bodyLines}
-                disabledNoteId={generationNoteId}
-                testMode={requiredCredits === 0}
-                onTestStatusChange={onTestStatusChange}
-                testDisabled={
-                  bodyDirty ||
-                  bodyBusy ||
-                  bodyConflict ||
-                  stale ||
-                  busy ||
-                  activeJob !== null ||
-                  resource?.based_on_content_revision !== contentRevision
-                }
               />
             ))}
           </ul>
         </>
+      )}
+      {!isLoading && (status === 'ready' || status === 'stale' || status === 'no_suggestions') && (
+        <IllustrationGenerationPanel
+          key={`${conversionId}:${contentRevision}`}
+          conversionId={conversionId}
+          contentRevision={contentRevision}
+          onAssetsChange={onGeneratedAssetsChange}
+          analysisVersion={resource?.analysis_version ?? null}
+          suggestions={status === 'ready' ? suggestions : []}
+          removeDisabled={bodyDirty || bodyBusy || bodyConflict}
+          disabled={
+            bodyDirty ||
+            bodyBusy ||
+            bodyConflict ||
+            stale ||
+            busy ||
+            activeJob !== null ||
+            resource?.based_on_content_revision !== contentRevision
+          }
+        />
       )}
     </section>
   )

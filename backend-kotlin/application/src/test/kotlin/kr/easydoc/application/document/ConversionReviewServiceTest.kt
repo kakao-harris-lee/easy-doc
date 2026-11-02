@@ -518,6 +518,11 @@ class ConversionReviewServiceTest {
                     EncryptedField.ILLUSTRATION_PLACEMENTS -> error("검수 저장이 그림 배치 열을 쓰지 않는다")
 
                     EncryptedField.ILLUSTRATION_SUGGESTION_RESULT -> error("검수 저장이 제안 결과 열을 쓰지 않는다")
+
+                    EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT,
+                    EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA,
+                    EncryptedField.ILLUSTRATION_GENERATION_ASSET_PNG,
+                    -> error("검수 저장이 생성 작업·자산 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

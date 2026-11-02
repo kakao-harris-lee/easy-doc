@@ -14,6 +14,8 @@ import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobS
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobView
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultService
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionResultView
+import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
+import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
 import kr.easydoc.core.revision.MAX_SAFE_REVISION
 import org.springframework.context.annotation.Profile
@@ -187,6 +189,7 @@ data class IllustrationSuggestionPayload(
     @get:JsonProperty("scenes") val scenes: List<String>,
     @get:JsonProperty("preserved_facts") val preservedFacts: List<String>,
     @get:JsonProperty("alt_text_draft") val altTextDraft: String,
+    @get:JsonProperty("configuration_revision") val configurationRevision: String,
 ) {
     /** 본문에서 나온 값을 로그에 싣지 않는다 — 직렬화는 이 재정의의 영향을 받지 않는다. */
     override fun toString(): String =
@@ -206,6 +209,13 @@ data class IllustrationSuggestionPayload(
                 suggestion.scenes,
                 suggestion.preservedFacts,
                 suggestion.altTextDraft,
+                illustrationConfigurationRevision(
+                    IllustrationGenerationConfiguration(
+                        suggestion.scenes,
+                        suggestion.preservedFacts,
+                        suggestion.altTextDraft,
+                    ),
+                ),
             )
     }
 }
@@ -217,6 +227,7 @@ data class IllustrationSuggestionsResponse(
     @get:JsonProperty("required_credits") val requiredCredits: BigDecimal?,
     @get:JsonProperty("suggestions") val suggestions: List<IllustrationSuggestionPayload>,
     @get:JsonProperty("dropped_count") val droppedCount: Int,
+    @get:JsonProperty("analysis_version") val analysisVersion: String?,
 ) {
     companion object {
         fun of(view: IllustrationSuggestionResultView): IllustrationSuggestionsResponse =
@@ -227,6 +238,7 @@ data class IllustrationSuggestionsResponse(
                 view.requiredCredits,
                 view.suggestions.map(IllustrationSuggestionPayload::of),
                 view.droppedCount,
+                view.analysisVersion,
             )
     }
 }

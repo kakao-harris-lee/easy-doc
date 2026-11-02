@@ -5,6 +5,7 @@ import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -36,7 +37,12 @@ import java.util.UUID
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = ["easydoc.auth.jwt-secret=$RETENTION_GUARD_TEST_SECRET"],
+    properties = [
+        "easydoc.auth.jwt-secret=$RETENTION_GUARD_TEST_SECRET",
+        "easydoc.illustration-generation.enabled=true",
+        "easydoc.illustration-generation.credits-per-image=0.5",
+        "easydoc.illustration-generation.provider-cost-usd-per-image=0.01",
+    ],
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RetentionReadGuardReachTest {
@@ -278,6 +284,73 @@ class RetentionReadGuardReachTest {
             ).isEqualTo(1)
     }
 
+    @Test
+    fun `만료된 문서의 생성 자산 목록과 PNG 조회 다운로드는 404다`() {
+        val fixture = completedConversion()
+        val assetId = seedGeneratedAsset(fixture)
+        val imagePath = GENERATED_IMAGE_PATH.forConversionAsset(fixture.conversionId, assetId)
+        assertThat(send(get(fixture.token, imagePath)).statusCode()).isEqualTo(OK)
+
+        expireIn(fixture.documentId, PAST)
+
+        assertDeclaredStatus(send(get(fixture.token, imagePath)), GENERATED_IMAGE_PATH, GET, NOT_FOUND)
+        assertDeclaredStatus(
+            send(get(fixture.token, GENERATED_DOWNLOAD_PATH.forConversionAsset(fixture.conversionId, assetId))),
+            GENERATED_DOWNLOAD_PATH,
+            GET,
+            NOT_FOUND,
+        )
+        assertDeclaredStatus(
+            send(get(fixture.token, GENERATED_LIST_PATH.forConversion(fixture.conversionId))),
+            GENERATED_LIST_PATH,
+            GET,
+            NOT_FOUND,
+        )
+    }
+
+    private fun seedGeneratedAsset(fixture: Fixture): UUID {
+        val jobId = UUID.randomUUID()
+        val assetId = UUID.randomUUID()
+        val input = cipher.encrypt(PlainBody("입력"), jobId, EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT)
+        val metadata = cipher.encrypt(PlainBody("메타"), assetId, EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA)
+        val png =
+            cipher.encryptBytes(
+                PlainBytes(byteArrayOf(1, 2, 3)),
+                assetId,
+                EncryptedField.ILLUSTRATION_GENERATION_ASSET_PNG,
+            )
+        database.execute(
+            """
+            INSERT INTO illustration_generation_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 suggestion_result_id, suggestion_id, analysis_version, configuration_revision,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 input_payload_encrypted, encryption_scheme, key_version,
+                 status, reserved_credits, settlement)
+            SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${fixture.conversionId}',
+                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-2', '$FINGERPRINT',
+                   1, 1, '$FINGERPRINT', decode('${hex(input.bytes)}', 'hex'),
+                   '${input.scheme}', ${input.keyVersion}, 'succeeded', 0, 'not_charged'
+            FROM documents d WHERE d.id = '${fixture.documentId}';
+            INSERT INTO generated_illustration_assets
+                (id, job_id, conversion_id, based_on_content_revision,
+                 metadata_encrypted, png_encrypted, encryption_scheme, key_version,
+                 png_byte_size, width, height, provenance)
+            VALUES ('$assetId', '$jobId', '${fixture.conversionId}', 1,
+                    decode('${hex(metadata.bytes)}', 'hex'), decode('${hex(png.bytes)}', 'hex'),
+                    '${metadata.scheme}', ${metadata.keyVersion}, 3, 1024, 1024, 'fake')
+            """.trimIndent(),
+        )
+        return assetId
+    }
+
+    private fun String.forConversion(conversionId: UUID): String = replace("{conversion_id}", conversionId.toString())
+
+    private fun String.forConversionAsset(
+        conversionId: UUID,
+        assetId: UUID,
+    ): String = forConversion(conversionId).replace("{asset_id}", assetId.toString())
+
     // =========================================================== 닫지 않은 자리
 
     @Test
@@ -498,12 +571,19 @@ class RetentionReadGuardReachTest {
         private const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         private const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
         private const val CONVERSION_FEEDBACK_PATH = "/conversions/{conversion_id}/feedback"
+        private const val GENERATED_LIST_PATH = "/conversions/{conversion_id}/generated-illustrations"
+        private const val GENERATED_IMAGE_PATH =
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}/image"
+        private const val GENERATED_DOWNLOAD_PATH =
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}/download"
 
         private const val GET = "get"
         private const val POST = "post"
         private const val PUT = "put"
 
+        private const val OK = 200
         private const val NOT_FOUND = 404
+        private const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
         private const val DETAIL = "detail"
         private const val ITEMS_PROPERTY = "items"

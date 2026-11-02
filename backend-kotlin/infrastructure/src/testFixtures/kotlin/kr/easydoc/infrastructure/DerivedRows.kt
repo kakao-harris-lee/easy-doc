@@ -50,6 +50,9 @@ object DerivedRows {
             // R7 ER-17 결과(V35). 작업 표(`illustration_suggestion_jobs`)는 V29 와 같은 이유로
             // FK 없이 감사 행으로 남으므로 여기 없다 — 파기 대상은 제안 본문뿐이다.
             "illustration_suggestion_results" to CONVERSION_ID,
+            // R7 ER-18 성공 자산(V51). 생성 작업은 감사·정산 근거로 남고, 입력 암호문은
+            // 문서 삭제 트리거가 비운다. CASCADE 파기 대상은 메타데이터·PNG 자산이다.
+            "generated_illustration_assets" to CONVERSION_ID,
         )
 
     /**
@@ -85,6 +88,7 @@ object DerivedRows {
     ): UUID {
         val jobId = UUID.randomUUID()
         val suggestionJobId = UUID.randomUUID()
+        val generationJobId = UUID.randomUUID()
         dataSource.connection.use { connection ->
             seedReviewSupport(connection, conversionId)
             seedTableStructure(connection, documentId)
@@ -95,6 +99,11 @@ object DerivedRows {
             seedIllustrationSuggestion(
                 connection,
                 JobRow(suggestionJobId, ownerId, workspaceId, documentId, conversionId),
+            )
+            seedIllustrationGeneration(
+                connection,
+                JobRow(generationJobId, ownerId, workspaceId, documentId, conversionId),
+                suggestionJobId,
             )
         }
         return jobId
@@ -281,6 +290,53 @@ object DerivedRows {
             UUID.randomUUID(),
             job.jobId,
             job.conversionId,
+            PAYLOAD,
+        )
+    }
+
+    private fun seedIllustrationGeneration(
+        connection: Connection,
+        job: JobRow,
+        suggestionResultId: UUID,
+    ) {
+        update(
+            connection,
+            """
+            INSERT INTO illustration_generation_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 suggestion_result_id, suggestion_id, analysis_version, configuration_revision,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 input_payload_encrypted, encryption_scheme, key_version,
+                 status, reserved_credits, settlement)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'r7-illustration-suggestion-2', ?,
+                    1, 1, ?, ?, 'aes256gcm-v1', 1, 'succeeded', ?, 'consumed')
+            """,
+            job.jobId,
+            UUID.randomUUID(),
+            job.ownerId,
+            job.workspaceId,
+            job.documentId,
+            job.conversionId,
+            suggestionResultId,
+            UUID.randomUUID(),
+            ACTION_GUIDE_FINGERPRINT,
+            ACTION_GUIDE_FINGERPRINT,
+            PAYLOAD,
+            RESERVED_CREDITS,
+        )
+        update(
+            connection,
+            """
+            INSERT INTO generated_illustration_assets
+                (id, job_id, conversion_id, based_on_content_revision,
+                 metadata_encrypted, png_encrypted, encryption_scheme, key_version,
+                 png_byte_size, width, height, provenance)
+            VALUES (?, ?, ?, 1, ?, ?, 'aes256gcm-v1', 1, 4, 1024, 1024, 'fake')
+            """,
+            UUID.randomUUID(),
+            job.jobId,
+            job.conversionId,
+            PAYLOAD,
             PAYLOAD,
         )
     }

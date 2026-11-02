@@ -14,7 +14,7 @@ services:
         "java",
         "-jar",
         "/app/easy-doc-api.jar",
-        "--spring.profiles.active=api,local,e2e",
+        "--spring.profiles.active=api,local,e2e,illustration-generation-fake",
       ]
     environment:
       EASYDOC_LLM_PROVIDER: fake
@@ -29,6 +29,8 @@ services:
       EASYDOC_ILLUSTRATIONS_ENABLED: "true"
       EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED: "true"
       EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS: "0"
+      EASYDOC_ILLUSTRATION_GENERATION_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE: "0"
       EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"
@@ -39,7 +41,7 @@ services:
         "java",
         "-jar",
         "/app/easy-doc-worker.jar",
-        "--spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake",
+        "--spring.profiles.active=worker,local,action-guide-fake,illustration-suggestion-fake,illustration-generation-fake",
       ]
     environment:
       EASYDOC_LLM_PROVIDER: fake
@@ -50,3 +52,6 @@ services:
       EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED: "true"
       EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED: "true"
       EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS: "0"
+      EASYDOC_ILLUSTRATION_GENERATION_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED: "true"
+      EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE: "0"

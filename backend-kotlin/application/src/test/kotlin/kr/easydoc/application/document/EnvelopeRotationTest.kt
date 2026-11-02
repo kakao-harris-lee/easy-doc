@@ -396,6 +396,10 @@ class EnvelopeRotationTest {
                         EncryptedField.DOCUMENT_TABLE_STRUCTURE,
                         EncryptedField.REVIEW_HISTORY_SNAPSHOT,
                         EncryptedField.ILLUSTRATION_SUGGESTION_RESULT,
+                        // Generation input/metadata/PNG have a dedicated JDBC CAS rotation test.
+                        EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT,
+                        EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA,
+                        EncryptedField.ILLUSTRATION_GENERATION_ASSET_PNG,
                     )
             }
         val uncovered = documentFields.filterNot { field -> field in rotationOf(field) }
@@ -453,6 +457,11 @@ class EnvelopeRotationTest {
 
                 // 제안 결과 회전은 `IllustrationSuggestionResultKeyRotationTest` 가 JDBC CAS 로 잰다.
                 EncryptedField.ILLUSTRATION_SUGGESTION_RESULT -> error("제안 결과 회전은 별도 시험이 검증한다")
+
+                EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT,
+                EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA,
+                EncryptedField.ILLUSTRATION_GENERATION_ASSET_PNG,
+                -> error("생성 입력·자산 회전은 IllustrationGenerationKeyRotationTest가 검증한다")
             }
 
         check(outcome == RotationOutcome.ROTATED) {

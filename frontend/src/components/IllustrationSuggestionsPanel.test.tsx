@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,6 +28,22 @@ vi.mock('../api/client', async (importOriginal) => ({
   listIllustrationSuggestionJobs: vi.fn(),
 }))
 
+vi.mock('./IllustrationGenerationPanel', () => ({
+  IllustrationGenerationPanel: ({
+    disabled,
+    removeDisabled,
+  }: {
+    disabled: boolean
+    removeDisabled: boolean
+  }) => (
+    <div
+      data-testid="generation-panel"
+      data-disabled={String(disabled)}
+      data-remove-disabled={String(removeDisabled)}
+    />
+  ),
+}))
+
 const SAVED_BODY = [
   '신청서를 씁니다.',
   '주민센터에 냅니다.',
@@ -37,6 +53,7 @@ const SAVED_BODY = [
 
 const suggestion: IllustrationSuggestion = {
   suggestion_id: 'suggestion-1',
+  configuration_revision: 'a'.repeat(64),
   purpose: 'procedure',
   reason: '신청 순서를 그림으로 보면 이해하기 쉬워집니다',
   body_range: { start: 0, end: 2 },
@@ -47,6 +64,7 @@ const suggestion: IllustrationSuggestion = {
 }
 
 const notAnalyzed: IllustrationSuggestionsResource = {
+  analysis_version: null,
   status: 'not_analyzed',
   content_revision: 1,
   based_on_content_revision: null,
@@ -58,6 +76,7 @@ const notAnalyzed: IllustrationSuggestionsResource = {
 const ready: IllustrationSuggestionsResource = {
   ...notAnalyzed,
   status: 'ready',
+  analysis_version: 'v1',
   based_on_content_revision: 1,
   suggestions: [suggestion],
 }
@@ -432,49 +451,6 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(screen.getByText('신청 순서를 차례대로 보여 주는 그림')).toBeInTheDocument()
   })
 
-  it('그림 만들기 버튼은 초점을 받을 수 있는 채로 비활성이라 이유가 읽힌다', async () => {
-    const user = userEvent.setup()
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
-
-    show()
-
-    const create = await screen.findByRole('button', { name: '그림 만들기(준비 중)' })
-    // `disabled` 버튼은 초점을 받지 못해 설명이 낭독되지 않는다 — aria-disabled로 둔다.
-    expect(create).toHaveAttribute('aria-disabled', 'true')
-    expect(create).toHaveAccessibleDescription(/현재는 그림 제안만 확인할 수 있습니다/)
-    create.focus()
-    expect(create).toHaveFocus()
-    await user.click(create)
-    expect(createIllustrationSuggestionJob).not.toHaveBeenCalled()
-  })
-
-  it('무료 테스트는 단일 상태 영역에서 알리고 테스트 SVG임을 보여 준다', async () => {
-    const user = userEvent.setup()
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
-    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
-    show()
-    await user.click(await screen.findByRole('button', { name: '테스트 그림 만들어 보기' }))
-    expect(screen.getAllByRole('status')).toHaveLength(1)
-    expect(screen.getByRole('status')).toHaveTextContent('테스트 그림을 만들고 있어요')
-    expect(await screen.findByRole('img')).toHaveTextContent('실제 AI 생성 아님')
-    expect(screen.getAllByRole('status')).toHaveLength(1)
-  })
-
-  it('이전 무료 테스트 제안은 생성 버튼을 표시하지 않는다', async () => {
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
-      ...ready,
-      status: 'stale',
-      content_revision: 2,
-    })
-    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
-    show({ contentRevision: 2 })
-    expect(await screen.findByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: '테스트 그림 만들어 보기' }),
-    ).not.toBeInTheDocument()
-    expect(screen.getAllByRole('status')).toHaveLength(1)
-  })
-
   it('한 줄만 가리키는 제안은 단일 줄로 적는다', async () => {
     vi.mocked(getIllustrationSuggestions).mockResolvedValue({
       ...ready,
@@ -553,10 +529,7 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     expect(await screen.findByText('그림에도 그대로 유지해야 하는 정보')).toBeInTheDocument()
     for (const fact of ['48시간', '10월 1일', '5만원'])
       expect(screen.getByText(fact)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '그림 만들기(준비 중)' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
+    expect(screen.getByTestId('generation-panel')).toHaveAttribute('data-disabled', 'false')
   })
 
   it('무과금 스택에서는 제안 없음에 사용 이용량을 적지 않는다', async () => {
@@ -607,96 +580,6 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     },
   )
 
-  it('폴링으로 빈 결과가 되면 제거된 카드의 테스트 상태를 더 이상 읽지 않는다', async () => {
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
-    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
-    vi.mocked(createIllustrationSuggestionJob).mockResolvedValue({ job, creditBalance: 6.4 })
-    show()
-    await screen.findByRole('button', { name: '그림 제안 다시 확인' })
-    vi.useFakeTimers()
-    try {
-      fireEvent.click(screen.getByRole('button', { name: '그림 제안 다시 확인' }))
-      await act(async () => {
-        await Promise.resolve()
-      })
-      expect(screen.getByRole('status')).toHaveTextContent('본문을 저장하고 최신 제안을 확인한 뒤')
-      vi.mocked(getIllustrationSuggestionJob).mockResolvedValue({ ...job, status: 'succeeded' })
-      vi.mocked(getIllustrationSuggestions).mockResolvedValue({
-        ...ready,
-        status: 'no_suggestions',
-        suggestions: [],
-      })
-      vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
-        ...jobs,
-        required_credits: 0,
-        latest_job: { ...job, status: 'succeeded', reserved_credits: 0 },
-      })
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(3000)
-      })
-      expect(screen.getByRole('status')).toHaveTextContent('문맥을 찾지 못했습니다')
-      expect(screen.getByRole('status')).not.toHaveTextContent(
-        '본문을 저장하고 최신 제안을 확인한 뒤',
-      )
-      expect(screen.queryByRole('heading', { name: '제안 1 · 절차' })).not.toBeInTheDocument()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('다른 카드의 상태가 끝나도 마지막으로 알린 카드의 상태를 지우지 않는다', async () => {
-    const user = userEvent.setup()
-    const second = { ...suggestion, suggestion_id: 'suggestion-2' }
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
-      ...ready,
-      suggestions: [suggestion, second],
-    })
-    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
-    show()
-    const firstCard = await screen.findByRole('region', { name: '제안 1 · 절차' })
-    const secondCard = screen.getByRole('region', { name: '제안 2 · 절차' })
-    await user.click(within(firstCard).getByRole('button', { name: '테스트 그림 만들어 보기' }))
-    await within(firstCard).findByRole('img')
-    await user.click(within(secondCard).getByRole('button', { name: '테스트 그림 만들어 보기' }))
-    await within(secondCard).findByRole('img')
-    await user.click(within(secondCard).getByRole('checkbox'))
-    await user.click(within(secondCard).getByRole('button', { name: '문서 미리보기에 추가' }))
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '테스트 그림을 문서 미리보기에 추가했습니다',
-    )
-    await user.click(within(firstCard).getByRole('button', { name: '그림 버리기' }))
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '테스트 그림을 문서 미리보기에 추가했습니다',
-    )
-  })
-
-  it('다른 카드가 사라져도 남은 카드의 테스트 상태는 지우지 않는다', async () => {
-    const user = userEvent.setup()
-    const second = { ...suggestion, suggestion_id: 'suggestion-2' }
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue({
-      ...ready,
-      suggestions: [suggestion, second],
-    })
-    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({ ...jobs, required_credits: 0 })
-    show()
-    const card = await screen.findByRole('region', { name: '제안 2 · 절차' })
-    await user.click(within(card).getByRole('button', { name: '테스트 그림 만들어 보기' }))
-    await within(card).findByRole('img')
-    await user.click(within(card).getByRole('checkbox'))
-    await user.click(within(card).getByRole('button', { name: '문서 미리보기에 추가' }))
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '테스트 그림을 문서 미리보기에 추가했습니다',
-    )
-    vi.mocked(getIllustrationSuggestions).mockResolvedValue({ ...ready, suggestions: [second] })
-    await user.click(screen.getByRole('button', { name: '상태 새로고침' }))
-    await waitFor(() =>
-      expect(screen.queryByRole('heading', { name: '제안 2 · 절차' })).not.toBeInTheDocument(),
-    )
-    expect(screen.getByRole('status')).toHaveTextContent(
-      '테스트 그림을 문서 미리보기에 추가했습니다',
-    )
-  })
-
   it('stale 결과는 이전 버전으로 표시하고 그림 만들기를 막은 채 재분석을 권한다', async () => {
     vi.mocked(getIllustrationSuggestions).mockResolvedValue({
       ...ready,
@@ -707,10 +590,8 @@ describe('ER-17 그림 제안 패널 — 결과', () => {
     show({ contentRevision: 2 })
 
     expect(await screen.findByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '그림 만들기(준비 중)' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    )
+    expect(screen.getByTestId('generation-panel')).toHaveAttribute('data-disabled', 'true')
+    expect(screen.getByTestId('generation-panel')).toHaveAttribute('data-remove-disabled', 'false')
     expect(screen.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 

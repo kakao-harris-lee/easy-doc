@@ -44,6 +44,8 @@ import kr.easydoc.infrastructure.actionguide.ActionGuideProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.illustration.IllustrationsProperties
+import kr.easydoc.infrastructure.illustration.generation.IllustrationGenerationProperties
+import kr.easydoc.infrastructure.illustration.generation.zeroCreditsAllowed
 import kr.easydoc.infrastructure.illustration.suggestion.IllustrationSuggestionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
@@ -52,6 +54,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
+import org.springframework.core.env.Environment
 import org.springframework.jdbc.core.simple.JdbcClient
 
 /**
@@ -71,6 +74,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
     ExplanationsProperties::class,
     IllustrationsProperties::class,
     IllustrationSuggestionProperties::class,
+    IllustrationGenerationProperties::class,
 )
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
@@ -209,6 +213,8 @@ class DocumentConfiguration {
         explanationsProperties: ExplanationsProperties,
         illustrationsProperties: IllustrationsProperties,
         illustrationSuggestionProperties: IllustrationSuggestionProperties,
+        illustrationGenerationProperties: IllustrationGenerationProperties,
+        environment: Environment,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -226,6 +232,7 @@ class DocumentConfiguration {
                     explanationsProperties.enabled,
                     illustrationsProperties.enabled,
                     illustrationSuggestionProperties,
+                    illustrationGenerationProperties.capabilityAvailable(zeroCreditsAllowed(environment)),
                 ),
         )
 
@@ -387,6 +394,7 @@ internal fun reviewCapabilitiesFor(
     explanationsEnabled: Boolean = false,
     illustrationsEnabled: Boolean = false,
     illustrationSuggestions: IllustrationSuggestionProperties = IllustrationSuggestionProperties(),
+    illustrationGeneration: Boolean = false,
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
@@ -399,4 +407,5 @@ internal fun reviewCapabilitiesFor(
         // 토글만으로는 부족하다 — 이용량 단가가 없으면 접수가 503 이므로 노출하지 않는다(명세 §3).
         illustrationSuggestions =
             illustrationSuggestions.enabled && illustrationSuggestions.creditsPer100Chars != null,
+        illustrationGeneration = illustrationGeneration,
     )

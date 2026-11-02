@@ -396,6 +396,7 @@ class OwnershipPredicateGuardTest {
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
         private const val ILLUSTRATION = "$MAIN/illustration"
+        private const val GENERATION = "$ILLUSTRATION/generation"
         private const val SUGGESTION = "$ILLUSTRATION/suggestion"
 
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
@@ -635,6 +636,40 @@ class OwnershipPredicateGuardTest {
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                // R7 ER-18 생성 입력·자산·작업·원장과 두 암호문 가족의 키 회전.
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [generated_illustration_assets]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [generated_illustration_assets]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [generated_illustration_assets]",
+                "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
+                    "INSERT [conversions, documents, generated_illustration_assets, " +
+                    "illustration_generation_jobs, illustration_suggestion_results]",
+                "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
+                    "SELECT [conversions, documents, generated_illustration_assets]",
+                "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
+                    "SELECT [conversions, documents, generated_illustration_assets]",
+                "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
+                    "UPDATE [conversions, documents, generated_illustration_assets]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | " +
+                    "SELECT [documents, illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [conversions, documents]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [conversions, documents]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | INSERT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | WITH [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | WITH [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | " +
+                    "SELECT [conversions, documents, illustration_generation_jobs, illustration_suggestion_results]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationLlmCallLedger.kt | SELECT [documents]",
                 // R7 ER-17 그림 제안(V35). provider 입력·접수 잠금·호출 원장·결과 저장/조회는
                 // 전부 사용자 소유 매개변수로 좁힌다. 가운데 세 문장(키 회전)만 운영자 경로라
                 // 아래 미방어 목록에도 같은 이름으로 있다.
@@ -850,6 +885,24 @@ class OwnershipPredicateGuardTest {
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | UPDATE [illustration_placements]",
                 "$ILLUSTRATION/JdbcIllustrationPlacementRepository.kt | SELECT [illustration_placements]",
+                // ER-18 회전은 운영자 배치이고 생성 작업 획득·fencing·정산은 owner-less worker 경로다.
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [illustration_generation_jobs]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | SELECT [generated_illustration_assets]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [generated_illustration_assets]",
+                "$GENERATION/IllustrationGenerationKeyRotation.kt | UPDATE [generated_illustration_assets]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | INSERT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | WITH [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | WITH [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
+                "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
                 // R7 ER-17 결과 payload 키 회전의 후보 커서·잠금·재봉인. 운영자 배치라 소유자를
                 // 인자로 받을 자리가 없다 — 사용자 경로(입력·접수·결과 조회)는 위 인구조사에만 있다.
                 "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
@@ -1011,6 +1064,7 @@ class OwnershipPredicateGuardTest {
         // selection and completion checks in the archive path retain explicit user_id predicates.
         // 124 -> 126: retained consent provenance lookup and BillingDeletionGuard separately counts
         // paid live charge/renewal orders.
-        const val MAX_UNGUARDED_STATEMENTS = 126
+        // 126 -> 144: ER-18 operator key rotation (6) and owner-less generation worker paths (12).
+        const val MAX_UNGUARDED_STATEMENTS = 144
     }
 }

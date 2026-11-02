@@ -27,15 +27,16 @@ import javax.sql.DataSource
  * **문서 삭제와 worker 정산이 잠금을 같은 순서로 잡는가.**
  *
  * worker 는 언제나 「작업 행 → 이용량 계정」 순서로 잡는다(`ProcessActionGuideJob`·
- * `ProcessIllustrationSuggestionJob`). 삭제가 계정을 **먼저** 쥔 채 아직 잠그지 않은 작업 행을
- * 기다리면 사이클이 닫히고, PostgreSQL 은 둘 중 하나를 죽인다 — 삭제(또는 그 삭제를 묶은 탈퇴·
- * 보존 만료 파기 배치 전체)가 통째로 되돌려지거나, 이미 돈을 쓴 정산이 사라진다.
+ * `ProcessIllustrationGenerationJob`·`ProcessIllustrationSuggestionJob`). 삭제가 계정을 **먼저** 쥔 채
+ * 아직 잠그지 않은 작업 행을 기다리면 사이클이 닫히고, PostgreSQL 은 둘 중 하나를 죽인다 —
+ * 삭제(또는 그 삭제를 묶은 탈퇴·보존 만료 파기 배치 전체)가 통째로 되돌려지거나, 이미 돈을 쓴
+ * 정산이 사라진다.
  *
  * 그 사이클은 두 자리에서 열린다.
  *
- * ⑴ **문서 한 건** — 한 문서에 두 가족의 작업이 동시에 활성일 수 있다. 가족마다 BEFORE DELETE
+ * ⑴ **문서 한 건** — 한 문서에 세 가족의 작업이 동시에 활성일 수 있다. 가족마다 BEFORE DELETE
  *    트리거를 두면 이름 순서 때문에 한 가족을 정산한(=계정을 잡은) 뒤에야 다음 가족을 잠근다.
- *    V35 의 단일 조정 트리거가 두 가족의 행을 먼저 모두 잠가 막는다.
+ *    V51 의 단일 조정 트리거가 세 가족의 행을 먼저 모두 잠가 막는다.
  * ⑵ **문서 여러 건** — 트리거는 행 단위라 `OLD.id` 의 작업만 미리 잠근다. 탈퇴·파기처럼 한
  *    문장이 여러 문서를 지우면 첫 문서를 정산하며 계정을 쥔 채 둘째 문서의 작업을 기다린다.
  *    삭제 **전에** [DocumentJobLocks] 가 배치 전체의 활성 작업을 정해진 순서로 잠가 막는다.
@@ -78,6 +79,16 @@ class DocumentDeleteSettlementLockOrderTest {
         val seeded = seedOneDocument()
 
         raceDeletionAgainstHolderOf(seeded, SUGGESTION_JOBS) { deleteDocument(seeded.documentIds.single()) }
+
+        assertSettledOnce(seeded)
+    }
+
+    @Test
+    @DisplayName("문서 한 건 삭제가 그림 생성 정산과 교착하지 않는다")
+    fun `문서 한 건 삭제가 그림 생성 정산과 교착하지 않는다`() {
+        val seeded = seedOneDocument()
+
+        raceDeletionAgainstHolderOf(seeded, GENERATION_JOBS) { deleteDocument(seeded.documentIds.single()) }
 
         assertSettledOnce(seeded)
     }
@@ -178,7 +189,7 @@ class DocumentDeleteSettlementLockOrderTest {
             .isEqualTo("0")
     }
 
-    /** 한 문서에 두 가족이 모두 활성 — 트리거 하나가 도는 자리다. */
+    /** 한 문서에 세 가족이 모두 활성 — 트리거 하나가 도는 자리다. */
     private fun seedOneDocument(): Seeded {
         val owner = insertOwner()
         val document = insertDocument(owner)
@@ -188,6 +199,7 @@ class DocumentDeleteSettlementLockOrderTest {
             jobIds =
                 mapOf(
                     ACTION_GUIDE_JOBS to insertJob(owner, document, ACTION_GUIDE_JOBS),
+                    GENERATION_JOBS to insertJob(owner, document, GENERATION_JOBS),
                     SUGGESTION_JOBS to insertJob(owner, document, SUGGESTION_JOBS),
                 ),
         )
@@ -228,7 +240,7 @@ class DocumentDeleteSettlementLockOrderTest {
         execute("INSERT INTO workspaces (id,user_id,name) VALUES ('$workspaceId','$ownerId','공간')")
         execute(
             "INSERT INTO workspace_credit_accounts (workspace_id,balance,reserved) " +
-                "VALUES ('$workspaceId',10,2)",
+                "VALUES ('$workspaceId',10,3)",
         )
         return Owner(ownerId, workspaceId)
     }
@@ -262,17 +274,41 @@ class DocumentDeleteSettlementLockOrderTest {
         table: String,
     ): UUID {
         val jobId = UUID.randomUUID()
-        val reasonColumn = if (table == ACTION_GUIDE_JOBS) "action_guide_job_id" else "illustration_suggestion_job_id"
-        val reason = if (table == ACTION_GUIDE_JOBS) "action_guide" else "illustration_suggestion"
+        val reasonColumn =
+            when (table) {
+                ACTION_GUIDE_JOBS -> "action_guide_job_id"
+                GENERATION_JOBS -> "illustration_generation_job_id"
+                else -> "illustration_suggestion_job_id"
+            }
+        val reason =
+            when (table) {
+                ACTION_GUIDE_JOBS -> "action_guide"
+                GENERATION_JOBS -> "illustration_generation"
+                else -> "illustration_suggestion"
+            }
+        val generationColumns =
+            if (table == GENERATION_JOBS) {
+                ", suggestion_result_id, suggestion_id, analysis_version, configuration_revision," +
+                    " input_payload_encrypted, encryption_scheme, key_version"
+            } else {
+                ""
+            }
+        val generationValues =
+            if (table == GENERATION_JOBS) {
+                ", gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-2', '$FINGERPRINT'," +
+                    " '\\x03'::bytea, 'aes256gcm-v1', 1"
+            } else {
+                ""
+            }
         execute(
             """
             INSERT INTO $table
                 (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
-                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 expected_content_revision, based_on_content_revision, input_fingerprint$generationColumns,
                  status, settlement, reserved_credits)
             VALUES ('$jobId', gen_random_uuid(), '${owner.ownerId}', '${owner.workspaceId}',
                     '${document.documentId}', '${document.conversionId}',
-                    1, 1, '$FINGERPRINT', 'queued', 'reserved', 1.0)
+                    1, 1, '$FINGERPRINT'$generationValues, 'queued', 'reserved', 1.0)
             """.trimIndent(),
         )
         execute(
@@ -303,7 +339,12 @@ class DocumentDeleteSettlementLockOrderTest {
         table: String,
         jobId: UUID,
     ): Int {
-        val column = if (table == ACTION_GUIDE_JOBS) "action_guide_job_id" else "illustration_suggestion_job_id"
+        val column =
+            when (table) {
+                ACTION_GUIDE_JOBS -> "action_guide_job_id"
+                GENERATION_JOBS -> "illustration_generation_job_id"
+                else -> "illustration_suggestion_job_id"
+            }
         return queryStrings(
             "SELECT count(*) FROM credit_transactions WHERE kind = 'release' AND $column = '$jobId'",
         ).single().toInt()
@@ -346,6 +387,7 @@ class DocumentDeleteSettlementLockOrderTest {
 
     private companion object {
         const val ACTION_GUIDE_JOBS = "action_guide_jobs"
+        const val GENERATION_JOBS = "illustration_generation_jobs"
         const val SUGGESTION_JOBS = "illustration_suggestion_jobs"
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
 

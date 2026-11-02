@@ -109,25 +109,48 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
-    const card = panel.getByRole('heading', { name: '제안 1 · 절차' }).locator('..')
-    const button = panel.getByRole('button', { name: '테스트 그림 만들어 보기' })
+    const card = panel.getByRole('region', { name: '그림 생성과 적용' })
+    const button = panel.getByRole('button', { name: '그림 만들기', exact: true })
+    await expect(button).toBeEnabled()
     const [cardBox, buttonBox] = await Promise.all([card.boundingBox(), button.boundingBox()])
     expect(cardBox).not.toBeNull()
     expect(buttonBox).not.toBeNull()
     expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width)
     await page.setViewportSize({ width: 1280, height: 720 })
-    // 무료 테스트는 외부 호출 없이 생성·확인·적용·제거를 체험한다.
-    await expect(panel.getByText(/무료 테스트 모드:/)).toBeVisible()
-    await panel.getByRole('button', { name: '테스트 그림 만들어 보기' }).click()
-    await expect(panel.getByRole('img')).toBeVisible()
-    const apply = panel.getByRole('button', { name: '문서 미리보기에 추가' })
+    // fake worker도 실제 작업 API와 비공개 PNG 경로를 사용한다.
+    const generation = panel.getByRole('region', { name: '그림 생성과 적용' })
+    await expect(generation.getByText(/그림 한 장 필요 이용량: 0크레딧/)).toBeVisible()
+    const documentPreview = page.getByRole('region', { name: '그림을 적용한 문서 미리보기' })
+    await expect(documentPreview).toHaveCount(0)
+    const editedAltText = '48시간 안에 가까운 지사를 방문해 국민건강보험료를 납부하는 모습.'
+    await generation.getByLabel('그림 대체텍스트').fill(editedAltText)
+    await button.click()
+    await expect(generation.getByRole('img', { name: editedAltText, exact: true })).toBeVisible({
+      timeout: 90_000,
+    })
+    await expect(
+      generation.getByText(`대체텍스트: ${editedAltText}`, { exact: true }),
+    ).toBeVisible()
+    await expect(generation.getByText(/테스트 그림입니다/)).toBeVisible()
+    const apply = generation.getByRole('button', { name: '문서에 그림 적용' })
     await expect(apply).toBeDisabled()
-    await panel.getByLabel('그림 대체텍스트').fill('확인한 테스트 그림 설명')
-    await panel.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
+    await generation.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
     await apply.click()
-    await expect(panel.getByRole('heading', { name: '문서 적용 미리보기' })).toBeVisible()
-    await panel.getByRole('button', { name: '문서 미리보기에서 제거' }).click()
-    await expect(panel.getByRole('heading', { name: '문서 적용 미리보기' })).toHaveCount(0)
+    await expect(
+      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
+    ).toBeVisible()
+    await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
+    await page.setViewportSize({ width: 320, height: 800 })
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true)
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      generation.getByRole('button', { name: '그림 다운로드' }).click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/\.png$/i)
 
     // 4. 재방문 — 브라우저 저장소가 아니라 서버 조회로 같은 결과를 되살린다.
     const callsBeforeReload = (await log.apiCalls()).length
@@ -139,6 +162,17 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(panel.getByRole('heading', { name: '제안 1 · 절차' })).toBeVisible({
       timeout: 90_000,
     })
+    await expect(generation.getByRole('img', { name: editedAltText, exact: true })).toBeVisible({
+      timeout: 90_000,
+    })
+    await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
+    await expect(
+      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
+    ).toBeVisible()
+    await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
+    await generation.getByRole('button', { name: '문서에서 그림 제거' }).click()
+    await expect(documentPreview).toHaveCount(0)
+    await expect(generation.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
     const recoveredCalls = (await log.apiCalls()).slice(callsBeforeReload).map(signature)
     expect(recoveredCalls).toContain(
       `${ROUTES.illustrationSuggestionsRead.method} ${suggestionsPath} ${ROUTES.illustrationSuggestionsRead.ok}`,
@@ -180,7 +214,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     const staleResource = (await staleResponse.json()) as IllustrationSuggestionsResource
     expect(staleResource.status).toBe('stale')
     await expect(panel.getByText(/이전 버전의 본문으로 만든 제안입니다/)).toBeVisible()
-    await expect(panel.getByRole('button', { name: '테스트 그림 만들어 보기' })).toHaveCount(0)
+    await expect(panel.getByRole('button', { name: '그림 만들기', exact: true })).toHaveCount(0)
+    await expect(generation.getByText(/이전 버전 본문으로 만든 그림/)).toBeVisible()
     await expect(panel.getByRole('button', { name: '그림 제안 다시 확인' })).toBeEnabled()
   })
 })

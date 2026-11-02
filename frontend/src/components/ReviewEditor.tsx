@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -24,6 +25,7 @@ import {
 import type {
   ConversionResponse,
   ExportFormat,
+  GeneratedIllustration,
   ReviewItem,
   ReviewItemState,
   ReviewSupportResponse,
@@ -46,6 +48,7 @@ import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
 import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 import { IllustrationSuggestionsPanel } from './IllustrationSuggestionsPanel'
+import { GeneratedIllustrationPreview } from './GeneratedIllustrationPreview'
 import { IllustrationsPanel } from './IllustrationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
 import { TableRelationsPanel } from './TableRelationsPanel'
@@ -204,6 +207,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 직후 알려 준다. 배치가 있고(count > 0) stale이 아닐 때만 내려받기 버튼 근처에
    * "파일에는 들어가지 않는다"는 안내를 보여준다.
    */
+  const [generatedIllustrations, setGeneratedIllustrations] = useState<{
+    conversionId: string
+    contentRevision: number
+    assets: GeneratedIllustration[]
+  } | null>(null)
+  const onGeneratedAssetsChange = useCallback(
+    (assets: GeneratedIllustration[]) => {
+      setGeneratedIllustrations({ conversionId: conversion.id, contentRevision, assets })
+    },
+    [conversion.id, contentRevision],
+  )
   const [illustrationPlacementCount, setIllustrationPlacementCount] = useState(0)
   const [illustrationPlacementsStale, setIllustrationPlacementsStale] = useState(false)
   /**
@@ -1269,6 +1283,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 서버가 false 로 보고하므로 화면은 이 값만 보고 패널을 그린다.
   const illustrationSuggestionsEnabled =
     conversion.review_capabilities?.illustration_suggestions === true
+  const currentGeneratedAssets =
+    illustrationSuggestionsEnabled &&
+    generatedIllustrations?.conversionId === conversion.id &&
+    generatedIllustrations.contentRevision === contentRevision
+      ? generatedIllustrations.assets.filter(
+          (asset) =>
+            asset.applied && !asset.stale && asset.based_on_content_revision === contentRevision,
+        )
+      : []
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
       <p
@@ -1701,6 +1724,14 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         {/* 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
             DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 TXT에 원본
             레이아웃·스타일이 반영되지 않는다는 사실을 대신 말한다. */}
+        {currentGeneratedAssets.length > 0 && (
+          <GeneratedIllustrationPreview
+            conversionId={conversion.id}
+            savedBody={savedText}
+            assets={currentGeneratedAssets}
+            blocked={dirty || busy || contentConflict}
+          />
+        )}
         <FormatPreservationPanel
           sourceFormat={conversion.source_format}
           preservation={preservation}
@@ -1711,6 +1742,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         {illustrationsEnabled && illustrationPlacementCount > 0 && !illustrationPlacementsStale && (
           <p className="mt-4 text-sm text-muted-foreground">
             배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.
+          </p>
+        )}
+
+        {currentGeneratedAssets.length > 0 && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            적용한 생성 그림은 DOCX·HWPX·TXT 파일에 포함되지 않습니다. 그림은 따로 다운로드해
+            주세요.
           </p>
         )}
 
@@ -1894,6 +1932,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   // 제안이 가리키는 줄은 **저장된** 본문 기준이다. 편집 중인 `draft`를 주면
                   // 저장하지 않은 수정이 제안의 근거처럼 보인다.
                   savedBody={savedText}
+                  onGeneratedAssetsChange={onGeneratedAssetsChange}
                 />
               )}
             </div>

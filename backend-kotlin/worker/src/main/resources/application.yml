@@ -62,6 +62,17 @@ easydoc:
     max-output-tokens: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_OUTPUT_TOKENS:8192}
     # 미설정과 0은 다르다 — 실제 provider worker는 0 이하를 기동에서 거부한다.
     credits-per-100-chars: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:}
+  # R7 ER-18 생성 worker. 실제 provider는 두 가격 설정이 없으면 기동을 거부한다.
+  illustration-generation:
+    enabled: ${EASYDOC_ILLUSTRATION_GENERATION_ENABLED:false}
+    worker-enabled: ${EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED:false}
+    owner: ${EASYDOC_ILLUSTRATION_GENERATION_WORKER_OWNER:}
+    lease-duration-seconds: ${EASYDOC_ILLUSTRATION_GENERATION_LEASE_DURATION_SECONDS:120}
+    max-lease-attempts: ${EASYDOC_ILLUSTRATION_GENERATION_MAX_LEASE_ATTEMPTS:5}
+    poll-interval-ms: ${EASYDOC_ILLUSTRATION_GENERATION_POLL_INTERVAL_MS:500}
+    credits-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE:}
+    provider-cost-usd-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_PROVIDER_COST_USD_PER_IMAGE:}
+    model: ${EASYDOC_ILLUSTRATION_GENERATION_MODEL:gpt-image-2.5-sunburst}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   prompt:

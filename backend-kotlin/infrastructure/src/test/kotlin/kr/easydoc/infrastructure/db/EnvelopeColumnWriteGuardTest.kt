@@ -459,6 +459,9 @@ class EnvelopeColumnWriteGuardTest {
                 // (`replaceOwned`, `ON CONFLICT (conversion_id) DO UPDATE SET`) 하나 — 문장 둘이다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/" +
                     "JdbcIllustrationPlacementRepository.kt",
+                // R7 ER-18 생성 입력과 자산 metadata/PNG 회전 둘. 각 UPDATE가 공통 봉투를 함께 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/generation/" +
+                    "IllustrationGenerationKeyRotation.kt",
                 // R7 ER-17 결과 payload 의 키 회전 UPDATE 하나. 저장은 INSERT 라 SET 절이 없어
                 // 이 조사에 잡히지 않는다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/suggestion/" +
@@ -489,6 +492,9 @@ class EnvelopeColumnWriteGuardTest {
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
                 // 함께 쓴다(`completeConversion`).
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/KeyRotationBatchTest.kt",
+                // ER-18 전송 실패 회귀도 실제 암호화 입력과 봉투 메타데이터를 함께 심는다.
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/illustration/generation/" +
+                    "JdbcIllustrationGenerationJobFlowTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/TossStoreTest.kt",
             )
 
@@ -560,7 +566,9 @@ class EnvelopeColumnWriteGuardTest {
          * hand-off의 저장·auth scrub·회전 세 문장이다. 모두 암호문과 두 봉투 열을 같은
          * 문장에서 쓴다. consent retention 갱신은 암호문을 쓰지 않아 이 가드의 분모에는
          * 들어오지 않는다.
+         * 52 -> 54: ER-18 생성 입력 한 문장과 자산 metadata/PNG 원자 회전 한 문장.
+         * 54 -> 55: ER-18 전송 실패 회귀 fixture의 입력 암호문과 봉투 메타데이터 갱신 한 문장.
          */
-        const val EXPECTED_STATEMENTS = 52
+        const val EXPECTED_STATEMENTS = 55
     }
 }

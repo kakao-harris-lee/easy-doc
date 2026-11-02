@@ -72,6 +72,14 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/illustration-suggestion-jobs",
             "/conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}",
             "/conversions/{conversion_id}/illustration-suggestions",
+            // 생성 작업·비공개 자산·적용은 모두 인증 소유자 전용이다. 공개 카탈로그 이미지와 달리
+            // image/download도 Bearer 없이 접근할 수 없게 각각 등록한다.
+            "/conversions/{conversion_id}/illustration-generation-jobs",
+            "/conversions/{conversion_id}/illustration-generation-jobs/{job_id}",
+            "/conversions/{conversion_id}/generated-illustrations",
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}/image",
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}/download",
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}/application",
             // 재변환(P0-4 S4)도 같은 사유로 **따로** 넣는다.
             "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",

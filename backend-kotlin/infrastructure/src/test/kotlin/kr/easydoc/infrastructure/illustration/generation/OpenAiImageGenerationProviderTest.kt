@@ -56,12 +56,13 @@ class OpenAiImageGenerationProviderTest {
         assertThat(httpRequest.header("authorization")).isEqualTo("Bearer $TEST_API_KEY")
         assertThat(httpRequest.header("content-type")).contains("application/json")
         val body = json.readTree(httpRequest.body)
-        assertThat(body.path("model").stringValue("")).isEqualTo(DEFAULT_OPENAI_IMAGE_MODEL)
+        assertThat(body.path("model").stringValue("")).isEqualTo("gpt-image-2.5-sunburst")
         assertThat(body.path("prompt").stringValue("")).isEqualTo(SENSITIVE_PROMPT)
         assertThat(body.path("n").asInt()).isEqualTo(1)
         assertThat(body.path("size").stringValue("")).isEqualTo("1024x1024")
+        assertThat(body.path("quality").stringValue("")).isEqualTo("medium")
         assertThat(body.path("output_format").stringValue("")).isEqualTo("png")
-        assertThat(body.size()).isEqualTo(5)
+        assertThat(body.size()).isEqualTo(6)
         assertThat(result.record.purpose).isEqualTo(LlmCallPurpose.ILLUSTRATION_GENERATION)
         assertThat(result.record.provider).isEqualTo("openai")
         assertThat(result.record.model).isEqualTo(DEFAULT_OPENAI_IMAGE_MODEL)
@@ -78,6 +79,8 @@ class OpenAiImageGenerationProviderTest {
 
         assertThat(json.readTree(server.singleRequest().body).path("model").stringValue(""))
             .isEqualTo("gpt-image-custom")
+        assertThat(json.readTree(server.singleRequest().body).path("quality").stringValue(""))
+            .isEqualTo("medium")
     }
 
     @Test

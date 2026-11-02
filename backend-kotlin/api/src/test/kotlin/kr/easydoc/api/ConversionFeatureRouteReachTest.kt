@@ -49,6 +49,9 @@ import java.util.UUID
         "easydoc.illustration-suggestions.enabled=true",
         // 단가가 없으면 접수가 503이라 기능이 노출되지 않는다 — 소유권 판정이 공회전한다.
         "easydoc.illustration-suggestions.credits-per-100-chars=0.1",
+        "easydoc.illustration-generation.enabled=true",
+        "easydoc.illustration-generation.credits-per-image=0.5",
+        "easydoc.illustration-generation.provider-cost-usd-per-image=0.01",
     ],
 )
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -174,6 +177,62 @@ class ConversionFeatureRouteReachTest {
             absentJob,
             foreignJob,
         )
+    }
+
+    @Test
+    fun `타인 그림 생성 작업 조회는 404다`() {
+        val mine = newAccount()
+        val theirs = doneConversion(newAccount())
+        val theirJob = seedGenerationJob(theirs)
+        val myDone = doneConversion(mine)
+        val myConversion = myDone.conversionId
+        val myJob = seedGenerationJob(myDone)
+
+        assertThat(getBytes(mine, GENERATION_JOBS_PATH.forConversion(myConversion)).statusCode()).isEqualTo(OK)
+        assertThat(getBytes(mine, generationJobPath(myConversion, myJob)).statusCode()).isEqualTo(OK)
+
+        val foreignConversion = getBytes(mine, generationJobPath(theirs.conversionId, theirJob))
+        val absentConversion = getBytes(mine, generationJobPath(UUID.randomUUID(), UUID.randomUUID()))
+        assertThat(foreignConversion.statusCode()).isEqualTo(NOT_FOUND)
+        OwnershipConcealment.assertIndistinguishable(
+            "GET $GENERATION_JOB_PATH (남의 변환)",
+            absentConversion,
+            foreignConversion,
+        )
+
+        val foreignJob = getBytes(mine, generationJobPath(myConversion, theirJob))
+        val absentJob = getBytes(mine, generationJobPath(myConversion, UUID.randomUUID()))
+        assertThat(foreignJob.statusCode()).isEqualTo(NOT_FOUND)
+        OwnershipConcealment.assertIndistinguishable(
+            "GET $GENERATION_JOB_PATH (내 변환·남의 작업)",
+            absentJob,
+            foreignJob,
+        )
+    }
+
+    private fun generationJobPath(
+        conversionId: UUID,
+        jobId: UUID,
+    ): String = GENERATION_JOB_PATH.forConversion(conversionId).replace("{$JOB_ID_VARIABLE}", jobId.toString())
+
+    private fun seedGenerationJob(seeded: Seeded): UUID {
+        val jobId = UUID.randomUUID()
+        database.execute(
+            """
+            INSERT INTO illustration_generation_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 suggestion_result_id, suggestion_id, analysis_version, configuration_revision,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 input_payload_encrypted, encryption_scheme, key_version,
+                 status, reserved_credits, settlement)
+            SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${seeded.conversionId}',
+                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-2', '$FINGERPRINT',
+                   1, 1, '$FINGERPRINT', '\\x03'::bytea, 'aes256gcm-v1', 1,
+                   'succeeded', 1.0, 'consumed'
+            FROM documents d WHERE d.id = '${seeded.documentId}'
+            """.trimIndent(),
+        )
+        return jobId
     }
 
     /** 남의 문서에서 소유자·작업 공간을 그대로 읽어 제안 작업 행 하나를 심는다. */
@@ -322,8 +381,11 @@ class ConversionFeatureRouteReachTest {
         private const val PLACEMENTS_PATH = "/conversions/{conversion_id}/illustration-placements"
         private const val SUGGESTION_JOBS_PATH = "/conversions/{conversion_id}/illustration-suggestion-jobs"
         private const val SUGGESTIONS_PATH = "/conversions/{conversion_id}/illustration-suggestions"
+        private const val GENERATION_JOBS_PATH = "/conversions/{conversion_id}/illustration-generation-jobs"
+        private const val GENERATED_ILLUSTRATIONS_PATH = "/conversions/{conversion_id}/generated-illustrations"
         private const val JOB_PATH = "$ACTION_GUIDE_JOBS_PATH/{job_id}"
         private const val SUGGESTION_JOB_PATH = "$SUGGESTION_JOBS_PATH/{job_id}"
+        private const val GENERATION_JOB_PATH = "$GENERATION_JOBS_PATH/{job_id}"
 
         /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
         private const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -353,6 +415,8 @@ class ConversionFeatureRouteReachTest {
                 PLACEMENTS_PATH,
                 SUGGESTION_JOBS_PATH,
                 SUGGESTIONS_PATH,
+                GENERATION_JOBS_PATH,
+                GENERATED_ILLUSTRATIONS_PATH,
             )
 
         /** 기능 토글이 다른 Spring 컨텍스트라 다른 테스트와 DB 를 공유하지 않는다. */

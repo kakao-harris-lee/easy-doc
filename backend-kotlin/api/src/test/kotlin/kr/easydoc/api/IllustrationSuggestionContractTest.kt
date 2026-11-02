@@ -166,6 +166,7 @@ class IllustrationSuggestionContractTest {
                     requiredCredits = BigDecimal("0.2"),
                     suggestions = listOf(suggestion()),
                     droppedCount = 2,
+                    analysisVersion = "test-version",
                 ),
             )
 
@@ -181,9 +182,11 @@ class IllustrationSuggestionContractTest {
                 "required_credits",
                 "suggestions",
                 "dropped_count",
+                "analysis_version",
             )
         assertThat(body["status"].asString()).isEqualTo("ready")
         assertThat(body["dropped_count"].asInt()).isEqualTo(2)
+        assertThat(body["analysis_version"].asString()).isEqualTo("test-version")
         val suggestion = body["suggestions"][0]
         assertThat(suggestion.propertyNames())
             .containsExactlyInAnyOrder(
@@ -195,8 +198,10 @@ class IllustrationSuggestionContractTest {
                 "scenes",
                 "preserved_facts",
                 "alt_text_draft",
+                "configuration_revision",
             )
         assertThat(suggestion["purpose"].asString()).isEqualTo("procedure")
+        assertThat(suggestion["configuration_revision"].asString()).matches("[0-9a-f]{64}")
         assertThat(suggestion["body_range"].propertyNames()).containsExactlyInAnyOrder("start", "end")
         assertThat(suggestion["source_anchors"][0].propertyNames())
             .containsExactlyInAnyOrder("source_unit_indexes", "quote")
@@ -223,6 +228,7 @@ class IllustrationSuggestionContractTest {
 
         assertThat(body["status"].asString()).isEqualTo("not_analyzed")
         assertThat(body["based_on_content_revision"].isNull).isTrue()
+        assertThat(body["analysis_version"].isNull).isTrue()
         assertThat(body["suggestions"]).isEmpty()
     }
 
