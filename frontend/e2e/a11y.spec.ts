@@ -565,9 +565,11 @@ test.describe('접근성 — 320px', () => {
     await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
       timeout: 90_000,
     })
-    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
-    await page.getByRole('button', { name: '의견 보내기 (선택)', exact: true }).click()
-    await expect(page.getByRole('button', { name: '그림 제안 확인', exact: true })).toBeVisible()
+    // 그림 기능은 관리자 허용 계정에서만 노출한다. 이 일반 계정에는 검수 화면의
+    // 그림 진입 버튼도 없어야 한다.
+    await expect(
+      page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }),
+    ).toHaveCount(0)
     overflow = await horizontalOverflow(page)
     expect(overflow.culprits.join('\n'), '검수가 가로로 넘친다').toBe('')
     expect(undersized(await touchTargets(page)), '검수의 작은 터치 대상').toEqual([])
