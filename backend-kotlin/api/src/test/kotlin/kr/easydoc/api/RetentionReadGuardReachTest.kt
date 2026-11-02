@@ -286,7 +286,7 @@ class RetentionReadGuardReachTest {
 
     @Test
     fun `만료된 문서의 생성 자산 목록과 PNG 조회 다운로드는 404다`() {
-        val fixture = completedConversion()
+        val fixture = completedConversion(allowIllustrations = true)
         val assetId = seedGeneratedAsset(fixture)
         val imagePath = GENERATED_IMAGE_PATH.forConversionAsset(fixture.conversionId, assetId)
         assertThat(send(get(fixture.token, imagePath)).statusCode()).isEqualTo(OK)
@@ -371,8 +371,8 @@ class RetentionReadGuardReachTest {
     // ================================================================ 배경 세우기
 
     /** 완료된 변환 하나 — 초안·검수본까지 채워 **조회가 실제로 본문을 싣는** 상태다. */
-    private fun completedConversion(): Fixture {
-        val token = newAccount()
+    private fun completedConversion(allowIllustrations: Boolean = false): Fixture {
+        val token = newAccount(allowIllustrations)
         val (documentId, conversionId) = createDocument(token)
         val edited = cipher.encrypt(PlainBody(STORED_EDITED), conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
         database.execute(
@@ -422,14 +422,24 @@ class RetentionReadGuardReachTest {
 
     // ================================================================ 요청 조립
 
-    private fun newAccount(): String {
+    private fun newAccount(allowIllustrations: Boolean = false): String {
         val email = "retentionguard${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf(EMAIL_PROPERTY to email, PASSWORD_PROPERTY to VALID_PASSWORD))
         send(post(null, credentials, SIGNUP_PATH))
         // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
         // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
         database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
-        return bodyOf(send(post(null, credentials, LOGIN_PATH))).required(ACCESS_TOKEN_PROPERTY).toString()
+        val token = bodyOf(send(post(null, credentials, LOGIN_PATH))).required(ACCESS_TOKEN_PROPERTY).toString()
+        if (allowIllustrations) {
+            // DB 는 테스트 메서드 사이에서 유지된다. 기존 관리자 이메일을 비운 뒤 이 fixture
+            // 사용자를 allowlist 주소로 지정한다.
+            database.execute(
+                "UPDATE users SET email = 'former-illustration-owner-' || id || '@example.test' " +
+                    "WHERE email = 'chihunlee@gmail.com'",
+            )
+            database.execute("UPDATE users SET email = 'chihunlee@gmail.com' WHERE email = '$email'")
+        }
+        return token
     }
 
     private fun createDocument(token: String): Pair<UUID, UUID> {
