@@ -9,8 +9,7 @@ import java.util.UUID
 /** Server-side allowlist for every illustration capability and asset route. */
 @Component
 class IllustrationAccessGuard(private val auth: AuthService) {
-    fun allows(userId: UUID): Boolean =
-        auth.readUser(userId).email.equals(ALLOWED_EMAIL, ignoreCase = true)
+    fun allows(userId: UUID): Boolean = auth.readUser(userId).email.equals(ALLOWED_EMAIL, ignoreCase = true)
 
     fun requireAllowed(userId: UUID) {
         if (!allows(userId)) throw NotFoundException(ILLUSTRATION_NOT_FOUND_MESSAGE)
