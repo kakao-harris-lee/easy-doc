@@ -504,13 +504,16 @@ export function getIllustrations(signal?: AbortSignal): Promise<IllustrationCata
   return requestJson<IllustrationCatalogResponse>('/illustrations', { signal })
 }
 
-/**
- * `Illustration.image_url`(API 상대 경로)을 절대 URL로 만든다.
- *
- * `GET /illustrations/{asset_id}/image`는 인증이 필요 없어 `<img src>`에 바로 쓸 수
- * 있다 — 다만 상대 경로라 화면의 origin이 API와 다른 개발 환경에서는 API base와 합쳐야
- * 한다.
- */
+/** GET /illustrations/{asset_id}/image — 인증된 카탈로그 PNG를 Blob으로 읽는다. */
+export async function getIllustrationImage(
+  imageUrl: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await send(imageUrl, { signal })
+  return response.blob()
+}
+
+/** Legacy helper for API URL construction; rendered catalog images use the authenticated Blob API. */
 export function illustrationImageUrl(imageUrl: string): string {
   return `${BASE_URL}${imageUrl}`
 }
