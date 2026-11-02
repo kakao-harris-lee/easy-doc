@@ -200,7 +200,9 @@ class AuthSliceBeans {
     @Bean
     fun illustrationAccessGuard(): IllustrationAccessGuard {
         val guard = org.mockito.Mockito.mock(IllustrationAccessGuard::class.java)
-        org.mockito.Mockito.`when`(guard.allows(org.mockito.Mockito.any(java.util.UUID::class.java))).thenReturn(true)
+        org.mockito.Mockito
+            .`when`(guard.allows(org.mockito.Mockito.any(java.util.UUID::class.java)))
+            .thenReturn(true)
         return guard
     }
 
