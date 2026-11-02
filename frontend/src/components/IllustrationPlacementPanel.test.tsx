@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getIllustrationImage,
   getIllustrationPlacements,
   getIllustrations,
   putIllustrationPlacements,
@@ -14,6 +15,7 @@ import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   getIllustrations: vi.fn(),
+  getIllustrationImage: vi.fn(),
   getIllustrationPlacements: vi.fn(),
   putIllustrationPlacements: vi.fn(),
 }))
@@ -50,12 +52,20 @@ function placementsResponse(
 
 beforeEach(() => {
   vi.mocked(getIllustrations).mockReset()
+  vi.mocked(getIllustrationImage).mockReset()
+  vi.mocked(getIllustrationImage).mockResolvedValue(new Blob(['image']))
+  vi.stubGlobal('URL', {
+    ...URL,
+    createObjectURL: vi.fn(() => 'blob:illustration'),
+    revokeObjectURL: vi.fn(),
+  })
   vi.mocked(getIllustrationPlacements).mockReset()
   vi.mocked(putIllustrationPlacements).mockReset()
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('IllustrationPlacementPanel', () => {

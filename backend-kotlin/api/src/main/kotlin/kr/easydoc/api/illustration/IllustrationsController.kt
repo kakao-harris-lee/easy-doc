@@ -2,6 +2,7 @@ package kr.easydoc.api.illustration
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.api.MIGRATE_PROFILE
+import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.api.config.privateResponse
 import kr.easydoc.application.illustration.ILLUSTRATION_NOT_FOUND_MESSAGE
 import kr.easydoc.application.illustration.IllustrationsService
@@ -18,21 +19,23 @@ import org.springframework.web.bind.annotation.RestController
 
 @Profile("!$MIGRATE_PROFILE")
 @RestController
-class IllustrationsController(private val service: IllustrationsService) {
+class IllustrationsController(
+    private val service: IllustrationsService,
+    private val illustrationAccess: IllustrationAccessGuard,
+) {
     @GetMapping(ILLUSTRATIONS_PATH)
-    fun list(): ResponseEntity<IllustrationCatalogResponse> =
-        ResponseEntity
+    fun list(user: AuthenticatedUser): ResponseEntity<IllustrationCatalogResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
             .privateResponse()
             .body(IllustrationCatalogResponse.of(service.list()))
+    }
 
     /**
-     * **인증이 없다** (계약 `security: []`) — `<img src>`는 `Authorization` 헤더를 보낼 수
-     * 없고, 이 바이트는 사용자 콘텐츠가 아니라 공공기관이 배포하는 고정 픽토그램이다.
-     * `AuthenticatedEndpoints.PROTECTED_PATH_PATTERNS`에 `/illustrations`만 있고 이 하위
-     * 경로가 없는 것은 **의도적이다** — 인터셉터 패턴이 하위 경로를 덮지 않는 이 저장소의
-     * 함정(`AuthenticatedEndpoints` 주석)이 여기서는 오히려 원하는 성질이다.
+     * 관리자 allowlist 인증이 필요하다. 브라우저의 `<img src>`는 Bearer 헤더를 보낼 수
+     * 없으므로 프런트엔드는 인증된 fetch 결과를 object URL로 표시해야 한다.
      *
      * `asset_id`가 [IllustrationAssetId.parse]에 실패하면 서비스를 부르지 않고 서비스가
      * 내는 404와 **같은 문구**를 낸다 — 존재를 숨긴다(형식 오류와 미존재를 구분하지 않는다).
@@ -53,8 +56,10 @@ class IllustrationsController(private val service: IllustrationsService) {
      */
     @GetMapping(ILLUSTRATION_IMAGE_PATH)
     fun image(
+        user: AuthenticatedUser,
         @PathVariable(ASSET_ID) rawAssetId: String,
     ): ResponseEntity<ByteArray> {
+        illustrationAccess.requireAllowed(user.id)
         val assetId = IllustrationAssetId.parse(rawAssetId) ?: throw NotFoundException(ILLUSTRATION_NOT_FOUND_MESSAGE)
         val image = service.image(assetId)
         return ResponseEntity

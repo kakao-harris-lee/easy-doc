@@ -4,11 +4,11 @@ import {
   ApiError,
   getIllustrationPlacements,
   getIllustrations,
-  illustrationImageUrl,
   putIllustrationPlacements,
 } from '../api/client'
 import type { Illustration, IllustrationPlacement } from '../api/types'
 import { Button } from './ui/Button'
+import { IllustrationImage } from './IllustrationImage'
 
 interface IllustrationPlacementPanelProps {
   conversionId: string
@@ -275,8 +275,8 @@ export function IllustrationPlacementPanel({
                       <div key={index}>
                         {item && (
                           <figure className="flex flex-col items-start gap-1">
-                            <img
-                              src={illustrationImageUrl(item.image_url)}
+                            <IllustrationImage
+                              imageUrl={item.image_url}
                               alt={item.alt_text}
                               width={64}
                               height={64}

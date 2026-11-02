@@ -12,7 +12,7 @@
 - **그림은 직접 그린 픽토그램이다.** `viewBox 0 0 64 64` 선 그림, 외부 참조·스크립트·래스터 없음, 라이선스 CC0-1.0. 임의 생성 이미지 호출은 명세대로 없다.
 - **검수 상태가 게이트다.** 도메인 `Illustration`은 `reviewed`면 검수자·일자가 반드시 있고 `unreviewed`면 둘 다 없다. `IllustrationCatalog.selectable()`은 `reviewed`만 남긴다. 유스케이스는 꺼짐·미존재·미검수를 **같은 404**로 낸다(존재 은닉).
 - **최대 10종은 도메인 불변식이다.** `IllustrationCatalog.MAX_ENTRIES = 10`, 초과나 id 중복은 카탈로그 로드 자체가 실패한다. 리소스 로더는 lazy가 아니라 기동 시 즉시 로드·검증하므로 잘못된 카탈로그는 부팅 실패로 드러난다.
-- **이미지 엔드포인트는 공개다.** `<img src>`는 Bearer 헤더를 보낼 수 없고 카탈로그는 사용자 데이터가 아니다. `AuthenticatedEndpoints`에 `/illustrations`만 넣고 `/illustrations/{asset_id}/image`는 뺐다 — 인터셉터가 하위 경로를 덮지 않는다는 이 저장소의 성질이 여기서는 필요한 쪽으로 작용한다. 응답에는 `X-Content-Type-Options: nosniff`·`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`·`Content-Disposition: inline`을 붙인다.
+- **당시 이미지 엔드포인트는 공개였다.** `<img src>`가 Bearer 헤더를 보낼 수 없다는 이유로 `/illustrations/{asset_id}/image`에 인증을 두지 않았지만, 2026-11-02부터 카탈로그 목록과 이미지는 `chihunlee@gmail.com` 계정으로 제한한다. 브라우저는 인증된 fetch로 이미지를 받아 표시한다. 응답에는 `X-Content-Type-Options: nosniff`·`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`·`Content-Disposition: inline`을 붙인다.
 - **`Cache-Control`은 `no-store`다.** 지침은 `public, max-age=86400`이었으나 이 저장소는 전역 필터가 모든 응답에 `no-store`를 박고, 계약 테스트가 「같은 헤더 이름은 같은 선언」을 강제한다(다른 값을 선언하면 28개 테스트 클래스가 깨지는 것을 실행 에이전트가 실측). 공개 캐싱은 그 전역 불변식을 다시 설계하는 별도 결정이라 이번엔 따르지 않았다.
 - **`IllustrationAssetId`는 value class가 아니다.** `SensitiveToStringReachTest`의 표본 생성기가 클래스패스의 모든 value class 생성자를 임의 문자열로 호출해 `require`가 게이트 밖에서 터지므로, `BusinessNumber`와 같은 일반 class + private 생성자 패턴을 썼다.
 - **검수자 표기.** 카탈로그 10건 모두 `reviewed_by: harris.lee`, `reviewed_at: 2026-09-23`. 이 커밋을 검수 행위로 본 오케스트레이터 결정이며, 머지 전에 항목을 `unreviewed`로 돌리면 그 항목은 목록·이미지에서 빠진다.

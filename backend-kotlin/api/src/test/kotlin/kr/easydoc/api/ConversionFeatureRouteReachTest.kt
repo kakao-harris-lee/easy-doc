@@ -67,7 +67,7 @@ class ConversionFeatureRouteReachTest {
     @ParameterizedTest(name = "GET {0}")
     @MethodSource("ownedGetRoutes")
     fun `타인 변환의 기능 라우트 조회는 404 이고 없는 것과 구별되지 않는다`(template: String) {
-        val mine = newAccount()
+        val mine = newAccount(allowIllustrations = true)
         val myConversion = doneConversion(mine).conversionId
         val theirs = doneConversion(newAccount()).conversionId
 
@@ -91,7 +91,7 @@ class ConversionFeatureRouteReachTest {
     @Test
     @DisplayName("타인 변환에 그림 배치 저장(PUT) → 404 · 없는 변환과 응답이 구별되지 않는다")
     fun `타인 변환의 그림 배치 저장은 404 다`() {
-        val mine = newAccount()
+        val mine = newAccount(allowIllustrations = true)
         val theirs = doneConversion(newAccount()).conversionId
         val body = json.writeValueAsString(mapOf("expected_content_revision" to 1, "placements" to emptyList<Any>()))
 
@@ -110,7 +110,7 @@ class ConversionFeatureRouteReachTest {
     @Test
     @DisplayName("타인 행동 안내 작업 조회 → 404 · 남의 변환으로도 내 변환 위의 남의 작업으로도 존재가 새지 않는다")
     fun `타인 행동 안내 작업 조회는 404 다`() {
-        val mine = newAccount()
+        val mine = newAccount(allowIllustrations = true)
         val theirs = doneConversion(newAccount())
         val theirJob = seedActionGuideJob(theirs)
         val myDone = doneConversion(mine)
@@ -142,7 +142,7 @@ class ConversionFeatureRouteReachTest {
     @Test
     @DisplayName("타인 그림 제안 작업 조회 → 404 · 남의 변환으로도 내 변환 위의 남의 작업으로도 존재가 새지 않는다")
     fun `타인 그림 제안 작업 조회는 404 다`() {
-        val mine = newAccount()
+        val mine = newAccount(allowIllustrations = true)
         val theirs = doneConversion(newAccount())
         val theirJob = seedSuggestionJob(theirs)
         val myDone = doneConversion(mine)
@@ -181,7 +181,7 @@ class ConversionFeatureRouteReachTest {
 
     @Test
     fun `타인 그림 생성 작업 조회는 404다`() {
-        val mine = newAccount()
+        val mine = newAccount(allowIllustrations = true)
         val theirs = doneConversion(newAccount())
         val theirJob = seedGenerationJob(theirs)
         val myDone = doneConversion(mine)
@@ -274,15 +274,26 @@ class ConversionFeatureRouteReachTest {
         return jobId
     }
 
-    private fun newAccount(): String {
+    private fun newAccount(allowIllustrations: Boolean = false): String {
         val email = "featureroute${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
         send(jsonRequest(SIGNUP_PATH, null).POST(bodyPublisher(credentials)))
         // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않는다.
         database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
-        return bodyOf(send(jsonRequest(LOGIN_PATH, null).POST(bodyPublisher(credentials))))
-            .getValue("access_token")
-            .toString()
+        val token =
+            bodyOf(send(jsonRequest(LOGIN_PATH, null).POST(bodyPublisher(credentials))))
+                .getValue("access_token")
+                .toString()
+        if (allowIllustrations) {
+            // DB 는 테스트 메서드 사이에서 유지된다. 이전 관리자 이메일을 비운 뒤 이번 테스트
+            // 소유자를 allowlist 주소로 바꿔, 동일한 고정 주소로 순차 실행할 수 있게 한다.
+            database.execute(
+                "UPDATE users SET email = 'former-illustration-owner-' || id || '@example.test' " +
+                    "WHERE email = 'chihunlee@gmail.com'",
+            )
+            database.execute("UPDATE users SET email = 'chihunlee@gmail.com' WHERE email = '$email'")
+        }
+        return token
     }
 
     /** 완료 상태의 변환 하나 — 워커가 할 일을 SQL 로 대신한다. */

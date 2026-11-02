@@ -25,9 +25,9 @@ interface CreatedJob {
   status: string
 }
 
-/** 각 시나리오가 다른 계정·문서를 쓴다 — 작업·이용량 상태를 테스트 사이에 공유하지 않는다. */
-async function openConvertedDocument(page: Page): Promise<string> {
-  const account = newAccount()
+/** 허용 관리자 이메일로 그림 제안 E2E용 변환을 만든다. */
+async function openConvertedDocument(page: Page, email: string): Promise<string> {
+  const account = { ...newAccount(), email }
   await signUpAndLand(page, account)
   await verifyEmail(page, account)
   await page.getByLabel('문서 제목').fill(`E2E 그림 제안 ${crypto.randomUUID().slice(0, 8)}`)
@@ -56,7 +56,9 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     test.setTimeout(180_000)
 
     const log = new NetworkLog(page, API_BASE_URL)
-    const conversionId = await openConvertedDocument(page)
+    // The API/UI illustration gate deliberately admits only the owner email. E2E runs
+    // against a fresh isolated database with synthetic mail/SMS inboxes.
+    const conversionId = await openConvertedDocument(page, 'chihunlee@gmail.com')
     const conversionPath = `/conversions/${conversionId}`
     const suggestionsPath = `${conversionPath}/illustration-suggestions`
     const jobsPath = `${conversionPath}/illustration-suggestion-jobs`

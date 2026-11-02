@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.api.config.privateResponse
+import kr.easydoc.api.illustration.IllustrationAccessGuard
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobCollectionView
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobCreationView
 import kr.easydoc.application.illustration.suggestion.IllustrationSuggestionJobService
@@ -42,21 +43,25 @@ import java.util.UUID
 class IllustrationSuggestionController(
     private val jobs: IllustrationSuggestionJobService,
     private val results: IllustrationSuggestionResultService,
+    private val illustrationAccess: IllustrationAccessGuard,
 ) {
     @GetMapping(SUGGESTION_JOBS_PATH)
     fun listJobs(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
-    ): ResponseEntity<IllustrationSuggestionJobCollectionResponse> =
-        ok(IllustrationSuggestionJobCollectionResponse.of(jobs.list(user.id, conversionId)))
+    ): ResponseEntity<IllustrationSuggestionJobCollectionResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(IllustrationSuggestionJobCollectionResponse.of(jobs.list(user.id, conversionId)))
+    }
 
     @PostMapping(SUGGESTION_JOBS_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun createJob(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @Valid @RequestBody request: IllustrationSuggestionJobCreateRequest,
-    ): ResponseEntity<IllustrationSuggestionJobResponse> =
-        accepted(
+    ): ResponseEntity<IllustrationSuggestionJobResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return accepted(
             conversionId,
             jobs.create(
                 ownerId = user.id,
@@ -65,21 +70,26 @@ class IllustrationSuggestionController(
                 expectedContentRevision = request.expectedContentRevision,
             ),
         )
+    }
 
     @GetMapping(SUGGESTION_JOB_PATH)
     fun getJob(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(JOB_ID) jobId: UUID,
-    ): ResponseEntity<IllustrationSuggestionJobResponse> =
-        ok(IllustrationSuggestionJobResponse.of(jobs.get(user.id, conversionId, jobId)))
+    ): ResponseEntity<IllustrationSuggestionJobResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(IllustrationSuggestionJobResponse.of(jobs.get(user.id, conversionId, jobId)))
+    }
 
     @GetMapping(SUGGESTIONS_PATH)
     fun getSuggestions(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
-    ): ResponseEntity<IllustrationSuggestionsResponse> =
-        ok(IllustrationSuggestionsResponse.of(results.get(user.id, conversionId)))
+    ): ResponseEntity<IllustrationSuggestionsResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(IllustrationSuggestionsResponse.of(results.get(user.id, conversionId)))
+    }
 
     private fun <T : Any> ok(body: T): ResponseEntity<T> =
         ResponseEntity

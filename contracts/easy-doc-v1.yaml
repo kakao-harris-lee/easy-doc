@@ -3811,7 +3811,8 @@ paths:
       description: |
         검수(reviewed)된 항목만 카탈로그에 실린 순서 그대로 낸다 — 검수되지 않은 항목은
         선택할 수 없다(AC-R7-a). 최대 10종이다. 배치·본문 삽입은 이 오퍼레이션의 범위가
-        아니다(ER-16). 기능이 꺼져 있으면(`easydoc.illustrations.enabled`, 기본 OFF) 404다.
+        아니다(ER-16). `chihunlee@gmail.com` 계정만 사용할 수 있다. 기능이 꺼져 있거나
+        계정이 허용되지 않으면 404다. 기능 토글은 `easydoc.illustrations.enabled`(기본 OFF)다.
       responses:
         '200':
           description: 검수된 그림 목록
@@ -3823,7 +3824,7 @@ paths:
               schema: { $ref: '#/components/schemas/IllustrationCatalogResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 기능이 꺼져 있다 — 토글 `easydoc.illustrations.enabled` 기본 OFF.
+          description: 기능이 꺼져 있거나 계정이 허용되지 않았다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3837,13 +3838,13 @@ paths:
       tags: [illustrations]
       operationId: readIllustrationImage
       summary: 그림 한 장의 SVG 바이트 (ER-15)
-      security: []
+      security: [{ HTTPBearer: [] }]
       description: |
-        **인증이 없다.** `<img src>`는 `Authorization` 헤더를 보낼 수 없고, 이 바이트는
-        공공기관이 배포하는 고정 픽토그램이라 사용자 콘텐츠가 아니다. 기능 OFF·미존재·
-        미검수 셋을 구분하지 않는 같은 404다(존재 은닉) — 검수되지 않은 항목은 이미지도
-        내지 않는다(AC-R7-a). `asset_id`가 형식을 어기면(대문자·구분자 등) 서비스를 부르지
-        않고 같은 404다.
+        Bearer 인증이 필요하며 `chihunlee@gmail.com` 계정만 사용할 수 있다. 브라우저의
+        `<img src>`는 `Authorization` 헤더를 보낼 수 없으므로 프런트엔드는 인증된 fetch로
+        바이트를 받아 표시한다. 기능 OFF·허용되지 않은 계정·미존재·미검수 넷을 구분하지
+        않는 같은 404다(존재 은닉) — 검수되지 않은 항목은 이미지도 내지 않는다(AC-R7-a).
+        `asset_id`가 형식을 어기면(대문자·구분자 등) 서비스를 부르지 않고 같은 404다.
 
         **`asset_id`가 공백뿐이면 404가 아니라 422다** — 이 저장소의 전역
         `TypedValueSlotInterceptor`가 경로·쿼리의 모든 값 자리에서 공백뿐인 입력을
@@ -3855,11 +3856,10 @@ paths:
           required: true
           schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,39}$' }
       responses:
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '200':
           description: |
-            그림 SVG 바이트. `Cache-Control`은 이 저장소의 전역 불변식대로 `no-store`다
-            (`x-global-response-headers` — 이 바이트 자체는 캐시해도 되는 공개 픽토그램이지만,
-            이 값을 다르게 선언하면 그 전역 불변식과 `ContractSpec`의 헤더 일관성 검사가 깨진다).
+            그림 SVG 바이트. `Cache-Control`은 이 저장소의 전역 불변식대로 `no-store`다.
           headers:
             Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
             X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
@@ -3882,7 +3882,7 @@ paths:
             image/svg+xml:
               schema: { type: string, format: binary }
         '404':
-          description: 기능 OFF·미존재·미검수·형식 위반 — 넷을 구분하지 않는다.
+          description: 기능 OFF·허용되지 않은 계정·미존재·미검수·형식 위반 — 다섯을 구분하지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -9018,7 +9018,7 @@ components:
           description: 쉬운 글 문장체 사용 예시 1~3개.
         image_url:
           type: string
-          description: '`GET /illustrations/{asset_id}/image`의 상대 경로. 인증 없이 호출한다.'
+          description: '`GET /illustrations/{asset_id}/image`의 상대 경로. 허용 계정의 Bearer 인증이 필요하다.'
 
     IllustrationPurpose:
       type: string
@@ -11758,12 +11758,11 @@ x-changelog:
       그림 카탈로그(ER-15, 최대 10종의 검수된 픽토그램)를 조회하는
       `GET /illustrations`와, 그림 한 장의 SVG 바이트를 내려주는
       `GET /illustrations/{asset_id}/image`를 추가한다. 목록은 검수(reviewed)된 항목만
-      본문 등장 순서 그대로 낸다. 이미지 엔드포인트는 `<img src>`가 인증 헤더를 보낼 수
-      없어 공개(`security: []`)이고, 기능 OFF·미존재·미검수를 구분하지 않는 같은 404다.
-      이미지 200 응답의 `Cache-Control`은 `no-store`다 — 이 바이트는 캐시해도 되는 공개
-      픽토그램이지만, `x-global-response-headers`가 이 값을 전역 하나로 못박고
+      본문 등장 순서 그대로 낸다. 현재 카탈로그와 이미지 엔드포인트는 Bearer 인증을 요구하며
+      `chihunlee@gmail.com` 계정만 사용할 수 있다. 이미지 200 응답의 `Cache-Control`은
+      `no-store`다 — `x-global-response-headers`가 이 값을 전역 하나로 못박고
       `ContractSpec`이 그 일관성을 검사하므로 이 오퍼레이션만 다른 값을 쓰지 않는다
-      (공개 캐싱은 그 전역 불변식을 다시 설계해야 하는 별도 결정이다).
+      (캐싱 정책 변경은 그 전역 불변식을 다시 설계해야 하는 별도 결정이다).
     ground: |
       G2: R7 구현 사용자 요청과 AC-R7-a(검수되지 않은 항목은 선택 불가).
     compatibility: |

@@ -58,12 +58,10 @@ object AuthenticatedEndpoints {
             // 추가 설명 조회(R6, ER-14)도 같은 사유로 **따로** 넣는다 — 인터셉터 패턴이
             // 하위 경로를 덮지 않는다.
             "/conversions/{conversion_id}/explanations",
-            // 그림 카탈로그 목록(ER-15) — `GET /illustrations/{asset_id}/image`는 **의도적으로**
-            // 여기 없다. `<img src>`는 Bearer 헤더를 보낼 수 없어 그 엔드포인트는 계약상
-            // 공개(`security: []`)다. 인터셉터 패턴이 하위 경로를 덮지 않는 이 저장소의 함정이
-            // 여기서는 오히려 원하는 성질이다 — `/illustrations` 하나만 넣으면 이미지 경로는
-            // 자동으로 인증 밖에 남는다.
+            // 카탈로그와 이미지 모두 허용 관리자만 볼 수 있다. 이미지 요청에는 프런트엔드가
+            // Bearer 토큰을 붙여야 한다.
             "/illustrations",
+            "/illustrations/{asset_id}/image",
             // 그림 배치(ER-16)도 같은 사유로 **따로** 넣는다 — 인터셉터 패턴이 하위 경로를
             // 덮지 않는다.
             "/conversions/{conversion_id}/illustration-placements",
@@ -72,7 +70,7 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/illustration-suggestion-jobs",
             "/conversions/{conversion_id}/illustration-suggestion-jobs/{job_id}",
             "/conversions/{conversion_id}/illustration-suggestions",
-            // 생성 작업·비공개 자산·적용은 모두 인증 소유자 전용이다. 공개 카탈로그 이미지와 달리
+            // 생성 작업·비공개 자산·적용은 모두 인증 소유자 전용이다. 카탈로그 이미지와 마찬가지로
             // image/download도 Bearer 없이 접근할 수 없게 각각 등록한다.
             "/conversions/{conversion_id}/illustration-generation-jobs",
             "/conversions/{conversion_id}/illustration-generation-jobs/{job_id}",

@@ -35,12 +35,18 @@ import java.util.UUID
  */
 @Profile("!$MIGRATE_PROFILE")
 @RestController
-class IllustrationPlacementController(private val service: IllustrationPlacementService) {
+class IllustrationPlacementController(
+    private val service: IllustrationPlacementService,
+    private val illustrationAccess: IllustrationAccessGuard,
+) {
     @GetMapping(PLACEMENTS_PATH)
     fun read(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
-    ): ResponseEntity<IllustrationPlacementsResponse> = response(service.read(user.id, conversionId))
+    ): ResponseEntity<IllustrationPlacementsResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return response(service.read(user.id, conversionId))
+    }
 
     @PutMapping(PLACEMENTS_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun replace(
@@ -48,6 +54,7 @@ class IllustrationPlacementController(private val service: IllustrationPlacement
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @Valid @RequestBody request: IllustrationPlacementsRequest,
     ): ResponseEntity<IllustrationPlacementsResponse> {
+        illustrationAccess.requireAllowed(user.id)
         val entries = request.placements.map(::toDomainEntry)
         val saved =
             service.replace(user.id, conversionId, request.expectedContentRevision, IllustrationPlacements(entries))

@@ -6,6 +6,7 @@ import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.api.config.privateResponse
+import kr.easydoc.api.illustration.IllustrationAccessGuard
 import kr.easydoc.application.illustration.generation.GeneratedIllustrationAssetService
 import kr.easydoc.application.illustration.generation.GeneratedIllustrationCollectionView
 import kr.easydoc.application.illustration.generation.GeneratedIllustrationView
@@ -36,14 +37,16 @@ import java.util.UUID
 class IllustrationGenerationController(
     private val jobs: IllustrationGenerationJobService,
     private val assets: GeneratedIllustrationAssetService,
+    private val illustrationAccess: IllustrationAccessGuard,
 ) {
     @PostMapping(GENERATION_JOBS_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun createJob(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @Valid @RequestBody request: IllustrationGenerationJobCreateRequest,
-    ): ResponseEntity<IllustrationGenerationJobResponse> =
-        accepted(
+    ): ResponseEntity<IllustrationGenerationJobResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return accepted(
             conversionId,
             jobs.create(
                 user.id,
@@ -56,42 +59,55 @@ class IllustrationGenerationController(
                 request.configuration.toDomain(),
             ),
         )
+    }
 
     @GetMapping(GENERATION_JOBS_PATH)
     fun listJobs(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
-    ): ResponseEntity<IllustrationGenerationJobCollectionResponse> =
-        ok(IllustrationGenerationJobCollectionResponse.of(jobs.list(user.id, conversionId)))
+    ): ResponseEntity<IllustrationGenerationJobCollectionResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(IllustrationGenerationJobCollectionResponse.of(jobs.list(user.id, conversionId)))
+    }
 
     @GetMapping(GENERATION_JOB_PATH)
     fun getJob(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(JOB_ID) jobId: UUID,
-    ): ResponseEntity<IllustrationGenerationJobResponse> =
-        ok(IllustrationGenerationJobResponse.of(jobs.get(user.id, conversionId, jobId)))
+    ): ResponseEntity<IllustrationGenerationJobResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(IllustrationGenerationJobResponse.of(jobs.get(user.id, conversionId, jobId)))
+    }
 
     @GetMapping(GENERATED_ILLUSTRATIONS_PATH)
     fun listAssets(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
-    ): ResponseEntity<GeneratedIllustrationCollectionResponse> =
-        ok(GeneratedIllustrationCollectionResponse.of(assets.list(user.id, conversionId)))
+    ): ResponseEntity<GeneratedIllustrationCollectionResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(GeneratedIllustrationCollectionResponse.of(assets.list(user.id, conversionId)))
+    }
 
     @GetMapping(GENERATED_ILLUSTRATION_IMAGE_PATH)
     fun image(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(ASSET_ID) assetId: UUID,
-    ): ResponseEntity<ByteArray> = png(assets, user.id, conversionId, assetId, false)
+    ): ResponseEntity<ByteArray> {
+        illustrationAccess.requireAllowed(user.id)
+        return png(assets, user.id, conversionId, assetId, false)
+    }
 
     @GetMapping(GENERATED_ILLUSTRATION_DOWNLOAD_PATH)
     fun download(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(ASSET_ID) assetId: UUID,
-    ): ResponseEntity<ByteArray> = png(assets, user.id, conversionId, assetId, true)
+    ): ResponseEntity<ByteArray> {
+        illustrationAccess.requireAllowed(user.id)
+        return png(assets, user.id, conversionId, assetId, true)
+    }
 
     @PutMapping(GENERATED_ILLUSTRATION_APPLICATION_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun updateApplication(
@@ -99,8 +115,9 @@ class IllustrationGenerationController(
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(ASSET_ID) assetId: UUID,
         @Valid @RequestBody request: GeneratedIllustrationApplicationRequest,
-    ): ResponseEntity<GeneratedIllustrationResponse> =
-        ok(
+    ): ResponseEntity<GeneratedIllustrationResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(
             GeneratedIllustrationResponse.of(
                 assets.updateApplication(
                     user.id,
@@ -112,6 +129,7 @@ class IllustrationGenerationController(
                 ),
             ),
         )
+    }
 
     private fun <T : Any> ok(body: T): ResponseEntity<T> =
         ResponseEntity

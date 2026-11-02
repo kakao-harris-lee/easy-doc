@@ -1,5 +1,6 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.api.illustration.IllustrationAccessGuard
 import kr.easydoc.application.accesslog.PersonalDataAccessLogEntry
 import kr.easydoc.application.accesslog.PersonalDataAccessLogWriter
 import kr.easydoc.application.accesslog.RecordPersonalDataAccess
@@ -195,6 +196,20 @@ class AuthSliceBeans {
     @Bean
     fun illustrationsService(): kr.easydoc.application.illustration.IllustrationsService =
         org.mockito.Mockito.mock(kr.easydoc.application.illustration.IllustrationsService::class.java)
+
+    @Bean
+    fun illustrationAccessGuard(): IllustrationAccessGuard =
+        org.mockito.Mockito.mock(
+            IllustrationAccessGuard::class.java,
+            org.mockito.stubbing.Answer { invocation ->
+                if (invocation.method.name == "allows") {
+                    true
+                } else {
+                    org.mockito.Answers.RETURNS_DEFAULTS
+                        .answer(invocation)
+                }
+            },
+        )
 
     @Bean
     fun illustrationPlacementService(): kr.easydoc.application.illustration.IllustrationPlacementService =

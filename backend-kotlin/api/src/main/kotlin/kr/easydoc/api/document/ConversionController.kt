@@ -4,6 +4,7 @@ import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.api.config.privateResponse
+import kr.easydoc.api.illustration.IllustrationAccessGuard
 import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionQueryService
@@ -37,6 +38,7 @@ class ConversionController(
     private val review: ConversionReviewService,
     private val exports: ConversionExportService,
     private val reconversion: ReconvertUnitService,
+    private val illustrationAccess: IllustrationAccessGuard,
 ) {
     /** 변환 한 건의 상태와 결과. 완료 전에는 결과 필드가 비어 있다(계약 `get.description`). */
     @GetMapping(CONVERSION_ITEM_PATH)
@@ -49,7 +51,7 @@ class ConversionController(
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
             .privateResponse()
-            .body(ConversionResponse.of(view))
+            .body(ConversionResponse.of(withIllustrationCapabilities(user.id, view)))
     }
 
     /**
@@ -74,7 +76,7 @@ class ConversionController(
             .ok()
             .contentType(MediaType.APPLICATION_JSON)
             .privateResponse()
-            .body(ConversionResponse.of(view))
+            .body(ConversionResponse.of(withIllustrationCapabilities(user.id, view)))
     }
 
     /**
@@ -135,5 +137,20 @@ class ConversionController(
         const val CONVERSION_ID_VARIABLE = "conversion_id"
         const val SOURCE_UNIT_INDEX_VARIABLE = "source_unit_index"
         const val FORMAT_PARAM = "format"
+    }
+
+    private fun withIllustrationCapabilities(
+        userId: UUID,
+        view: kr.easydoc.core.document.ConversionView,
+    ): kr.easydoc.core.document.ConversionView {
+        if (illustrationAccess.allows(userId)) return view
+        return view.copy(
+            reviewCapabilities =
+                view.reviewCapabilities.copy(
+                    illustrations = false,
+                    illustrationSuggestions = false,
+                    illustrationGeneration = false,
+                ),
+        )
     }
 }

@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react'
 
-import { ApiError, getIllustrations, illustrationImageUrl } from '../api/client'
+import { ApiError, getIllustrations } from '../api/client'
 import type { Illustration, IllustrationPurpose } from '../api/types'
+import { IllustrationImage } from './IllustrationImage'
 
 function errorText(caught: unknown, fallback: string): string {
   return caught instanceof ApiError ? caught.message : fallback
@@ -30,12 +31,11 @@ function IllustrationCard({ item }: { item: Illustration }) {
   return (
     <li className="rounded-[10px] border border-border p-4">
       <div className="flex flex-wrap items-start gap-3">
-        <img
-          src={illustrationImageUrl(item.image_url)}
+        <IllustrationImage
+          imageUrl={item.image_url}
           alt={item.alt_text}
           width={64}
           height={64}
-          loading="lazy"
           className="size-16 shrink-0 rounded-[6px] border border-border object-contain"
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
