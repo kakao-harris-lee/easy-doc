@@ -505,10 +505,7 @@ export function getIllustrations(signal?: AbortSignal): Promise<IllustrationCata
 }
 
 /** GET /illustrations/{asset_id}/image — 인증된 카탈로그 PNG를 Blob으로 읽는다. */
-export async function getIllustrationImage(
-  imageUrl: string,
-  signal?: AbortSignal,
-): Promise<Blob> {
+export async function getIllustrationImage(imageUrl: string, signal?: AbortSignal): Promise<Blob> {
   const response = await send(imageUrl, { signal })
   return response.blob()
 }

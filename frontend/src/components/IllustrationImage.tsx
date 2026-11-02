@@ -15,9 +15,9 @@ export function IllustrationImage({
   width?: number
   height?: number
 }) {
-  const [loadedImage, setLoadedImage] = useState<
-    { imageUrl: string; objectUrl: string } | null
-  >(null)
+  const [loadedImage, setLoadedImage] = useState<{ imageUrl: string; objectUrl: string } | null>(
+    null,
+  )
 
   useEffect(() => {
     const controller = new AbortController()
