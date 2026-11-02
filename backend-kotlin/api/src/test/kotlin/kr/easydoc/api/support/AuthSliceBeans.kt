@@ -198,13 +198,18 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.illustration.IllustrationsService::class.java)
 
     @Bean
-    fun illustrationAccessGuard(): IllustrationAccessGuard {
-        val guard = org.mockito.Mockito.mock(IllustrationAccessGuard::class.java)
-        org.mockito.Mockito
-            .`when`(guard.allows(org.mockito.Mockito.any(java.util.UUID::class.java)))
-            .thenReturn(true)
-        return guard
-    }
+    fun illustrationAccessGuard(): IllustrationAccessGuard =
+        org.mockito.Mockito.mock(
+            IllustrationAccessGuard::class.java,
+            org.mockito.stubbing.Answer { invocation ->
+                if (invocation.method.name == "allows") {
+                    true
+                } else {
+                    org.mockito.Answers.RETURNS_DEFAULTS
+                        .answer(invocation)
+                }
+            },
+        )
 
     @Bean
     fun illustrationPlacementService(): kr.easydoc.application.illustration.IllustrationPlacementService =
