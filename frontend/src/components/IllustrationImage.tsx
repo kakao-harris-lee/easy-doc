@@ -15,17 +15,18 @@ export function IllustrationImage({
   width?: number
   height?: number
 }) {
-  const [url, setUrl] = useState<string | null>(null)
+  const [loadedImage, setLoadedImage] = useState<
+    { imageUrl: string; objectUrl: string } | null
+  >(null)
 
   useEffect(() => {
     const controller = new AbortController()
     let objectUrl: string | null = null
-    setUrl(null)
     void getIllustrationImage(imageUrl, controller.signal)
       .then((blob) => {
         if (controller.signal.aborted) return
         objectUrl = URL.createObjectURL(blob)
-        setUrl(objectUrl)
+        setLoadedImage({ imageUrl, objectUrl })
       })
       .catch(() => {
         // Missing/expired authorization or an unavailable asset leaves the image concealed.
@@ -36,6 +37,14 @@ export function IllustrationImage({
     }
   }, [imageUrl])
 
-  if (url === null) return null
-  return <img src={url} alt={alt} width={width} height={height} className={className} />
+  if (loadedImage?.imageUrl !== imageUrl) return null
+  return (
+    <img
+      src={loadedImage.objectUrl}
+      alt={alt}
+      width={width}
+      height={height}
+      className={className}
+    />
+  )
 }
