@@ -21,6 +21,7 @@ import {
   createActionGuideAnalysisJob,
   getConversion,
   getExplanations,
+  getIllustrationImage,
   getIllustrationPlacements,
   getIllustrations,
   getIllustrationSuggestions,
@@ -87,6 +88,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   createActionGuideAnalysisJob: vi.fn(),
   getExplanations: vi.fn(),
   getIllustrations: vi.fn(),
+  getIllustrationImage: vi.fn(),
   getIllustrationPlacements: vi.fn(),
   getIllustrationSuggestions: vi.fn(),
   listIllustrationSuggestionJobs: vi.fn(),
@@ -128,11 +130,18 @@ beforeEach(() => {
   vi.mocked(downloadExport).mockReset()
   vi.mocked(saveFeedback).mockReset()
   vi.mocked(lookupTerm).mockReset()
+  vi.stubGlobal('URL', {
+    ...URL,
+    createObjectURL: vi.fn(() => 'blob:illustration'),
+    revokeObjectURL: vi.fn(),
+  })
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getConversion).mockReset()
   vi.mocked(getActionGuide).mockReset()
   vi.mocked(getExplanations).mockReset()
   vi.mocked(getIllustrations).mockReset()
+  vi.mocked(getIllustrationImage).mockReset()
+  vi.mocked(getIllustrationImage).mockResolvedValue(new Blob(['image']))
   vi.mocked(getIllustrationPlacements).mockReset()
   vi.mocked(putIllustrationPlacements).mockReset()
   vi.mocked(getReviewHistory).mockReset()
@@ -3727,7 +3736,7 @@ describe('ER-16 그림 배치', () => {
       />,
     )
 
-    await waitFor(() => expect(getIllustrationPlacements).toHaveBeenCalled())
+    expect(await screen.findByText('배치 0 / 10')).toBeInTheDocument()
     expect(
       screen.queryByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
     ).not.toBeInTheDocument()
@@ -3750,7 +3759,7 @@ describe('ER-16 그림 배치', () => {
       />,
     )
 
-    await waitFor(() => expect(getIllustrationPlacements).toHaveBeenCalled())
+    expect(await screen.findByText('현재 본문과 다름')).toBeInTheDocument()
     expect(
       screen.queryByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
     ).not.toBeInTheDocument()

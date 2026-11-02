@@ -1,13 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, getIllustrations, illustrationImageUrl } from '../api/client'
+import { ApiError, getIllustrationImage, getIllustrations } from '../api/client'
 import type { Illustration } from '../api/types'
 import { IllustrationsPanel } from './IllustrationsPanel'
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   getIllustrations: vi.fn(),
+  getIllustrationImage: vi.fn(),
 }))
 
 function illustration(overrides: Partial<Illustration> = {}): Illustration {
@@ -29,10 +30,18 @@ function illustration(overrides: Partial<Illustration> = {}): Illustration {
 
 beforeEach(() => {
   vi.mocked(getIllustrations).mockReset()
+  vi.mocked(getIllustrationImage).mockReset()
+  vi.mocked(getIllustrationImage).mockResolvedValue(new Blob(['image']))
+  vi.stubGlobal('URL', {
+    ...URL,
+    createObjectURL: vi.fn(() => 'blob:illustration'),
+    revokeObjectURL: vi.fn(),
+  })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('IllustrationsPanel', () => {
@@ -46,7 +55,11 @@ describe('IllustrationsPanel', () => {
     const img = await screen.findByRole('img', {
       name: '사람이 건물 입구로 걸어 들어가는 그림',
     })
-    expect(img).toHaveAttribute('src', illustrationImageUrl('/illustrations/visit-office/image'))
+    expect(img).toHaveAttribute('src', 'blob:illustration')
+    expect(getIllustrationImage).toHaveBeenCalledWith(
+      '/illustrations/visit-office/image',
+      expect.any(AbortSignal),
+    )
     // 캡션 "기관 방문"과 purpose 라벨 "기관 방문"이 이 고정값에서는 같은 문자열이라 두
     // 곳에 나타난다(캡션 span, 용도 span).
     expect(screen.getAllByText('기관 방문').length).toBeGreaterThanOrEqual(2)
