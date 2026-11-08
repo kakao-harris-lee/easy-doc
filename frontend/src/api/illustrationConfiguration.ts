@@ -1,5 +1,11 @@
 import type { IllustrationGenerationConfiguration } from './types'
 
+export const ILLUSTRATION_TEXT_MAX_LENGTH = 300
+
+export function illustrationTextLength(value: string): number {
+  return Array.from(value).length
+}
+
 /** IllustrationGenerationJobCreateRequest.configuration_revision in easy-doc-v1.yaml. */
 export async function illustrationConfigurationRevision(
   configuration: IllustrationGenerationConfiguration,

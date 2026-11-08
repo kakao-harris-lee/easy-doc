@@ -2,7 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { getGeneratedIllustrations, updateGeneratedIllustrationApplication } from '../api/client'
+import {
+  getGeneratedIllustrations,
+  getIllustrationSuggestions,
+  listIllustrationGenerationJobs,
+  updateGeneratedIllustrationApplication,
+} from '../api/client'
 import type { GeneratedIllustration } from '../api/types'
 import { conversion, sourceReady } from '../test/factories'
 import { setUnsavedChanges } from '../review/unsavedChanges'
@@ -31,6 +36,9 @@ vi.mock('../api/client', async (original) => ({
     latest_job: null,
     required_credits: 0,
     available_credits: 3,
+    request_count: 1,
+    request_limit: 10,
+    remaining_request_count: 9,
   })),
   getGeneratedIllustrations: vi.fn(),
   getGeneratedIllustrationImage: vi.fn(async () => new Blob(['png'])),
@@ -46,6 +54,7 @@ const asset: GeneratedIllustration = {
   based_on_content_revision: 1,
   stale: false,
   applied: false,
+  discarded: false,
   asset_revision: 1,
   purpose: 'procedure',
   reason: '절차',
@@ -82,6 +91,7 @@ function editor(id = document.id) {
   )
 }
 beforeEach(() => {
+  vi.mocked(getIllustrationSuggestions).mockClear()
   vi.mocked(getGeneratedIllustrations)
     .mockReset()
     .mockResolvedValue({ content_revision: 1, assets: [asset] })
@@ -159,8 +169,74 @@ it.each([
     assets: [{ ...asset, applied: true, ...change }],
   })
   render(editor())
-  await screen.findByText('그림 미리보기 · 적용됨')
+  await screen.findByText('그림 1 미리보기 · 적용됨')
   expect(
     screen.queryByRole('region', { name: '그림을 적용한 문서 미리보기' }),
   ).not.toBeInTheDocument()
+})
+
+it('제안 read가 꺼져도 생성 read로 기존 자산과 적용 미리보기를 독립 복구한다', async () => {
+  const user = userEvent.setup()
+  const capabilities = {
+    ...document.review_capabilities!,
+    illustration_suggestions: true,
+    illustration_suggestions_read: false,
+    illustration_suggestions_create: false,
+    illustration_generation: false,
+    illustration_generation_read: true,
+    illustration_generation_create: false,
+  }
+  vi.mocked(listIllustrationGenerationJobs).mockResolvedValue({
+    enabled: false,
+    active_job: null,
+    latest_job: null,
+    required_credits: null,
+    available_credits: 3,
+    request_count: 1,
+    request_limit: 10,
+    remaining_request_count: 9,
+  })
+  vi.mocked(getGeneratedIllustrations).mockResolvedValue({
+    content_revision: 1,
+    assets: [{ ...asset, applied: true }],
+  })
+  render(
+    <MemoryRouter>
+      <ReviewEditor
+        conversion={{ ...document, review_capabilities: capabilities }}
+        source={sourceReady('신청')}
+      />
+    </MemoryRouter>,
+  )
+  expect(
+    await screen.findByRole('region', { name: '그림을 적용한 문서 미리보기' }),
+  ).toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: '생성 그림 보기 (선택)' }))
+  const panel = await screen.findByRole('region', { name: '그림 생성과 적용' })
+  expect(await within(panel).findByRole('img', { name: '신청하는 사람' })).toBeInTheDocument()
+  expect(within(panel).getByText(/기존 작업과 그림은 계속 확인할 수 있습니다/)).toBeInTheDocument()
+  expect(screen.queryByRole('heading', { name: '그림 제안' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '그림 만들기' })).not.toBeInTheDocument()
+  expect(getIllustrationSuggestions).not.toHaveBeenCalled()
+})
+
+it('생성 read가 꺼지면 자산 조회와 적용 미리보기를 만들지 않는다', async () => {
+  const capabilities = {
+    ...document.review_capabilities!,
+    illustration_suggestions_read: false,
+    illustration_generation_read: false,
+  }
+  render(
+    <MemoryRouter>
+      <ReviewEditor
+        conversion={{ ...document, review_capabilities: capabilities }}
+        source={sourceReady('신청')}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.queryByRole('button', { name: /그림.*선택/ })).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('region', { name: '그림을 적용한 문서 미리보기' }),
+  ).not.toBeInTheDocument()
+  expect(getGeneratedIllustrations).not.toHaveBeenCalled()
 })

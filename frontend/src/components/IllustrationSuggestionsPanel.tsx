@@ -30,11 +30,15 @@ export interface IllustrationSuggestionsPanelProps {
   bodyConflict: boolean
   /** 저장된 본문. 제안이 가리키는 줄 범위를 이 본문에서 발췌한다. */
   savedBody: string
+  createEnabled?: boolean
+  generationRead?: boolean
+  generationCreateEnabled?: boolean
   onGeneratedAssetsChange?: (assets: GeneratedIllustration[]) => void
 }
 
 /** R2 행동 안내 작업과 같은 주기다 — 같은 lease 작업 큐를 읽는다. */
 const POLL_INTERVAL_MS = 2500
+const MAX_POLL_FAILURES = 3
 
 const PURPOSE_LABELS: Record<IllustrationSuggestionPurpose, string> = {
   procedure: '절차',
@@ -91,7 +95,11 @@ function SuggestionCard({
   const excerpt = bodyLines.slice(suggestion.body_range.start, suggestion.body_range.end + 1)
 
   return (
-    <li className="rounded-[10px] border border-border p-4">
+    <li
+      id={`illustration-suggestion-${suggestion.suggestion_id}`}
+      tabIndex={-1}
+      className="rounded-[10px] border border-border p-4"
+    >
       <section aria-labelledby={headingId} className="flex flex-col gap-3">
         <h3 id={headingId} className="text-base font-semibold">
           제안 {index + 1} · {PURPOSE_LABELS[suggestion.purpose]}
@@ -169,6 +177,9 @@ export function IllustrationSuggestionsPanel({
   bodyBusy,
   bodyConflict,
   savedBody,
+  createEnabled = true,
+  generationRead = true,
+  generationCreateEnabled = true,
   onGeneratedAssetsChange,
 }: IllustrationSuggestionsPanelProps) {
   const headingId = useId()
@@ -187,9 +198,15 @@ export function IllustrationSuggestionsPanel({
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const requestRef = useRef(false)
+  const scopeVersionRef = useRef(0)
   const refreshControllerRef = useRef<AbortController | null>(null)
+  const createControllerRef = useRef<AbortController | null>(null)
   const activeStatusRef = useRef<HTMLParagraphElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const errorRef = useRef<HTMLParagraphElement>(null)
+  const previousConversionRef = useRef(conversionId)
   const focusActiveStatusRef = useRef(false)
+  const focusErrorRef = useRef(false)
 
   const loaded = loadedConversionId === conversionId
   const latestJob = loaded ? (jobs?.latest_job ?? null) : null
@@ -230,52 +247,52 @@ export function IllustrationSuggestionsPanel({
     currentJob?.status === 'succeeded' && currentJob.reserved_credits > 0
       ? currentJob.reserved_credits
       : null
-  // 이용량 단가가 없으면 접수 자체가 503이다(계약 `IllustrationSuggestionJobCollectionResponse`).
-  // 누를 수 없는 버튼 대신 이유를 적는다.
-  const canRequest = requiredCredits !== null
+  const canRequest = createEnabled && requiredCredits !== null
   const suggestionOwner = (suggestionId: string) =>
     `${conversionId}:${contentRevision}:${status}:${suggestionId}`
 
   useEffect(() => {
-    let disposed = false
+    const version = ++scopeVersionRef.current
     const controller = new AbortController()
+    createControllerRef.current?.abort()
+    refreshControllerRef.current?.abort()
+    requestRef.current = false
+    if (previousConversionRef.current !== conversionId) {
+      previousConversionRef.current = conversionId
+      headingRef.current?.focus()
+    }
     async function restore(): Promise<void> {
+      setBusy(false)
+      setLoading(true)
+      setError(null)
+      setNotice(null)
+      setPendingCreate(null)
       try {
         const [nextResource, nextJobs] = await Promise.all([
           getIllustrationSuggestions(conversionId, controller.signal),
           listIllustrationSuggestionJobs(conversionId, controller.signal),
         ])
-        if (disposed) return
-        setError(null)
-        setNotice(null)
-        setPendingCreate(null)
+        if (controller.signal.aborted || version !== scopeVersionRef.current) return
         setJob(null)
         setResource(nextResource)
         setJobs(nextJobs)
         setPollingJobId(nextJobs.active_job?.job_id ?? null)
       } catch (caught) {
-        if (disposed) return
+        if (controller.signal.aborted || version !== scopeVersionRef.current) return
         setResource(null)
         setJobs(null)
         setPollingJobId(null)
         setJob(null)
-        setPendingCreate(null)
         setError(errorText(caught, 'load'))
       } finally {
-        if (!disposed) {
+        if (!controller.signal.aborted && version === scopeVersionRef.current) {
           setLoadedConversionId(conversionId)
           setLoading(false)
         }
       }
     }
     void restore()
-    return () => {
-      disposed = true
-      controller.abort()
-    }
-    // 본문을 저장하면 서버가 **읽는 시점에** 결과를 stale 로 판정한다(계약 §
-    // `IllustrationSuggestionsResponse`). 저장 뒤 다시 읽어야 화면이 그 사실을 말할 수
-    // 있으므로 `contentRevision`도 의존성에 둔다(ExplanationsPanel과 같은 규칙).
+    return () => controller.abort()
   }, [conversionId, contentRevision])
 
   /**
@@ -288,40 +305,64 @@ export function IllustrationSuggestionsPanel({
     const id = pollingJobId
     if (id === null || !loaded) return
     const controller = new AbortController()
+    const version = scopeVersionRef.current
     let timer = 0
+    let failures = 0
 
-    async function poll(): Promise<boolean> {
+    async function poll(): Promise<number | null> {
       try {
         const next = await getIllustrationSuggestionJob(conversionId, id!, controller.signal)
-        if (controller.signal.aborted) return false
+        if (controller.signal.aborted || version !== scopeVersionRef.current) return null
+        failures = 0
+        setError(null)
         setJob(next)
-        if (next.status === 'queued' || next.status === 'running') return true
+        if (next.status === 'queued' || next.status === 'running') return POLL_INTERVAL_MS
         const [nextResource, nextJobs] = await Promise.all([
           getIllustrationSuggestions(conversionId, controller.signal),
           listIllustrationSuggestionJobs(conversionId, controller.signal),
         ])
-        if (controller.signal.aborted) return false
+        if (controller.signal.aborted || version !== scopeVersionRef.current) return null
         setResource(nextResource)
         setJobs(nextJobs)
         setPollingJobId(nextJobs.active_job?.job_id ?? null)
-        return false
+        return null
       } catch (caught) {
-        if (controller.signal.aborted) return false
-        // 일시적인 조회 실패로 폴링을 멈추지 않는다 — 작업은 서버에서 계속 돈다.
-        setError(errorText(caught, 'load'))
-        return true
+        if (controller.signal.aborted || version !== scopeVersionRef.current) return null
+        // 일시적인 조회 실패로 폴링을 멈출 수 있다 — 작업은 서버에서 계속될 수 있다.
+        failures += 1
+        const retryable =
+          caught instanceof ApiError &&
+          (caught.status === 0 ||
+            caught.status === 408 ||
+            caught.status === 429 ||
+            caught.status >= 500)
+        if (!retryable || failures >= MAX_POLL_FAILURES) {
+          if (caught instanceof ApiError && caught.status === 401) {
+            setError('로그인이 만료되어 제안 상태 조회를 멈췄습니다. 다시 로그인해 주세요.')
+          } else if (caught instanceof ApiError && caught.status === 404) {
+            setError('문서나 작업을 더 이상 조회할 수 없어 제안 상태 확인을 멈췄습니다.')
+          } else {
+            setError(
+              '일시적인 오류가 계속되어 자동 상태 확인을 멈췄습니다. 서버 작업 취소나 이용량 반환을 뜻하지는 않습니다. 상태 새로고침으로 다시 확인해 주세요.',
+            )
+          }
+          setPollingJobId(null)
+          return null
+        }
+        setError('제안 상태를 일시적으로 확인하지 못했습니다. 잠시 후 자동으로 다시 확인합니다.')
+        return POLL_INTERVAL_MS * 2 ** (failures - 1)
       }
     }
 
-    function schedule(): void {
+    function schedule(delay: number): void {
       timer = window.setTimeout(() => {
-        void poll().then((again) => {
-          if (again && !controller.signal.aborted) schedule()
+        void poll().then((nextDelay) => {
+          if (nextDelay !== null && !controller.signal.aborted) schedule(nextDelay)
         })
-      }, POLL_INTERVAL_MS)
+      }, delay)
     }
 
-    schedule()
+    schedule(POLL_INTERVAL_MS)
     return () => {
       controller.abort()
       window.clearTimeout(timer)
@@ -339,10 +380,24 @@ export function IllustrationSuggestionsPanel({
     activeStatusRef.current.focus()
   }, [activeJob?.job_id])
 
-  useEffect(() => () => refreshControllerRef.current?.abort(), [])
+  useEffect(() => {
+    if (focusErrorRef.current && error !== null && errorRef.current !== null) {
+      focusErrorRef.current = false
+      errorRef.current.focus()
+    }
+  }, [error])
+
+  useEffect(
+    () => () => {
+      refreshControllerRef.current?.abort()
+      createControllerRef.current?.abort()
+    },
+    [],
+  )
 
   async function refresh(): Promise<void> {
     refreshControllerRef.current?.abort()
+    const version = scopeVersionRef.current
     const controller = new AbortController()
     refreshControllerRef.current = controller
     setBusy(true)
@@ -352,20 +407,19 @@ export function IllustrationSuggestionsPanel({
         getIllustrationSuggestions(conversionId, controller.signal),
         listIllustrationSuggestionJobs(conversionId, controller.signal),
       ])
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || version !== scopeVersionRef.current) return
       setResource(nextResource)
       setJobs(nextJobs)
       setPollingJobId(nextJobs.active_job?.job_id ?? null)
       setJob(null)
-      // 서버 상태를 다시 읽었으므로 「결과를 모르는 요청」도 더는 남겨 두지 않는다 —
-      // 접수됐다면 위 목록에 나타나고, 아니라면 새 요청으로 다시 시작한다.
       setPendingCreate(null)
       setNotice('최신 상태를 불러왔습니다.')
     } catch (caught) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || version !== scopeVersionRef.current) return
+      focusErrorRef.current = true
       setError(errorText(caught, 'load'))
     } finally {
-      if (!controller.signal.aborted) setBusy(false)
+      if (!controller.signal.aborted && version === scopeVersionRef.current) setBusy(false)
     }
   }
 
@@ -374,14 +428,18 @@ export function IllustrationSuggestionsPanel({
    * 돌려주므로 중복 접수도 중복 예약도 생기지 않는다(계약 `createIllustrationSuggestionJob`).
    */
   async function submitCreate(body: CreateIllustrationSuggestionJobRequest): Promise<void> {
-    if (requestRef.current) return
+    if (requestRef.current || !createEnabled) return
+    const version = scopeVersionRef.current
+    const controller = new AbortController()
+    createControllerRef.current = controller
     requestRef.current = true
     setBusy(true)
     setError(null)
     setNotice(null)
     setPendingCreate(body)
     try {
-      const created = await createIllustrationSuggestionJob(conversionId, body)
+      const created = await createIllustrationSuggestionJob(conversionId, body, controller.signal)
+      if (controller.signal.aborted || version !== scopeVersionRef.current) return
       setJob(created.job)
       setPollingJobId(created.job.job_id)
       setJobs((current) =>
@@ -402,16 +460,21 @@ export function IllustrationSuggestionsPanel({
       // 같은 키를 다시 보낼 값어치가 있는 것은 **결과를 모르는** 실패뿐이다(네트워크
       // 끊김·status 0). 402·409·429·503처럼 서버가 분명히 거절한 경우는 같은 키를 다시
       // 보내도 답이 같으므로 재전송 버튼을 내밀지 않고 기본 요청 버튼을 그대로 둔다.
+      if (controller.signal.aborted || version !== scopeVersionRef.current) return
       if (caught instanceof ApiError && caught.status !== 0) setPendingCreate(null)
+      focusErrorRef.current = true
       setError(errorText(caught, 'create'))
     } finally {
-      requestRef.current = false
-      setBusy(false)
+      if (!controller.signal.aborted && version === scopeVersionRef.current) {
+        requestRef.current = false
+        setBusy(false)
+      }
     }
   }
 
   function startCreate(): void {
-    if (busy || bodyDirty || bodyBusy || bodyConflict || activeJob !== null) return
+    if (!createEnabled || busy || bodyDirty || bodyBusy || bodyConflict || activeJob !== null)
+      return
     void submitCreate({
       request_id: crypto.randomUUID(),
       expected_content_revision: contentRevision,
@@ -425,7 +488,7 @@ export function IllustrationSuggestionsPanel({
       className="mt-6 space-y-4 rounded-xl border border-border bg-card p-4 sm:p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id={headingId} className="text-lg font-semibold">
+        <h2 id={headingId} ref={headingRef} tabIndex={-1} className="text-lg font-semibold">
           그림 제안
         </h2>
         <Button
@@ -452,7 +515,13 @@ export function IllustrationSuggestionsPanel({
       </p>
 
       {!isLoading && error !== null && (
-        <p role="alert" className="rounded-md bg-danger/10 p-3 text-sm text-danger">
+        <p
+          id={`${headingId}-error`}
+          ref={errorRef}
+          tabIndex={-1}
+          role="alert"
+          className="rounded-md bg-danger/10 p-3 text-sm text-danger"
+        >
           {error}
         </p>
       )}
@@ -467,6 +536,12 @@ export function IllustrationSuggestionsPanel({
 
       {!isLoading && jobs !== null && (
         <div className="space-y-3 rounded-md border border-border p-4">
+          {!createEnabled && (
+            <p className="text-sm">
+              지금은 새 그림 제안을 요청할 수 없습니다. 저장된 제안과 작업은 계속 확인할 수
+              있습니다.
+            </p>
+          )}
           {requiredCredits === null ? (
             <p className="text-sm">
               이용량이 설정되지 않았습니다. 지금은 그림 제안을 요청할 수 없습니다.
@@ -584,11 +659,12 @@ export function IllustrationSuggestionsPanel({
           </ul>
         </>
       )}
-      {!isLoading && (status === 'ready' || status === 'stale' || status === 'no_suggestions') && (
+      {generationRead && (
         <IllustrationGenerationPanel
           key={`${conversionId}:${contentRevision}`}
           conversionId={conversionId}
           contentRevision={contentRevision}
+          createEnabled={generationCreateEnabled}
           onAssetsChange={onGeneratedAssetsChange}
           analysisVersion={resource?.analysis_version ?? null}
           suggestions={status === 'ready' ? suggestions : []}
