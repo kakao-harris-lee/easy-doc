@@ -8,6 +8,8 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
+import kr.easydoc.core.illustration.generation.IllustrationGenerationJobFailureCode
+import kr.easydoc.core.illustration.generation.IllustrationGenerationJobStatus
 import kr.easydoc.core.illustration.generation.IllustrationGenerationStorageCodec
 import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
 import kr.easydoc.core.illustration.suggestion.ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION
@@ -129,10 +131,24 @@ class IllustrationGenerationJobServiceTest {
     }
 
     @Test
-    fun `기능이 꺼져 있어도 소유자는 비활성 상태를 조회할 수 있고 접수는 차단된다`() {
+    fun `생성 접수가 꺼져도 기존 작업은 읽을 수 있다`() {
+        jobs.rows[GENERATION_JOB] = storedGenerationJob()
         val disabled = service(enabled = false)
+
         assertThat(disabled.list(GENERATION_OWNER, GENERATION_CONVERSION).enabled).isFalse()
+        assertThat(disabled.get(GENERATION_OWNER, GENERATION_CONVERSION, GENERATION_JOB).jobId)
+            .isEqualTo(GENERATION_JOB)
         assertThatThrownBy { create(disabled) }
+            .isInstanceOf(kr.easydoc.core.exceptions.NotFoundException::class.java)
+    }
+
+    @Test
+    fun `읽기가 꺼지면 목록과 단건은 기존 404 정책을 유지한다`() {
+        val disabled = service(readEnabled = false)
+
+        assertThatThrownBy { disabled.list(GENERATION_OWNER, GENERATION_CONVERSION) }
+            .isInstanceOf(kr.easydoc.core.exceptions.NotFoundException::class.java)
+        assertThatThrownBy { disabled.get(GENERATION_OWNER, GENERATION_CONVERSION, GENERATION_JOB) }
             .isInstanceOf(kr.easydoc.core.exceptions.NotFoundException::class.java)
     }
 
@@ -145,6 +161,27 @@ class IllustrationGenerationJobServiceTest {
         assertThat(available(service(providerPricingConfigured = false))).isFalse()
         assertThat(available(service())).isTrue()
         assertThat(available(service(creditsPerImage = BigDecimal.ZERO, zeroAllowed = true))).isTrue()
+    }
+
+    @Test
+    fun `생성 목록은 실패를 포함한 문서 요청 수와 남은 한도를 노출한다`() {
+        val empty = service().list(GENERATION_OWNER, GENERATION_CONVERSION)
+        assertThat(empty.requestCount).isZero()
+        assertThat(empty.requestLimit).isEqualTo(MAX_GENERATION_JOBS_PER_DOCUMENT)
+        assertThat(empty.remainingRequestCount).isEqualTo(MAX_GENERATION_JOBS_PER_DOCUMENT)
+
+        jobs.rows[java.util.UUID.randomUUID()] =
+            storedGenerationJob(status = IllustrationGenerationJobStatus.FAILED).copy(
+                failureCode = IllustrationGenerationJobFailureCode.OUTCOME_UNKNOWN,
+            )
+        val failed = service().list(GENERATION_OWNER, GENERATION_CONVERSION)
+        assertThat(failed.requestCount).isEqualTo(1)
+        assertThat(failed.remainingRequestCount).isEqualTo(MAX_GENERATION_JOBS_PER_DOCUMENT - 1)
+
+        jobs.countOverride = MAX_GENERATION_JOBS_PER_DOCUMENT
+        val full = service().list(GENERATION_OWNER, GENERATION_CONVERSION)
+        assertThat(full.requestCount).isEqualTo(MAX_GENERATION_JOBS_PER_DOCUMENT)
+        assertThat(full.remainingRequestCount).isZero()
     }
 
     @Test
@@ -193,6 +230,7 @@ class IllustrationGenerationJobServiceTest {
         zeroAllowed: Boolean = false,
         providerPricingConfigured: Boolean = true,
         enabled: Boolean = true,
+        readEnabled: Boolean = true,
     ) = IllustrationGenerationJobService(
         enabled = enabled,
         creditsPerImage = creditsPerImage,
@@ -204,5 +242,6 @@ class IllustrationGenerationJobServiceTest {
         cipher = cipher,
         transaction = DirectGenerationTransaction(),
         clock = Clock.fixed(GENERATION_NOW, ZoneOffset.UTC),
+        readEnabled = readEnabled,
     )
 }

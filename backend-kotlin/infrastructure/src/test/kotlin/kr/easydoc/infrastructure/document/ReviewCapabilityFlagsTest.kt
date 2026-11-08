@@ -141,4 +141,23 @@ class ReviewCapabilityFlagsTest {
         assertThat(configured.illustrations).isFalse()
         assertThat(configured.actionGuide).isFalse()
     }
+
+    @Test
+    fun `제안과 생성의 읽기는 접수 가격 설정과 토글에서 분리된다`() {
+        val capabilities =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                illustrationSuggestions = IllustrationSuggestionProperties(enabled = false, readEnabled = true),
+                illustrationGeneration = false,
+                illustrationGenerationRead = true,
+            )
+
+        assertThat(capabilities.illustrationSuggestionsRead).isTrue()
+        assertThat(capabilities.illustrationSuggestionsCreate).isFalse()
+        assertThat(capabilities.illustrationSuggestions).isFalse()
+        assertThat(capabilities.illustrationGenerationRead).isTrue()
+        assertThat(capabilities.illustrationGenerationCreate).isFalse()
+        assertThat(capabilities.illustrationGeneration).isFalse()
+    }
 }

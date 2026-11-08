@@ -103,6 +103,7 @@ easydoc:
   # R7 ER-17 문맥 기반 그림 제안. `easydoc.illustrations`(ER-15 카탈로그)와 독립 토글이다.
   illustration-suggestions:
     enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_ENABLED:false}
+    read-enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_READ_ENABLED:true}
     worker-enabled: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_WORKER_ENABLED:false}
     # 미설정과 0은 다르다 — 미설정이면 접수가 503이고 기능을 노출하지 않는다.
     credits-per-100-chars: ${EASYDOC_ILLUSTRATION_SUGGESTIONS_CREDITS_PER_100_CHARS:}
@@ -113,6 +114,7 @@ easydoc:
   # R7 ER-18 요청형 이미지 생성. 제안·카탈로그와 독립이며 가격 없이는 접수하지 않는다.
   illustration-generation:
     enabled: ${EASYDOC_ILLUSTRATION_GENERATION_ENABLED:false}
+    read-enabled: ${EASYDOC_ILLUSTRATION_GENERATION_READ_ENABLED:true}
     worker-enabled: ${EASYDOC_ILLUSTRATION_GENERATION_WORKER_ENABLED:false}
     credits-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_CREDITS_PER_IMAGE:}
     provider-cost-usd-per-image: ${EASYDOC_ILLUSTRATION_GENERATION_PROVIDER_COST_USD_PER_IMAGE:}

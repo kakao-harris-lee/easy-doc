@@ -18,9 +18,9 @@ class IllustrationSuggestionResultServiceTest {
     private val cipher = PassThroughCipher()
 
     private fun service(
-        enabled: Boolean = true,
+        readEnabled: Boolean = true,
         rate: BigDecimal? = BigDecimal("0.1"),
-    ) = IllustrationSuggestionResultService(enabled, rate, jobs, results, cipher, DirectSuggestionTransaction())
+    ) = IllustrationSuggestionResultService(readEnabled, rate, jobs, results, cipher, DirectSuggestionTransaction())
 
     private fun storeResult(
         set: IllustrationSuggestionSet,
@@ -104,9 +104,8 @@ class IllustrationSuggestionResultServiceTest {
     }
 
     @Test
-    @DisplayName("기능이 꺼져 있거나 남의 변환이면 404다")
-    fun `꺼져 있거나 남의 것이면 404다`() {
-        assertThatThrownBy { service(enabled = false).get(SUGGESTION_OWNER, SUGGESTION_CONVERSION) }
+    fun `읽기가 꺼져 있거나 남의 변환이면 404다`() {
+        assertThatThrownBy { service(readEnabled = false).get(SUGGESTION_OWNER, SUGGESTION_CONVERSION) }
             .isInstanceOf(NotFoundException::class.java)
 
         jobs.context = null

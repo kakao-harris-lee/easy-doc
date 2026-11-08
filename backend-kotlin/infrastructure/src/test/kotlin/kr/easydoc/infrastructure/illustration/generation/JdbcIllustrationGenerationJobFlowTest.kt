@@ -320,6 +320,49 @@ class JdbcIllustrationGenerationJobFlowTest {
     }
 
     @Test
+    fun `자산 검토 수정은 metadata PNG와 revision을 CAS로 바꾸고 stale·적용 폐기를 거부한다`() {
+        val fixture = seed()
+        val job = fixture.job()
+        insertReserved(fixture, job)
+        val lease = acquire()
+        val assetId = UUID.randomUUID()
+        tx.executeWithoutResult {
+            val held = jobs.lockIfHeld(lease)!!
+            jobs.markProviderStarted(lease, UUID.randomUUID(), NOW)
+            assets.insertAsset(held, asset(job.jobId, fixture.conversionId, assetId))
+            jobs.markSucceeded(lease, NOW)
+            credits.consume(held)
+        }
+        val metadata = EncryptedContent(byteArrayOf(99, 98), "aes256gcm-v1", 2)
+        val png = EncryptedContent(byteArrayOf(97, 96), "aes256gcm-v1", 2)
+
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 1, metadata, png, discard = false),
+        ).isTrue()
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 1, metadata, png, discard = false),
+        ).isFalse()
+        val updated = assets.findOwned(fixture.ownerId, fixture.conversionId, assetId)!!
+        assertThat(updated.assetRevision).isEqualTo(2)
+        assertThat(updated.metadata).isEqualTo(metadata)
+        assertThat(updated.png).isEqualTo(png)
+        assertThat(assets.updateApplication(fixture.ownerId, fixture.conversionId, assetId, 1, 2, true)).isTrue()
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 3, metadata, png, discard = true),
+        ).isFalse()
+
+        jdbc
+            .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
+            .param("id", fixture.conversionId)
+            .update()
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 3, metadata, png, discard = false),
+        ).isFalse()
+        assertThat(count("generated_illustration_assets", "id", assetId)).isEqualTo(1)
+        assertThat(count("credit_transactions", "illustration_generation_job_id", job.jobId, "release")).isZero()
+    }
+
+    @Test
     fun `문서 삭제는 자산을 CASCADE로 파기하고 활성 예약과 시작 호출을 정산하며 감사 행만 남긴다`() {
         val fixture = seed()
         val succeeded = fixture.job()

@@ -4,6 +4,7 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.illustration.suggestion.PassThroughCipher
 import kr.easydoc.application.illustration.suggestion.suggestion
 import kr.easydoc.core.credit.Credits
+import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
@@ -39,7 +40,12 @@ internal open class FakeGenerationJobs(var context: IllustrationGenerationJobCon
     override fun lockAndCountDocumentJobs(
         ownerId: UUID,
         documentId: UUID,
-    ): Int = countOverride ?: rows.values.count { it.documentId == documentId }
+    ): Int = countDocumentJobs(ownerId, documentId)
+
+    override fun countDocumentJobs(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Int = countOverride ?: rows.values.count { it.ownerId == ownerId && it.documentId == documentId }
 
     override fun lockOwnedContext(
         ownerId: UUID,
@@ -234,6 +240,7 @@ internal class RecordingGenerationAssets : GeneratedIllustrationAssetRepository 
         assetId: UUID,
     ): StoredGeneratedIllustrationAsset? = inserted.singleOrNull { it.assetId == assetId }
 
+    @Suppress("ReturnCount", "ComplexCondition")
     override fun updateApplication(
         ownerId: UUID,
         conversionId: UUID,
@@ -243,7 +250,40 @@ internal class RecordingGenerationAssets : GeneratedIllustrationAssetRepository 
         applied: Boolean,
     ): Boolean {
         this.applied = applied
-        return updateSucceeds
+        if (!updateSucceeds) return false
+        val index = inserted.indexOfFirst { it.assetId == assetId }
+        val current = inserted.getOrNull(index) ?: return false
+        if (current.assetRevision != expectedAssetRevision ||
+            current.basedOnContentRevision > expectedContentRevision ||
+            (applied && current.basedOnContentRevision != expectedContentRevision)
+        ) {
+            return false
+        }
+        inserted[index] = current.copy(applied = applied, assetRevision = current.assetRevision + 1)
+        return true
+    }
+
+    @Suppress("ReturnCount", "ComplexCondition")
+    override fun updateReview(
+        ownerId: UUID,
+        conversionId: UUID,
+        assetId: UUID,
+        expectedContentRevision: Long,
+        expectedAssetRevision: Long,
+        metadata: EncryptedContent,
+        png: EncryptedContent,
+        discard: Boolean,
+    ): Boolean {
+        val index = inserted.indexOfFirst { it.assetId == assetId }
+        val current = inserted.getOrNull(index) ?: return false
+        if (current.assetRevision != expectedAssetRevision ||
+            current.basedOnContentRevision != expectedContentRevision ||
+            (discard && current.applied)
+        ) {
+            return false
+        }
+        inserted[index] = current.copy(metadata = metadata, png = png, assetRevision = current.assetRevision + 1)
+        return true
     }
 }
 

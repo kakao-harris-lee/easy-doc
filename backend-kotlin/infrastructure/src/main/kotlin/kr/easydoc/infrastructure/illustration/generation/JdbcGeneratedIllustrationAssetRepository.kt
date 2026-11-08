@@ -78,6 +78,30 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
             .param("applied", applied)
             .update() == 1
 
+    override fun updateReview(
+        ownerId: UUID,
+        conversionId: UUID,
+        assetId: UUID,
+        expectedContentRevision: Long,
+        expectedAssetRevision: Long,
+        metadata: EncryptedContent,
+        png: EncryptedContent,
+        discard: Boolean,
+    ): Boolean =
+        jdbc
+            .sql(UPDATE_REVIEW_SQL)
+            .param("ownerId", ownerId)
+            .param("conversionId", conversionId)
+            .param("assetId", assetId)
+            .param("expectedContentRevision", expectedContentRevision)
+            .param("expectedAssetRevision", expectedAssetRevision)
+            .param("metadata", metadata.bytes)
+            .param("png", png.bytes)
+            .param("scheme", metadata.scheme)
+            .param("keyVersion", metadata.keyVersion)
+            .param("discard", discard)
+            .update() == 1
+
     private fun mapAsset(
         rs: ResultSet,
         @Suppress("UNUSED_PARAMETER") row: Int,
@@ -175,6 +199,23 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
               AND c.content_revision = :expectedContentRevision
               AND a.asset_revision = :expectedAssetRevision
               AND (CAST(:applied AS boolean) = false OR a.based_on_content_revision = :expectedContentRevision)
+            """.trimIndent()
+
+        val UPDATE_REVIEW_SQL =
+            """
+            UPDATE generated_illustration_assets AS a
+            SET metadata_encrypted = :metadata, png_encrypted = :png,
+                encryption_scheme = :scheme, key_version = :keyVersion,
+                asset_revision = a.asset_revision + 1, updated_at = now()
+            FROM conversions c
+            JOIN documents d ON d.id = c.document_id
+            WHERE a.id = :assetId AND a.conversion_id = :conversionId
+              AND c.id = a.conversion_id AND d.user_id = :ownerId
+              AND d.retention_expires_at > now()
+              AND c.content_revision = :expectedContentRevision
+              AND a.based_on_content_revision = :expectedContentRevision
+              AND a.asset_revision = :expectedAssetRevision
+              AND (CAST(:discard AS boolean) = false OR a.applied = false)
             """.trimIndent()
     }
 }

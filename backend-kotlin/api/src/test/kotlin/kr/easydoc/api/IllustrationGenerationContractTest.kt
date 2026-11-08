@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.config.JsonRequestStrictnessConfig
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
+import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.application.illustration.generation.GeneratedIllustrationAssetService
 import kr.easydoc.application.illustration.generation.GeneratedIllustrationCollectionView
@@ -32,6 +33,7 @@ import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
 import org.springframework.test.web.servlet.put
 import tools.jackson.databind.JsonNode
@@ -99,7 +101,16 @@ class IllustrationGenerationContractTest {
         val conversionId = UUID.randomUUID()
         val job = job()
         `when`(jobs.list(owner, conversionId)).thenReturn(
-            IllustrationGenerationJobCollectionView(job, job, BigDecimal("0.5"), BigDecimal("4.0"), true),
+            IllustrationGenerationJobCollectionView(
+                job,
+                job,
+                BigDecimal("0.5"),
+                BigDecimal("4.0"),
+                true,
+                requestCount = 10,
+                requestLimit = 10,
+                remainingRequestCount = 0,
+            ),
         )
 
         val response = get(owner, "/conversions/$conversionId/illustration-generation-jobs")
@@ -108,6 +119,19 @@ class IllustrationGenerationContractTest {
         assertThat(json(response)["active_job"]["job_id"].asString()).isEqualTo(job.jobId.toString())
         assertThat(json(response)["required_credits"].decimalValue()).isEqualTo(BigDecimal("0.5"))
         assertThat(json(response)["enabled"].asBoolean()).isTrue()
+        assertThat(json(response)["request_count"].asInt()).isEqualTo(10)
+        assertThat(json(response)["request_limit"].asInt()).isEqualTo(10)
+        assertThat(json(response)["remaining_request_count"].asInt()).isZero()
+        assertThat(json(response).propertyNames()).contains(
+            "request_count",
+            "request_limit",
+            "remaining_request_count",
+        )
+        assertThat(ContractSpec.schemaRequired("IllustrationGenerationJobCollectionResponse")).contains(
+            "request_count",
+            "request_limit",
+            "remaining_request_count",
+        )
     }
 
     @Test
@@ -131,6 +155,7 @@ class IllustrationGenerationContractTest {
             "based_on_content_revision",
             "stale",
             "applied",
+            "discarded",
             "asset_revision",
             "purpose",
             "reason",
@@ -189,6 +214,39 @@ class IllustrationGenerationContractTest {
         assertThat(response.status).isEqualTo(200)
         assertThat(json(response)["applied"].asBoolean()).isTrue()
         assertThat(json(response)["asset_revision"].asLong()).isEqualTo(2)
+    }
+
+    @Test
+    fun `자산 PATCH는 대체텍스트와 폐기를 CAS revision과 함께 전달한다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val view = asset(conversionId, discarded = true, assetRevision = 2)
+        `when`(assets.updateReview(owner, conversionId, ASSET_ID, 4, 1, ALT_TEXT, true)).thenReturn(view)
+
+        val response =
+            mockMvc
+                .patch("/conversions/$conversionId/generated-illustrations/$ASSET_ID") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """{"expected_content_revision":4,"expected_asset_revision":1,
+                        "alt_text":"$ALT_TEXT","discarded":true}"""
+                }.andReturn()
+                .response
+
+        assertThat(response.status)
+            .isEqualTo(
+                ContractSpec.successStatus(
+                    "/conversions/{conversion_id}/generated-illustrations/{asset_id}",
+                    "patch",
+                ),
+            )
+        assertThat(ContractSpec.schemaRequired("GeneratedIllustrationUpdateRequest"))
+            .containsExactlyInAnyOrder("expected_content_revision", "expected_asset_revision")
+        assertThat(json(response)["discarded"].asBoolean()).isTrue()
+        assertThat(json(response)["asset_revision"].asLong()).isEqualTo(2)
+        assertThat(json(response)["configuration_revision"].asString()).isEqualTo(CONFIGURATION_REVISION)
+        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
     }
 
     private fun post(
@@ -261,6 +319,7 @@ class IllustrationGenerationContractTest {
             conversionId: UUID,
             stale: Boolean = false,
             applied: Boolean = false,
+            discarded: Boolean = false,
             assetRevision: Long = 1,
         ): GeneratedIllustrationView {
             val metadata =
@@ -275,6 +334,7 @@ class IllustrationGenerationContractTest {
                     listOf(SCENE),
                     listOf(FACT),
                     ALT_TEXT,
+                    discarded,
                 )
             return GeneratedIllustrationView(
                 ASSET_ID,
@@ -282,6 +342,7 @@ class IllustrationGenerationContractTest {
                 3,
                 stale,
                 applied,
+                discarded,
                 assetRevision,
                 metadata,
                 "/conversions/$conversionId/generated-illustrations/$ASSET_ID/image",

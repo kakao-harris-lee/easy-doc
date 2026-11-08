@@ -570,6 +570,8 @@ class ValueSlotInvariantReachTest {
                     "configuration":{"scenes":["장면"],"preserved_facts":[],"alt_text":"대체텍스트"}}""",
                 "GeneratedIllustrationApplicationRequest" to
                     """{"expected_content_revision":1,"expected_asset_revision":1,"applied":true}""",
+                "GeneratedIllustrationUpdateRequest" to
+                    """{"expected_content_revision":1,"expected_asset_revision":1,"alt_text":"대체텍스트"}""",
                 "ActionGuideSaveRequest" to
                     """{"candidate_id":null,"expected_content_revision":1,
                     "expected_guide_revision":null,"mark_reviewed":false,

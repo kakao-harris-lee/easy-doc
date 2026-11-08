@@ -28,7 +28,14 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .param("documentId", documentId.toString())
             .query { _, _ -> true }
             .single()
-        return jdbc
+        return countDocumentJobs(ownerId, documentId)
+    }
+
+    override fun countDocumentJobs(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Int =
+        jdbc
             .sql(
                 """
                 SELECT count(*) FROM illustration_generation_jobs j
@@ -39,7 +46,6 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .param("ownerId", ownerId)
             .query { rs, _ -> rs.getInt(1) }
             .single()
-    }
 
     override fun lockOwnedContext(
         ownerId: UUID,
