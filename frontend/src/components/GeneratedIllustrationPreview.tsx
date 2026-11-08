@@ -46,7 +46,11 @@ export function GeneratedIllustrationPreview({ conversionId, savedBody, assets, 
               .filter((asset) => asset.body_range.end === index)
               .map((asset) => (
                 <figure key={asset.asset_id} className="space-y-2">
-                  <GeneratedIllustrationImage conversionId={conversionId} asset={asset} />
+                  <GeneratedIllustrationImage
+                    conversionId={conversionId}
+                    asset={asset}
+                    decorative
+                  />
                   <figcaption className="text-sm">{asset.alt_text}</figcaption>
                   {asset.provenance === 'fake' && (
                     <p className="text-sm">테스트 그림입니다. 실제 AI가 생성한 그림이 아닙니다.</p>

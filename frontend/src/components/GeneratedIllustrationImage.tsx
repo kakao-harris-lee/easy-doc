@@ -1,44 +1,62 @@
-import { useEffect, useState } from 'react'
-import { getGeneratedIllustrationImage } from '../api/client'
+import { useEffect, useId, useState } from 'react'
 import type { GeneratedIllustration } from '../api/types'
+import {
+  acquireGeneratedIllustrationImage,
+  invalidateFailedGeneratedIllustrationImage,
+} from './generatedIllustrationImageCache'
 import { Button } from './ui/Button'
+
+type ImageState = {
+  key: string
+  attempt: number
+  url: string | null
+  failed: boolean
+}
 
 export function GeneratedIllustrationImage({
   conversionId,
   asset,
+  decorative = false,
 }: {
   conversionId: string
   asset: GeneratedIllustration
+  decorative?: boolean
 }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [failed, setFailed] = useState(false)
+  const errorId = useId()
+  const key = `${conversionId}\0${asset.asset_id}`
   const [attempt, setAttempt] = useState(0)
+  const [state, setState] = useState<ImageState | null>(null)
+
   useEffect(() => {
-    const controller = new AbortController()
-    let objectUrl: string | null = null
-    void getGeneratedIllustrationImage(conversionId, asset.asset_id, controller.signal)
-      .then((blob) => {
-        if (controller.signal.aborted) return
-        objectUrl = URL.createObjectURL(blob)
-        setUrl(objectUrl)
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setFailed(true)
-      })
+    let active = true
+    const lease = acquireGeneratedIllustrationImage(conversionId, asset.asset_id)
+    void lease.promise.then(
+      (url) => {
+        if (active) setState({ key, attempt, url, failed: false })
+      },
+      () => {
+        if (active) setState({ key, attempt, url: null, failed: true })
+      },
+    )
     return () => {
-      controller.abort()
-      if (objectUrl !== null) URL.revokeObjectURL(objectUrl)
+      active = false
+      lease.release()
     }
-  }, [conversionId, asset.asset_id, attempt])
-  if (failed)
+  }, [conversionId, asset.asset_id, key, attempt])
+
+  const current = state?.key === key && state.attempt === attempt ? state : null
+  if (current?.failed) {
     return (
       <div>
-        <p>그림 미리보기를 불러오지 못했습니다.</p>
+        <p id={errorId} role="alert">
+          그림 미리보기를 불러오지 못했습니다.
+        </p>
         <Button
           type="button"
           variant="outline"
+          aria-describedby={errorId}
           onClick={() => {
-            setFailed(false)
+            invalidateFailedGeneratedIllustrationImage(conversionId, asset.asset_id)
             setAttempt((value) => value + 1)
           }}
         >
@@ -46,11 +64,18 @@ export function GeneratedIllustrationImage({
         </Button>
       </div>
     )
-  if (url === null) return <p>그림을 불러오는 중…</p>
+  }
+  if (current?.url == null) {
+    return (
+      <p role="status" aria-live="polite">
+        그림을 불러오는 중…
+      </p>
+    )
+  }
   return (
     <img
-      src={url}
-      alt={asset.alt_text}
+      src={current.url}
+      alt={decorative ? '' : asset.alt_text}
       className="w-full max-w-lg rounded-lg border border-border"
     />
   )

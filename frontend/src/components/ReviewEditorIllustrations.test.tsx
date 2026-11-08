@@ -122,7 +122,10 @@ it('검토 후 적용한 그림을 문맥 끝에 표시하고 제거하면 문�
   await user.click(within(panel).getByRole('checkbox'))
   await user.click(within(panel).getByRole('button', { name: '문서에 그림 적용' }))
   const preview = await screen.findByRole('region', { name: '그림을 적용한 문서 미리보기' })
-  const image = await within(preview).findByRole('img', { name: '신청하는 사람' })
+  await waitFor(() => expect(preview.querySelector('img')).toHaveAttribute('src', 'blob:test'))
+  const image = preview.querySelector('img')!
+  expect(image).toHaveAttribute('alt', '')
+  expect(within(preview).getByText('신청하는 사람').tagName).toBe('FIGCAPTION')
   expect(image.closest('figure')?.previousElementSibling).toHaveTextContent('서류를 내세요.')
   expect(image.closest('figure')?.nextElementSibling).toHaveTextContent('결과를 기다리세요.')
   expect(within(preview).getByText(/테스트 그림입니다/)).toBeVisible()
@@ -143,7 +146,7 @@ it('서버의 적용 그림을 접힌 패널에서도 복구하고 편집 중 �
   })
   const view = render(editor())
   const preview = await screen.findByRole('region', { name: '그림을 적용한 문서 미리보기' })
-  expect(await within(preview).findByRole('img')).toBeVisible()
+  await waitFor(() => expect(preview.querySelector('img')).toHaveAttribute('src', 'blob:test'))
   const input = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
   fireEvent.change(input, { target: { value: '수정 중' } })
   expect(
