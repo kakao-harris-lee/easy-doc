@@ -146,7 +146,7 @@ export function ConversionPage() {
   }
 
   if (conversion !== null && conversion.status === 'done') {
-    return <ReviewEditor conversion={conversion} source={source} />
+    return <ReviewEditor key={conversion.id} conversion={conversion} source={source} />
   }
 
   if (conversion !== null && conversion.status === 'failed') {

@@ -33,6 +33,7 @@ import {
   saveReview,
   saveActionGuide,
   setUnauthorizedHandler,
+  updateGeneratedIllustrationReview,
   updateReviewSupportItem,
   updateReviewSupportItems,
   illustrationImageUrl,
@@ -702,6 +703,26 @@ describe('ER-18 그림 생성 API', () => {
     )
     expect(await image.arrayBuffer()).toEqual(new Uint8Array([1, 2, 3]).buffer)
     expect(download.filename).toBe('illustration-a1.png')
+  })
+
+  it('생성 자산 검토는 PATCH로 CAS revision과 수정·폐기 필드를 본낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { asset_id: 'a1', asset_revision: 8 }))
+    const controller = new AbortController()
+    await updateGeneratedIllustrationReview(
+      'c1',
+      'a1',
+      { expected_content_revision: 7, expected_asset_revision: 7, alt_text: '수정한 설명' },
+      controller.signal,
+    )
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/generated-illustrations/a1`)
+    expect(init?.method).toBe('PATCH')
+    expect(init?.signal).toBe(controller.signal)
+    expect(JSON.parse(init?.body as string)).toEqual({
+      expected_content_revision: 7,
+      expected_asset_revision: 7,
+      alt_text: '수정한 설명',
+    })
   })
 })
 

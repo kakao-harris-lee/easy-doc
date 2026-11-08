@@ -41,6 +41,7 @@ import type {
   ReadingLevel,
   SaveActionGuideRequest,
   UpdateGeneratedIllustrationApplicationRequest,
+  UpdateGeneratedIllustrationReviewRequest,
   UpdateReviewItemRequest,
   UpdateReviewItemsRequest,
   WorkspaceListResponse,
@@ -634,10 +635,12 @@ export interface IllustrationSuggestionJobCreationResult {
 export async function createIllustrationSuggestionJob(
   conversionId: string,
   body: CreateIllustrationSuggestionJobRequest,
+  signal?: AbortSignal,
 ): Promise<IllustrationSuggestionJobCreationResult> {
   const response = await send(`/conversions/${conversionId}/illustration-suggestion-jobs`, {
     method: 'POST',
     body,
+    signal,
   })
   return {
     job: (await response.json()) as IllustrationSuggestionJob,
@@ -685,10 +688,12 @@ export interface IllustrationGenerationJobCreationResult {
 export async function createIllustrationGenerationJob(
   conversionId: string,
   body: CreateIllustrationGenerationJobRequest,
+  signal?: AbortSignal,
 ): Promise<IllustrationGenerationJobCreationResult> {
   const response = await send(`/conversions/${conversionId}/illustration-generation-jobs`, {
     method: 'POST',
     body,
+    signal,
   })
   return {
     job: (await response.json()) as IllustrationGenerationJob,
@@ -710,10 +715,23 @@ export function updateGeneratedIllustrationApplication(
   conversionId: string,
   assetId: string,
   body: UpdateGeneratedIllustrationApplicationRequest,
+  signal?: AbortSignal,
 ): Promise<GeneratedIllustration> {
   return requestJson<GeneratedIllustration>(
     `/conversions/${conversionId}/generated-illustrations/${assetId}/application`,
-    { method: 'PUT', body },
+    { method: 'PUT', body, signal },
+  )
+}
+
+export function updateGeneratedIllustrationReview(
+  conversionId: string,
+  assetId: string,
+  body: UpdateGeneratedIllustrationReviewRequest,
+  signal?: AbortSignal,
+): Promise<GeneratedIllustration> {
+  return requestJson<GeneratedIllustration>(
+    `/conversions/${conversionId}/generated-illustrations/${assetId}`,
+    { method: 'PATCH', body, signal },
   )
 }
 
@@ -733,10 +751,11 @@ export async function getGeneratedIllustrationImage(
 export async function downloadGeneratedIllustration(
   conversionId: string,
   assetId: string,
+  signal?: AbortSignal,
 ): Promise<DownloadedFile> {
   const response = await send(
     `/conversions/${conversionId}/generated-illustrations/${assetId}/download`,
-    {},
+    { signal },
   )
   return {
     blob: await response.blob(),
