@@ -460,7 +460,7 @@ it('문서 전환 중 늦은 접수 응답이 새 문서의 이용량과 상태�
   expect(createIllustrationGenerationJob).toHaveBeenCalledTimes(1)
 })
 
-it.each([401, 404])('%s 폴폴 오류는 즉시 중단한다', async (status) => {
+it.each([401, 404])('%s 폴링 오류는 즉시 중단한다', async (status) => {
   vi.useFakeTimers()
   try {
     vi.mocked(listIllustrationGenerationJobs).mockResolvedValue({
@@ -483,7 +483,7 @@ it.each([401, 404])('%s 폴폴 오류는 즉시 중단한다', async (status) =>
   }
 })
 
-it('일시 폴폴 오류는 세 번 뒤 중단하고 수동 새로고침으로 재개한다', async () => {
+it('일시 폴링 오류는 세 번 뒤 중단하고 수동 새로고침으로 재개한다', async () => {
   vi.useFakeTimers()
   try {
     vi.mocked(listIllustrationGenerationJobs).mockResolvedValue({

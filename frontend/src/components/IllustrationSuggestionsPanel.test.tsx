@@ -732,7 +732,7 @@ it('A 접수의 늦은 응답이 B를 오염하지 않고 A 재방문 시 서버
   expect(createIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
 })
 
-it.each([401, 404])('%s 제안 폴폴 오류는 즉시 중단한다', async (status) => {
+it.each([401, 404])('%s 제안 폴링 오류는 즉시 중단한다', async (status) => {
   vi.useFakeTimers()
   try {
     vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
@@ -755,7 +755,7 @@ it.each([401, 404])('%s 제안 폴폴 오류는 즉시 중단한다', async (sta
   }
 })
 
-it('일시 제안 폴폴 오류는 제한적으로 backoff하고 수동 새로고침으로 재개한다', async () => {
+it('일시 제안 폴링 오류는 제한적으로 backoff하고 수동 새로고침으로 재개한다', async () => {
   vi.useFakeTimers()
   try {
     vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
