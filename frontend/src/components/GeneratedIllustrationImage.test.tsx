@@ -17,6 +17,7 @@ const asset: GeneratedIllustration = {
   based_on_content_revision: 1,
   stale: false,
   applied: true,
+  discarded: false,
   asset_revision: 1,
   purpose: 'procedure',
   reason: '절차',
