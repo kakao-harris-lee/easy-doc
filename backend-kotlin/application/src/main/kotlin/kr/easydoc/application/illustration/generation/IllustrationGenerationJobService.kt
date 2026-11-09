@@ -238,7 +238,7 @@ class IllustrationGenerationJobService(
         requireReadEnabled()
         return transaction.inTransaction {
             val context =
-                jobs.lockOwnedContext(ownerId, conversionId)
+                jobs.readOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             val active = jobs.findActiveOwned(ownerId, conversionId)
             val requestCount = jobs.countDocumentJobs(ownerId, context.documentId)
@@ -262,7 +262,7 @@ class IllustrationGenerationJobService(
     ): IllustrationGenerationJobView {
         requireReadEnabled()
         return transaction.inTransaction {
-            jobs.lockOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+            jobs.readOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             jobs.findOwned(ownerId, conversionId, jobId)?.toView()
                 ?: throw NotFoundException(GENERATION_JOB_NOT_FOUND_MESSAGE)
         }

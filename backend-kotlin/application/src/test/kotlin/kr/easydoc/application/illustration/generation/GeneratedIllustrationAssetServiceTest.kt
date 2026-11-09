@@ -124,6 +124,18 @@ class GeneratedIllustrationAssetServiceTest {
     }
 
     @Test
+    fun `자산 목록과 이미지는 읽기 context를 사용하고 최신 revision으로 stale을 계산한다`() {
+        jobs.context = defaultGenerationContext().copy(contentRevision = 4)
+
+        val listed = service().list(GENERATION_OWNER, GENERATION_CONVERSION)
+        assertThat(listed.contentRevision).isEqualTo(4)
+        assertThat(listed.assets.single().stale).isTrue()
+        assertThat(service().image(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID).bytes).isNotEmpty()
+        assertThat(jobs.readContextCalls).isEqualTo(2)
+        assertThat(jobs.lockContextCalls).isZero()
+    }
+
+    @Test
     fun `자산 읽기가 꺼지면 목록 이미지 수정은 404다`() {
         val disabled = service(readEnabled = false)
 

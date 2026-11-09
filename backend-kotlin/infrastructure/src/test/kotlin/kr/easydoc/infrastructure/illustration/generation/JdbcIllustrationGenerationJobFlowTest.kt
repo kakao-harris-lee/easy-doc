@@ -78,6 +78,85 @@ class JdbcIllustrationGenerationJobFlowTest {
     }
 
     @Test
+    fun `읽기 context 조회는 conversion 저장과 Lock 대기 없이 동시에 끝난다`() {
+        val fixture = seed()
+        val pool = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        try {
+            lateinit var save: java.util.concurrent.Future<Int>
+            tx.executeWithoutResult {
+                assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                save =
+                    pool.submit<Int> {
+                        tx.execute<Int> {
+                            started.countDown()
+                            jdbc
+                                .sql(
+                                    """
+                                    UPDATE conversions
+                                    SET content_revision = 2
+                                    WHERE id = :id
+                                    """.trimIndent(),
+                                ).param("id", fixture.conversionId)
+                                .update()
+                        }
+                    }
+                assertThat(started.await(5, TimeUnit.SECONDS)).isTrue()
+                assertThat(save.get(5, TimeUnit.SECONDS)).isEqualTo(1)
+            }
+            assertThat(scalar("SELECT content_revision FROM conversions WHERE id = '${fixture.conversionId}'"))
+                .isEqualTo("2")
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `읽기 context는 소유권과 만료를 거부하고 최신 revision을 반환한다`() {
+        val fixture = seed()
+
+        assertThat(jobs.readOwnedContext(UUID.randomUUID(), fixture.conversionId)).isNull()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(1)
+        jdbc
+            .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
+            .param("id", fixture.conversionId)
+            .update()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(2)
+
+        jdbc
+            .sql("UPDATE documents SET retention_expires_at = now() WHERE id = :id")
+            .param("id", fixture.documentId)
+            .update()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+    }
+
+    @Test
+    fun `읽기 context는 문서 삭제와 직렬화된다`() {
+        val fixture = seed()
+        val pool = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        try {
+            lateinit var deletion: java.util.concurrent.Future<Int>
+            tx.executeWithoutResult {
+                assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                deletion =
+                    pool.submit<Int> {
+                        started.countDown()
+                        jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", fixture.documentId).update()
+                    }
+                assertThat(started.await(5, TimeUnit.SECONDS)).isTrue()
+                org.assertj.core.api.Assertions
+                    .assertThatThrownBy { deletion.get(300, TimeUnit.MILLISECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+            }
+            assertThat(deletion.get(10, TimeUnit.SECONDS)).isEqualTo(1)
+            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun `접수와 삭제가 경합하면 새 작업은 삭제 정산과 입력 파기에 포함된다`() {
         val fixture = seed()
         val job = fixture.job()

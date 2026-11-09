@@ -35,6 +35,8 @@ internal open class FakeGenerationJobs(var context: IllustrationGenerationJobCon
     var currentInputCheck: (() -> Boolean)? = null
     var terminalWriteSucceeds = true
     var countOverride: Int? = null
+    var lockContextCalls = 0
+    var readContextCalls = 0
     val terminalWrites = mutableListOf<Pair<IllustrationGenerationJobStatus, IllustrationGenerationJobFailureCode?>>()
 
     override fun lockAndCountDocumentJobs(
@@ -50,7 +52,18 @@ internal open class FakeGenerationJobs(var context: IllustrationGenerationJobCon
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? = context
+    ): IllustrationGenerationJobContext? {
+        lockContextCalls++
+        return context
+    }
+
+    override fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationGenerationJobContext? {
+        readContextCalls++
+        return context
+    }
 
     override fun findByRequestId(
         ownerId: UUID,
