@@ -249,6 +249,50 @@ class IllustrationGenerationContractTest {
         assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
     }
 
+    @Test
+    fun `자산 PATCH는 대체텍스트만 볼 수 있다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val view = asset(conversionId, assetRevision = 2)
+        `when`(assets.updateReview(owner, conversionId, ASSET_ID, 4, 1, ALT_TEXT, null)).thenReturn(view)
+
+        val response =
+            mockMvc
+                .patch("/conversions/$conversionId/generated-illustrations/$ASSET_ID") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """{"expected_content_revision":4,"expected_asset_revision":1,
+                        "alt_text":"$ALT_TEXT"}"""
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(json(response)["alt_text"].asString()).isEqualTo(ALT_TEXT)
+    }
+
+    @Test
+    fun `자산 PATCH는 폐기만 볼 수 있다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val view = asset(conversionId, discarded = true, assetRevision = 2)
+        `when`(assets.updateReview(owner, conversionId, ASSET_ID, 4, 1, null, true)).thenReturn(view)
+
+        val response =
+            mockMvc
+                .patch("/conversions/$conversionId/generated-illustrations/$ASSET_ID") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content =
+                        """{"expected_content_revision":4,"expected_asset_revision":1,
+                        "discarded":true}"""
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(json(response)["discarded"].asBoolean()).isTrue()
+    }
+
     private fun post(
         owner: UUID,
         conversionId: UUID,

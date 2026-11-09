@@ -2,6 +2,8 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
@@ -316,8 +318,8 @@ data class GeneratedIllustrationUpdateRequest
     constructor(
         @param:JsonProperty("expected_content_revision", required = true) val expectedContentRevision: Long,
         @param:JsonProperty("expected_asset_revision", required = true) val expectedAssetRevision: Long,
-        @param:JsonProperty("alt_text") val altText: String? = null,
-        @param:JsonProperty("discarded") val discarded: Boolean? = null,
+        @param:JsonProperty("alt_text") @param:JsonSetter(nulls = Nulls.SET) val altText: String? = null,
+        @param:JsonProperty("discarded") @param:JsonSetter(nulls = Nulls.SET) val discarded: Boolean? = null,
     ) {
         override fun toString(): String =
             "GeneratedIllustrationUpdateRequest(expectedContentRevision=$expectedContentRevision, " +

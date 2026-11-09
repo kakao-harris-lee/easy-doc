@@ -138,9 +138,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(apply).toBeDisabled()
     await generation.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
     await apply.click()
-    await expect(
-      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
-    ).toBeVisible()
+    await expect(documentPreview.locator('img')).toBeVisible()
+    await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')
     await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
     await page.setViewportSize({ width: 320, height: 800 })
     expect(
@@ -168,9 +167,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
       timeout: 90_000,
     })
     await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
-    await expect(
-      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
-    ).toBeVisible()
+    await expect(documentPreview.locator('img')).toBeVisible()
+    await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')
     await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
     await generation.getByRole('button', { name: '문서에서 그림 제거' }).click()
     await expect(documentPreview).toHaveCount(0)
