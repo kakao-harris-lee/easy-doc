@@ -110,6 +110,11 @@ interface IllustrationGenerationJobRepository {
         conversionId: UUID,
     ): IllustrationGenerationJobContext?
 
+    fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationGenerationJobContext?
+
     fun findByRequestId(
         ownerId: UUID,
         conversionId: UUID,

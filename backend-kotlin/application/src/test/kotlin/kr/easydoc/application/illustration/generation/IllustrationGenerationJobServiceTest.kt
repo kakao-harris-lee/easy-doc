@@ -138,6 +138,8 @@ class IllustrationGenerationJobServiceTest {
         assertThat(disabled.list(GENERATION_OWNER, GENERATION_CONVERSION).enabled).isFalse()
         assertThat(disabled.get(GENERATION_OWNER, GENERATION_CONVERSION, GENERATION_JOB).jobId)
             .isEqualTo(GENERATION_JOB)
+        assertThat(jobs.readContextCalls).isEqualTo(2)
+        assertThat(jobs.lockContextCalls).isZero()
         assertThatThrownBy { create(disabled) }
             .isInstanceOf(kr.easydoc.core.exceptions.NotFoundException::class.java)
     }

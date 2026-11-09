@@ -54,7 +54,7 @@ class GeneratedIllustrationAssetService(
         requireReadEnabled()
         return transaction.inTransaction {
             val context =
-                jobs.lockOwnedContext(ownerId, conversionId)
+                jobs.readOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             GeneratedIllustrationCollectionView(
                 context.contentRevision,
@@ -192,7 +192,7 @@ class GeneratedIllustrationAssetService(
     ): GeneratedIllustrationImage {
         requireReadEnabled()
         return transaction.inTransaction {
-            jobs.lockOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+            jobs.readOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             val asset =
                 assets.findOwned(ownerId, conversionId, assetId)
                     ?: throw NotFoundException(GENERATED_ILLUSTRATION_NOT_FOUND_MESSAGE)
