@@ -18,10 +18,12 @@
 
 **`⟨확인 필요: …⟩` 규칙은 앞으로의 개정에도 그대로 적용된다** — 하나라도 남아 있으면 일반 유료 구매를 개방하지 않는다. 채우는 방법과 담당은 `docs/plans/2026-09-10-personal-data-inventory.md` §5에 있다.
 
+새 처리의 구현·검증·배포 상태는 [유료 출시 준비](../plans/2026-10-11-paid-release-readiness.md)에서 추적한다.
+
 거래 보존(결제 동의 증빙)에 쓰는 백엔드 `backend-kotlin/infrastructure/src/main/resources/legal/` 파일은 해당 버전의 증빙 스냅샷이므로 덮어쓰지 않고 새 버전 파일을 추가한다. 어느 파일을 담을지는 `LegalSnapshot`이 정한다.
 
 - `LegalSnapshot.VERSION` — 약관 스냅샷 버전이자 **유료 실결제 시행 시각(`EFFECTIVE_AT`)의 근거**다. 약관을 개정할 때만 올린다.
-- `LegalSnapshot.PRIVACY_VERSION` — 방침 스냅샷 버전. 방침만 고칠 때는 이것만 올려 유료 시행 시각을 움직이지 않는다.
+- `LegalSnapshot.PRIVACY_VERSIONS` — 방침 판의 시행 순서 목록(마지막이 현재 판 `PRIVACY_VERSION`). 동의 증빙에는 **동의 시각에 시행 중이던 판**의 본문과 `privacy_version`을 담는다. 방침만 고칠 때는 이 목록에 새 판을 더해 유료 시행 시각을 움직이지 않는다.
 - `JdbcRetainedTransactionRepositoryTest`가 현재 스냅샷 리소스와 프런트 게시 문안이 바이트 단위로 같은지 검사한다. CI는 `compose.ci.yml`에서 프런트 문안을 backend 검사 컨테이너에 읽기 전용으로 붙인다.
 
 법률 검토를 필수 관문으로 두지 않기로 했다(인벤토리 §5 머리말). 그 대신 **공개 법령·기관 지침과 실제 계약·설정·구현 증거를 대조해 직접 확정한다.** 그러니 이 문서의 정확성은 그 대조를 마쳤는지에 달려 있다.

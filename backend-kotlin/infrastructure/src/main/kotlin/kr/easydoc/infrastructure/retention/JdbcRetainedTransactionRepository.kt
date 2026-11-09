@@ -587,9 +587,14 @@ class JdbcRetainedTransactionRepository(
         // start-monthly-v1 is the only version for which the current published snapshot is
         // explicitly supplied by successful checkout. Historical backfills retain only the
         // version/time and stay quarantined until evidence is reviewed.
+        // 방침 스냅샷은 동의 **시점에 시행 중이던** 판이다. 지금 판을 박으면 과거의 동의가 보지도
+        // 못한 방침에 동의한 것처럼 기록된다. EFFECTIVE_AT 이 첫 방침 시행 시각과 같아 아래 null 은
+        // 나오지 않지만, 둘이 갈라지면 증거를 지어내는 대신 격리한다.
+        val privacyVersion = occurredAt?.let { LegalSnapshot.privacyVersionAt(it) }
         val current =
             snapshotEligible && session.consentVersion == CURRENT_CONSENT_VERSION &&
-                occurredAt != null && !occurredAt.isBefore(LegalSnapshot.EFFECTIVE_AT)
+                occurredAt != null && !occurredAt.isBefore(LegalSnapshot.EFFECTIVE_AT) &&
+                privacyVersion != null
         upsertRecord(
             id = id,
             type = RetainedRecordType.CONSENT,
@@ -606,8 +611,9 @@ class JdbcRetainedTransactionRepository(
                     "consent_version" to session.consentVersion,
                     "consent_at" to occurredAt?.toString(),
                     "terms_snapshot" to if (current) legalResource("legal/terms-${LegalSnapshot.VERSION}.md") else null,
+                    "privacy_version" to if (current) "privacy-$privacyVersion" else null,
                     "privacy_snapshot" to
-                        if (current) legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md") else null,
+                        if (current) legalResource("legal/privacy-$privacyVersion.md") else null,
                 ),
         )
     }

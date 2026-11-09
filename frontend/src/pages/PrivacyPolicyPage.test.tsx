@@ -9,7 +9,13 @@ describe('개인정보처리방침 화면', () => {
 
     expect(screen.getByRole('heading', { name: '개인정보처리방침', level: 1 })).toBeInTheDocument()
     // 머리말의 버전과 §10 변경 이력에 같은 문자열이 나온다.
-    expect(screen.getAllByText('privacy-2026-11-10').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('privacy-2026-11-10')).toHaveLength(2)
+  })
+
+  it('그림 제안에 보내는 내용이 원문 본문과 이용자 수정본임을 밝힌다', () => {
+    render(<PrivacyPolicyPage />)
+
+    expect(screen.getByText(/이용자 수정본이 있으면 그 수정본/)).toBeInTheDocument()
   })
 
   it('유료 조건의 검토일과 적용일 공고 조건을 보여준다', () => {

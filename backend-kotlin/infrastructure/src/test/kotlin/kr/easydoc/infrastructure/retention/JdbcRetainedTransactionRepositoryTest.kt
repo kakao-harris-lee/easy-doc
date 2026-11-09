@@ -33,11 +33,15 @@ class JdbcRetainedTransactionRepositoryTest {
     @Test
     fun `November legal resources contain the published Start conditions`() {
         val terms = legalResource("legal/terms-${LegalSnapshot.VERSION}.md")
-        assertThat(terms).contains("terms-2026-11-01", "2026-10-26", "2026년 11월 1일")
+        assertThat(terms).contains("terms-${LegalSnapshot.VERSION}", "2026-10-26", "2026년 11월 1일")
         assertThat(terms).contains("월 99,000원", "50크레딧", "start-monthly-v1")
 
         val privacy = legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md")
-        assertThat(privacy).contains("privacy-2026-11-10", "2026-11-10", "2026년 11월 1일")
+        assertThat(privacy).contains(
+            "privacy-${LegalSnapshot.PRIVACY_VERSION}",
+            "검토일: ${LegalSnapshot.PRIVACY_VERSION}",
+            "2026년 11월 1일",
+        )
         assertThat(privacy).contains("Images API는 이 옵션을 제공하지 않으므로")
 
         listOf(terms, privacy).forEach {
@@ -59,7 +63,7 @@ class JdbcRetainedTransactionRepositoryTest {
     }
 
     @Test
-    fun `consent at the November cutoff archives the current snapshots`() {
+    fun `consent at the November cutoff archives the policy in force at consent time`() {
         val db = database("retained_consent_at_cutoff")
         val (user, workspace, session) = owner(db)
         val repository = repository(db, 1)
@@ -72,9 +76,29 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(cutoff)
         assertThat(archivedConsent.summary.manualReview).isFalse()
-        assertThat(archivedConsent.payloadJson).contains("terms-2026-11-01", "privacy-2026-11-10")
-        assertThat(ObjectMapper().readTree(archivedConsent.payloadJson)["privacy_snapshot"].asString())
-            .isEqualTo(legalResource("legal/privacy-2026-11-10.md"))
+        assertThat(archivedConsent.payloadJson).contains("terms-${LegalSnapshot.VERSION}", "privacy-2026-11-01")
+        val payload = ObjectMapper().readTree(archivedConsent.payloadJson)
+        assertThat(payload["privacy_version"].asString()).isEqualTo("privacy-2026-11-01")
+        assertThat(payload["privacy_snapshot"].asString()).isEqualTo(legalResource("legal/privacy-2026-11-01.md"))
+    }
+
+    @Test
+    fun `consent after the November tenth revision archives the revised policy`() {
+        val db = database("retained_consent_after_revision")
+        val (user, workspace, session) = owner(db)
+        val repository = repository(db, 1)
+        val fixture = paymentIds(db, workspace, "start", 1000, 0)
+        val afterRevision = Instant.parse("2026-11-10T00:00:00+09:00")
+        val consent = sessionModel(workspace, session, user).copy(consentAt = afterRevision)
+
+        repository.archivePayment(fixture.order, fixture.payment, 0, null, consent)
+
+        val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
+        assertThat(archivedConsent.summary.manualReview).isFalse()
+        val payload = ObjectMapper().readTree(archivedConsent.payloadJson)
+        assertThat(payload["privacy_version"].asString()).isEqualTo("privacy-${LegalSnapshot.PRIVACY_VERSION}")
+        assertThat(payload["privacy_snapshot"].asString())
+            .isEqualTo(legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md"))
     }
 
     @Test
@@ -91,7 +115,11 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(beforeCutoff)
         assertThat(archivedConsent.summary.manualReview).isTrue()
-        assertThat(archivedConsent.payloadJson).contains("\"terms_snapshot\":null", "\"privacy_snapshot\":null")
+        assertThat(archivedConsent.payloadJson).contains(
+            "\"terms_snapshot\":null",
+            "\"privacy_snapshot\":null",
+            "\"privacy_version\":null",
+        )
     }
 
     @Test
