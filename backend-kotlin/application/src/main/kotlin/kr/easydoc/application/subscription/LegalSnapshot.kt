@@ -7,17 +7,23 @@ import java.time.ZoneId
 /**
  * 유료 Start 약관·개인정보처리방침 스냅샷 버전과 그 시행 시각의 한 정의.
  *
- * [VERSION] 은 `infrastructure` 가 동의 기록에 담는 `legal/terms-<VERSION>.md`·
- * `legal/privacy-<VERSION>.md` 리소스 이름이고, 같은 날짜가 공개한 약관의 시행일이다.
- * 버전과 시행 시각을 따로 적으면 스냅샷은 새 약관을 가리키는데 결제는 그 전에 열리는 식으로
- * 어긋나므로 시행 시각을 버전에서 끌어낸다.
+ * [VERSION] 은 `infrastructure` 가 동의 기록에 담는 `legal/terms-<VERSION>.md` 리소스 이름이고,
+ * 같은 날짜가 공개한 약관의 시행일이다. 버전과 시행 시각을 따로 적으면 스냅샷은 새 약관을
+ * 가리키는데 결제는 그 전에 열리는 식으로 어긋나므로 시행 시각을 버전에서 끌어낸다.
+ *
+ * [PRIVACY_VERSION] 은 `legal/privacy-<PRIVACY_VERSION>.md` 리소스 이름이다. **약관 버전과 따로
+ * 움직인다** — 개인정보처리방침 개정은 유료 약관의 내용도 시행 시각도 바꾸지 않으므로, 방침을
+ * 고치려고 [EFFECTIVE_AT] 을 옮기면 실결제 관문이 공개된 약관과 어긋난다.
  *
  * 코드와 함께 바뀌어야 하는 불변식이라 구성값이 아니라 상수로 둔다 — 약관 본문을 저장소에
  * 함께 올리지 않고는 바꿀 수 없다.
  */
 object LegalSnapshot {
-    /** `legal/terms-<VERSION>.md`·`legal/privacy-<VERSION>.md` 의 버전이자 시행일(`yyyy-MM-dd`). */
+    /** `legal/terms-<VERSION>.md` 의 버전이자 유료 약관 시행일(`yyyy-MM-dd`). */
     const val VERSION = "2026-11-01"
+
+    /** `legal/privacy-<PRIVACY_VERSION>.md` 의 버전. 방침 개정은 유료 시행일을 옮기지 않는다. */
+    const val PRIVACY_VERSION = "2026-11-10"
 
     /** 약관 본문이 적은 시행 시점의 기준 시간대. */
     val ZONE: ZoneId = ZoneId.of("Asia/Seoul")

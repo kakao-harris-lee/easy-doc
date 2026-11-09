@@ -607,7 +607,7 @@ class JdbcRetainedTransactionRepository(
                     "consent_at" to occurredAt?.toString(),
                     "terms_snapshot" to if (current) legalResource("legal/terms-${LegalSnapshot.VERSION}.md") else null,
                     "privacy_snapshot" to
-                        if (current) legalResource("legal/privacy-${LegalSnapshot.VERSION}.md") else null,
+                        if (current) legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md") else null,
                 ),
         )
     }

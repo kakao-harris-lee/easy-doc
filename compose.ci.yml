@@ -36,6 +36,11 @@ services:
       # ConfigurationPropertiesBindingTest 의 Telegram 환경변수 계약 검사가 api 모듈(/build/api)에서
       # ../../.env.example 로 저장소 루트의 .env.example 을 읽으므로 /.env.example 로 붙인다.
       - ./.env.example:/.env.example:ro
+      # 게시 법정 문안의 정본은 frontend/src/content/legal 이다. 동의 증빙 스냅샷 리소스가
+      # 그 문안과 갈라지지 않았는지 보는 검사가 backend 루트(/build)의 부모에서
+      # frontend/src/content/legal 을 찾으므로 그 경로로 붙인다. 붙이지 않으면 검사가
+      # CI 에서 "문안을 찾지 못했다"로 실패한다 — 빌드 컨텍스트에는 프런트가 없다.
+      - ./frontend/src/content/legal:/frontend/src/content/legal:ro
 
   frontend-check:
     profiles: [ci]
