@@ -1,11 +1,11 @@
 # 쉬운 글 그림으로 설명 개선 실행 계획
 
-작성일: 2026-11-07 · 상태: **실행 계획, 구현 전** · 코드 기준: `47cc2858`
+작성일: 2026-11-07 · 상태: **구현·자동/fake 검증 완료, 실제 provider 평가·파일럿 승인 미완료** · 코드 기준: `47cc2858`
 
 이 문서는 쉬운 글 변환 뒤 **그림 제안 → 사용자 명시 요청에 따른 비동기 생성 → 검토 → 적용** 흐름의
 리뷰 결과를 실행 순서로 정리한다. 현재 제안·생성 기능은 기본 OFF이며 관리자 파일럿으로 제한한다
 (`backend-kotlin/api/src/main/resources/application.yml:105`, `:115`,
-`frontend/e2e/illustration-suggestions.spec.ts:52`). 이 문서는 구현이나 품질·출시 완료 증거가 아니다.
+`frontend/e2e/illustration-suggestions.spec.ts:52`). fake/0크레딧 검증 통과는 실제 provider 품질·출시 완료 증거가 아니다.
 
 ## 1. 목표와 비목표
 
