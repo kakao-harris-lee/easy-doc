@@ -1,6 +1,6 @@
 # 쉬운 글 그림으로 설명 개선 실행 계획
 
-작성일: 2026-11-07 · 상태: **구현·자동/fake 검증 완료, 실제 provider 평가·파일럿 승인 미완료** · 코드 기준: `47cc2858`
+작성일: 2026-11-07 · 상태: **0~3단계 구현·자동/fake 검증 완료(§10), 4단계 실제 provider 평가·파일럿 승인 미완료** · 코드 기준: `47cc2858`
 
 이 문서는 쉬운 글 변환 뒤 **그림 제안 → 사용자 명시 요청에 따른 비동기 생성 → 검토 → 적용** 흐름의
 리뷰 결과를 실행 순서로 정리한다. 현재 제안·생성 기능은 기본 OFF이며 관리자 파일럿으로 제한한다
@@ -350,7 +350,26 @@ E2E는 운영 `.env`·DB·포트·실제 API 키를 쓰지 않는 **격리된 fa
 - 사전 승인된 기준으로 실제 provider 평가를 판정하고 실제 비용·지연을 기록했으며, 파일럿 유지·중단·확대 결정이 남았다.
 - 기본 OFF·관리자 제한·유료 호출 승인 경계가 유지되고, 남은 미검증 항목을 완료로 보고하지 않았다.
 
-## 10. 사용자 추가 결정이 필요한 사항
+## 10. 구현 기록 (2026-11-10, 통합 브랜치 `codex/illustration-explanation-improvement-20261108`)
+
+| 과제 | 상태 | 결정·근거 |
+|---|---|---|
+| P0-2 `store=false` | 완료(문안 정정) | Images API는 `store` 파라미터를 지원하지 않으므로 요청은 그대로 두고, 처리방침을 `privacy-2026-11-08`로 올려 Responses API에만 `store=false`를 지정한다고 정정했다. 법무 검토 기록은 별도 확인 대상이다. |
+| P1-1 capability 분리 | 완료 | `ReviewCapabilities`에 `illustration_{suggestions,generation}_{read,create}`를 추가했다. 기존 필드는 `*_create`와 같은 값의 호환 필드다. read는 `read-enabled`에 연결되고 가격·접수 토글과 독립이며, 관리자 허용 목록 밖 사용자는 7개 필드가 모두 false로 마스킹된다(`ConversionIllustrationCapabilityContractTest`). |
+| P1-2 문서 전환 경합 | 완료 | 접수 응답을 conversion·시도 범위로 검사하고 전환 시 abort한다. |
+| P1-3 폴링 | 완료 | 401/404 즉시 중지, 5xx 3회 제한 후 수동 새로고침. terminal 상태 이후의 목록·자산 재조회 실패가 terminal 안내를 덮거나 폴링을 재개하지 않도록 수정했다(회귀 테스트 3건). |
+| P1-4 실패·402·한도 | 완료 | 실패 코드별 안내, 402 필요량·가용량·충전 이동, 응답에 `request_count`·`request_limit`(10)·`remaining_request_count` 노출(계약 변경). |
+| P1-5 후보 검토 | 완료(도입) | 원 제안 정보 표시 + `PATCH` 대체텍스트 수정·soft 폐기를 `expected_asset_revision` CAS로 도입했다. 폐기는 암호화 메타데이터의 soft flag(물리 삭제 아님, 복구 없음, 적용 자산은 먼저 적용 해제), 크레딧 불반환, `configuration_revision`은 생성 당시 provenance 유지. 새 migration 없음(기존 V51 `asset_revision` 사용). |
+| P1-6 코드 포인트 300 | 완료 | 제안·생성·프런트를 코드 포인트로 통일, canonical 해시 벡터 유지. |
+| P2-1 접근성 | 완료 | 로딩 status·오류 연결 재시도·입력 오류 ID·중복 낭독 제거(`alt=""`+`figcaption`). 수동 스크린리더 확인은 미실시. |
+| P2-2 Blob 공유 | 완료 | `generatedIllustrationImageCache.ts`로 문서·자산 단위 GET 1회·참조 해제 시 revoke. |
+| P2-3 읽기 잠금 | 변경 | 실제 PostgreSQL 흐름 테스트에서 읽기 context 조회 트랜잭션이 열린 동안 본문 저장이 대기 없이 끝남을 확인하고(기존 `FOR NO KEY UPDATE`는 저장을 막음), 읽기 경로만 잠금 없는 `readOwnedContext`로 분리했다. 문서 삭제 직렬화·소유권·만료는 회귀 테스트로 유지. 대기 시간 수치 측정은 하지 않았다. |
+| P0-1 실제 provider 평가 | **미착수** | §11-3의 통과 기준·예산 승인 전이라 유료 호출을 하지 않았다. 파일럿 확대 불가. |
+
+## 11. 사용자 추가 결정이 필요한 사항
+
+1·2는 §10대로 결정·구현됐다. 3만 남아 있다.
+
 
 1. **생성 후 대체텍스트 수정·후보 폐기 도입 여부:** 도입할지, 폐기를 숨김/물리 삭제 중 무엇으로 할지, stale·보존·재생성 규칙을 확정해야 한다.
 2. **capability 계약 분리 방식:** `ReviewCapabilities`에 read/create를 추가할지, 각 작업/자산 응답에 둘지, 제안 읽기까지 같은 단위로 분리할지 선택해야 한다.
