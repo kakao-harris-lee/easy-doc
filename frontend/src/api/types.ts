@@ -288,10 +288,18 @@ export interface ReviewCapabilities {
   illustrations: boolean
   /** 결과 문단에 실제 검토 신호만 합쳐 표시하는 새 UX가 켜졌는지. */
   focused_review: boolean
-  /** 토글이 켜져 있고 이용량 단가가 설정돼 있을 때만 true다. */
+  /** 기존 호환 필드. 신규 접수 capability와 같다. */
   illustration_suggestions: boolean
-  /** 독립 토글·provider 가격·고객 차감량이 모두 유효할 때만 true다. */
+  /** 저장된 제안·작업 읽기. 배포 시차가 있는 옛 응답에는 없을 수 있다. */
+  illustration_suggestions_read?: boolean
+  /** 신규 제안 접수. 읽기 가능 여부와 독립이다. */
+  illustration_suggestions_create?: boolean
+  /** 기존 호환 필드. 신규 접수 capability와 같다. */
   illustration_generation: boolean
+  /** 기존 생성 작업·자산·이미지 읽기. */
+  illustration_generation_read?: boolean
+  /** 신규 생성·재생성 접수. */
+  illustration_generation_create?: boolean
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
@@ -744,11 +752,15 @@ export interface IllustrationGenerationJob {
 }
 
 export interface IllustrationGenerationJobCollection {
+  /** 신규 접수 가능 여부. 기존 작업·자산 읽기와 무관하다. */
   enabled: boolean
   active_job: IllustrationGenerationJob | null
   latest_job: IllustrationGenerationJob | null
   required_credits: number | null
   available_credits: number
+  request_count: number
+  request_limit: number
+  remaining_request_count: number
 }
 
 export interface GeneratedIllustration {
@@ -757,10 +769,13 @@ export interface GeneratedIllustration {
   job_id: string
   suggestion_id: string
   analysis_version: string
+  /** 생성 당시 구성의 provenance. 후속 대체텍스트 수정으로 바뀌지 않는다. */
   configuration_revision: string
   based_on_content_revision: number
   stale: boolean
   applied: boolean
+  /** true인 자산은 일반 목록 응답에서 이미 제외된다. */
+  discarded: boolean
   asset_revision: number
   purpose: IllustrationSuggestionPurpose
   reason: string
@@ -783,6 +798,13 @@ export interface UpdateGeneratedIllustrationApplicationRequest {
   expected_content_revision: number
   expected_asset_revision: number
   applied: boolean
+}
+
+export interface UpdateGeneratedIllustrationReviewRequest {
+  expected_content_revision: number
+  expected_asset_revision: number
+  alt_text?: string
+  discarded?: true
 }
 
 /** 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). */

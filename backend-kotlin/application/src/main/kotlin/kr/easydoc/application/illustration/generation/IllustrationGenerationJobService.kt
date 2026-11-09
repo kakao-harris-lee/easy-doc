@@ -52,6 +52,9 @@ data class IllustrationGenerationJobCollectionView(
     val requiredCredits: BigDecimal?,
     val availableCredits: BigDecimal,
     val enabled: Boolean,
+    val requestCount: Int,
+    val requestLimit: Int,
+    val remainingRequestCount: Int,
 )
 
 data class IllustrationGenerationJobCreationView(
@@ -71,6 +74,7 @@ class IllustrationGenerationJobService(
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
+    private val readEnabled: Boolean = true,
 ) {
     @Suppress("LongMethod", "ThrowsCount", "CyclomaticComplexMethod", "ComplexCondition")
     fun create(
@@ -230,29 +234,35 @@ class IllustrationGenerationJobService(
     fun list(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobCollectionView =
-        transaction.inTransaction {
+    ): IllustrationGenerationJobCollectionView {
+        requireReadEnabled()
+        return transaction.inTransaction {
             val context =
-                jobs.lockOwnedContext(ownerId, conversionId)
+                jobs.readOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             val active = jobs.findActiveOwned(ownerId, conversionId)
+            val requestCount = jobs.countDocumentJobs(ownerId, context.documentId)
             IllustrationGenerationJobCollectionView(
                 active?.toView(),
                 (active ?: jobs.findLatestOwned(ownerId, conversionId))?.toView(),
                 creditsPerImage,
                 credits.available(ownerId, context.workspaceId),
                 capabilityAvailable(),
+                requestCount,
+                MAX_GENERATION_JOBS_PER_DOCUMENT,
+                (MAX_GENERATION_JOBS_PER_DOCUMENT - requestCount).coerceAtLeast(0),
             )
         }
+    }
 
     fun get(
         ownerId: UUID,
         conversionId: UUID,
         jobId: UUID,
     ): IllustrationGenerationJobView {
-        requireEnabled()
+        requireReadEnabled()
         return transaction.inTransaction {
-            jobs.lockOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+            jobs.readOwnedContext(ownerId, conversionId) ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             jobs.findOwned(ownerId, conversionId, jobId)?.toView()
                 ?: throw NotFoundException(GENERATION_JOB_NOT_FOUND_MESSAGE)
         }
@@ -260,6 +270,10 @@ class IllustrationGenerationJobService(
 
     private fun requireEnabled() {
         if (!enabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+    }
+
+    private fun requireReadEnabled() {
+        if (!readEnabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
     }
 
     private fun capabilityAvailable(): Boolean =

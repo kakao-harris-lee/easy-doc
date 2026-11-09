@@ -144,12 +144,18 @@ class ConversionController(
         view: kr.easydoc.core.document.ConversionView,
     ): kr.easydoc.core.document.ConversionView {
         if (illustrationAccess.allows(userId)) return view
+        // `copy()` 는 생성자 기본값(`illustrationSuggestionsCreate = illustrationSuggestions`)을
+        // 다시 유도하지 않는다 — 읽기·접수 capability 일곱을 모두 명시해야 마스킹이 닫힌다.
         return view.copy(
             reviewCapabilities =
                 view.reviewCapabilities.copy(
                     illustrations = false,
                     illustrationSuggestions = false,
                     illustrationGeneration = false,
+                    illustrationSuggestionsRead = false,
+                    illustrationSuggestionsCreate = false,
+                    illustrationGenerationRead = false,
+                    illustrationGenerationCreate = false,
                 ),
         )
     }

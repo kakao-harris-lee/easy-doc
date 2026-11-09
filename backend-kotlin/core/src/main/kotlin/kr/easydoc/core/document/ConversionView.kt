@@ -99,13 +99,14 @@ data class ReviewCapabilities(
     val reviewHistory: Boolean,
     val explanations: Boolean,
     val illustrations: Boolean,
-    /**
-     * R7 ER-17 문맥 기반 그림 제안. 토글이 켜져 있고 **이용량 단가가 설정돼 있을 때만** true 다
-     * (명세 §3·§6) — 단가가 없으면 접수가 503 이라 기능을 노출하는 것이 거짓말이 된다.
-     */
+    /** 기존 필드는 신규 제안 접수 capability와 같은 값이다. */
     val illustrationSuggestions: Boolean,
-    /** R7 ER-18 요청형 실제 이미지 생성. 제안·카탈로그 토글과 독립이다. */
+    /** 기존 필드는 신규 생성 접수 capability와 같은 값이다. */
     val illustrationGeneration: Boolean = false,
+    val illustrationSuggestionsRead: Boolean = false,
+    val illustrationSuggestionsCreate: Boolean = illustrationSuggestions,
+    val illustrationGenerationRead: Boolean = false,
+    val illustrationGenerationCreate: Boolean = illustrationGeneration,
 ) {
     companion object {
         val NONE = ReviewCapabilities(false, false, false, false, false, false, false, false, false)

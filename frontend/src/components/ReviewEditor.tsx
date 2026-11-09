@@ -48,6 +48,7 @@ import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
 import { IllustrationPlacementPanel } from './IllustrationPlacementPanel'
 import { IllustrationSuggestionsPanel } from './IllustrationSuggestionsPanel'
+import { IllustrationGenerationPanel } from './IllustrationGenerationPanel'
 import { GeneratedIllustrationPreview } from './GeneratedIllustrationPreview'
 import { IllustrationsPanel } from './IllustrationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
@@ -1279,17 +1280,25 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
   const illustrationsEnabled = conversion.review_capabilities?.illustrations === true
-  // 기존 `illustrations` 토글과 독립이다. 이용량 단가가 없으면
-  // 서버가 false 로 보고하므로 화면은 이 값만 보고 패널을 그린다.
-  const illustrationSuggestionsEnabled =
-    conversion.review_capabilities?.illustration_suggestions === true
+  const capabilities = conversion.review_capabilities
+  const illustrationSuggestionsRead =
+    capabilities?.illustration_suggestions_read ?? capabilities?.illustration_suggestions ?? false
+  const illustrationSuggestionsCreate =
+    capabilities?.illustration_suggestions_create ?? capabilities?.illustration_suggestions ?? false
+  const illustrationGenerationRead =
+    capabilities?.illustration_generation_read ?? capabilities?.illustration_generation ?? false
+  const illustrationGenerationCreate =
+    capabilities?.illustration_generation_create ?? capabilities?.illustration_generation ?? false
   const currentGeneratedAssets =
-    illustrationSuggestionsEnabled &&
+    illustrationGenerationRead &&
     generatedIllustrations?.conversionId === conversion.id &&
     generatedIllustrations.contentRevision === contentRevision
       ? generatedIllustrations.assets.filter(
           (asset) =>
-            asset.applied && !asset.stale && asset.based_on_content_revision === contentRevision,
+            asset.applied &&
+            !asset.discarded &&
+            !asset.stale &&
+            asset.based_on_content_revision === contentRevision,
         )
       : []
   return (
@@ -1884,7 +1893,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           />
         )}
 
-        {(illustrationsEnabled || illustrationSuggestionsEnabled) && (
+        {(illustrationsEnabled || illustrationSuggestionsRead || illustrationGenerationRead) && (
           <section aria-label="선택 그림" className="mt-4 rounded-xl border border-border p-4">
             <Button
               type="button"
@@ -1895,12 +1904,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               onClick={() => setIllustrationsOpen((current) => !current)}
             >
               {illustrationsOpen
-                ? illustrationSuggestionsEnabled
+                ? illustrationSuggestionsRead
                   ? '그림 제안 접기'
-                  : '그림 목록·배치 접기'
-                : illustrationSuggestionsEnabled
+                  : illustrationGenerationRead
+                    ? '생성 그림 접기'
+                    : '그림 목록·배치 접기'
+                : illustrationSuggestionsRead
                   ? '그림 제안 보기 (선택)'
-                  : '그림 목록·배치 보기 (선택)'}
+                  : illustrationGenerationRead
+                    ? '생성 그림 보기 (선택)'
+                    : '그림 목록·배치 보기 (선택)'}
             </Button>
             <div
               id={`${editorId}-illustrations-panel`}
@@ -1922,17 +1935,30 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 />
               )}
 
-              {illustrationSuggestionsEnabled && (
+              {illustrationSuggestionsRead && (
                 <IllustrationSuggestionsPanel
                   conversionId={conversion.id}
                   contentRevision={contentRevision}
                   bodyDirty={dirty}
                   bodyBusy={busy}
                   bodyConflict={contentConflict}
-                  // 제안이 가리키는 줄은 **저장된** 본문 기준이다. 편집 중인 `draft`를 주면
-                  // 저장하지 않은 수정이 제안의 근거처럼 보인다.
                   savedBody={savedText}
+                  createEnabled={illustrationSuggestionsCreate}
+                  generationRead={illustrationGenerationRead}
+                  generationCreateEnabled={illustrationGenerationCreate}
                   onGeneratedAssetsChange={onGeneratedAssetsChange}
+                />
+              )}
+              {!illustrationSuggestionsRead && illustrationGenerationRead && (
+                <IllustrationGenerationPanel
+                  conversionId={conversion.id}
+                  contentRevision={contentRevision}
+                  analysisVersion={null}
+                  suggestions={[]}
+                  disabled
+                  removeDisabled={dirty || busy || contentConflict}
+                  createEnabled={illustrationGenerationCreate}
+                  onAssetsChange={onGeneratedAssetsChange}
                 />
               )}
             </div>

@@ -23,6 +23,7 @@ class IllustrationSuggestionJobServiceTest {
     private fun service(
         enabled: Boolean = true,
         rate: BigDecimal? = BigDecimal("0.1"),
+        readEnabled: Boolean = true,
     ) = IllustrationSuggestionJobService(
         enabled,
         rate,
@@ -30,6 +31,7 @@ class IllustrationSuggestionJobServiceTest {
         credits,
         DirectSuggestionTransaction(jobs),
         Clock.fixed(SUGGESTION_NOW, ZoneOffset.UTC),
+        readEnabled,
     )
 
     @Test
@@ -117,12 +119,21 @@ class IllustrationSuggestionJobServiceTest {
     }
 
     @Test
-    @DisplayName("기능이 꺼져 있으면 접수·목록·단건이 모두 404다 — 존재를 알리지 않는다")
-    fun `기능이 꺼져 있으면 404다`() {
+    fun `신규 제안 접수가 꺼져도 기존 작업은 읽을 수 있다`() {
         val disabled = service(enabled = false)
 
         assertThatThrownBy { disabled.create(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_REQUEST, 3) }
             .isInstanceOf(NotFoundException::class.java)
+        assertThat(disabled.list(SUGGESTION_OWNER, SUGGESTION_CONVERSION).latestJob).isNull()
+        assertThatThrownBy { disabled.get(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_JOB) }
+            .isInstanceOf(NotFoundException::class.java)
+            .hasMessage(SUGGESTION_JOB_NOT_FOUND_MESSAGE)
+    }
+
+    @Test
+    fun `제안 읽기가 꺼지면 목록과 단건은 404다`() {
+        val disabled = service(readEnabled = false)
+
         assertThatThrownBy { disabled.list(SUGGESTION_OWNER, SUGGESTION_CONVERSION) }
             .isInstanceOf(NotFoundException::class.java)
         assertThatThrownBy { disabled.get(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_JOB) }

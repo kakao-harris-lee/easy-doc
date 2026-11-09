@@ -75,6 +75,7 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/illustration-generation-jobs",
             "/conversions/{conversion_id}/illustration-generation-jobs/{job_id}",
             "/conversions/{conversion_id}/generated-illustrations",
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}",
             "/conversions/{conversion_id}/generated-illustrations/{asset_id}/image",
             "/conversions/{conversion_id}/generated-illustrations/{asset_id}/download",
             "/conversions/{conversion_id}/generated-illustrations/{asset_id}/application",

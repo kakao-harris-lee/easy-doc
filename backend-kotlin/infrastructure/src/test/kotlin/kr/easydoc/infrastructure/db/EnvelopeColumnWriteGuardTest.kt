@@ -462,6 +462,9 @@ class EnvelopeColumnWriteGuardTest {
                 // R7 ER-18 생성 입력과 자산 metadata/PNG 회전 둘. 각 UPDATE가 공통 봉투를 함께 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/generation/" +
                     "IllustrationGenerationKeyRotation.kt",
+                // 자산 검토 수정도 metadata와 PNG를 같은 세대로 재봉인하고 공통 봉투를 함께 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/generation/" +
+                    "JdbcGeneratedIllustrationAssetRepository.kt",
                 // R7 ER-17 결과 payload 의 키 회전 UPDATE 하나. 저장은 INSERT 라 SET 절이 없어
                 // 이 조사에 잡히지 않는다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/suggestion/" +
@@ -568,7 +571,8 @@ class EnvelopeColumnWriteGuardTest {
          * 들어오지 않는다.
          * 52 -> 54: ER-18 생성 입력 한 문장과 자산 metadata/PNG 원자 회전 한 문장.
          * 54 -> 55: ER-18 전송 실패 회귀 fixture의 입력 암호문과 봉투 메타데이터 갱신 한 문장.
+         * 55 -> 56: ER-18 자산 검토 수정이 metadata와 PNG를 같은 봉투 세대로 갱신하는 한 문장.
          */
-        const val EXPECTED_STATEMENTS = 55
+        const val EXPECTED_STATEMENTS = 56
     }
 }

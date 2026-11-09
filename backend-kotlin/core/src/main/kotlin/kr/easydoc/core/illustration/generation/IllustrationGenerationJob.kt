@@ -60,6 +60,7 @@ data class IllustrationGenerationMetadata(
     val scenes: List<String>,
     val preservedFacts: List<String>,
     val altText: String,
+    val discarded: Boolean = false,
 ) {
     override fun toString(): String =
         "IllustrationGenerationMetadata(suggestionId=$suggestionId, analysisVersion=$analysisVersion, " +
@@ -77,6 +78,12 @@ class IllustrationGenerationInput(
         "IllustrationGenerationInput(finalPrompt=${finalPrompt.length}자, metadata=$metadata)"
 }
 
+fun validateIllustrationGenerationAltText(altText: String) {
+    require(altText.isNotBlank() && altText.codePointCount(0, altText.length) <= MAX_GENERATION_ALT_TEXT_CHARS) {
+        "대체텍스트 구성이 올바르지 않습니다"
+    }
+}
+
 fun validateIllustrationGenerationConfiguration(
     suggestion: IllustrationSuggestion,
     configuration: IllustrationGenerationConfiguration,
@@ -85,9 +92,7 @@ fun validateIllustrationGenerationConfiguration(
         "그림 장면 구성이 올바르지 않습니다"
     }
     require(configuration.preservedFacts.size <= MAX_GENERATION_FACTS) { "보존할 사실 구성이 올바르지 않습니다" }
-    require(configuration.altText.isNotBlank() && configuration.altText.length <= MAX_GENERATION_ALT_TEXT_CHARS) {
-        "대체텍스트 구성이 올바르지 않습니다"
-    }
+    validateIllustrationGenerationAltText(configuration.altText)
     require(configuration.scenes.all { it in suggestion.scenes }) { "최신 제안에 없는 장면은 사용할 수 없습니다" }
     require(configuration.preservedFacts.all { it in suggestion.preservedFacts }) {
         "최신 제안에 없는 원문 사실은 사용할 수 없습니다"

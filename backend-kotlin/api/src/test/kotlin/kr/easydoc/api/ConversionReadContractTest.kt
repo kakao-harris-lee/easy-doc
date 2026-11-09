@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.document.ConversionResponse
+import kr.easydoc.api.document.ReviewCapabilitiesResponse
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.InMemoryConversionRepository
@@ -13,6 +14,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.ConversionView
+import kr.easydoc.core.document.ReviewCapabilities
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
@@ -355,6 +357,36 @@ class ConversionReadContractTest {
                 .withFailMessage("검증 항목의 키 집합이 계약 %s 와 다르다 — 제출값이 실리면 응답과 로그에 남는다", VALIDATION_ITEM_SCHEMA)
                 .isEqualTo(declared)
         }
+    }
+
+    @Test
+    fun `그림 capability는 read와 create를 모두 노출하고 기존 필드는 create를 유지한다`() {
+        val capabilities =
+            ReviewCapabilities(
+                reviewSupport = false,
+                focusedReview = false,
+                actionGuide = false,
+                tableRelations = false,
+                reviewHistory = false,
+                explanations = false,
+                illustrations = false,
+                illustrationSuggestions = true,
+                illustrationGeneration = false,
+                illustrationSuggestionsRead = false,
+                illustrationSuggestionsCreate = true,
+                illustrationGenerationRead = true,
+                illustrationGenerationCreate = false,
+            )
+
+        val body = json.readTree(json.writeValueAsString(ReviewCapabilitiesResponse.of(capabilities)))
+
+        assertThat(body.propertyNames()).isEqualTo(ContractSpec.schemaPropertyNames("ReviewCapabilities"))
+        assertThat(body["illustration_suggestions"].asBoolean()).isTrue()
+        assertThat(body["illustration_suggestions_create"].asBoolean()).isTrue()
+        assertThat(body["illustration_suggestions_read"].asBoolean()).isFalse()
+        assertThat(body["illustration_generation"].asBoolean()).isFalse()
+        assertThat(body["illustration_generation_create"].asBoolean()).isFalse()
+        assertThat(body["illustration_generation_read"].asBoolean()).isTrue()
     }
 
     private fun bodyOf(response: MockHttpServletResponse): Map<*, *> =

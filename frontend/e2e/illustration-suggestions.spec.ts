@@ -138,9 +138,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(apply).toBeDisabled()
     await generation.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
     await apply.click()
-    await expect(
-      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
-    ).toBeVisible()
+    await expect(documentPreview.locator('img')).toBeVisible()
+    await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')
     await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
     await page.setViewportSize({ width: 320, height: 800 })
     expect(
@@ -168,9 +167,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
       timeout: 90_000,
     })
     await expect(generation.getByRole('button', { name: '문서에서 그림 제거' })).toBeVisible()
-    await expect(
-      documentPreview.getByRole('img', { name: editedAltText, exact: true }),
-    ).toBeVisible()
+    await expect(documentPreview.locator('img')).toBeVisible()
+    await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')
     await expect(documentPreview.locator('figcaption')).toHaveText(editedAltText)
     await generation.getByRole('button', { name: '문서에서 그림 제거' }).click()
     await expect(documentPreview).toHaveCount(0)
@@ -187,6 +185,37 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
       log
         .apiRequests()
         .filter((request) => request.method === 'POST' && request.url === api(jobsPath)),
+    ).toHaveLength(1)
+
+    const reviewedAltText = `${editedAltText} 원 제안과 원문을 대조한 설명.`
+    await generation.getByRole('button', { name: '대체텍스트 수정', exact: true }).click()
+    await generation.getByLabel('그림 1 대체텍스트 수정').fill(reviewedAltText)
+    const [reviewResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().includes('/generated-illustrations/') &&
+          response.request().method() === 'PATCH',
+      ),
+      generation.getByRole('button', { name: '대체텍스트 저장', exact: true }).click(),
+    ])
+    expect(reviewResponse.status()).toBe(200)
+    await expect(generation.getByText(`대체텍스트: ${reviewedAltText}`)).toBeVisible()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: '쉬운 글 확인' })).toBeVisible({
+      timeout: 90_000,
+    })
+    await page.getByRole('button', { name: '그림 제안 보기 (선택)', exact: true }).click()
+    await expect(generation.getByRole('img', { name: reviewedAltText, exact: true })).toBeVisible({
+      timeout: 90_000,
+    })
+    expect(
+      log
+        .apiRequests()
+        .filter(
+          (request) =>
+            request.method === 'POST' &&
+            request.url === api(`${conversionPath}/illustration-generation-jobs`),
+        ),
     ).toHaveLength(1)
 
     // 5. 본문을 고치는 중에는 요청을 막는다(저장 먼저).

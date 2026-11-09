@@ -233,6 +233,7 @@ class DocumentConfiguration {
                     illustrationsProperties.enabled,
                     illustrationSuggestionProperties,
                     illustrationGenerationProperties.capabilityAvailable(zeroCreditsAllowed(environment)),
+                    illustrationGenerationProperties.readEnabled,
                 ),
         )
 
@@ -395,6 +396,7 @@ internal fun reviewCapabilitiesFor(
     illustrationsEnabled: Boolean = false,
     illustrationSuggestions: IllustrationSuggestionProperties = IllustrationSuggestionProperties(),
     illustrationGeneration: Boolean = false,
+    illustrationGenerationRead: Boolean = false,
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
@@ -404,8 +406,12 @@ internal fun reviewCapabilitiesFor(
         reviewHistory = reviewHistoryEnabled,
         explanations = explanationsEnabled,
         illustrations = illustrationsEnabled,
-        // 토글만으로는 부족하다 — 이용량 단가가 없으면 접수가 503 이므로 노출하지 않는다(명세 §3).
         illustrationSuggestions =
             illustrationSuggestions.enabled && illustrationSuggestions.creditsPer100Chars != null,
         illustrationGeneration = illustrationGeneration,
+        illustrationSuggestionsRead = illustrationSuggestions.readEnabled,
+        illustrationSuggestionsCreate =
+            illustrationSuggestions.enabled && illustrationSuggestions.creditsPer100Chars != null,
+        illustrationGenerationRead = illustrationGenerationRead,
+        illustrationGenerationCreate = illustrationGeneration,
     )

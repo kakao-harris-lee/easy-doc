@@ -52,6 +52,7 @@ class IllustrationSuggestionAttemptLimitExceededException(message: String) : Eas
  * (`ConfigurationException`) — 「무료」가 아니라 「운영 설정이 빠졌다」이기 때문이다. 0 은
  * 설정된 값이며 fake 모드에서만 쓰인다(실제 provider worker 는 기동에서 0을 거부한다).
  */
+@Suppress("LongParameterList")
 class IllustrationSuggestionJobService(
     private val enabled: Boolean,
     private val creditsPer100Chars: BigDecimal?,
@@ -59,6 +60,7 @@ class IllustrationSuggestionJobService(
     private val credits: IllustrationSuggestionCreditPort,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
+    private val readEnabled: Boolean = true,
 ) {
     @Suppress("LongMethod", "ThrowsCount") // 멱등 확인부터 예약·삽입까지 한 트랜잭션의 순서를 보인다.
     fun create(
@@ -160,7 +162,7 @@ class IllustrationSuggestionJobService(
         ownerId: UUID,
         conversionId: UUID,
     ): IllustrationSuggestionJobCollectionView {
-        requireEnabled()
+        requireReadEnabled()
         return transaction.inTransaction {
             val context =
                 jobs.lockOwnedContext(ownerId, conversionId)
@@ -180,7 +182,7 @@ class IllustrationSuggestionJobService(
         conversionId: UUID,
         jobId: UUID,
     ): IllustrationSuggestionJobView {
-        requireEnabled()
+        requireReadEnabled()
         return transaction.inTransaction {
             jobs.lockOwnedContext(ownerId, conversionId)
                 ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
@@ -191,6 +193,10 @@ class IllustrationSuggestionJobService(
 
     private fun requireEnabled() {
         if (!enabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+    }
+
+    private fun requireReadEnabled() {
+        if (!readEnabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
     }
 
     private fun requireConfiguredRate(): BigDecimal =

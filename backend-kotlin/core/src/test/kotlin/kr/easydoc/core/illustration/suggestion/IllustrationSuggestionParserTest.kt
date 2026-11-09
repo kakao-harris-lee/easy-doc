@@ -342,6 +342,21 @@ class IllustrationSuggestionParserTest {
     }
 
     @Test
+    fun `제안 대체텍스트는 emoji를 코드 포인트로 세어 300까지 허용한다`() {
+        listOf(150, 151, 300).forEach { count ->
+            val altText = "😀".repeat(count)
+            assertThat(validSetOf(analyze(validJson.replace(altTextDraft, altText))).suggestions)
+                .describedAs("emoji $count 개")
+                .hasSize(1)
+        }
+        invalid(validJson.replace(altTextDraft, "😀".repeat(301)))
+
+        val koreanAndEmoji = "한국어" + "😀".repeat(297)
+        assertThat(validSetOf(analyze(validJson.replace(altTextDraft, koreanAndEmoji))).suggestions).hasSize(1)
+        invalid(validJson.replace(altTextDraft, koreanAndEmoji + "😀"))
+    }
+
+    @Test
     @DisplayName("toString 에 원문 인용·장면·대체텍스트가 실리지 않는다")
     fun `toString 은 본문을 가린다`() {
         val set = validSetOf(analyze(validJson, FixedSuggestionIds(FIRST_ID)))

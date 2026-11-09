@@ -29,17 +29,19 @@ import java.math.BigDecimal
 import java.time.Duration
 
 /**
- * R7 ER-17 그림 제안의 공개 기능과 worker 는 각각 명시적으로 켜며 기본값은 모두 꺼져 있다.
- * 기존 `easydoc.illustrations.enabled`(ER-15 카탈로그)와 **독립**이다(명세 §6).
+ * R7 ER-17 그림 제안의 신규 접수와 worker 는 각각 명시적으로 켜며 기본값은 꺼져 있다.
+ * 저장 결과 읽기는 [readEnabled]로 접수와 분리한다. 기존 `easydoc.illustrations.enabled`(ER-15 카탈로그)와
+ * **독립**이다(명세 §6).
  *
  * [creditsPer100Chars] 는 **미설정과 0이 다르다**(명세 §3).
- * - 미설정(`null`): 기능이 켜져 있어도 접수를 503 으로 거부하고 capability 를 false 로 낸다.
+ * - 미설정(`null`): 신규 접수를 503 으로 거부하고 create capability 를 false 로 낸다.
  * - `0`: 설정된 값이며 크레딧 거래 행을 만들지 않는다. fake 모드 전용이고, 실제 provider
  *   worker 는 기동에서 이 값을 거부한다([ProviderIllustrationSuggestionWorkerConfiguration]).
  */
 @ConfigurationProperties(prefix = "easydoc.illustration-suggestions")
 data class IllustrationSuggestionProperties(
     val enabled: Boolean = false,
+    val readEnabled: Boolean = true,
     val workerEnabled: Boolean = false,
     val owner: String = "",
     val leaseDurationSeconds: Long = DEFAULT_LEASE_SECONDS,
@@ -132,6 +134,7 @@ class IllustrationSuggestionConfiguration {
             jobs,
             credits,
             transactionRunner,
+            readEnabled = properties.readEnabled,
         )
 
     @Bean
@@ -143,7 +146,7 @@ class IllustrationSuggestionConfiguration {
         transactionRunner: TransactionRunner,
     ): IllustrationSuggestionResultService =
         IllustrationSuggestionResultService(
-            properties.enabled,
+            properties.readEnabled,
             properties.creditsPer100Chars,
             jobs,
             results,

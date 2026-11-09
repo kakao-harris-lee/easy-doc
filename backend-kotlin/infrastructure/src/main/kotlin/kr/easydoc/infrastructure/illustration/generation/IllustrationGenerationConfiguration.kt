@@ -30,6 +30,7 @@ import java.math.BigDecimal
 @ConfigurationProperties(prefix = "easydoc.illustration-generation")
 data class IllustrationGenerationProperties(
     val enabled: Boolean = false,
+    val readEnabled: Boolean = true,
     val workerEnabled: Boolean = false,
     val owner: String = "",
     val leaseDurationSeconds: Long = DEFAULT_LEASE_SECONDS,
@@ -123,6 +124,7 @@ class IllustrationGenerationConfiguration {
             credits,
             cipher,
             transactionRunner,
+            readEnabled = properties.readEnabled,
         )
 
     @Bean
@@ -133,7 +135,7 @@ class IllustrationGenerationConfiguration {
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
     ): GeneratedIllustrationAssetService =
-        GeneratedIllustrationAssetService(properties.enabled, jobs, assets, cipher, transactionRunner)
+        GeneratedIllustrationAssetService(properties.readEnabled, jobs, assets, cipher, transactionRunner)
 }
 
 @Configuration(proxyBeanMethods = false)

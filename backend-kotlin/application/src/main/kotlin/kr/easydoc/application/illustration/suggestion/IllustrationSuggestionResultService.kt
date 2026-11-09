@@ -45,7 +45,7 @@ data class IllustrationSuggestionResultView(
  * 읽을 때 비교한다.
  */
 class IllustrationSuggestionResultService(
-    private val enabled: Boolean,
+    private val readEnabled: Boolean,
     private val creditsPer100Chars: BigDecimal?,
     private val jobs: IllustrationSuggestionJobRepository,
     private val results: IllustrationSuggestionResultRepository,
@@ -56,7 +56,7 @@ class IllustrationSuggestionResultService(
         ownerId: UUID,
         conversionId: UUID,
     ): IllustrationSuggestionResultView {
-        if (!enabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
+        if (!readEnabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
         return transaction.inTransaction {
             val context =
                 jobs.lockOwnedContext(ownerId, conversionId)

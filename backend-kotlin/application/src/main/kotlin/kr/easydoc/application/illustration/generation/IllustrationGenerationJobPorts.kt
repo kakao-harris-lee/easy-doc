@@ -110,6 +110,11 @@ interface IllustrationGenerationJobRepository {
         conversionId: UUID,
     ): IllustrationGenerationJobContext?
 
+    fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationGenerationJobContext?
+
     fun findByRequestId(
         ownerId: UUID,
         conversionId: UUID,
@@ -120,6 +125,11 @@ interface IllustrationGenerationJobRepository {
 
     /** Serializes generation intake for this document until the surrounding transaction completes. */
     fun lockAndCountDocumentJobs(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Int
+
+    fun countDocumentJobs(
         ownerId: UUID,
         documentId: UUID,
     ): Int
@@ -192,6 +202,28 @@ class StoredGeneratedIllustrationAsset(
     val applied: Boolean = false,
     val createdAt: Instant? = null,
 ) {
+    fun copy(
+        metadata: EncryptedContent = this.metadata,
+        png: EncryptedContent = this.png,
+        assetRevision: Long = this.assetRevision,
+        applied: Boolean = this.applied,
+    ): StoredGeneratedIllustrationAsset =
+        StoredGeneratedIllustrationAsset(
+            assetId,
+            jobId,
+            conversionId,
+            basedOnContentRevision,
+            metadata,
+            png,
+            pngByteSize,
+            width,
+            height,
+            provenance,
+            assetRevision,
+            applied,
+            createdAt,
+        )
+
     override fun toString(): String =
         "StoredGeneratedIllustrationAsset(assetId=$assetId, jobId=$jobId, conversionId=$conversionId, " +
             "basedOnContentRevision=$basedOnContentRevision, pngByteSize=$pngByteSize, " +
@@ -222,6 +254,17 @@ interface GeneratedIllustrationAssetRepository {
         expectedContentRevision: Long,
         expectedAssetRevision: Long,
         applied: Boolean,
+    ): Boolean
+
+    fun updateReview(
+        ownerId: UUID,
+        conversionId: UUID,
+        assetId: UUID,
+        expectedContentRevision: Long,
+        expectedAssetRevision: Long,
+        metadata: EncryptedContent,
+        png: EncryptedContent,
+        discard: Boolean,
     ): Boolean
 }
 

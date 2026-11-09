@@ -28,7 +28,14 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .param("documentId", documentId.toString())
             .query { _, _ -> true }
             .single()
-        return jdbc
+        return countDocumentJobs(ownerId, documentId)
+    }
+
+    override fun countDocumentJobs(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Int =
+        jdbc
             .sql(
                 """
                 SELECT count(*) FROM illustration_generation_jobs j
@@ -39,14 +46,23 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .param("ownerId", ownerId)
             .query { rs, _ -> rs.getInt(1) }
             .single()
-    }
 
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
+    ): IllustrationGenerationJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+
+    override fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationGenerationJobContext? = ownedContext(CONTEXT_SQL, ownerId, conversionId)
+
+    private fun ownedContext(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
     ): IllustrationGenerationJobContext? {
-        // Lock the document before the conversion so deletion cannot pass its job-scrubbing trigger
-        // between the ownership check and inserting a new encrypted job.
+        // Keep deletion behind the document lock; only conversion writes need the stronger conversion lock.
         val documentExists =
             jdbc
                 .sql(LOCK_DOCUMENT_SQL)
@@ -57,7 +73,7 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
                 .orElse(false)
         if (!documentExists) return null
         return jdbc
-            .sql(LOCK_CONTEXT_SQL)
+            .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
             .query { rs, _ ->
@@ -331,15 +347,16 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             reserved_credits, status, failure_code, provider_execution_id, provider_started_at, created_at, updated_at
             """.trimIndent()
 
-        val LOCK_CONTEXT_SQL =
+        val CONTEXT_SQL =
             """
             SELECT d.workspace_id, d.id AS document_id, c.id AS conversion_id,
                    c.content_revision, c.status AS conversion_status
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
             WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
-            FOR NO KEY UPDATE OF c
             """.trimIndent()
+
+        val LOCK_CONTEXT_SQL = "$CONTEXT_SQL FOR NO KEY UPDATE OF c"
 
         val LOCK_DOCUMENT_SQL =
             """

@@ -2,6 +2,8 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
@@ -24,6 +26,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -34,6 +37,7 @@ import java.util.UUID
 
 @Profile("!$MIGRATE_PROFILE")
 @RestController
+@Suppress("TooManyFunctions")
 class IllustrationGenerationController(
     private val jobs: IllustrationGenerationJobService,
     private val assets: GeneratedIllustrationAssetService,
@@ -131,6 +135,29 @@ class IllustrationGenerationController(
         )
     }
 
+    @PatchMapping(GENERATED_ILLUSTRATION_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun updateReview(
+        user: AuthenticatedUser,
+        @PathVariable(CONVERSION_ID) conversionId: UUID,
+        @PathVariable(ASSET_ID) assetId: UUID,
+        @Valid @RequestBody request: GeneratedIllustrationUpdateRequest,
+    ): ResponseEntity<GeneratedIllustrationResponse> {
+        illustrationAccess.requireAllowed(user.id)
+        return ok(
+            GeneratedIllustrationResponse.of(
+                assets.updateReview(
+                    user.id,
+                    conversionId,
+                    assetId,
+                    request.expectedContentRevision,
+                    request.expectedAssetRevision,
+                    request.altText,
+                    request.discarded,
+                ),
+            ),
+        )
+    }
+
     private fun <T : Any> ok(body: T): ResponseEntity<T> =
         ResponseEntity
             .ok()
@@ -178,6 +205,7 @@ class IllustrationGenerationController(
         const val GENERATION_JOBS_PATH = "/conversions/{conversion_id}/illustration-generation-jobs"
         const val GENERATION_JOB_PATH = "$GENERATION_JOBS_PATH/{job_id}"
         const val GENERATED_ILLUSTRATIONS_PATH = "/conversions/{conversion_id}/generated-illustrations"
+        const val GENERATED_ILLUSTRATION_PATH = "$GENERATED_ILLUSTRATIONS_PATH/{asset_id}"
         const val GENERATED_ILLUSTRATION_IMAGE_PATH = "$GENERATED_ILLUSTRATIONS_PATH/{asset_id}/image"
         const val GENERATED_ILLUSTRATION_DOWNLOAD_PATH = "$GENERATED_ILLUSTRATIONS_PATH/{asset_id}/download"
         const val GENERATED_ILLUSTRATION_APPLICATION_PATH = "$GENERATED_ILLUSTRATIONS_PATH/{asset_id}/application"
@@ -258,6 +286,9 @@ data class IllustrationGenerationJobCollectionResponse(
     @get:JsonProperty("required_credits") val requiredCredits: BigDecimal?,
     @get:JsonProperty("available_credits") val availableCredits: BigDecimal,
     @get:JsonProperty("enabled") val enabled: Boolean,
+    @get:JsonProperty("request_count") val requestCount: Int,
+    @get:JsonProperty("request_limit") val requestLimit: Int,
+    @get:JsonProperty("remaining_request_count") val remainingRequestCount: Int,
 ) {
     companion object {
         fun of(view: IllustrationGenerationJobCollectionView): IllustrationGenerationJobCollectionResponse =
@@ -267,6 +298,9 @@ data class IllustrationGenerationJobCollectionResponse(
                 view.requiredCredits,
                 view.availableCredits,
                 view.enabled,
+                view.requestCount,
+                view.requestLimit,
+                view.remainingRequestCount,
             )
     }
 }
@@ -279,6 +313,20 @@ data class GeneratedIllustrationApplicationRequest
         @param:JsonProperty("applied", required = true) val applied: Boolean,
     )
 
+data class GeneratedIllustrationUpdateRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("expected_content_revision", required = true) val expectedContentRevision: Long,
+        @param:JsonProperty("expected_asset_revision", required = true) val expectedAssetRevision: Long,
+        @param:JsonProperty("alt_text") @param:JsonSetter(nulls = Nulls.SET) val altText: String? = null,
+        @param:JsonProperty("discarded") @param:JsonSetter(nulls = Nulls.SET) val discarded: Boolean? = null,
+    ) {
+        override fun toString(): String =
+            "GeneratedIllustrationUpdateRequest(expectedContentRevision=$expectedContentRevision, " +
+                "expectedAssetRevision=$expectedAssetRevision, altText=${altText?.length ?: 0}자, " +
+                "discarded=$discarded)"
+    }
+
 data class GeneratedIllustrationResponse(
     @get:JsonProperty("asset_id") val assetId: UUID,
     @get:JsonProperty("job_id") val jobId: UUID,
@@ -288,6 +336,7 @@ data class GeneratedIllustrationResponse(
     @get:JsonProperty("based_on_content_revision") val basedOnContentRevision: Long,
     @get:JsonProperty("stale") val stale: Boolean,
     @get:JsonProperty("applied") val applied: Boolean,
+    @get:JsonProperty("discarded") val discarded: Boolean,
     @get:JsonProperty("asset_revision") val assetRevision: Long,
     @get:JsonProperty("purpose") val purpose: String,
     @get:JsonProperty("reason") val reason: String,
@@ -304,8 +353,8 @@ data class GeneratedIllustrationResponse(
     override fun toString(): String =
         "GeneratedIllustrationResponse(assetId=$assetId, jobId=$jobId, suggestionId=$suggestionId, " +
             "basedOnContentRevision=$basedOnContentRevision, stale=$stale, applied=$applied, " +
-            "assetRevision=$assetRevision, anchorCount=${sourceAnchors.size}, sceneCount=${scenes.size}, " +
-            "factCount=${preservedFacts.size}, altText=${altText.length}자)"
+            "discarded=$discarded, assetRevision=$assetRevision, anchorCount=${sourceAnchors.size}, " +
+            "sceneCount=${scenes.size}, factCount=${preservedFacts.size}, altText=${altText.length}자)"
 
     companion object {
         fun of(view: GeneratedIllustrationView): GeneratedIllustrationResponse =
@@ -318,6 +367,7 @@ data class GeneratedIllustrationResponse(
                 view.basedOnContentRevision,
                 view.stale,
                 view.applied,
+                view.discarded,
                 view.assetRevision,
                 view.metadata.purpose.wireName,
                 view.metadata.reason,

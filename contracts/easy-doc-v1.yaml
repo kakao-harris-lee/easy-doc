@@ -4951,8 +4951,8 @@ paths:
         이용량과 가용 이용량을 함께 돌려준다. 필요한 양은 **원문의 공백 포함 문자 수**에
         `ceil(nonnegative char_count / 100) × easydoc.illustration-suggestions.credits-per-100-chars`
         를 적용한다. 단가가 설정되지 않았으면 `required_credits`는 null이고 접수는 503이다.
-        조회는 작업을 새로 만들거나 이용량을 예약하지 않는다.
-        기능 토글 OFF, 타인·삭제·만료는 모두 404다.
+        조회는 작업을 새로 만들거나 이용량을 예약하지 않는다. 신규 접수 `enabled`·단가와 무관하게
+        `read-enabled`가 켜져 있으면 기존 작업을 읽는다. 읽기 OFF, 타인·삭제·만료는 모두 404다.
       responses:
         '200':
           description: 현재 그림 제안 분석 작업 상태
@@ -5051,7 +5051,7 @@ paths:
               schema: { $ref: '#/components/schemas/IllustrationSuggestionJobResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5116,7 +5116,9 @@ paths:
       security: [{ HTTPBearer: [] }]
       responses:
         '200':
-          description: 활성·최신 작업과 이용량. 기능이 꺼져 있거나 설정이 불완전하면 enabled는 false다.
+          description: |
+            활성·최신 작업, 이용량과 문서 요청 사용량·한도. 신규 접수 토글이 꺼져 있거나 설정이 불완전하면
+            enabled는 false지만 기존 작업은 그대로 읽는다. 읽기가 꺼져 있을 때만 이 경로는 404다.
           headers:
             Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
             X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
@@ -5125,7 +5127,7 @@ paths:
               schema: { $ref: '#/components/schemas/IllustrationGenerationJobCollectionResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니거나 만료됐다
+          description: 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5211,7 +5213,7 @@ paths:
               schema: { $ref: '#/components/schemas/IllustrationGenerationJobResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 작업이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5232,7 +5234,7 @@ paths:
       security: [{ HTTPBearer: [] }]
       responses:
         '200':
-          description: 성공 자산 목록. 미적용·제거만으로 목록에서 삭제되거나 크레딧이 반환되지 않는다.
+          description: soft 폐기되지 않은 성공 자산 목록. 미적용·적용 해제만으로 목록에서 삭제되거나 크레딧이 반환되지 않는다.
           headers:
             Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
             X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
@@ -5241,10 +5243,62 @@ paths:
               schema: { $ref: '#/components/schemas/GeneratedIllustrationCollectionResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/generated-illustrations/{asset_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: asset_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [documents]
+      operationId: updateGeneratedIllustrationReview
+      summary: 생성 자산의 대체텍스트 수정 또는 미적용 후보 soft 폐기를 CAS로 저장한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        본문 revision과 expected_asset_revision을 검사하고 성공하면 asset_revision을 1 증가시킨 새 자산 상태를 반환한다.
+        stale 자산의 수정·폐기는 409다. 적용된 자산은 먼저 PUT application으로 적용을 해제해야 폐기할 수 있다.
+        폐기는 암호화된 저장 메타데이터의 soft flag이며 물리 삭제가 아니다. 일반 자산 목록과 적용 후보에서 제외하지만
+        소유자의 기존 image·download URL 재조회는 문서 만료 전까지 유지한다. 폐기 복구는 지원하지 않으며
+        대체텍스트 수정·폐기·적용 해제 모두 이미 소비한 크레딧을 반환하지 않는다.
+        configuration_revision·suggestion_id·분석 버전·provenance는 생성 당시 값으로 보존한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GeneratedIllustrationUpdateRequest' }
+      responses:
+        '200':
+          description: 수정 또는 폐기된 자산과 증가한 asset_revision
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeneratedIllustrationResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 본문·자산 revision 충돌, stale, 적용된 자산 폐기 또는 이미 폐기된 자산 변경
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -5275,7 +5329,7 @@ paths:
               schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5309,7 +5363,7 @@ paths:
               schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -5352,7 +5406,7 @@ paths:
               schema: { $ref: '#/components/schemas/GeneratedIllustrationResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          description: 자산이나 변환이 없거나 내 것이 아니거나 만료됐거나 읽기가 꺼져 있다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -8732,7 +8786,11 @@ components:
 
     ReviewCapabilities:
       type: object
-      required: [review_support, action_guide, table_relations, review_history, explanations, illustrations, focused_review, illustration_suggestions, illustration_generation]
+      required:
+        [review_support, action_guide, table_relations, review_history, explanations, illustrations,
+         focused_review, illustration_suggestions, illustration_generation,
+         illustration_suggestions_read, illustration_suggestions_create,
+         illustration_generation_read, illustration_generation_create]
       properties:
         review_support: { type: boolean }
         action_guide: { type: boolean }
@@ -8755,15 +8813,22 @@ components:
             결과 문단 통합 UX와 batch/CAS API를 사용하고, 거짓이면 기존 패널을 유지한다.
         illustration_suggestions:
           type: boolean
-          description: |
-            R7 ER-17 문맥 기반 그림 제안(2.47.0). `easydoc.illustration-suggestions.enabled`가
-            켜져 있고 **이용량 단가가 설정돼 있을 때만** true다 — 단가가 없으면 접수가 503이라
-            기능을 노출하는 것이 거짓말이 된다. ER-15 카탈로그 토글과는 독립이다.
+          description: 기존 호환 필드. illustration_suggestions_create와 항상 같은 값이다.
+        illustration_suggestions_read:
+          type: boolean
+          description: 저장된 제안 결과와 작업 읽기 지원. `read-enabled`에 연결되며 신규 접수 가격·토글과 독립이다.
+        illustration_suggestions_create:
+          type: boolean
+          description: 신규 제안 접수 지원. `enabled`와 이용량 단가가 모두 유효할 때만 true다.
         illustration_generation:
           type: boolean
-          description: |
-            R7 ER-18 요청형 이미지 생성. 독립 토글·provider 가격·고객 차감량이 모두 유효할 때만
-            true다. 기존 illustrations와 illustration_suggestions 값으로 유도하지 않는다.
+          description: 기존 호환 필드. illustration_generation_create와 항상 같은 값이다.
+        illustration_generation_read:
+          type: boolean
+          description: 기존 생성 작업·자산·이미지 읽기 지원. `read-enabled`에 연결되며 생성 접수 토글·가격과 독립이다.
+        illustration_generation_create:
+          type: boolean
+          description: 신규 이미지 생성 접수 지원. `enabled`·provider 가격·고객 차감량이 모두 유효할 때만 true다.
       description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
 
     ReviewHistoryResponse:
@@ -9994,7 +10059,11 @@ components:
           type: array
           maxItems: 10
           items: { type: string, minLength: 1, maxLength: 200 }
-        alt_text_draft: { type: string, minLength: 1, maxLength: 300 }
+        alt_text_draft:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: 공백만으로 이루어질 수 없고 Unicode 코드 포인트 1~300개다.
         configuration_revision:
           type: string
           pattern: '^[0-9a-f]{64}$'
@@ -10055,7 +10124,11 @@ components:
           type: array
           maxItems: 10
           items: { type: string, minLength: 1, maxLength: 200 }
-        alt_text: { type: string, minLength: 1, maxLength: 300 }
+        alt_text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: 공백만으로 이루어질 수 없고 Unicode 코드 포인트 1~300개다.
 
     IllustrationGenerationJobCreateRequest:
       type: object
@@ -10108,7 +10181,9 @@ components:
 
     IllustrationGenerationJobCollectionResponse:
       type: object
-      required: [active_job, latest_job, required_credits, available_credits, enabled]
+      required:
+        [active_job, latest_job, required_credits, available_credits, enabled,
+         request_count, request_limit, remaining_request_count]
       properties:
         enabled: { type: boolean, description: 기능 토글과 이용량·provider 가격 구성이 모두 유효하여 새 작업을 접수할 수 있는지 여부. }
         active_job:
@@ -10125,6 +10200,16 @@ components:
             - { type: number, multipleOf: 0.1, minimum: 0 }
             - { type: 'null' }
         available_credits: { type: number, multipleOf: 0.1 }
+        request_count:
+          type: integer
+          minimum: 0
+          description: 문서에 접수된 생성 요청 수. 성공·진행·확정 실패·결과 불명확·superseded를 모두 포함하고 멱등 재조회는 다시 세지 않는다.
+        request_limit: { type: integer, const: 10 }
+        remaining_request_count:
+          type: integer
+          minimum: 0
+          maximum: 10
+          description: 새 요청을 더 접수할 수 있는 수. 처음에는 10, 한도에 도달하면 0이다. 기존 자산 읽기 가능 여부와 무관하다.
 
     GeneratedIllustrationApplicationRequest:
       type: object
@@ -10134,11 +10219,28 @@ components:
         expected_asset_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
         applied: { type: boolean }
 
+    GeneratedIllustrationUpdateRequest:
+      type: object
+      required: [expected_content_revision, expected_asset_revision]
+      description: |
+        `alt_text`와 `discarded: true` 중 하나 이상을 지정한다. 두 필드를 함께 지정하면 한 번의 CAS로 수정하고 폐기한다.
+        `discarded: false`와 폐기 복구는 지원하지 않는다. alt_text는 공백만으로 이루어질 수 없고
+        UTF-16 코드 단위가 아닌 Unicode 코드 포인트 1~300개여야 한다.
+      properties:
+        expected_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        expected_asset_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        alt_text:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: 공백만으로 이루어질 수 없고 Unicode 코드 포인트 1~300개다.
+        discarded: { type: boolean, enum: [true] }
+
     GeneratedIllustrationResponse:
       type: object
       required:
         [asset_id, job_id, suggestion_id, analysis_version, configuration_revision,
-         based_on_content_revision, stale, applied, asset_revision, purpose, reason, body_range,
+         based_on_content_revision, stale, applied, discarded, asset_revision, purpose, reason, body_range,
          source_anchors, scenes, preserved_facts, alt_text, image_url, download_url, created_at, provenance]
       properties:
         provenance: { type: string, enum: [fake, provider] }
@@ -10146,11 +10248,21 @@ components:
         job_id: { type: string, format: uuid }
         suggestion_id: { type: string, format: uuid }
         analysis_version: { type: string }
-        configuration_revision: { type: string, pattern: '^[0-9a-f]{64}$' }
+        configuration_revision:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: 생성 당시 구성의 provenance. 후속 alt_text 수정으로 다시 계산하거나 바꾸지 않는다.
         based_on_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
         stale: { type: boolean }
         applied: { type: boolean }
-        asset_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        discarded:
+          type: boolean
+          description: soft 폐기 여부. true인 자산은 일반 후보 목록에서 제외되며 물리 삭제나 크레딧 반환을 뜻하지 않는다.
+        asset_revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: 적용·대체텍스트·폐기 변경마다 증가하는 CAS 버전. 수정 응답은 증가한 새 값을 반환한다.
         purpose: { $ref: '#/components/schemas/IllustrationSuggestionPurpose' }
         reason: { type: string }
         body_range: { $ref: '#/components/schemas/IllustrationSuggestionBodyRange' }

@@ -201,6 +201,10 @@ data class ReviewCapabilitiesResponse(
     @get:JsonProperty("illustrations") val illustrations: Boolean,
     @get:JsonProperty("illustration_suggestions") val illustrationSuggestions: Boolean,
     @get:JsonProperty("illustration_generation") val illustrationGeneration: Boolean = false,
+    @get:JsonProperty("illustration_suggestions_read") val illustrationSuggestionsRead: Boolean = false,
+    @get:JsonProperty("illustration_suggestions_create") val illustrationSuggestionsCreate: Boolean = false,
+    @get:JsonProperty("illustration_generation_read") val illustrationGenerationRead: Boolean = false,
+    @get:JsonProperty("illustration_generation_create") val illustrationGenerationCreate: Boolean = false,
     @get:JsonProperty("action_guide_workflow") val actionGuideWorkflow: Boolean = true,
     @get:JsonProperty("action_guide_workflow_read") val actionGuideWorkflowRead: Boolean = true,
 ) {
@@ -216,6 +220,10 @@ data class ReviewCapabilitiesResponse(
                 value.illustrations,
                 value.illustrationSuggestions,
                 value.illustrationGeneration,
+                value.illustrationSuggestionsRead,
+                value.illustrationSuggestionsCreate,
+                value.illustrationGenerationRead,
+                value.illustrationGenerationCreate,
             )
     }
 }

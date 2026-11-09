@@ -78,22 +78,25 @@ object IllustrationGenerationStorageCodec {
             put("scenes", stringArray(metadata.scenes))
             put("preserved_facts", stringArray(metadata.preservedFacts))
             put("alt_text", metadata.altText)
+            if (metadata.discarded) put("discarded", true)
         }
 
     private fun decodeMetadata(element: JsonElement): IllustrationGenerationMetadata {
         val value = element.requiredObject()
-        value.exactKeys(
-            "suggestion_id",
-            "analysis_version",
-            "configuration_revision",
-            "purpose",
-            "reason",
-            "body_range",
-            "source_anchors",
-            "scenes",
-            "preserved_facts",
-            "alt_text",
-        )
+        val baseKeys =
+            setOf(
+                "suggestion_id",
+                "analysis_version",
+                "configuration_revision",
+                "purpose",
+                "reason",
+                "body_range",
+                "source_anchors",
+                "scenes",
+                "preserved_facts",
+                "alt_text",
+            )
+        if (value.keys != baseKeys && value.keys != baseKeys + "discarded") corrupt()
         val range = value.requiredObject("body_range")
         range.exactKeys("start", "end")
         return IllustrationGenerationMetadata(
@@ -112,6 +115,7 @@ object IllustrationGenerationStorageCodec {
             scenes = value.requiredArray("scenes").map { it.requiredString() },
             preservedFacts = value.requiredArray("preserved_facts").map { it.requiredString() },
             altText = value.requiredString("alt_text"),
+            discarded = value["discarded"]?.requiredBoolean() ?: false,
         )
     }
 
@@ -138,6 +142,9 @@ object IllustrationGenerationStorageCodec {
 
     private fun JsonElement.requiredInt(): Int =
         (this as? JsonPrimitive)?.takeUnless { it.isString }?.intOrNull ?: corrupt()
+
+    private fun JsonElement.requiredBoolean(): Boolean =
+        (this as? JsonPrimitive)?.takeUnless { it.isString }?.content?.toBooleanStrictOrNull() ?: corrupt()
 
     private fun JsonObject.exactKeys(vararg expected: String) {
         if (keys != expected.toSet()) corrupt()

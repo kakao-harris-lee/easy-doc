@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { illustrationConfigurationRevision } from './illustrationConfiguration'
+import {
+  illustrationConfigurationRevision,
+  illustrationTextLength,
+} from './illustrationConfiguration'
 
 describe('illustration configuration revision contract', () => {
   it('hashes Korean text, UTF-16 lengths and literal delimiters without normalization', async () => {
@@ -17,5 +20,11 @@ describe('illustration configuration revision contract', () => {
         alt_text: '한글 😀;|',
       }),
     ).toBe('740605d45eb3e461643a7da08073236a9f4b25880230d0137f2dbf9d607161da')
+  })
+
+  it('counts Unicode code points without changing the UTF-16 canonical hash rule', () => {
+    expect(illustrationTextLength('한글😀')).toBe(3)
+    expect(illustrationTextLength('😀'.repeat(300))).toBe(300)
+    expect(illustrationTextLength('😀'.repeat(301))).toBe(301)
   })
 })

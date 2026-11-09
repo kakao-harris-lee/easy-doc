@@ -652,6 +652,8 @@ class OwnershipPredicateGuardTest {
                     "SELECT [conversions, documents, generated_illustration_assets]",
                 "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
                     "UPDATE [conversions, documents, generated_illustration_assets]",
+                "$GENERATION/JdbcGeneratedIllustrationAssetRepository.kt | " +
+                    "UPDATE [conversions, documents, generated_illustration_assets]",
                 "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | " +
                     "SELECT [documents, illustration_generation_jobs]",
                 "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | SELECT [illustration_generation_jobs]",

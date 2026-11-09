@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -196,10 +196,11 @@ describe('ER-17 그림 제안 패널 — 접수와 진행', () => {
     show({ contentRevision: 3 })
     await user.click(await screen.findByRole('button', { name: '그림 제안 확인' }))
 
-    expect(createIllustrationSuggestionJob).toHaveBeenCalledWith('conversion-1', {
-      request_id: 'generated-uuid',
-      expected_content_revision: 3,
-    })
+    expect(createIllustrationSuggestionJob).toHaveBeenCalledWith(
+      'conversion-1',
+      { request_id: 'generated-uuid', expected_content_revision: 3 },
+      expect.any(AbortSignal),
+    )
     expect(
       await screen.findByText('그림 제안을 분석하고 있어요. 다른 화면으로 이동해도 계속됩니다.'),
     ).toBeInTheDocument()
@@ -684,4 +685,98 @@ describe('ER-17 그림 제안 패널 — 오류', () => {
     )
     expect(screen.queryByRole('button', { name: '그림 제안 확인' })).not.toBeInTheDocument()
   })
+})
+
+it('신규 제안 create가 꺼져도 저장된 결과 읽기는 유지한다', async () => {
+  vi.mocked(getIllustrationSuggestions).mockResolvedValue(ready)
+  show({ createEnabled: false })
+  expect(await screen.findByRole('heading', { name: '제안 1 · 절차' })).toBeInTheDocument()
+  expect(screen.getByText(/저장된 제안과 작업은 계속 확인할 수 있습니다/)).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /그림 제안.*확인/ })).not.toBeInTheDocument()
+  expect(createIllustrationSuggestionJob).not.toHaveBeenCalled()
+})
+
+it('A 접수의 늦은 응답이 B를 오염하지 않고 A 재방문 시 서버 작업을 복구한다', async () => {
+  const user = userEvent.setup()
+  let resolveA!: (value: { job: IllustrationSuggestionJob; creditBalance: number }) => void
+  let signalA: AbortSignal | undefined
+  vi.mocked(createIllustrationSuggestionJob).mockImplementation((_id, _body, signal) => {
+    signalA = signal
+    return new Promise((resolve) => {
+      resolveA = resolve
+    })
+  })
+  vi.mocked(listIllustrationSuggestionJobs).mockImplementation(async (id) =>
+    id === 'conversion-2' ? { ...jobs, available_credits: 9 } : jobs,
+  )
+  const view = show()
+  await user.click(await screen.findByRole('button', { name: '그림 제안 확인' }))
+  view.rerender(<IllustrationSuggestionsPanel {...defaults} conversionId="conversion-2" />)
+  expect(signalA?.aborted).toBe(true)
+  expect(await screen.findByText(/남은 이용량 9크레딧/)).toBeInTheDocument()
+  await act(async () => {
+    resolveA({ job, creditBalance: 1 })
+    await Promise.resolve()
+  })
+  expect(screen.getByText(/남은 이용량 9크레딧/)).toBeInTheDocument()
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  expect(createIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
+
+  vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+    ...jobs,
+    active_job: job,
+    latest_job: job,
+  })
+  view.rerender(<IllustrationSuggestionsPanel {...defaults} />)
+  expect(await screen.findByText(/그림 제안을 분석하고 있어요/)).toBeInTheDocument()
+  expect(createIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
+})
+
+it.each([401, 404])('%s 제안 폴링 오류는 즉시 중단한다', async (status) => {
+  vi.useFakeTimers()
+  try {
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+      ...jobs,
+      active_job: job,
+      latest_job: job,
+    })
+    vi.mocked(getIllustrationSuggestionJob).mockRejectedValue(new ApiError(status, '영구 오류'))
+    show()
+    await act(async () => await Promise.resolve())
+    await act(async () => await vi.advanceTimersByTimeAsync(3000))
+    expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      status === 401 ? /다시 로그인/ : /상태 확인을 멈췄습니다/,
+    )
+    await act(async () => await vi.advanceTimersByTimeAsync(20_000))
+    expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('일시 제안 폴링 오류는 제한적으로 backoff하고 수동 새로고침으로 재개한다', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.mocked(listIllustrationSuggestionJobs).mockResolvedValue({
+      ...jobs,
+      active_job: job,
+      latest_job: job,
+    })
+    vi.mocked(getIllustrationSuggestionJob).mockRejectedValue(new ApiError(0, '네트워크'))
+    show()
+    await act(async () => await Promise.resolve())
+    await act(async () => await vi.advanceTimersByTimeAsync(3000))
+    await act(async () => await vi.advanceTimersByTimeAsync(5000))
+    await act(async () => await vi.advanceTimersByTimeAsync(10_000))
+    expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('alert')).toHaveTextContent(/서버 작업 취소나 이용량 반환을 뜻하지는/)
+    fireEvent.click(screen.getByRole('button', { name: '상태 새로고침' }))
+    await act(async () => await Promise.resolve())
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await act(async () => await vi.advanceTimersByTimeAsync(3000))
+    expect(getIllustrationSuggestionJob).toHaveBeenCalledTimes(4)
+  } finally {
+    vi.useRealTimers()
+  }
 })
