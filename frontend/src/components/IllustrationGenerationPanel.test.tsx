@@ -509,6 +509,46 @@ it('일시 폴폴 오류는 세 번 뒤 중단하고 수동 새로고침으로 �
   }
 })
 
+it.each([
+  ['목록', 404],
+  ['자산', 404],
+  ['자산', 503],
+] as const)('terminal 상태는 %s 조회의 %s 오류와 무관하게 유지한다', async (refresh, status) => {
+  vi.useFakeTimers()
+  try {
+    vi.mocked(listIllustrationGenerationJobs).mockResolvedValueOnce({
+      ...jobs,
+      active_job: job,
+      latest_job: job,
+    })
+    if (refresh === '목록') {
+      vi.mocked(listIllustrationGenerationJobs).mockRejectedValue(new ApiError(status, '조회 실패'))
+    } else {
+      vi.mocked(listIllustrationGenerationJobs).mockResolvedValue(jobs)
+      vi.mocked(getGeneratedIllustrations)
+        .mockResolvedValueOnce({ content_revision: 1, assets: [] })
+        .mockRejectedValue(new ApiError(status, '조회 실패'))
+    }
+    vi.mocked(getIllustrationGenerationJob).mockResolvedValue({
+      ...job,
+      status: 'failed',
+      failure_code: 'generation_failed',
+    })
+    render(<IllustrationGenerationPanel {...props} />)
+    await act(async () => await Promise.resolve())
+    await act(async () => await vi.advanceTimersByTimeAsync(3000))
+
+    expect(screen.getByRole('status')).toHaveTextContent(/이미지 제공 서비스/)
+    expect(screen.getByRole('status')).toHaveTextContent(/예약 이용량 반환이 확인됐습니다/)
+    expect(screen.queryByText(/그림을 만들고 있습니다/)).not.toBeInTheDocument()
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    await act(async () => await vi.advanceTimersByTimeAsync(20_000))
+    expect(getIllustrationGenerationJob).toHaveBeenCalledTimes(1)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('402는 필요량·가용량과 기존 이용량·충전 이동을 제공한다', async () => {
   const user = userEvent.setup()
   vi.mocked(createIllustrationGenerationJob).mockRejectedValue(

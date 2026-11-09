@@ -220,20 +220,26 @@ export function IllustrationGenerationPanel({
           schedule(POLL_INTERVAL_MS)
           return
         }
-        const [jobs, result] = await Promise.all([
-          listIllustrationGenerationJobs(conversionId, controller.signal),
-          getGeneratedIllustrations(conversionId, controller.signal),
-        ])
-        if (controller.signal.aborted || version !== versionRef.current) return
-        const nextAssets = result.assets.filter((asset) => !asset.discarded)
-        setCollection(jobs)
-        setAssets(nextAssets)
-        setAssetDrafts(
-          Object.fromEntries(nextAssets.map((asset) => [asset.asset_id, asset.alt_text])),
-        )
-        const latest = jobs.active_job ?? jobs.latest_job
-        setJob(latest && latest.job_id !== next.job_id ? latest : next)
-        setNotice('최신 그림 상태를 불러왔습니다.')
+        try {
+          const [jobs, result] = await Promise.all([
+            listIllustrationGenerationJobs(conversionId, controller.signal),
+            getGeneratedIllustrations(conversionId, controller.signal),
+          ])
+          if (controller.signal.aborted || version !== versionRef.current) return
+          const nextAssets = result.assets.filter((asset) => !asset.discarded)
+          setCollection(jobs)
+          setAssets(nextAssets)
+          setAssetDrafts(
+            Object.fromEntries(nextAssets.map((asset) => [asset.asset_id, asset.alt_text])),
+          )
+          const latest = jobs.active_job ?? jobs.latest_job
+          setJob(latest && latest.job_id !== next.job_id ? latest : next)
+          setNotice('최신 그림 상태를 불러왔습니다.')
+        } catch (caught) {
+          if (controller.signal.aborted || version !== versionRef.current) return
+          setJob(next)
+          setError(loadError(caught))
+        }
       } catch (caught) {
         if (controller.signal.aborted || version !== versionRef.current) return
         failures += 1
