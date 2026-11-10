@@ -5,6 +5,8 @@ import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.illustration.generation.ILLUSTRATION_GENERATION_PROMPT_VERSION
 import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
 import kr.easydoc.core.illustration.generation.buildIllustrationGenerationPrompt
+import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
+import kr.easydoc.core.illustration.generation.illustrationGenerationMetadata
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionParser
 import kr.easydoc.core.illustration.suggestion.isNumericOnlySource
@@ -267,7 +269,8 @@ class IllustrationEvaluationLaneTest {
                 splitUnits(SOURCE_TEXT),
                 splitUnits(EASY_BODY),
             )
-        val suggestion = (analysis as IllustrationSuggestionAnalysis.Valid).suggestions.suggestions.single()
+        val suggestions = (analysis as IllustrationSuggestionAnalysis.Valid).suggestions
+        val suggestion = suggestions.suggestions.single()
         val configuration =
             IllustrationGenerationConfiguration(
                 scenes = suggestion.scenes,
@@ -275,17 +278,25 @@ class IllustrationEvaluationLaneTest {
                 altText = suggestion.altTextDraft,
             )
 
-        val node =
-            JSON.readTree(
-                IllustrationLaneJson.image(
-                    suggestion,
-                    configuration,
-                    buildIllustrationGenerationPrompt(suggestion, configuration),
-                ),
+        val metadata =
+            illustrationGenerationMetadata(
+                suggestion,
+                suggestions.analysisVersion,
+                configuration,
+                illustrationConfigurationRevision(configuration),
             )
 
-        assertThat(node.path("prompt_version").stringValue(""))
-            .isEqualTo(ILLUSTRATION_GENERATION_PROMPT_VERSION)
+        val node =
+            JSON.readTree(
+                IllustrationLaneJson.image(metadata, buildIllustrationGenerationPrompt(suggestion, configuration)),
+            )
+
+        // 산출물은 레인이 만든 입력 메타데이터가 찍은 값을 그대로 낸다 — 전역 상수를 산출물
+        // 쪽에서 따로 읽으면 저장된 입력과 갈라질 수 있다(이슈 #207 리뷰 ④).
+        assertThat(node.path("prompt_version").stringValue("")).isEqualTo(metadata.promptVersion)
+        assertThat(metadata.promptVersion).isEqualTo(ILLUSTRATION_GENERATION_PROMPT_VERSION)
+        assertThat(node.path("configuration_revision").stringValue(""))
+            .isEqualTo(metadata.configurationRevision)
     }
 
     @Test

@@ -125,7 +125,9 @@ fun illustrationConfigurationRevision(configuration: IllustrationGenerationConfi
 
 /**
  * 생성 프롬프트의 개정 식별자. [buildIllustrationGenerationPrompt] 의 문구를 바꿀 때마다 올린다 —
- * 「어느 프롬프트가 그린 그림인가」를 나중에 잇는 값이다.
+ * 「어느 프롬프트가 그린 그림인가」를 나중에 잇는 값이다. 사람 기억에 맡기지 않는다:
+ * `IllustrationGenerationTest` 가 프롬프트 전문의 SHA-256 을 이 값과 나란히 고정하므로,
+ * 문구를 고치면 digest 가 먼저 깨지고 그 자리에서 이 상수를 올리게 된다.
  *
  * 감사·품질 추적 전용이다. 멱등 키([illustrationConfigurationRevision] 와 작업 fingerprint),
  * DB 열, 공개 API, `contracts/easy-doc-v1.yaml` 에는 넣지 않는다 — 프롬프트 문구가 바뀌었다고
@@ -143,8 +145,13 @@ fun buildIllustrationGenerationPrompt(
         append("Purpose: ").append(suggestion.purpose.wireName).append(". ")
         append("Show these scenes: ").append(configuration.scenes.joinToString(" | ")).append(". ")
         if (configuration.preservedFacts.isNotEmpty()) {
-            append("Preserve these facts and conditions exactly: ")
+            // 「그대로 그려라」가 아니라 「어기지 마라」다. 2차 평가 표본 002-2 의 보존 사실이
+            // 「20분 이상」이었고, 옛 문구는 아래 수치 금지와 정면으로 부딪쳤다 — 보존 사실은
+            // 그림이 어겨서는 안 될 제약이지 그려야 할 대상이 아니다(이슈 #207 리뷰 ①).
+            append("The image must not contradict these facts and conditions: ")
             append(configuration.preservedFacts.joinToString(" | ")).append(". ")
+            append("Numbers in these facts and in the scenes are shown in the accompanying text; ")
+            append("do not draw them. ")
         }
         append("Verified source context: ")
         append(suggestion.sourceAnchors.joinToString(" | ") { it.quote }).append(". ")
@@ -163,7 +170,10 @@ fun buildIllustrationGenerationPrompt(
         // 두 문장을 하나로 합치고 「그려진 수량」까지 막으라고 정한다.
         append("Do not show any number, amount, date, time, duration, or quantity in the image — ")
         append("not as written text and not as a drawn quantity such as clock hands, calendar marks, ")
-        append("counted objects, or bar lengths. The accompanying text carries every number. ")
+        append("or bar lengths. The accompanying text carries every number. ")
+        // 「세어 그린 사물」까지 막으면 「서류 두 장을 준비합니다」 같은 장면과 여러 단계 절차를
+        // 그릴 수 없다 — 막을 것은 수량 자체가 아니라 숫자 표기다(이슈 #207 리뷰 ②).
+        append("Draw only as many objects or steps as the scenes name, without numerals or numeric marks. ")
         append("Do not add, repeat, or reorder procedure steps beyond the scenes listed above. ")
         append("Do not draw a service or benefit as a physical package or box ")
         append("unless the source says an item is handed over. ")

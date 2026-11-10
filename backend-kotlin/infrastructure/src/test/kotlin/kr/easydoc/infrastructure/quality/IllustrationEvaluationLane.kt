@@ -1,9 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.core.exceptions.ConfigurationException
-import kr.easydoc.core.illustration.generation.ILLUSTRATION_GENERATION_PROMPT_VERSION
-import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
-import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
+import kr.easydoc.core.illustration.generation.IllustrationGenerationMetadata
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionSet
 import kr.easydoc.core.llm.LlmOptions
@@ -464,24 +462,27 @@ internal object IllustrationLaneJson {
         return write(root)
     }
 
+    /**
+     * 그림 한 장의 산출물. 입력 메타데이터를 **그대로** 받는다 — 레인이 만든 생성 입력과
+     * 산출물이 같은 출처를 읽어야 둘이 갈라지지 않는다(이슈 #207 리뷰 ④).
+     */
     fun image(
-        suggestion: IllustrationSuggestion,
-        configuration: IllustrationGenerationConfiguration,
+        metadata: IllustrationGenerationMetadata,
         prompt: String,
     ): String {
         val node = JSON.createObjectNode()
-        node.put("suggestion_id", suggestion.suggestionId.toString())
-        node.put("purpose", suggestion.purpose.wireName)
-        node.put("configuration_revision", illustrationConfigurationRevision(configuration))
+        node.put("suggestion_id", metadata.suggestionId.toString())
+        node.put("purpose", metadata.purpose.wireName)
+        node.put("configuration_revision", metadata.configurationRevision)
         // 제안 산출물이 `analysis_version` 을 남기는 것과 같은 이유다 — 어느 프롬프트가 그린
         // 그림인지 산출물만 보고 알 수 있어야 평가 회차를 비교할 수 있다(이슈 #204 ③).
-        node.put("prompt_version", ILLUSTRATION_GENERATION_PROMPT_VERSION)
+        node.put("prompt_version", metadata.promptVersion)
         node.put("prompt_code_points", prompt.codePointCount(0, prompt.length))
         val scenes = node.putArray("scenes")
-        configuration.scenes.forEach { scenes.add(it) }
+        metadata.scenes.forEach { scenes.add(it) }
         val facts = node.putArray("preserved_facts")
-        configuration.preservedFacts.forEach { facts.add(it) }
-        node.put("alt_text", configuration.altText)
+        metadata.preservedFacts.forEach { facts.add(it) }
+        node.put("alt_text", metadata.altText)
         return write(node)
     }
 
