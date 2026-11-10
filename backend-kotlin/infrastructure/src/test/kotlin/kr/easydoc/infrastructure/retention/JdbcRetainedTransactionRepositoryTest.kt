@@ -62,6 +62,22 @@ class JdbcRetainedTransactionRepositoryTest {
         }
     }
 
+    /**
+     * 동의 증거는 동의 시점에 시행 중이던 판을 그대로 담으므로, 이력에 남은 옛 판의 본문도
+     * 계속 classpath 에 있어야 한다 — 한 판이라도 빠지면 그 시점의 동의는 가리킬 본문을 잃는다.
+     */
+    @Test
+    fun `every published legal version keeps its retained resource`() {
+        LegalSnapshot.PRIVACY_VERSIONS.forEach { version ->
+            assertThat(javaClass.classLoader.getResource("legal/privacy-$version.md"))
+                .describedAs(version)
+                .isNotNull()
+        }
+        assertThat(javaClass.classLoader.getResource("legal/terms-${LegalSnapshot.VERSION}.md"))
+            .describedAs(LegalSnapshot.VERSION)
+            .isNotNull()
+    }
+
     @Test
     fun `consent at the November cutoff archives the policy in force at consent time`() {
         val db = database("retained_consent_at_cutoff")

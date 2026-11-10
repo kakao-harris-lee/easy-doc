@@ -43,7 +43,8 @@ class LegalSnapshotTest {
 
     @Test
     fun `첫 방침 시행 시각은 유료 약관 시행 시각과 같다`() {
-        assertThat(LegalSnapshot.privacyVersionAt(LegalSnapshot.EFFECTIVE_AT)).isEqualTo("2026-11-01")
+        assertThat(LegalSnapshot.privacyVersionAt(LegalSnapshot.EFFECTIVE_AT))
+            .isEqualTo(LegalSnapshot.PRIVACY_VERSIONS.first())
     }
 
     @Test
