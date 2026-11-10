@@ -4,6 +4,7 @@ import kr.easydoc.application.retention.ComplaintDecisionCommand
 import kr.easydoc.application.retention.RefundDecisionCommand
 import kr.easydoc.application.subscription.BillingOrder
 import kr.easydoc.application.subscription.BillingSession
+import kr.easydoc.application.subscription.LegalSnapshot
 import kr.easydoc.application.subscription.TossPayment
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.security.Secret
@@ -16,6 +17,10 @@ import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.Test
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import tools.jackson.databind.ObjectMapper
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -27,19 +32,54 @@ class JdbcRetainedTransactionRepositoryTest {
 
     @Test
     fun `November legal resources contain the published Start conditions`() {
-        listOf("terms", "privacy").forEach { kind ->
-            val text =
-                requireNotNull(javaClass.classLoader.getResource("legal/$kind-2026-11-01.md"))
-                    .readText()
-            assertThat(text).contains("$kind-2026-11-01", "2026-10-26", "2026년 11월 1일")
-            assertThat(text).doesNotContain("출시 전 공고로 확정", "확정 전에는 신규 실결제를 받지 않습니다")
-        }
-        val terms = requireNotNull(javaClass.classLoader.getResource("legal/terms-2026-11-01.md")).readText()
+        val terms = legalResource("legal/terms-${LegalSnapshot.VERSION}.md")
+        assertThat(terms).contains("terms-${LegalSnapshot.VERSION}", "2026-10-26", "2026년 11월 1일")
         assertThat(terms).contains("월 99,000원", "50크레딧", "start-monthly-v1")
+
+        val privacy = legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md")
+        assertThat(privacy).contains(
+            "privacy-${LegalSnapshot.PRIVACY_VERSION}",
+            "검토일: ${LegalSnapshot.PRIVACY_VERSION}",
+            "2026년 11월 1일",
+        )
+        assertThat(privacy).contains("Images API는 이 옵션을 제공하지 않으므로")
+
+        listOf(terms, privacy).forEach {
+            assertThat(it).doesNotContain("출시 전 공고로 확정", "확정 전에는 신규 실결제를 받지 않습니다")
+        }
     }
 
     @Test
-    fun `consent at the November cutoff archives the current snapshots`() {
+    fun `retained legal resources are the published front-end wording`() {
+        val published = publishedLegalDirectory()
+        mapOf(
+            "legal/terms-${LegalSnapshot.VERSION}.md" to "terms-of-service.md",
+            "legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md" to "privacy-policy.md",
+        ).forEach { (resource, fileName) ->
+            assertThat(legalResource(resource))
+                .describedAs("$resource 와 frontend/src/content/legal/$fileName 이 갈라졌다")
+                .isEqualTo(Files.readString(published.resolve(fileName)))
+        }
+    }
+
+    /**
+     * 동의 증거는 동의 시점에 시행 중이던 판을 그대로 담으므로, 이력에 남은 옛 판의 본문도
+     * 계속 classpath 에 있어야 한다 — 한 판이라도 빠지면 그 시점의 동의는 가리킬 본문을 잃는다.
+     */
+    @Test
+    fun `every published legal version keeps its retained resource`() {
+        LegalSnapshot.PRIVACY_VERSIONS.forEach { version ->
+            assertThat(javaClass.classLoader.getResource("legal/privacy-$version.md"))
+                .describedAs(version)
+                .isNotNull()
+        }
+        assertThat(javaClass.classLoader.getResource("legal/terms-${LegalSnapshot.VERSION}.md"))
+            .describedAs(LegalSnapshot.VERSION)
+            .isNotNull()
+    }
+
+    @Test
+    fun `consent at the November cutoff archives the policy in force at consent time`() {
         val db = database("retained_consent_at_cutoff")
         val (user, workspace, session) = owner(db)
         val repository = repository(db, 1)
@@ -52,7 +92,29 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(cutoff)
         assertThat(archivedConsent.summary.manualReview).isFalse()
-        assertThat(archivedConsent.payloadJson).contains("terms-2026-11-01", "privacy-2026-11-01")
+        assertThat(archivedConsent.payloadJson).contains("terms-${LegalSnapshot.VERSION}", "privacy-2026-11-01")
+        val payload = ObjectMapper().readTree(archivedConsent.payloadJson)
+        assertThat(payload["privacy_version"].asString()).isEqualTo("privacy-2026-11-01")
+        assertThat(payload["privacy_snapshot"].asString()).isEqualTo(legalResource("legal/privacy-2026-11-01.md"))
+    }
+
+    @Test
+    fun `consent after the November tenth revision archives the revised policy`() {
+        val db = database("retained_consent_after_revision")
+        val (user, workspace, session) = owner(db)
+        val repository = repository(db, 1)
+        val fixture = paymentIds(db, workspace, "start", 1000, 0)
+        val afterRevision = Instant.parse("2026-11-10T00:00:00+09:00")
+        val consent = sessionModel(workspace, session, user).copy(consentAt = afterRevision)
+
+        repository.archivePayment(fixture.order, fixture.payment, 0, null, consent)
+
+        val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
+        assertThat(archivedConsent.summary.manualReview).isFalse()
+        val payload = ObjectMapper().readTree(archivedConsent.payloadJson)
+        assertThat(payload["privacy_version"].asString()).isEqualTo("privacy-${LegalSnapshot.PRIVACY_VERSION}")
+        assertThat(payload["privacy_snapshot"].asString())
+            .isEqualTo(legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md"))
     }
 
     @Test
@@ -69,7 +131,11 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(beforeCutoff)
         assertThat(archivedConsent.summary.manualReview).isTrue()
-        assertThat(archivedConsent.payloadJson).contains("\"terms_snapshot\":null", "\"privacy_snapshot\":null")
+        assertThat(archivedConsent.payloadJson).contains(
+            "\"terms_snapshot\":null",
+            "\"privacy_snapshot\":null",
+            "\"privacy_version\":null",
+        )
     }
 
     @Test
@@ -385,6 +451,28 @@ class JdbcRetainedTransactionRepositoryTest {
             AesGcmContentCipher(mapOf(1 to key(1), 2 to key(2)), version),
             Clock.fixed(now, ZoneOffset.UTC),
         )
+
+    private fun legalResource(path: String): String =
+        requireNotNull(javaClass.classLoader.getResource(path)) { "$path 리소스가 없다" }.readText()
+
+    /**
+     * 게시 문안이 있는 `frontend/src/content/legal` 디렉터리.
+     *
+     * Gradle 테스트의 작업 디렉터리는 모듈 디렉터리라 저장소 루트까지 거슬러 올라간다 —
+     * 올라갈 단계 수를 적어 두면 모듈이 옮겨질 때 조용히 어긋난다.
+     */
+    private fun publishedLegalDirectory(): Path {
+        var directory: Path? = Paths.get(System.getProperty("user.dir")).toAbsolutePath()
+        while (directory != null) {
+            val candidate = directory.resolve("frontend/src/content/legal")
+            if (Files.isDirectory(candidate)) return candidate
+            directory = directory.parent
+        }
+        error(
+            "frontend/src/content/legal 을 찾지 못했다 — 저장소 전체를 체크아웃한 상태에서 돌려야 한다" +
+                " (작업 디렉터리: ${System.getProperty("user.dir")})",
+        )
+    }
 
     private fun database(prefix: String): DatabaseHandle =
         PostgresTestSupport.createEmptyDatabase(prefix).also { db ->

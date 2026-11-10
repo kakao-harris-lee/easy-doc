@@ -1,6 +1,6 @@
 # 쉬운 글 그림으로 설명 개선 실행 계획
 
-작성일: 2026-11-07 · 상태: **P1·P2 구현·자동/fake 검증 완료(§10), P0-2 처리방침 정정(별도 법무 변경)·P0-1 실제 provider 평가·파일럿 승인 미완료** · 코드 기준: `47cc2858`
+작성일: 2026-11-07 · 상태: **P0-2·P1·P2 구현·자동/fake 검증 완료(§10), P0-1 실제 provider 평가·파일럿 승인 미완료** · 코드 기준: `47cc2858`
 
 이 문서는 쉬운 글 변환 뒤 **그림 제안 → 사용자 명시 요청에 따른 비동기 생성 → 검토 → 적용** 흐름의
 리뷰 결과를 실행 순서로 정리한다. 현재 제안·생성 기능은 기본 OFF이며 관리자 파일럿으로 제한한다
@@ -354,7 +354,7 @@ E2E는 운영 `.env`·DB·포트·실제 API 키를 쓰지 않는 **격리된 fa
 
 | 과제 | 상태 | 결정·근거 |
 |---|---|---|
-| P0-2 `store=false` | **미완료(분리)** | Images API는 `store` 파라미터를 지원하지 않으므로 요청 본문은 바꾸지 않는다. 처리방침 정정은 결제 동의 증빙 스냅샷(`LegalSnapshot.VERSION`, `legal/privacy-<버전>.md`)과 함께 움직여야 하고 버전을 올리면 유료 약관 효력 시점도 바뀌므로, 법무 검토를 거친 별도 변경으로 분리했다. 실제 provider 활성화·파일럿 확대 전에 반드시 닫는다. |
+| P0-2 `store=false` | 완료(문안 정정) | Images API는 `store` 파라미터를 지원하지 않으므로 요청 본문은 바꾸지 않고, 처리방침을 `privacy-2026-11-10`(즉시 시행)으로 개정해 그림 제안·생성 전송 내용·생성 그림 보관을 공개하고 `store=false` 문장을 바로잡았다. 결제 동의 증빙 스냅샷은 `LegalSnapshot.PRIVACY_VERSION`으로 분리해 유료 시행 시각(`VERSION`)은 움직이지 않았다. |
 | P1-1 capability 분리 | 완료 | `ReviewCapabilities`에 `illustration_{suggestions,generation}_{read,create}`를 추가했다. 기존 필드는 `*_create`와 같은 값의 호환 필드다. read는 `read-enabled`에 연결되고 가격·접수 토글과 독립이며, 관리자 허용 목록 밖 사용자는 7개 필드가 모두 false로 마스킹된다(`ConversionIllustrationCapabilityContractTest`). |
 | P1-2 문서 전환 경합 | 완료 | 접수 응답을 conversion·시도 범위로 검사하고 전환 시 abort한다. |
 | P1-3 폴링 | 완료 | 401/404 즉시 중지, 5xx 3회 제한 후 수동 새로고침. terminal 상태 이후의 목록·자산 재조회 실패가 terminal 안내를 덮거나 폴링을 재개하지 않도록 수정했다(회귀 테스트 3건). |
