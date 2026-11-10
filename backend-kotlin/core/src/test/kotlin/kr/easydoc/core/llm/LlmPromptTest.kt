@@ -318,6 +318,21 @@ class LlmPromptTest {
     }
 
     @Test
+    @DisplayName("사용자에게 보이는 필드는 한국어로, 장면은 원문 용어로 적게 한다(계획 §12.4)")
+    fun `그림 제안 시스템 프롬프트는 한국어 출력과 원문 용어 지정을 요구한다`() {
+        val prompt = LlmPrompt.forIllustrationSuggestions("원문입니다.", "본문입니다.")
+
+        assertThat(prompt.system)
+            .contains(
+                "reason·scenes·preserved_facts·alt_text_draft 는 모두 한국어로 쓴다",
+                "한국어가 아닌 제안은 버려진다",
+                "원문이 쓴 용어 그대로",
+                "분변 검사 용기",
+                "더 넓은 말로 바꾸지 마라",
+            )
+    }
+
+    @Test
     @DisplayName("toString 에 본문이 실리지 않는다")
     fun `toString 은 길이만 남긴다`() {
         val prompt = LlmPrompt.forConversion("대외비 문서 본문입니다.", fixedIds)

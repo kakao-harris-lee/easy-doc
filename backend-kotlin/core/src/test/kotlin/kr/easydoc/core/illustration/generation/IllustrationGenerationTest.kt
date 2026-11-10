@@ -8,6 +8,7 @@ import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Instant
@@ -91,6 +92,30 @@ class IllustrationGenerationTest {
         assertThat(decoded.metadata.discarded).isTrue()
         assertThat(decoded.metadata.configurationRevision).isEqualTo(metadata.configurationRevision)
         assertThat(decoded.metadata.altText).isEqualTo(metadata.altText)
+    }
+
+    @Test
+    @DisplayName("원문이 정한 대상·수치·단계를 바꾸지 못하게 지시한다(계획 §12.4)")
+    fun `생성 프롬프트는 대상 바꿔 그리기와 없는 수치를 금지한다`() {
+        val prompt = buildIllustrationGenerationPrompt(suggestion(), configuration("대체텍스트"))
+
+        assertThat(prompt).contains(
+            "Keep the exact kind of every object the source names",
+            "never replace one with a different or more specific kind",
+            "keep it generic instead of inventing equipment, places, or methods",
+            "Do not invent example numbers, amounts, dates, or quantities that are not in the scenes, " +
+                "preserved facts, or verified source context above.",
+            "Do not add, repeat, or reorder procedure steps",
+            "physical package or box unless the source says an item is handed over",
+        )
+        // 기존 지시도 그대로 남는다.
+        assertThat(prompt).contains(
+            "Create exactly one educational illustration for adult readers.",
+            "do not depict adults as children",
+            "Do not put important names, numbers, conditions, or instructions in image text.",
+            "Do not add unsupported actions or facts.",
+            "Return one 1024x1024 PNG.",
+        )
     }
 
     private fun configuration(altText: String) =

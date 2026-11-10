@@ -673,7 +673,7 @@ class JdbcIllustrationGenerationJobFlowTest {
                 UUID.randomUUID(),
                 suggestionResultId,
                 UUID.randomUUID(),
-                "r7-illustration-suggestion-2",
+                "r7-illustration-suggestion-3",
                 FINGERPRINT,
                 1,
                 FINGERPRINT,
