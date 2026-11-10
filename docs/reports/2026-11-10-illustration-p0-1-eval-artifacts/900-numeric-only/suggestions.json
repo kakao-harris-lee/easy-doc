@@ -1,0 +1,9 @@
+{
+  "raw_text" : "{\"schema_version\":1,\"suggestions\":[]}",
+  "numeric_only_source" : true,
+  "analysis" : "valid",
+  "schema_version" : 1,
+  "analysis_version" : "r7-illustration-suggestion-2",
+  "dropped_count" : 0,
+  "suggestions" : [ ]
+}
