@@ -327,9 +327,12 @@ class LlmPromptTest {
                 "reason·scenes·preserved_facts·alt_text_draft 는 모두 한국어로 쓴다",
                 "한국어가 아닌 제안은 버려진다",
                 "원문이 쓴 용어 그대로",
-                "분변 검사 용기",
+                "혈압 측정기",
                 "더 넓은 말로 바꾸지 마라",
             )
+        // 평가 표본의 문구를 프롬프트 예시로 쓰지 않는다(이슈 #204) — 표본 010 의 「분변 검사 용기」가
+        // 그대로 들어가 있으면 평가가 자기 힌트를 채점하게 된다.
+        assertThat(prompt.system).doesNotContain("분변")
     }
 
     @Test

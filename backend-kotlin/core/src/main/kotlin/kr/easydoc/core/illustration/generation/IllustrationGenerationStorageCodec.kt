@@ -79,6 +79,7 @@ object IllustrationGenerationStorageCodec {
             put("preserved_facts", stringArray(metadata.preservedFacts))
             put("alt_text", metadata.altText)
             if (metadata.discarded) put("discarded", true)
+            metadata.promptVersion?.let { put("prompt_version", it) }
         }
 
     private fun decodeMetadata(element: JsonElement): IllustrationGenerationMetadata {
@@ -96,7 +97,10 @@ object IllustrationGenerationStorageCodec {
                 "preserved_facts",
                 "alt_text",
             )
-        if (value.keys != baseKeys && value.keys != baseKeys + "discarded") corrupt()
+        // `discarded` 와 `prompt_version` 은 뒤에 붙은 선택 키다 — 이미 저장된 레코드에는 없으므로
+        // 없어도 읽히고, 모르는 키는 그대로 깨진 입력으로 본다.
+        val optionalKeys = setOf("discarded", "prompt_version")
+        if (!value.keys.containsAll(baseKeys) || (value.keys - baseKeys).any { it !in optionalKeys }) corrupt()
         val range = value.requiredObject("body_range")
         range.exactKeys("start", "end")
         return IllustrationGenerationMetadata(
@@ -116,6 +120,7 @@ object IllustrationGenerationStorageCodec {
             preservedFacts = value.requiredArray("preserved_facts").map { it.requiredString() },
             altText = value.requiredString("alt_text"),
             discarded = value["discarded"]?.requiredBoolean() ?: false,
+            promptVersion = value["prompt_version"]?.requiredString(),
         )
     }
 

@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.core.illustration.generation.ILLUSTRATION_GENERATION_PROMPT_VERSION
 import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
 import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
@@ -472,6 +473,9 @@ internal object IllustrationLaneJson {
         node.put("suggestion_id", suggestion.suggestionId.toString())
         node.put("purpose", suggestion.purpose.wireName)
         node.put("configuration_revision", illustrationConfigurationRevision(configuration))
+        // 제안 산출물이 `analysis_version` 을 남기는 것과 같은 이유다 — 어느 프롬프트가 그린
+        // 그림인지 산출물만 보고 알 수 있어야 평가 회차를 비교할 수 있다(이슈 #204 ③).
+        node.put("prompt_version", ILLUSTRATION_GENERATION_PROMPT_VERSION)
         node.put("prompt_code_points", prompt.codePointCount(0, prompt.length))
         val scenes = node.putArray("scenes")
         configuration.scenes.forEach { scenes.add(it) }

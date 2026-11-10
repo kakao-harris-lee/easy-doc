@@ -95,16 +95,17 @@ class IllustrationGenerationTest {
     }
 
     @Test
-    @DisplayName("원문이 정한 대상·수치·단계를 바꾸지 못하게 지시한다(계획 §12.4)")
-    fun `생성 프롬프트는 대상 바꿔 그리기와 없는 수치를 금지한다`() {
+    @DisplayName("원문이 정한 대상·수치·단계를 바꾸지 못하게 지시한다(계획 §12.4, 이슈 #204)")
+    fun `생성 프롬프트는 대상 바꿔 그리기와 모든 수치 그리기를 금지한다`() {
         val prompt = buildIllustrationGenerationPrompt(suggestion(), configuration("대체텍스트"))
 
         assertThat(prompt).contains(
             "Keep the exact kind of every object the source names",
             "never replace one with a different or more specific kind",
             "keep it generic instead of inventing equipment, places, or methods",
-            "Do not invent example numbers, amounts, dates, or quantities that are not in the scenes, " +
-                "preserved facts, or verified source context above.",
+            "Do not show any number, amount, date, time, duration, or quantity in the image — " +
+                "not as written text and not as a drawn quantity such as clock hands, calendar marks, " +
+                "counted objects, or bar lengths. The accompanying text carries every number.",
             "Do not add, repeat, or reorder procedure steps",
             "physical package or box unless the source says an item is handed over",
         )
@@ -112,10 +113,46 @@ class IllustrationGenerationTest {
         assertThat(prompt).contains(
             "Create exactly one educational illustration for adult readers.",
             "do not depict adults as children",
-            "Do not put important names, numbers, conditions, or instructions in image text.",
+            "Do not put important names, conditions, or instructions in image text.",
             "Do not add unsupported actions or facts.",
             "Return one 1024x1024 PNG.",
         )
+        // 수치 지시는 하나뿐이다 — 「없는 숫자만 금지」로 읽히던 문장은 남기지 않는다
+        // (2026-11-10 2차 평가 002-2: 「20분 이상」을 10분짜리 시계로 그렸다).
+        assertThat(prompt).doesNotContain(
+            "Do not invent example numbers",
+            "Do not put important names, numbers, conditions, or instructions",
+        )
+    }
+
+    @Test
+    @DisplayName("생성 프롬프트 개정 식별자는 메타데이터와 저장 codec에만 남는다(이슈 #204)")
+    fun `생성 프롬프트 버전은 메타데이터에 남고 옛 레코드는 null로 읽힌다`() {
+        val configuration = configuration("대체텍스트")
+        val metadata =
+            illustrationGenerationMetadata(
+                suggestion(),
+                "analysis-v1",
+                configuration,
+                illustrationConfigurationRevision(configuration),
+            )
+
+        assertThat(metadata.promptVersion).isEqualTo(ILLUSTRATION_GENERATION_PROMPT_VERSION)
+        // toString 에는 내지 않는다 — 「prompt」가 민감 이름 토큰이라 SensitiveToStringReachTest 가
+        // 이름만으로 누출로 본다. 값은 저장된 입력과 평가 산출물로 잇는다.
+        assertThat(metadata.toString()).doesNotContain(ILLUSTRATION_GENERATION_PROMPT_VERSION)
+
+        val encoded = IllustrationGenerationStorageCodec.encode(IllustrationGenerationInput("prompt", metadata))
+        assertThat(IllustrationGenerationStorageCodec.decode(encoded).metadata.promptVersion)
+            .isEqualTo(ILLUSTRATION_GENERATION_PROMPT_VERSION)
+
+        // 이미 저장된 레코드에는 키가 없다 — 선택 필드라 그대로 읽혀야 한다.
+        val legacy =
+            IllustrationGenerationStorageCodec.encode(
+                IllustrationGenerationInput("prompt", metadata.copy(promptVersion = null)),
+            )
+        assertThat(legacy).doesNotContain("prompt_version")
+        assertThat(IllustrationGenerationStorageCodec.decode(legacy).metadata.promptVersion).isNull()
     }
 
     private fun configuration(altText: String) =

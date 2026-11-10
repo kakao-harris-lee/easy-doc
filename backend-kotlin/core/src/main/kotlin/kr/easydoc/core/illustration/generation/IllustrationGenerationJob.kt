@@ -61,7 +61,13 @@ data class IllustrationGenerationMetadata(
     val preservedFacts: List<String>,
     val altText: String,
     val discarded: Boolean = false,
+    /** 이 입력을 만든 생성 프롬프트의 개정([ILLUSTRATION_GENERATION_PROMPT_VERSION]). 옛 레코드는 `null` 이다. */
+    val promptVersion: String? = null,
 ) {
+    // `promptVersion` 은 toString 에 내지 않는다. 값 자체는 서버가 찍는 상수라 안전하지만,
+    // `SensitiveToStringReachTest` 의 민감 판정은 **이름**으로 돌고 「prompt」가 그 토큰이다 —
+    // 이름만으로 거르는 게이트에 예외를 뚫는 것보다 로그 한 칸을 비우는 편이 싸다. 이 값을 읽는
+    // 쪽은 저장된 입력(`prompt_version`)과 평가 레인 산출물이지 로그가 아니다.
     override fun toString(): String =
         "IllustrationGenerationMetadata(suggestionId=$suggestionId, analysisVersion=$analysisVersion, " +
             "configurationRevision=$configurationRevision, purpose=$purpose, " +
@@ -117,6 +123,16 @@ fun illustrationConfigurationRevision(configuration: IllustrationGenerationConfi
         .joinToString("") { "%02x".format(it) }
 }
 
+/**
+ * 생성 프롬프트의 개정 식별자. [buildIllustrationGenerationPrompt] 의 문구를 바꿀 때마다 올린다 —
+ * 「어느 프롬프트가 그린 그림인가」를 나중에 잇는 값이다.
+ *
+ * 감사·품질 추적 전용이다. 멱등 키([illustrationConfigurationRevision] 와 작업 fingerprint),
+ * DB 열, 공개 API, `contracts/easy-doc-v1.yaml` 에는 넣지 않는다 — 프롬프트 문구가 바뀌었다고
+ * 이미 만든 그림을 다시 그리게 하거나 계약을 흔들 이유가 없다.
+ */
+const val ILLUSTRATION_GENERATION_PROMPT_VERSION: String = "r7-illustration-generation-2"
+
 fun buildIllustrationGenerationPrompt(
     suggestion: IllustrationSuggestion,
     configuration: IllustrationGenerationConfiguration,
@@ -132,7 +148,7 @@ fun buildIllustrationGenerationPrompt(
         }
         append("Verified source context: ")
         append(suggestion.sourceAnchors.joinToString(" | ") { it.quote }).append(". ")
-        append("Do not put important names, numbers, conditions, or instructions in image text. ")
+        append("Do not put important names, conditions, or instructions in image text. ")
         append("Do not add unsupported actions or facts. ")
         // 1차 평가(2026-11-10)에서 모델이 원문이 정한 대상을 더 구체적인 다른 것으로 바꾸고
         // (분변 검사 → 대장내시경), 없는 예시 금액을 그려 넣고, 절차 단계를 하나 더 붙였다.
@@ -141,8 +157,13 @@ fun buildIllustrationGenerationPrompt(
         append("benefits, and items provided — and never replace one with a different or more specific kind. ")
         append("If the source does not say how something looks, ")
         append("keep it generic instead of inventing equipment, places, or methods. ")
-        append("Do not invent example numbers, amounts, dates, or quantities ")
-        append("that are not in the scenes, preserved facts, or verified source context above. ")
+        // 수치 지시는 하나뿐이다. 2차 평가(2026-11-10)에서 표본 002-2 가 「20분 이상」을 10분을
+        // 가리키는 시계로 그렸다 — 「없는 숫자를 만들지 마라」가 「원문에 있는 숫자는 그려도 된다」로
+        // 읽혔고, 글자가 아닌 그림(시곗바늘)은 「그림 속 글자」 금지에도 걸리지 않았다. 이슈 #204 ①이
+        // 두 문장을 하나로 합치고 「그려진 수량」까지 막으라고 정한다.
+        append("Do not show any number, amount, date, time, duration, or quantity in the image — ")
+        append("not as written text and not as a drawn quantity such as clock hands, calendar marks, ")
+        append("counted objects, or bar lengths. The accompanying text carries every number. ")
         append("Do not add, repeat, or reorder procedure steps beyond the scenes listed above. ")
         append("Do not draw a service or benefit as a physical package or box ")
         append("unless the source says an item is handed over. ")
@@ -168,6 +189,7 @@ fun illustrationGenerationMetadata(
         scenes = configuration.scenes,
         preservedFacts = configuration.preservedFacts,
         altText = configuration.altText,
+        promptVersion = ILLUSTRATION_GENERATION_PROMPT_VERSION,
     )
 
 const val MAX_GENERATION_SCENES: Int = 6

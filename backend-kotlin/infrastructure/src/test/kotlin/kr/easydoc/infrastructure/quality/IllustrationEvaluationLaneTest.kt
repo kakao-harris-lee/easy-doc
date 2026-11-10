@@ -2,6 +2,9 @@ package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.LlmProviderException
+import kr.easydoc.core.illustration.generation.ILLUSTRATION_GENERATION_PROMPT_VERSION
+import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
+import kr.easydoc.core.illustration.generation.buildIllustrationGenerationPrompt
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionParser
 import kr.easydoc.core.illustration.suggestion.isNumericOnlySource
@@ -10,6 +13,7 @@ import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.segment.splitUnits
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import tools.jackson.databind.json.JsonMapper
 import java.math.BigDecimal
@@ -252,6 +256,36 @@ class IllustrationEvaluationLaneTest {
         assertThat(suggestion.path("alt_text_draft").stringValue("")).isEqualTo("신청 순서를 보여 주는 그림")
         val anchor = suggestion.path("source_anchors").path(0)
         assertThat(anchor.path("quote").stringValue("")).isEqualTo("먼저 신청서를 씁니다")
+    }
+
+    @Test
+    @DisplayName("그림 산출물은 어느 생성 프롬프트가 그렸는지 함께 남긴다(이슈 #204)")
+    fun `그림 JSON 은 생성 프롬프트 버전을 남긴다`() {
+        val analysis =
+            IllustrationSuggestionParser.parseAndValidate(
+                VALID_SUGGESTION_JSON,
+                splitUnits(SOURCE_TEXT),
+                splitUnits(EASY_BODY),
+            )
+        val suggestion = (analysis as IllustrationSuggestionAnalysis.Valid).suggestions.suggestions.single()
+        val configuration =
+            IllustrationGenerationConfiguration(
+                scenes = suggestion.scenes,
+                preservedFacts = suggestion.preservedFacts,
+                altText = suggestion.altTextDraft,
+            )
+
+        val node =
+            JSON.readTree(
+                IllustrationLaneJson.image(
+                    suggestion,
+                    configuration,
+                    buildIllustrationGenerationPrompt(suggestion, configuration),
+                ),
+            )
+
+        assertThat(node.path("prompt_version").stringValue(""))
+            .isEqualTo(ILLUSTRATION_GENERATION_PROMPT_VERSION)
     }
 
     @Test

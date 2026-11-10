@@ -226,7 +226,7 @@ class ConversionFeatureRouteReachTest {
                  input_payload_encrypted, encryption_scheme, key_version,
                  status, reserved_credits, settlement)
             SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${seeded.conversionId}',
-                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-3', '$FINGERPRINT',
+                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-4', '$FINGERPRINT',
                    1, 1, '$FINGERPRINT', '\\x03'::bytea, 'aes256gcm-v1', 1,
                    'succeeded', 1.0, 'consumed'
             FROM documents d WHERE d.id = '${seeded.documentId}'
