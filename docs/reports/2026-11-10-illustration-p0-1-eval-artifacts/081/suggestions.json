@@ -1,0 +1,24 @@
+{
+  "raw_text" : "{\"schema_version\":1,\"suggestions\":[{\"purpose\":\"procedure\",\"reason\":\"신청을 받는 곳과 지원 대상자를 결정하는 곳이 다르므로, 두 기관의 역할과 순서를 연결해 보여주면 신청 절차를 이해하기 쉽습니다.\",\"body_range\":{\"start\":18,\"end\":18},\"source_anchors\":[{\"source_unit_indexes\":[15],\"quote\":\"서비스 이용자의 주소지 읍면사무소에 신청하여 군에서 대상자 결정\"}],\"scenes\":[\"성인 서비스 이용자에서 주소지 읍면사무소로 향하는 화살표로 신청을 표현한다.\",\"읍면사무소에 신청하는 장면 다음에 함양군이 지원 대상자를 결정하는 장면을 연결한다. 이용자가 함양군에 다시 방문하는 모습은 넣지 않는다.\"],\"preserved_facts\":[\"신청하는 곳은 서비스 이용자의 주소지 읍면사무소다.\",\"지원 대상자를 결정하는 곳은 함양군이다.\"],\"alt_text_draft\":\"서비스 이용자가 주소지 읍면사무소에 신청하면, 이후 함양군에서 지원 대상자를 결정하는 흐름입니다.\"}]}",
+  "numeric_only_source" : false,
+  "analysis" : "valid",
+  "schema_version" : 1,
+  "analysis_version" : "r7-illustration-suggestion-2",
+  "dropped_count" : 0,
+  "suggestions" : [ {
+    "suggestion_id" : "475ef7aa-19e4-4dbc-b60f-cff28a3fa370",
+    "purpose" : "procedure",
+    "reason" : "신청을 받는 곳과 지원 대상자를 결정하는 곳이 다르므로, 두 기관의 역할과 순서를 연결해 보여주면 신청 절차를 이해하기 쉽습니다.",
+    "body_range" : {
+      "start" : 18,
+      "end" : 18
+    },
+    "source_anchors" : [ {
+      "source_unit_indexes" : [ 15 ],
+      "quote" : "서비스 이용자의 주소지 읍면사무소에 신청하여 군에서 대상자 결정"
+    } ],
+    "scenes" : [ "성인 서비스 이용자에서 주소지 읍면사무소로 향하는 화살표로 신청을 표현한다.", "읍면사무소에 신청하는 장면 다음에 함양군이 지원 대상자를 결정하는 장면을 연결한다. 이용자가 함양군에 다시 방문하는 모습은 넣지 않는다." ],
+    "preserved_facts" : [ "신청하는 곳은 서비스 이용자의 주소지 읍면사무소다.", "지원 대상자를 결정하는 곳은 함양군이다." ],
+    "alt_text_draft" : "서비스 이용자가 주소지 읍면사무소에 신청하면, 이후 함양군에서 지원 대상자를 결정하는 흐름입니다."
+  } ]
+}

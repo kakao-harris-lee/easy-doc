@@ -1,0 +1,9 @@
+{
+  "suggestion_id" : "0d32c7c6-b5d4-4935-82b3-d06fed2d8e56",
+  "purpose" : "relationship",
+  "configuration_revision" : "4a720bc7dcbeba1a76b979c002e08b325299a98492fe6259f8b67cac0d3606c1",
+  "prompt_code_points" : 692,
+  "scenes" : [ "모두 신청 대상인 성인 부부를 나란히 배치하고, 각 사람에게서 각자의 신청서로 별도 연결선을 그린다. 두 사람의 연결선을 하나의 신청서로 합치지 않는다." ],
+  "preserved_facts" : [ "부부가 모두 신청 대상인 경우를 설명한다.", "부부가 모두 신청 대상이어도 각각 신청해야 한다." ],
+  "alt_text" : "모두 신청 대상인 부부의 각 사람에게서 별도의 신청서로 연결선이 이어진다. 부부도 각자 신청해야 한다."
+}
