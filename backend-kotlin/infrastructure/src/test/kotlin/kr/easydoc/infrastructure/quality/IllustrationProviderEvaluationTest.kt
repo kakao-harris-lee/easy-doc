@@ -16,7 +16,6 @@ import kr.easydoc.core.illustration.generation.IllustrationGenerationRequest
 import kr.easydoc.core.illustration.generation.MAX_GENERATION_FACTS
 import kr.easydoc.core.illustration.generation.MAX_GENERATION_SCENES
 import kr.easydoc.core.illustration.generation.buildIllustrationGenerationPrompt
-import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
 import kr.easydoc.core.illustration.generation.validateIllustrationGenerationConfiguration
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
@@ -40,8 +39,6 @@ import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
-import tools.jackson.databind.json.JsonMapper
-import tools.jackson.databind.node.ObjectNode
 import java.math.BigDecimal
 import java.util.concurrent.TimeUnit
 
@@ -51,10 +48,16 @@ import java.util.concurrent.TimeUnit
  *
  * `./gradlew :infrastructure:testLlm` 으로만 열리며(`@Tag("llm")`), 선택한 provider 의 비밀값이
  * 없으면 skip 한다. 표본마다 **제품과 같은 경로**를 그대로 지난다:
- * 변환(`ConvertDocumentUseCase`) → 숫자-only 가드(`isNumericOnlySource`) →
+ * 변환(`ConvertDocumentUseCase`) →
  * 제안(`LlmPrompt.forIllustrationSuggestions` + `IllustrationSuggestionParser.parseAndValidate`,
  * `ProviderIllustrationSuggestionJobRunner.call` 과 같은 순서·판정) →
- * 생성(`buildIllustrationGenerationPrompt` + `OpenAiImageGenerationProvider`). PNG 검증은
+ * 생성(`buildIllustrationGenerationPrompt` + `OpenAiImageGenerationProvider`).
+ *
+ * **숫자-only 원문에서도 호출을 거르지 않는다.** 제품의 가드는 응답을 받은 뒤
+ * `IllustrationSuggestionValidator.validate` 가 제안을 전부 버리는 자리에 있고, 호출 전에
+ * 끊는 것은 fake runner 뿐이다 — 레인이 끊으면 제품과 다른 길을 재게 되고, 모델이 억지
+ * 제안을 냈는지(계획 §12.2 ①′)도 볼 수 없다. `isNumericOnlySource` 판정은 산출물
+ * `suggestions.json` 의 `numeric_only_source` 에 **정보로만** 실린다. PNG 검증은
  * provider 가 응답을 받자마자 `GeneratedPngValidator.validate` 로 하므로
  * (`OpenAiImageGenerationProvider.generate`) 레인이 한 번 더 하지 않는다 — 여기서 올라오는
  * `IllustrationResultException` 이 곧 그 검증의 판정이다.
@@ -348,15 +351,6 @@ private class IllustrationLaneDocumentRun(
 ) {
     fun run(document: GoldenDocument) {
         val easyBody = convert(document) ?: return
-        if (isNumericOnlySource(splitUnits(document.sourceText))) {
-            // 제품의 숫자-only 가드는 `IllustrationSuggestionValidator.validate` 가 **응답을 받은
-            // 뒤** 모든 제안을 버리는 자리에 있다 — 사용자에게 남는 결과는 언제나 제안 0건이다.
-            // 레인은 그 결과를 사기 전에 끊는다(§12.1 예산). 원장의 이 줄이 「호출하지 않았다」는
-            // 사실 자체다.
-            materials.artifacts.writeSuggestions(document.id, IllustrationLaneJson.numericOnlySkip())
-            record(IllustrationLaneLedgerRow(document.id, STEP_SUGGEST, "skipped_numeric_only"))
-            return
-        }
         suggest(document, easyBody)?.let { suggestions -> generate(document.id, suggestions) }
     }
 
@@ -388,6 +382,13 @@ private class IllustrationLaneDocumentRun(
         document: GoldenDocument,
         easyBody: String,
     ): IllustrationSuggestionSet? {
+        val sourceUnits = splitUnits(document.sourceText)
+        // 제품은 숫자-only 원문에서도 provider 를 부른다 — 가드는 응답을 받은 뒤
+        // `IllustrationSuggestionValidator.validate` 가 제안을 전부 버리는 자리에 있고
+        // (`NumericOnlySource.kt` 의 유일한 제품 소비자), 호출 전에 끊는 것은 fake runner 뿐이다.
+        // 레인도 끊지 않는다: 끊으면 모델이 억지 제안을 냈는지(계획 §12.2 ①′)를 볼 수 없다.
+        // 이 값은 산출물에 정보로만 실린다.
+        val numericOnlySource = isNumericOnlySource(sourceUnits)
         val prompt = LlmPrompt.forIllustrationSuggestions(document.sourceText, easyBody)
         val startedAt = System.nanoTime()
         val completion =
@@ -400,19 +401,16 @@ private class IllustrationLaneDocumentRun(
             }
         val latencyMs = completion.latencyMs ?: elapsedMillis(startedAt)
         if (completion.finishReason != LlmFinishReason.END_TURN || completion.text.isBlank()) {
-            return recordInvalidSuggestion(document.id, completion, latencyMs, truncatedOutcome(completion))
+            val outcome = truncatedOutcome(completion)
+            return invalidSuggestion(document.id, completion, outcome, latencyMs, numericOnlySource)
         }
         val analysis =
-            IllustrationSuggestionParser.parseAndValidate(
-                completion.text,
-                splitUnits(document.sourceText),
-                splitUnits(easyBody),
-            )
+            IllustrationSuggestionParser.parseAndValidate(completion.text, sourceUnits, splitUnits(easyBody))
         return when (analysis) {
             is IllustrationSuggestionAnalysis.Valid -> {
                 materials.artifacts.writeSuggestions(
                     document.id,
-                    IllustrationLaneJson.suggestions(completion.text, analysis.suggestions),
+                    IllustrationLaneJson.suggestions(completion.text, analysis.suggestions, numericOnlySource),
                 )
                 record(suggestionRow(document.id, "valid", latencyMs, completion))
                 materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
@@ -420,18 +418,22 @@ private class IllustrationLaneDocumentRun(
             }
 
             IllustrationSuggestionAnalysis.InvalidStructure -> {
-                recordInvalidSuggestion(document.id, completion, latencyMs, "invalid")
+                invalidSuggestion(document.id, completion, "invalid", latencyMs, numericOnlySource)
             }
         }
     }
 
-    private fun recordInvalidSuggestion(
+    private fun invalidSuggestion(
         documentId: String,
         completion: LlmCompletion,
-        latencyMs: Long,
         outcome: String,
+        latencyMs: Long,
+        numericOnlySource: Boolean,
     ): IllustrationSuggestionSet? {
-        materials.artifacts.writeSuggestions(documentId, IllustrationLaneJson.suggestions(completion.text, null))
+        materials.artifacts.writeSuggestions(
+            documentId,
+            IllustrationLaneJson.suggestions(completion.text, null, numericOnlySource),
+        )
         record(suggestionRow(documentId, outcome, latencyMs, completion))
         materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
         return null
@@ -599,85 +601,4 @@ private class IllustrationLaneDocumentRun(
         const val STEP_CONVERT: String = "convert"
         const val STEP_SUGGEST: String = "suggest"
     }
-}
-
-/**
- * 산출물 JSON. 표본이 공개 행정 문서라 제안 본문·원문 인용을 남기는 것은 허용된다(§12.1) —
- * 사람이 ①~④ 를 채점하려면 그 값들이 있어야 한다. 이미지 쪽은 **프롬프트 전문 대신 길이**만
- * 남긴다: 프롬프트에 새로 생기는 사실이 없고, 구성·대체텍스트가 그 내용을 이미 담는다.
- */
-private object IllustrationLaneJson {
-    private val JSON: JsonMapper = JsonMapper.builder().build()
-
-    fun numericOnlySkip(): String =
-        write(
-            JSON.createObjectNode().apply {
-                put("analysis", "skipped_numeric_only")
-                put("reason", "isNumericOnlySource 가 참이라 제안 호출을 시작하지 않았다(계획 §12.1 표본)")
-            },
-        )
-
-    fun suggestions(
-        rawText: String,
-        suggestions: IllustrationSuggestionSet?,
-    ): String {
-        val root = JSON.createObjectNode()
-        root.put("raw_text", rawText)
-        if (suggestions == null) {
-            root.put("analysis", "invalid_structure")
-            return write(root)
-        }
-        root.put("analysis", "valid")
-        root.put("schema_version", suggestions.schemaVersion)
-        root.put("analysis_version", suggestions.analysisVersion)
-        root.put("dropped_count", suggestions.droppedCount)
-        val array = root.putArray("suggestions")
-        suggestions.suggestions.forEach { array.add(suggestionNode(it)) }
-        return write(root)
-    }
-
-    fun image(
-        suggestion: IllustrationSuggestion,
-        configuration: IllustrationGenerationConfiguration,
-        prompt: String,
-    ): String {
-        val node = JSON.createObjectNode()
-        node.put("suggestion_id", suggestion.suggestionId.toString())
-        node.put("purpose", suggestion.purpose.wireName)
-        node.put("configuration_revision", illustrationConfigurationRevision(configuration))
-        node.put("prompt_code_points", prompt.codePointCount(0, prompt.length))
-        val scenes = node.putArray("scenes")
-        configuration.scenes.forEach { scenes.add(it) }
-        val facts = node.putArray("preserved_facts")
-        configuration.preservedFacts.forEach { facts.add(it) }
-        node.put("alt_text", configuration.altText)
-        return write(node)
-    }
-
-    private fun suggestionNode(suggestion: IllustrationSuggestion): ObjectNode {
-        val node = JSON.createObjectNode()
-        node.put("suggestion_id", suggestion.suggestionId.toString())
-        node.put("purpose", suggestion.purpose.wireName)
-        node.put("reason", suggestion.reason)
-        node.putObject("body_range").apply {
-            put("start", suggestion.bodyRange.start)
-            put("end", suggestion.bodyRange.end)
-        }
-        val anchors = node.putArray("source_anchors")
-        suggestion.sourceAnchors.forEach { anchor ->
-            val anchorNode = JSON.createObjectNode()
-            val indexes = anchorNode.putArray("source_unit_indexes")
-            anchor.sourceUnitIndexes.forEach { indexes.add(it) }
-            anchorNode.put("quote", anchor.quote)
-            anchors.add(anchorNode)
-        }
-        val scenes = node.putArray("scenes")
-        suggestion.scenes.forEach { scenes.add(it) }
-        val facts = node.putArray("preserved_facts")
-        suggestion.preservedFacts.forEach { facts.add(it) }
-        node.put("alt_text_draft", suggestion.altTextDraft)
-        return node
-    }
-
-    private fun write(node: ObjectNode): String = JSON.writerWithDefaultPrettyPrinter().writeValueAsString(node)
 }

@@ -1,8 +1,14 @@
 package kr.easydoc.infrastructure.quality
 
+import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
+import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionSet
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.quality.GoldenDocument
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.databind.node.ObjectNode
 import java.math.BigDecimal
 
 // P0-1 「실제 provider 품질·비용·지연 출시 게이트」 레인의 규칙 묶음
@@ -258,3 +264,89 @@ internal val NUMERIC_ONLY_LANE_DOCUMENT: GoldenDocument =
             ).joinToString("\n"),
         requiredFacts = emptyList(),
     )
+
+/**
+ * 산출물 JSON. 표본이 공개 행정 문서라 제안 본문·원문 인용을 남기는 것은 허용된다(계획 §12.1) —
+ * 사람이 ①~④ 를 채점하려면 그 값들이 있어야 한다. 이미지 쪽은 **프롬프트 전문 대신 길이**만
+ * 남긴다: 프롬프트에 새로 생기는 사실이 없고, 구성·대체텍스트가 그 내용을 이미 담는다.
+ *
+ * 레인 본문이 아니라 여기 있는 이유는 [IllustrationLaneBudget] 과 같다 — 산출물 모양은 순수
+ * 함수라 유료 호출 없이 시험할 수 있어야 한다([IllustrationEvaluationLaneTest]).
+ */
+internal object IllustrationLaneJson {
+    private val JSON: JsonMapper = JsonMapper.builder().build()
+
+    /**
+     * 제안 한 번의 산출물.
+     *
+     * [rawText] 는 **언제나** 남긴다 — 제품이 숫자-only 원문의 제안을 전부 버리더라도
+     * (`IllustrationSuggestionValidator.validate`), 모델이 스스로 억지 제안을 냈는지는 응답
+     * 원문에만 남는다(계획 §12.2 ①′ 가 묻는 것이 그것이다). [numericOnlySource] 는 그 판정의
+     * 참고값일 뿐 레인의 분기 조건이 아니다.
+     */
+    fun suggestions(
+        rawText: String,
+        suggestions: IllustrationSuggestionSet?,
+        numericOnlySource: Boolean,
+    ): String {
+        val root = JSON.createObjectNode()
+        root.put("raw_text", rawText)
+        root.put("numeric_only_source", numericOnlySource)
+        if (suggestions == null) {
+            root.put("analysis", "invalid_structure")
+            return write(root)
+        }
+        root.put("analysis", "valid")
+        root.put("schema_version", suggestions.schemaVersion)
+        root.put("analysis_version", suggestions.analysisVersion)
+        root.put("dropped_count", suggestions.droppedCount)
+        val array = root.putArray("suggestions")
+        suggestions.suggestions.forEach { array.add(suggestionNode(it)) }
+        return write(root)
+    }
+
+    fun image(
+        suggestion: IllustrationSuggestion,
+        configuration: IllustrationGenerationConfiguration,
+        prompt: String,
+    ): String {
+        val node = JSON.createObjectNode()
+        node.put("suggestion_id", suggestion.suggestionId.toString())
+        node.put("purpose", suggestion.purpose.wireName)
+        node.put("configuration_revision", illustrationConfigurationRevision(configuration))
+        node.put("prompt_code_points", prompt.codePointCount(0, prompt.length))
+        val scenes = node.putArray("scenes")
+        configuration.scenes.forEach { scenes.add(it) }
+        val facts = node.putArray("preserved_facts")
+        configuration.preservedFacts.forEach { facts.add(it) }
+        node.put("alt_text", configuration.altText)
+        return write(node)
+    }
+
+    private fun suggestionNode(suggestion: IllustrationSuggestion): ObjectNode {
+        val node = JSON.createObjectNode()
+        node.put("suggestion_id", suggestion.suggestionId.toString())
+        node.put("purpose", suggestion.purpose.wireName)
+        node.put("reason", suggestion.reason)
+        node.putObject("body_range").apply {
+            put("start", suggestion.bodyRange.start)
+            put("end", suggestion.bodyRange.end)
+        }
+        val anchors = node.putArray("source_anchors")
+        suggestion.sourceAnchors.forEach { anchor ->
+            val anchorNode = JSON.createObjectNode()
+            val indexes = anchorNode.putArray("source_unit_indexes")
+            anchor.sourceUnitIndexes.forEach { indexes.add(it) }
+            anchorNode.put("quote", anchor.quote)
+            anchors.add(anchorNode)
+        }
+        val scenes = node.putArray("scenes")
+        suggestion.scenes.forEach { scenes.add(it) }
+        val facts = node.putArray("preserved_facts")
+        suggestion.preservedFacts.forEach { facts.add(it) }
+        node.put("alt_text_draft", suggestion.altTextDraft)
+        return node
+    }
+
+    private fun write(node: ObjectNode): String = JSON.writerWithDefaultPrettyPrinter().writeValueAsString(node)
+}

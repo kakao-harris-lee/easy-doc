@@ -1,6 +1,8 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.core.exceptions.LlmProviderException
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionParser
 import kr.easydoc.core.illustration.suggestion.isNumericOnlySource
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
@@ -8,6 +10,7 @@ import kr.easydoc.core.segment.splitUnits
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import tools.jackson.databind.json.JsonMapper
 import java.math.BigDecimal
 
 /**
@@ -121,6 +124,40 @@ class IllustrationEvaluationLaneTest {
     }
 
     @Test
+    fun `제안 JSON 은 응답 원문과 숫자-only 여부를 함께 남긴다`() {
+        val node = JSON.readTree(IllustrationLaneJson.suggestions("응답 원문", null, numericOnlySource = true))
+
+        assertThat(node.path("raw_text").stringValue("")).isEqualTo("응답 원문")
+        assertThat(node.path("numeric_only_source").booleanValue(false)).isTrue()
+        assertThat(node.path("analysis").stringValue("")).isEqualTo("invalid_structure")
+    }
+
+    @Test
+    fun `유효한 제안도 숫자-only 여부를 함께 남긴다`() {
+        val analysis =
+            IllustrationSuggestionParser.parseAndValidate(
+                VALID_SUGGESTION_JSON,
+                splitUnits(SOURCE_TEXT),
+                splitUnits(EASY_BODY),
+            )
+        val valid = analysis as IllustrationSuggestionAnalysis.Valid
+
+        val node =
+            JSON.readTree(
+                IllustrationLaneJson.suggestions(VALID_SUGGESTION_JSON, valid.suggestions, numericOnlySource = false),
+            )
+
+        assertThat(node.path("analysis").stringValue("")).isEqualTo("valid")
+        assertThat(node.path("numeric_only_source").booleanValue(true)).isFalse()
+        assertThat(node.path("raw_text").stringValue("")).isEqualTo(VALID_SUGGESTION_JSON)
+        val suggestion = node.path("suggestions").path(0)
+        assertThat(suggestion.path("purpose").stringValue("")).isEqualTo("procedure")
+        assertThat(suggestion.path("alt_text_draft").stringValue("")).isEqualTo("신청 순서를 보여 주는 그림")
+        val anchor = suggestion.path("source_anchors").path(0)
+        assertThat(anchor.path("quote").stringValue("")).isEqualTo("먼저 신청서를 씁니다")
+    }
+
+    @Test
     fun `원장은 단계마다 누적 비용까지 한 줄로 남긴다`() {
         val ledger = IllustrationLaneLedger()
 
@@ -150,12 +187,12 @@ class IllustrationEvaluationLaneTest {
         val ledger = IllustrationLaneLedger()
 
         ledger.add(
-            IllustrationLaneLedgerRow(documentId = "900", step = "suggest", outcome = "skipped_numeric_only"),
+            IllustrationLaneLedgerRow(documentId = "900", step = "generate-1", outcome = "configuration_invalid"),
             cumulativeUsd = BigDecimal.ZERO,
         )
 
         val lines = ledger.render().trim().lines()
-        assertThat(lines.last()).isEqualTo("900,suggest,skipped_numeric_only,,,,,0")
+        assertThat(lines.last()).isEqualTo("900,generate-1,configuration_invalid,,,,,0")
     }
 
     private fun budgetOf(
@@ -167,7 +204,21 @@ class IllustrationEvaluationLaneTest {
     private fun faultOf(label: String): LaneFault = LaneFaults.of(LlmProviderException("호출 실패 ($label)"))
 
     private companion object {
+        val JSON: JsonMapper = JsonMapper.builder().build()
         val PROMPT: LlmPrompt = LlmPrompt.forIllustrationSuggestions("원문 한 줄", "본문 한 줄")
         val OPTIONS: LlmOptions = LlmOptions(maxTokens = 8_192)
+
+        const val SOURCE_TEXT: String = "먼저 신청서를 씁니다\n그다음 서류를 냅니다"
+        const val EASY_BODY: String = "신청서를 씁니다\n서류를 냅니다"
+
+        /** 제품 파서·검증기를 그대로 통과하는 최소 응답 — 숫자가 없어 사실 대조에 걸리지 않는다. */
+        val VALID_SUGGESTION_JSON: String =
+            """
+            {"schema_version":1,"suggestions":[{"purpose":"procedure",
+            "reason":"절차를 그림으로 보여 주면 이해가 쉽다","body_range":{"start":0,"end":1},
+            "source_anchors":[{"source_unit_indexes":[0],"quote":"먼저 신청서를 씁니다"}],
+            "scenes":["신청서를 쓰는 모습"],"preserved_facts":["신청서를 먼저 씁니다"],
+            "alt_text_draft":"신청 순서를 보여 주는 그림"}]}
+            """.trimIndent().replace("\n", "")
     }
 }
