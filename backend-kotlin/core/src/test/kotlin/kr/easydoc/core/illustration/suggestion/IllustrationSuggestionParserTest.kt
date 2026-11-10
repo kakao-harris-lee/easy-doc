@@ -324,6 +324,42 @@ class IllustrationSuggestionParserTest {
         assertThat(set.droppedCount).isZero()
     }
 
+    @Test
+    @DisplayName("글자가 하나도 없는 보존 사실(날짜·전화번호·비율)은 한국어 판정으로 버리지 않는다")
+    fun `숫자와 기호뿐인 보존 사실은 남는다`() {
+        val source = listOf("신청 기간은 2026. 3. 15.까지이고, 문의는 02-123-4567, 지원 비율은 50% 입니다.")
+
+        listOf("2026. 3. 15.", "02-123-4567", "50%").forEach { fact ->
+            val draft = example("procedure", "신청 기간은", "신청 기간을 확인하는 모습", fact, "신청 안내 그림")
+
+            val set =
+                validSetOf(
+                    IllustrationSuggestionParser.parseAndValidate(jsonWith(draft), source, listOf("합성 본문")),
+                )
+
+            assertThat(set.suggestions).describedAs(fact).hasSize(1)
+            assertThat(set.droppedCount).describedAs(fact).isZero()
+        }
+    }
+
+    @Test
+    @DisplayName("반각 가타카나와 가타카나 음성 확장도 일본어로 보고 제안 단위로 버린다")
+    fun `확장 가나 구간이 섞인 제안은 버려진다`() {
+        val scene = "신청서와 신분증을 준비하는 모습"
+        val mixedWithKana =
+            listOf(
+                validJson.replace(scene, "ｼﾝｾｲ 신청 서류를 준비하는 모습"),
+                validJson.replace(scene, "ㇱ 신청 서류를 준비하는 모습"),
+            )
+
+        mixedWithKana.forEach { json ->
+            val set = validSetOf(analyze(json))
+
+            assertThat(set.suggestions).describedAs(json).isEmpty()
+            assertThat(set.droppedCount).describedAs(json).isEqualTo(1)
+        }
+    }
+
     @Suppress("LongParameterList") // 각 JSON 필드를 독립적으로 바꾸어 환각 검사를 확인한다.
     private fun example(
         purpose: String,

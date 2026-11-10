@@ -153,7 +153,7 @@ internal fun illustrationLaneSampleRejection(
     return if (outside.isEmpty()) {
         null
     } else {
-        "${LaneDocuments.ENV}: 계획 §12.4 표본 밖의 문서다 —${outside.joinToString(", ") { "'$it'" }}. " +
+        "${LaneDocuments.ENV}: 계획 §12.4 표본 밖의 문서다 — ${outside.joinToString(", ") { "'$it'" }}. " +
             "승인받은 표본은 ${allowed.joinToString(",")} 뿐이다."
     }
 }
