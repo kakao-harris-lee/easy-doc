@@ -4,7 +4,7 @@ import kr.easydoc.core.quality.GoldenDocumentLoader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import kotlin.io.path.readText
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 
@@ -92,16 +92,20 @@ internal class IllustrationLaneArtifacts private constructor(private val directo
 
         private const val UNKNOWN_COMMIT: String = "unknown"
 
+        private const val GIT_TIMEOUT_SECONDS: Long = 5
+
         fun plan(
             env: (String) -> String?,
             documentIds: List<String>,
         ): IllustrationLaneArtifactsPlan {
             val configured = env(ENV)?.takeIf(String::isNotBlank)
             val directory = configured?.let(Path::of) ?: repositoryRoot().resolve(DEFAULT_RELATIVE)
+            // 문서 id 검사는 파일시스템을 건드리지 않는다 — 먼저 돌려서, 거절할 실행이 디렉터리를
+            // 만들어 두고 끝나지 않게 한다(다음 실행의 「비어 있지 않다」 거절을 미리 만드는 꼴).
+            rejectUnsafeDocumentIds(documentIds, directory)?.let { return it }
             return try {
                 Files.createDirectories(directory)
                 rejectIfNotEmpty(directory)
-                    ?: rejectUnsafeDocumentIds(documentIds, directory)
                     ?: run {
                         probeWritable(directory)
                         IllustrationLaneArtifactsPlan.Ready(IllustrationLaneArtifacts(directory))
@@ -134,21 +138,36 @@ internal class IllustrationLaneArtifacts private constructor(private val directo
          * 체크아웃처럼 읽어 낼 수 없는 경우는 [UNKNOWN_COMMIT] 이다: 모르는 값을 지어내지
          * 않는다.
          */
-        fun commitSha(root: Path): String {
-            val head = root.resolve(".git/HEAD")
-            if (!Files.isRegularFile(head)) return UNKNOWN_COMMIT
-            return commitShaOf(root, head.readText().trim())
-        }
+        fun commitSha(root: Path): String =
+            try {
+                readCommitSha(root)
+            } catch (exc: IOException) {
+                // git 이 없거나 저장소가 아니다. 모르는 값을 지어내지 않는다.
+                println("commit sha 조회 실패: ${exc.message}")
+                UNKNOWN_COMMIT
+            } catch (exc: InterruptedException) {
+                Thread.currentThread().interrupt()
+                println("commit sha 조회 중단: ${exc.message}")
+                UNKNOWN_COMMIT
+            }
 
-        /** 분리된 HEAD 는 참조가 아니라 커밋 해시를 그대로 담는다. */
-        private fun commitShaOf(
-            root: Path,
-            head: String,
-        ): String {
-            val reference = head.removePrefix("ref: ")
-            if (reference == head) return head
-            val referenceFile = root.resolve(".git").resolve(reference)
-            return if (Files.isRegularFile(referenceFile)) referenceFile.readText().trim() else UNKNOWN_COMMIT
+        /**
+         * `git` 에게 묻는다. `.git` 을 직접 읽으면 **연결된 worktree**(`.git` 이 디렉터리가 아니라
+         * `gitdir:` 한 줄을 담은 파일이고, 참조는 공용 디렉터리에 있다)와 packed-refs 에서 조용히
+         * `unknown` 이 된다 — 평가 기록이 어느 리비전을 잰 것인지가 바로 그 두 경우에 사라진다.
+         */
+        private fun readCommitSha(root: Path): String {
+            val process =
+                ProcessBuilder("git", "rev-parse", "HEAD")
+                    .directory(root.toFile())
+                    .redirectErrorStream(false)
+                    .start()
+            val output = process.inputStream.bufferedReader().use { reader -> reader.readText().trim() }
+            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroy()
+                return UNKNOWN_COMMIT
+            }
+            return if (process.exitValue() == 0 && output.isNotEmpty()) output else UNKNOWN_COMMIT
         }
 
         /** 문서 id 가 디렉터리 이름으로 안전한가 — 문법은 [GoldenDocumentLoader.SAFE_DOCUMENT_ID] 가 정본이다. */

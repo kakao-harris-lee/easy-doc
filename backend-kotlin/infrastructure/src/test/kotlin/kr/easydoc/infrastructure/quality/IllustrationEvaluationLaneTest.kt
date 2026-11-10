@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.quality
 
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionParser
@@ -115,6 +116,87 @@ class IllustrationEvaluationLaneTest {
         assertThat(illustrationLaneSignalOf(faultOf("HTTP 503"))).isEqualTo(IllustrationLaneSignal.HEALTHY)
         assertThat(illustrationLaneSignalOf(faultOf("SocketTimeoutException")))
             .isEqualTo(IllustrationLaneSignal.HEALTHY)
+    }
+
+    @Test
+    fun `계획이 고정한 provider 와 모델이면 통과한다`() {
+        val env = mapOf(GoldenLlmLane.PROVIDER_ENV to "openai", GoldenLlmLane.MODEL_ENV to "gpt-6-astra")
+
+        assertThat(illustrationLaneModelRejection(env::get)).isNull()
+    }
+
+    @Test
+    fun `모델을 적지 않으면 거절한다`() {
+        val env = mapOf(GoldenLlmLane.PROVIDER_ENV to "openai")
+
+        // 미설정은 코드 기본값 gpt-4.1 로 접혀, 계획이 고정한 모델이 아닌 것을 재고도 쟀다고 적는다.
+        assertThat(illustrationLaneModelRejection(env::get)).contains(GoldenLlmLane.MODEL_ENV, "gpt-6-astra")
+    }
+
+    @Test
+    fun `다른 모델이나 다른 provider 는 거절한다`() {
+        val otherModel = mapOf(GoldenLlmLane.PROVIDER_ENV to "openai", GoldenLlmLane.MODEL_ENV to "gpt-4.1")
+        val otherProvider = mapOf(GoldenLlmLane.PROVIDER_ENV to "anthropic", GoldenLlmLane.MODEL_ENV to "gpt-6-astra")
+
+        assertThat(illustrationLaneModelRejection(otherModel::get)).contains("gpt-4.1")
+        assertThat(illustrationLaneModelRejection(otherProvider::get)).contains("anthropic")
+    }
+
+    @Test
+    fun `provider 미설정은 배포 기본값 openai 로 본다`() {
+        val env = mapOf(GoldenLlmLane.MODEL_ENV to "gpt-6-astra")
+
+        assertThat(illustrationLaneModelRejection(env::get)).isNull()
+    }
+
+    @Test
+    fun `레인 상한은 숫자여야 하고 승인 총액을 넘을 수 없다`() {
+        assertThat(illustrationLaneBudgetOf("20")).isEqualByComparingTo("20")
+
+        assertThatThrownBy { illustrationLaneBudgetOf(null) }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("EASYDOC_LANE_MAX_USD")
+        assertThatThrownBy { illustrationLaneBudgetOf("20달러") }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("숫자")
+        assertThatThrownBy { illustrationLaneBudgetOf("0") }
+            .isInstanceOf(ConfigurationException::class.java)
+        assertThatThrownBy { illustrationLaneBudgetOf("50.01") }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("승인")
+    }
+
+    @Test
+    fun `이미지 단가는 설정했다면 0보다 커야 한다`() {
+        assertThat(illustrationLaneImageCostOf(null)).isNull()
+        assertThat(illustrationLaneImageCostOf("0.02")).isEqualByComparingTo("0.02")
+
+        assertThatThrownBy { illustrationLaneImageCostOf("0") }.isInstanceOf(ConfigurationException::class.java)
+        assertThatThrownBy { illustrationLaneImageCostOf("-1") }.isInstanceOf(ConfigurationException::class.java)
+        assertThatThrownBy { illustrationLaneImageCostOf("무료") }.isInstanceOf(ConfigurationException::class.java)
+    }
+
+    @Test
+    fun `표본 밖 문서를 고르면 거절한다`() {
+        val allowed = listOf("001", "010")
+
+        assertThat(illustrationLaneSampleRejection("001,010", allowed)).isNull()
+        assertThat(illustrationLaneSampleRejection("001", allowed)).isNull()
+        assertThat(illustrationLaneSampleRejection(null, allowed)).isNull()
+        assertThat(illustrationLaneSampleRejection("001,002", allowed)).contains("002")
+    }
+
+    @Test
+    fun `단계가 다르면 연속 실패가 아니다`() {
+        val rules = IllustrationLaneStopRules()
+
+        rules.generate.record(IllustrationLaneSignal.REJECTED)
+        rules.convert.record(IllustrationLaneSignal.HEALTHY)
+        assertThat(rules.stopped).isFalse()
+        rules.generate.record(IllustrationLaneSignal.REJECTED)
+
+        assertThat(rules.stopped).isTrue()
+        assertThat(rules.stopReason).contains("generate", "거절")
     }
 
     @Test

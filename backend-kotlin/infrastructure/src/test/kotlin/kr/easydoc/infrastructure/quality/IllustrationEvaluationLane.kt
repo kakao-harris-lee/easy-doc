@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.quality
 
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.illustration.generation.IllustrationGenerationConfiguration
 import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
@@ -36,6 +37,126 @@ internal val ILLUSTRATION_IMAGE_WORST_CASE_USD: BigDecimal = BigDecimal("0.10")
 
 /** 계획 §12.3 — 거절·결과 불명확이 이만큼 연속이면 레인을 멈춘다. */
 internal const val ILLUSTRATION_LANE_STOP_STREAK: Int = 2
+
+/**
+ * 계획 §12.1 이 고정한 텍스트 provider·모델 — 「변환·제안 `openai`/`gpt-6-astra`(제품 설정)」.
+ *
+ * **모델을 환경변수로 적지 않으면 레인은 이 모델을 재지 않는다.** `LlmProperties.model` 미설정은
+ * 어댑터 코드 기본값 [DEFAULT_OPENAI_MODEL][kr.easydoc.infrastructure.llm.DEFAULT_OPENAI_MODEL]
+ * (`gpt-4.1`)로 접히므로, 그대로 돌면 계획이 고정한 조건이 아닌 것을 재고도 쟀다고 적게 된다 —
+ * 2026-08-27 골든 레인 사고와 같은 계열이다([GoldenLlmLane] 최상단 KDoc).
+ */
+internal const val ILLUSTRATION_LANE_TEXT_PROVIDER: String = "openai"
+
+internal const val ILLUSTRATION_LANE_TEXT_MODEL: String = "gpt-6-astra"
+
+/**
+ * 사용자가 2026-11-10 승인한 **총액** 상한(계획 §11-3·§12.1 「총 예산 US$50 이내」).
+ * 레인 한 회차의 상한([ILLUSTRATION_LANE_TEXT_MODEL] 과 달리 운영자가 고르는 값)은 이 값을
+ * 넘을 수 없다 — 넘기면 승인 범위 밖의 지출을 한 회차에 허용하게 된다.
+ */
+internal val ILLUSTRATION_LANE_APPROVED_MAX_USD: BigDecimal = BigDecimal("50")
+
+/**
+ * 유료 호출을 시작하기 전에 **무엇을 재는지** 확인한다. 맞으면 `null`, 아니면 거절 사유 한 줄.
+ *
+ * 조건 줄([IllustrationLaneArtifacts.CONDITIONS_FILE_NAME])을 쓰기 전에 판정해야 한다 —
+ * 조건을 적어 둔 뒤에 다른 모델로 도는 실행이 가장 읽기 어려운 결과를 남긴다.
+ */
+internal fun illustrationLaneModelRejection(env: (String) -> String?): String? {
+    val provider =
+        env(GoldenLlmLane.PROVIDER_ENV)?.takeIf(String::isNotBlank)?.lowercase() ?: GoldenLlmLane.DEFAULT_PROVIDER
+    if (provider != ILLUSTRATION_LANE_TEXT_PROVIDER) {
+        return "${GoldenLlmLane.PROVIDER_ENV}='$provider' 로는 계획 §12.1 을 잴 수 없다 — " +
+            "고정 조건은 $ILLUSTRATION_LANE_TEXT_PROVIDER 다."
+    }
+    val model = env(GoldenLlmLane.MODEL_ENV)?.takeIf(String::isNotBlank)
+    return if (model == ILLUSTRATION_LANE_TEXT_MODEL) {
+        null
+    } else {
+        "${GoldenLlmLane.MODEL_ENV}=${model ?: "(미설정)"} 로는 계획 §12.1 을 잴 수 없다 — " +
+            "$ILLUSTRATION_LANE_TEXT_MODEL 을 명시해야 한다. 미설정은 어댑터 기본 모델로 접힌다."
+    }
+}
+
+/**
+ * 레인 한 회차의 달러 상한. 없거나 숫자가 아니거나 범위를 벗어나면 [ConfigurationException] —
+ * 조용히 접으면 상한 없이(또는 승인 범위 밖으로) 유료 호출을 시작하게 된다.
+ */
+internal fun illustrationLaneBudgetOf(raw: String?): BigDecimal {
+    val configured = raw?.takeIf(String::isNotBlank)
+    val budget = configured?.toBigDecimalOrNull()
+    budgetRejection(configured, budget)?.let { throw ConfigurationException(it) }
+    return checkNotNull(budget)
+}
+
+/** 거절 사유 한 줄, 쓸 수 있으면 `null`. 사유를 한 자리에 모아 둔다 — 먼저 걸린 것부터 알린다. */
+private fun budgetRejection(
+    configured: String?,
+    budget: BigDecimal?,
+): String? =
+    when {
+        configured == null -> {
+            "$ILLUSTRATION_LANE_MAX_USD_ENV 로 달러 상한을 명시해야 한다 — 예: " +
+                "$ILLUSTRATION_LANE_MAX_USD_ENV=20 (계획 §12.1)."
+        }
+
+        budget == null -> {
+            "$ILLUSTRATION_LANE_MAX_USD_ENV='$configured' 은 숫자가 아니다 — 달러 금액만 적는다(예: 20)."
+        }
+
+        budget.signum() <= 0 -> {
+            "$ILLUSTRATION_LANE_MAX_USD_ENV 는 0보다 커야 한다: $budget"
+        }
+
+        budget > ILLUSTRATION_LANE_APPROVED_MAX_USD -> {
+            "$ILLUSTRATION_LANE_MAX_USD_ENV=$budget 는 승인 총액 US\$$ILLUSTRATION_LANE_APPROVED_MAX_USD 를 " +
+                "넘는다 — 더 쓰려면 먼저 예산을 다시 승인받는다."
+        }
+
+        else -> {
+            null
+        }
+    }
+
+internal const val ILLUSTRATION_LANE_MAX_USD_ENV: String = "EASYDOC_LANE_MAX_USD"
+
+/**
+ * 이미지 1장의 **정산** 단가(`easydoc.illustration-generation.provider-cost-usd-per-image`).
+ * 미설정은 `null`(보수 단가로 계상). 설정했다면 0보다 커야 한다 — 제품도 0 이하를 기동에서
+ * 거절한다(`ProviderIllustrationGenerationWorkerConfiguration`).
+ */
+internal fun illustrationLaneImageCostOf(raw: String?): BigDecimal? {
+    val configured = raw?.takeIf(String::isNotBlank) ?: return null
+    val cost =
+        configured.toBigDecimalOrNull()
+            ?: throw ConfigurationException("이미지 단가 '$configured' 은 숫자가 아니다")
+    if (cost.signum() <= 0) {
+        throw ConfigurationException("이미지 단가는 0보다 커야 한다(제품도 0 이하를 거절한다): $cost")
+    }
+    return cost
+}
+
+/**
+ * [LaneDocuments.ENV] 로 고른 표본이 계획 §12.1 의 13건 **안**인가. 맞으면 `null`.
+ *
+ * 승인받은 것은 그 13건이다 — 밖의 문서를 고르면 승인 범위 밖에 예산을 쓰게 된다
+ * ([LaneDocuments] KDoc 이 막으려는 것과 같은 사고). 문법·중복·미존재 검사는 그대로
+ * [LaneDocuments.select] 몫이라 빈 값은 여기서 보지 않는다.
+ */
+internal fun illustrationLaneSampleRejection(
+    raw: String?,
+    allowed: List<String>,
+): String? {
+    val requested = raw?.takeIf(String::isNotBlank)?.split(',')?.map(String::trim) ?: return null
+    val outside = requested.filterNot(allowed::contains)
+    return if (outside.isEmpty()) {
+        null
+    } else {
+        "${LaneDocuments.ENV}: 계획 §12.1 표본 밖의 문서다 — ${outside.joinToString(", ") { "'$it'" }}. " +
+            "승인받은 표본은 ${allowed.joinToString(",")} 뿐이다."
+    }
+}
 
 /** 계획 §12.1 「문서마다 유효 제안 중 앞의 최대 2건」. */
 internal const val ILLUSTRATION_LANE_IMAGES_PER_DOCUMENT: Int = 2
@@ -165,6 +286,27 @@ internal class IllustrationLaneStopRule(private val threshold: Int = ILLUSTRATIO
             IllustrationLaneSignal.OUTCOME_UNKNOWN -> "결과 불명확"
             IllustrationLaneSignal.HEALTHY -> "정상"
         }
+}
+
+/**
+ * 단계마다 따로 세는 중단 규칙.
+ *
+ * 하나로 묶으면 **다른 단계의 성공이 연속을 끊는다** — 문서마다 변환이 성공하므로, 이미지
+ * 403 이 문서마다 한 건씩 나는 실행은 영원히 멈추지 않는다. 계획 §12.3 이 말하는 「2건 연속」은
+ * 같은 실패가 되풀이되는 것이지 호출 순서상 이웃한 것이 아니다.
+ */
+internal class IllustrationLaneStopRules(
+    val convert: IllustrationLaneStopRule = IllustrationLaneStopRule(),
+    val suggest: IllustrationLaneStopRule = IllustrationLaneStopRule(),
+    val generate: IllustrationLaneStopRule = IllustrationLaneStopRule(),
+) {
+    val stopped: Boolean get() = stopReason != null
+
+    /** 먼저 멈춘 단계의 사유 한 줄. 어느 단계였는지가 평가 기록에 남아야 한다. */
+    val stopReason: String?
+        get() =
+            listOf("convert" to convert, "suggest" to suggest, "generate" to generate)
+                .firstNotNullOfOrNull { (step, rule) -> rule.stopReason?.let { "$step: $it" } }
 }
 
 /**

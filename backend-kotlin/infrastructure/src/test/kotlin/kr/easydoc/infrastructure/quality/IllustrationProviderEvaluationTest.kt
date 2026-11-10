@@ -4,6 +4,9 @@ import kr.easydoc.application.conversion.ConversionResult
 import kr.easydoc.application.conversion.ConversionUsage
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.application.illustration.generation.IllustrationGenerationProvider
+import kr.easydoc.core.document.ReadingLevel
+import kr.easydoc.core.easyread.ExplanationPromptVersion
+import kr.easydoc.core.easyread.StructureHintOptions
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.IllustrationProviderIoException
 import kr.easydoc.core.exceptions.IllustrationProviderTimeoutException
@@ -75,18 +78,23 @@ class IllustrationProviderEvaluationTest {
     @DisplayName("비밀값이 있으면 제품과 같은 경로로 제안·생성을 실제 provider 로 측정한다")
     fun `그림 제안과 생성을 실측한다`() {
         val ready = resolvePlan()
+        // 무엇을 재는지를 **조건 줄을 쓰기 전에** 확인한다 — 모델 미설정은 어댑터 기본값으로
+        // 접히므로, 그대로 돌면 계획 §12.1 이 아닌 것을 재고도 쟀다고 적게 된다.
+        illustrationLaneModelRejection(System::getenv)?.let { fail<Unit>(it) }
         val budgetUsd = laneBudget()
         val spendLimit = spendLimitFor(ready, budgetUsd)
         val imageSettings = resolveImageSettings()
         val suggestionMaxTokens = suggestionMaxOutputTokens()
         val selection = selectDocuments()
-        val artifacts = planArtifacts(selection.documents.map(GoldenDocument::id))
+        val documentIds = selection.documents.map(GoldenDocument::id)
+        val dictionary = planDictionary(documentIds)
+        val artifacts = planArtifacts(documentIds)
 
         // 텍스트 최악 비용의 상계식은 골든 레인과 한 벌만 둔다([LaneSpendLimit.reservationFor]).
         val budget = IllustrationLaneBudget(budgetUsd, textWorstCaseUsd = spendLimit::reservationFor)
         val provider = IllustrationLaneProvider(ready.provider, budget)
         val ledger = IllustrationLaneLedger()
-        val stopRule = IllustrationLaneStopRule()
+        val stopRules = IllustrationLaneStopRules()
 
         val conditions =
             listOf(
@@ -94,6 +102,10 @@ class IllustrationProviderEvaluationTest {
                 "suggestion_max_tokens=$suggestionMaxTokens",
                 imageSettings.description,
                 "images_per_document<=$ILLUSTRATION_LANE_IMAGES_PER_DOCUMENT retries=0",
+                "explanation_version=${LANE_EXPLANATION_VERSION.name} " +
+                    "structure_max_runs=${StructureHintOptions.DEFAULT_MAX_RUNS} " +
+                    "reading_level=${LANE_READING_LEVEL.wireName}",
+                dictionary.description,
                 selection.description,
                 artifacts.description,
                 "cap_usd=$budgetUsd image_worst_case_usd=$ILLUSTRATION_IMAGE_WORST_CASE_USD",
@@ -105,21 +117,28 @@ class IllustrationProviderEvaluationTest {
 
         val run =
             IllustrationLaneDocumentRun(
-                converter = ConvertDocumentUseCase(provider, defaultOptions = ready.options),
+                // 제품 조립과 같은 자리에 사전 포트를 넘긴다(GoldenCorpusLlmEvaluationTest 와 같다).
+                converter =
+                    ConvertDocumentUseCase(
+                        provider,
+                        defaultOptions = ready.options,
+                        explanationPromptVersion = LANE_EXPLANATION_VERSION,
+                        dictionary = dictionary.contextSource,
+                    ),
                 provider = provider,
                 suggestionOptions = LlmOptions(maxTokens = suggestionMaxTokens),
                 images = imageSettings.images(),
-                materials = IllustrationLaneMaterials(budget, stopRule, ledger, artifacts),
+                materials = IllustrationLaneMaterials(budget, stopRules, ledger, artifacts, dictionary),
             )
 
         // 문서를 **순차로** 돈다 — 동시 호출은 예산 선검사와 연속 실패 판정을 함께 무너뜨린다.
         for (document in selection.documents) {
-            if (stopRule.stopped || runOrStop(run, document, ledger, budget)) break
+            if (stopRules.stopped || runOrStop(run, document, ledger, budget)) break
         }
 
         artifacts.writeLedger(ledger.render())
         println(ledger.render())
-        stopRule.stopReason?.let { println("lane stopped: $it") }
+        stopRules.stopReason?.let { println("lane stopped: $it") }
         println("lane spent_usd=${budget.spentUsd} cap_usd=$budgetUsd")
     }
 
@@ -154,24 +173,31 @@ class IllustrationProviderEvaluationTest {
      */
     private fun selectDocuments(): LaneDocumentSelection {
         val corpus = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
-        val pool = corpus + NUMERIC_ONLY_LANE_DOCUMENT
-        if (System.getenv(LaneDocuments.ENV) != null) {
-            return try {
-                LaneDocuments.select(System::getenv, pool)
-            } catch (exc: ConfigurationException) {
-                fail<LaneDocumentSelection>(exc.message)
-            }
+        val byId = (corpus + NUMERIC_ONLY_LANE_DOCUMENT).associateBy(GoldenDocument::id)
+        // 풀 자체가 계획 §12.1 의 13건이다 — 코퍼스 전건이 아니라. 환경변수로 고를 수 있는 것은
+        // 그 안의 부분집합뿐이고(승인 범위), 바깥 id 는 아래에서 먼저 거절한다.
+        val pool =
+            PLAN_SAMPLE_IDS.map { id -> byId[id] ?: fail<GoldenDocument>("계획 §12.1 표본 '$id' 가 코퍼스에 없다") }
+        illustrationLaneSampleRejection(System.getenv(LaneDocuments.ENV), PLAN_SAMPLE_IDS)
+            ?.let { fail<LaneDocumentSelection>(it) }
+        return try {
+            LaneDocuments.select(System::getenv, pool)
+        } catch (exc: ConfigurationException) {
+            fail<LaneDocumentSelection>(exc.message)
         }
-        val byId = pool.associateBy(GoldenDocument::id)
-        val documents =
-            PLAN_SAMPLE_IDS.map { id ->
-                byId[id] ?: fail<GoldenDocument>("계획 §12.1 표본 '$id' 가 골든 코퍼스에 없다")
-            }
-        return LaneDocumentSelection(
-            documents,
-            "documents=plan-12.1(${documents.size})[${PLAN_SAMPLE_IDS.joinToString(",")}]",
-        )
     }
+
+    /**
+     * 제품 변환은 사전 컨텍스트를 싣는다(파일럿은 `EASYDOC_DICTIONARY_ENABLED=true`). 레인도
+     * 같은 포트를 넘긴다 — `EASYDOC_LANE_DICT_PRODUCT` 를 설정하면 제품 composition root 가
+     * 조립한 실제 소스를 쓰고(색인은 클래스패스 리소스라 파일럿 DB 가 필요 없다), 미설정이면
+     * 사전 없이 돈다. 어느 쪽이었는지는 조건 줄에 `dictContext=` 로 남는다.
+     */
+    private fun planDictionary(documentIds: List<String>): LaneDictionary =
+        when (val plan = LaneDictionary.plan(System::getenv, documentIds)) {
+            is LaneDictionaryPlan.Ready -> plan.dictionary
+            is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
+        }
 
     private fun planArtifacts(documentIds: List<String>): IllustrationLaneArtifacts =
         when (val plan = IllustrationLaneArtifacts.plan(System::getenv, documentIds)) {
@@ -209,9 +235,11 @@ class IllustrationProviderEvaluationTest {
         )
 
     private fun laneBudget(): BigDecimal =
-        checkNotNull(System.getenv("EASYDOC_LANE_MAX_USD")) {
-            "유료 실행에는 EASYDOC_LANE_MAX_USD로 달러 상한을 명시해야 한다"
-        }.toBigDecimal()
+        try {
+            illustrationLaneBudgetOf(System.getenv(ILLUSTRATION_LANE_MAX_USD_ENV))
+        } catch (exc: ConfigurationException) {
+            fail<BigDecimal>(exc.message)
+        }
 
     private companion object {
         /** 제품 worker `application.yml` 과 같은 이름이다. */
@@ -220,12 +248,24 @@ class IllustrationProviderEvaluationTest {
         /**
          * 계획 §12.1 표본 13건 — 절차 `001·010·015·089`, 비교·관계 `041·090·097`,
          * 조건·예외 `005·016·081`, 무제안 예상 `052·063`, 숫자-only 합성 1건.
+         *
+         * 텍스트 provider·모델도 같은 절이 고정한다 — [ILLUSTRATION_LANE_TEXT_PROVIDER]
+         * (`openai`)와 [ILLUSTRATION_LANE_TEXT_MODEL](`gpt-6-astra`)이고,
+         * [illustrationLaneModelRejection] 이 유료 호출 전에 확인한다.
          */
         val PLAN_SAMPLE_IDS: List<String> =
             listOf("001", "010", "015", "089", "041", "090", "097", "005", "016", "081", "052", "063") +
                 NUMERIC_ONLY_LANE_DOCUMENT.id
     }
 }
+
+/**
+ * 레인이 고정한 변환 조건 — 계획 §12 는 한 조건만 재므로 노브로 받지 않는다. 대신 조건 줄에
+ * 그대로 적어, 디렉터리를 나중에 여는 사람이 무엇으로 잰 결과인지 알게 한다.
+ */
+private val LANE_EXPLANATION_VERSION: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE
+
+private val LANE_READING_LEVEL: ReadingLevel = ReadingLevel.GRADE_5_6
 
 /** 이미지 단계의 provider 와 정산 단가. 레인 조립이 한 번만 고른다. */
 private class IllustrationLaneImages(
@@ -271,20 +311,9 @@ private class IllustrationLaneImageSettings(
             return IllustrationLaneImageSettings(
                 apiKey = Secret(key),
                 model = env(MODEL_ENV)?.takeIf(String::isNotBlank) ?: DEFAULT_OPENAI_IMAGE_MODEL,
-                costUsdPerImage = costOf(env(COST_ENV)?.takeIf(String::isNotBlank)),
+                // 값 규칙은 [illustrationLaneImageCostOf] 가 정본이다 — 유료 호출 없이 시험한다.
+                costUsdPerImage = illustrationLaneImageCostOf(env(COST_ENV)),
             )
-        }
-
-        /**
-         * 미설정은 `null`(보수 단가로 계상). 값이 있는데 숫자가 아니거나 음수면 조용히 접지
-         * 않는다 — 접으면 운영자가 적은 단가와 다른 값으로 지출을 계상한 채 유료 호출을 다
-         * 쓰게 된다([GoldenLlmLane.priceOf] 와 같은 판단).
-         */
-        private fun costOf(raw: String?): BigDecimal? {
-            val cost = raw?.toBigDecimalOrNull()
-            if (raw != null && cost == null) throw ConfigurationException("$COST_ENV='$raw' 은 숫자가 아니다")
-            if (cost != null && cost.signum() < 0) throw ConfigurationException("$COST_ENV 는 음수일 수 없다: $cost")
-            return cost
         }
     }
 }
@@ -315,6 +344,10 @@ private class IllustrationLaneProvider(
         prompt: LlmPrompt,
         options: LlmOptions,
     ): LlmCompletion {
+        // 호출마다 지운다. 남겨 두면 변환 1차 호출의 4xx 가 — 그 호출이 성공했는데 보정 호출이
+        // 절단돼 `Failed(TRUNCATED)` 로 끝난 문서에서 — 예외 없이 끝난 실패의 원인으로 잘못
+        // 읽혀 중단 규칙이 엉뚱한 신호를 센다.
+        lastFault = null
         val reservation = budget.reserveText(prompt, options)
         var actualUsd: BigDecimal? = null
         try {
@@ -331,9 +364,10 @@ private class IllustrationLaneProvider(
 /** 문서 한 건을 도는 동안 함께 끌고 다니는 레인 재료([LaneMaterials] 와 같은 자리). */
 private class IllustrationLaneMaterials(
     val budget: IllustrationLaneBudget,
-    val stopRule: IllustrationLaneStopRule,
+    val stopRules: IllustrationLaneStopRules,
     val ledger: IllustrationLaneLedger,
     val artifacts: IllustrationLaneArtifacts,
+    val dictionary: LaneDictionary,
 )
 
 /**
@@ -356,19 +390,33 @@ private class IllustrationLaneDocumentRun(
 
     private fun convert(document: GoldenDocument): String? {
         val startedAt = System.nanoTime()
-        val result = converter.convert(document.sourceText)
+        val result =
+            try {
+                // 사전 컨텍스트는 제품 조립 모드에서 포트가 대고, 파일 주입 모드에서만 명시
+                // 인자가 온다(`LaneDictionary` KDoc 「두 방식」) — 골든 레인과 같은 호출이다.
+                converter.convert(
+                    document.sourceText,
+                    dictionaryContext = materials.dictionary.contextFor(document.id),
+                    readingLevel = LANE_READING_LEVEL,
+                )
+            } catch (stop: IllustrationLaneBudgetStop) {
+                // 1차 호출이 끝난 뒤 보정 호출에서 멈췄다면 그 지출은 이미 정산됐다 — 어디까지
+                // 샀는지 원장에 남기고 중단을 그대로 올린다.
+                record(IllustrationLaneLedgerRow(document.id, STEP_CONVERT, "budget_stop", elapsedMillis(startedAt)))
+                throw stop
+            }
         val latencyMs = elapsedMillis(startedAt)
         return when (result) {
             is ConversionResult.Converted -> {
                 materials.artifacts.writeEasyText(document.id, result.easyText.value)
                 record(conversionRow(document.id, "converted", latencyMs, result.usage))
-                materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
+                materials.stopRules.convert.record(IllustrationLaneSignal.HEALTHY)
                 result.easyText.value
             }
 
             is ConversionResult.Failed -> {
                 record(conversionRow(document.id, result.kind.name.lowercase(), latencyMs, result.usage))
-                materials.stopRule.record(
+                materials.stopRules.convert.record(
                     provider.lastFault?.let(::illustrationLaneSignalOf) ?: IllustrationLaneSignal.HEALTHY,
                 )
                 null
@@ -396,7 +444,7 @@ private class IllustrationLaneDocumentRun(
                 provider.complete(prompt, suggestionOptions)
             } catch (failure: LlmProviderException) {
                 record(IllustrationLaneLedgerRow(document.id, STEP_SUGGEST, "provider_error", elapsedMillis(startedAt)))
-                materials.stopRule.record(illustrationLaneSignalOf(LaneFaults.of(failure)))
+                materials.stopRules.suggest.record(illustrationLaneSignalOf(LaneFaults.of(failure)))
                 return null
             }
         val latencyMs = completion.latencyMs ?: elapsedMillis(startedAt)
@@ -413,7 +461,7 @@ private class IllustrationLaneDocumentRun(
                     IllustrationLaneJson.suggestions(completion.text, analysis.suggestions, numericOnlySource),
                 )
                 record(suggestionRow(document.id, "valid", latencyMs, completion))
-                materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
+                materials.stopRules.suggest.record(IllustrationLaneSignal.HEALTHY)
                 analysis.suggestions
             }
 
@@ -435,7 +483,7 @@ private class IllustrationLaneDocumentRun(
             IllustrationLaneJson.suggestions(completion.text, null, numericOnlySource),
         )
         record(suggestionRow(documentId, outcome, latencyMs, completion))
-        materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
+        materials.stopRules.suggest.record(IllustrationLaneSignal.HEALTHY)
         return null
     }
 
@@ -447,7 +495,7 @@ private class IllustrationLaneDocumentRun(
         suggestions.suggestions
             .take(ILLUSTRATION_LANE_IMAGES_PER_DOCUMENT)
             .forEachIndexed { index, suggestion ->
-                if (!materials.stopRule.stopped) generateOne(documentId, index + 1, suggestion)
+                if (!materials.stopRules.stopped) generateOne(documentId, index + 1, suggestion)
             }
     }
 
@@ -489,11 +537,17 @@ private class IllustrationLaneDocumentRun(
             generated = images.provider.generate(IllustrationGenerationRequest(prompt))
         } catch (exc: LlmProviderException) {
             failure = exc
+        } finally {
+            // 어떤 예외로 끝나든 예약은 정산한다 — 설정 오류처럼 여기서 잡지 않는 예외가
+            // 예약을 떼어먹고 나가면 상한이 조용히 헐거워진다. 실패한 호출의 비용은 알 수
+            // 없으므로 예약액을 그대로 지출로 남긴다.
+            materials.budget.settle(
+                reservation,
+                if (generated == null) null else images.costUsdPerImage ?: reservation,
+            )
         }
         val latencyMs = elapsedMillis(startedAt)
-        // 실패한 호출의 비용은 알 수 없다 — 예약액을 그대로 지출로 남긴다.
         val actualUsd = if (generated == null) null else images.costUsdPerImage ?: reservation
-        materials.budget.settle(reservation, actualUsd)
         if (generated == null) {
             recordImageFailure(documentId, index, checkNotNull(failure), latencyMs)
             return
@@ -513,7 +567,7 @@ private class IllustrationLaneDocumentRun(
                 estimatedUsd = actualUsd,
             ),
         )
-        materials.stopRule.record(IllustrationLaneSignal.HEALTHY)
+        materials.stopRules.generate.record(IllustrationLaneSignal.HEALTHY)
     }
 
     /**
@@ -541,10 +595,12 @@ private class IllustrationLaneDocumentRun(
                 step = stepOf(index),
                 outcome = outcome,
                 latencyMs = latencyMs,
-                estimatedUsd = ILLUSTRATION_IMAGE_WORST_CASE_USD,
+                // 실패한 호출이 실제로 청구됐는지는 알 수 없다 — 빈 칸으로 둔다. 보수적으로
+                // 붙잡아 둔 예약액은 같은 줄의 cumulative_usd 에 이미 들어 있다.
+                estimatedUsd = null,
             ),
         )
-        materials.stopRule.record(
+        materials.stopRules.generate.record(
             if (unknown) {
                 IllustrationLaneSignal.OUTCOME_UNKNOWN
             } else {
@@ -570,7 +626,13 @@ private class IllustrationLaneDocumentRun(
             latencyMs = latencyMs,
             inputTokens = usage.inputTokens,
             outputTokens = usage.outputTokens,
-            estimatedUsd = usage.calls.mapNotNull { it.estimatedCostUsd }.fold(BigDecimal.ZERO, BigDecimal::add),
+            // 단가 미설정·호출 실패로 비용을 모르면 **빈 칸**이다 — 0으로 적으면 「0달러를
+            // 썼다」로 읽힌다(LlmCompletion.estimatedCostUsd 와 같은 규칙).
+            estimatedUsd =
+                usage.calls
+                    .mapNotNull { it.estimatedCostUsd }
+                    .takeIf { it.isNotEmpty() }
+                    ?.fold(BigDecimal.ZERO, BigDecimal::add),
         )
 
     private fun suggestionRow(
