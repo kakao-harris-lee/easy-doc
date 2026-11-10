@@ -4,6 +4,7 @@ import kr.easydoc.core.easyread.findMissingFacts
 import kr.easydoc.core.segment.MAX_SOURCE_ANCHORS
 import kr.easydoc.core.segment.isSourceAnchorShapeValid
 import kr.easydoc.core.segment.isSourceAnchorSupported
+import java.text.Normalizer
 import java.util.UUID
 
 /**
@@ -13,8 +14,8 @@ import java.util.UUID
  * 두 층이 다르게 끝난다.
  * - **구조**(개수·길이·줄 범위): 하나라도 어기면 결과 **전체**가 무효다. 어떤 제안이
  *   틀렸는지를 LLM 출력의 나머지로 추정하지 않는다.
- * - **의미**(앵커가 원문과 맞는가, 근거에 없는 사실을 더했는가): **제안 단위**로 버리고
- *   개수만 센다.
+ * - **의미**(앵커가 원문과 맞는가, 근거에 없는 사실을 더했는가, 사용자에게 보이는 필드가
+ *   한국어인가): **제안 단위**로 버리고 개수만 센다.
  *
  * 숫자-only 원문 가드는 구조 검증 뒤 모든 제안을 버리는 좁은 입력 형태 검사다.
  */
@@ -49,7 +50,7 @@ internal object IllustrationSuggestionValidator {
             if (isNumericOnlySource(sourceUnits)) {
                 emptyList()
             } else {
-                drafts.filter { isSupportedBySource(it, sourceUnits) }
+                drafts.filter { isKoreanUserVisibleText(it) && isSupportedBySource(it, sourceUnits) }
             }
         return IllustrationSuggestionAnalysis.Valid(
             IllustrationSuggestionSet(
@@ -89,6 +90,42 @@ internal object IllustrationSuggestionValidator {
     ): Boolean =
         bodyRange.start in 0 until savedBodyLineCount &&
             bodyRange.end in bodyRange.start until savedBodyLineCount
+
+    /**
+     * 사용자에게 보이는 네 필드가 모두 한국어인가(계획 §12.4 ②).
+     *
+     * 1차 평가(2026-11-10)에서 한 제안의 `reason` 이 일본어로 돌아왔다. 제품 화면은 이 네
+     * 필드를 그대로 보여 주므로 다른 언어면 읽을 수 없는 제안이다 — 구조 위반이 아니라
+     * **제안 단위 탈락**이다(언어는 그 제안 하나의 문제다).
+     *
+     * 판정은 두 가지뿐이다: 한글 음절(U+AC00~U+D7A3)이 하나도 없거나, 일본어 가나
+     * (히라가나 U+3040~U+309F·가타카나 U+30A0~U+30FF)가 섞여 있으면 버린다. 숫자·로마자
+     * 낱말(예: LPG)은 한국어 문장 안에서 흔하므로 그 자체로는 버리지 않는다.
+     *
+     * 두 가지를 더 본다.
+     * - 가나 구간 안이라도 `・`(U+30FB)·`ー`(U+30FC)는 일본어로 보지 않는다 — 한국어 공문서가
+     *   「수집・이용」처럼 구분점으로 쓰는 글자라 버리면 멀쩡한 제안이 사라진다.
+     * - 한글 음절 판정 전에 각 필드를 NFC 로 정규화한다. 자모로 분해된(NFD) 한국어는 음절
+     *   구간에 들어오지 않아 한글이 없는 글로 보인다.
+     */
+    private fun isKoreanUserVisibleText(draft: IllustrationSuggestionDraft): Boolean =
+        (listOf(draft.reason, draft.altTextDraft) + draft.scenes + draft.preservedFacts).all(::isKorean)
+
+    private fun isKorean(text: String): Boolean {
+        val normalized = Normalizer.normalize(text, Normalizer.Form.NFC)
+        return normalized.any { it.code in HANGUL_SYLLABLES } && normalized.none { isKana(it.code) }
+    }
+
+    private fun isKana(code: Int): Boolean = code in KANA && code !in KANA_PUNCTUATION
+
+    /** 한글 음절 U+AC00~U+D7A3. 글자가 아니라 코드 포인트로 비교해 가독성을 지킨다. */
+    private val HANGUL_SYLLABLES = 0xAC00..0xD7A3
+
+    /** 일본어 가나 — 히라가나 U+3040~U+309F 와 가타카나 U+30A0~U+30FF 는 맞붙은 한 구간이다. */
+    private val KANA = 0x3040..0x30FF
+
+    /** 가나 구간에 섞여 있지만 한국어 글에서도 쓰는 구분점 `・` 와 장음 부호 `ー`. */
+    private val KANA_PUNCTUATION = setOf(0x30FB, 0x30FC)
 
     /**
      * 앵커가 원문과 맞고, 그림으로 그릴 내용에 **근거에 없는 사실**이 없는가.

@@ -166,19 +166,21 @@ class IllustrationProviderEvaluationTest {
         }
 
     /**
-     * 계획 §12.1 표본 13건이 기본이다. [LaneDocuments.ENV] 를 설정하면 골든 코퍼스 + 합성
-     * 표본 안에서 그 목록으로 바꾼다 — 검증(문법·중복·미존재)은 골든 레인과 같은 규칙을 쓴다.
-     * 기본 표본은 코퍼스 순서가 아니라 **계획이 적은 순서**로 돈다(절차 → 비교·관계 →
-     * 조건·예외 → 무제안 → 숫자-only) — 원장을 계획 §12.1 표와 나란히 읽기 위해서다.
+     * 계획 §12.4 표본 17건([ILLUSTRATION_LANE_PLAN_SAMPLE_IDS])이 기본이다. [LaneDocuments.ENV] 를
+     * 설정하면 골든 코퍼스 + 합성 표본 안에서 그 목록으로 바꾼다 — 검증(문법·중복·미존재)은 골든
+     * 레인과 같은 규칙을 쓴다. 기본 표본은 코퍼스 순서가 아니라 **계획이 적은 순서**로 돈다
+     * (1차 13건 → 보류 4건) — 원장을 계획 §12.4 와 나란히 읽기 위해서다.
      */
     private fun selectDocuments(): LaneDocumentSelection {
         val corpus = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
         val byId = (corpus + NUMERIC_ONLY_LANE_DOCUMENT).associateBy(GoldenDocument::id)
-        // 풀 자체가 계획 §12.1 의 13건이다 — 코퍼스 전건이 아니라. 환경변수로 고를 수 있는 것은
+        // 풀 자체가 계획 §12.4 의 17건이다 — 코퍼스 전건이 아니라. 환경변수로 고를 수 있는 것은
         // 그 안의 부분집합뿐이고(승인 범위), 바깥 id 는 아래에서 먼저 거절한다.
         val pool =
-            PLAN_SAMPLE_IDS.map { id -> byId[id] ?: fail<GoldenDocument>("계획 §12.1 표본 '$id' 가 코퍼스에 없다") }
-        illustrationLaneSampleRejection(System.getenv(LaneDocuments.ENV), PLAN_SAMPLE_IDS)
+            ILLUSTRATION_LANE_PLAN_SAMPLE_IDS.map { id ->
+                byId[id] ?: fail<GoldenDocument>("계획 §12.4 표본 '$id' 가 코퍼스에 없다")
+            }
+        illustrationLaneSampleRejection(System.getenv(LaneDocuments.ENV), ILLUSTRATION_LANE_PLAN_SAMPLE_IDS)
             ?.let { fail<LaneDocumentSelection>(it) }
         return try {
             LaneDocuments.select(System::getenv, pool)
@@ -244,18 +246,6 @@ class IllustrationProviderEvaluationTest {
     private companion object {
         /** 제품 worker `application.yml` 과 같은 이름이다. */
         const val SUGGESTION_MAX_OUTPUT_TOKENS_ENV: String = "EASYDOC_ILLUSTRATION_SUGGESTIONS_MAX_OUTPUT_TOKENS"
-
-        /**
-         * 계획 §12.1 표본 13건 — 절차 `001·010·015·089`, 비교·관계 `041·090·097`,
-         * 조건·예외 `005·016·081`, 무제안 예상 `052·063`, 숫자-only 합성 1건.
-         *
-         * 텍스트 provider·모델도 같은 절이 고정한다 — [ILLUSTRATION_LANE_TEXT_PROVIDER]
-         * (`openai`)와 [ILLUSTRATION_LANE_TEXT_MODEL](`gpt-6-astra`)이고,
-         * [illustrationLaneModelRejection] 이 유료 호출 전에 확인한다.
-         */
-        val PLAN_SAMPLE_IDS: List<String> =
-            listOf("001", "010", "015", "089", "041", "090", "097", "005", "016", "081", "052", "063") +
-                NUMERIC_ONLY_LANE_DOCUMENT.id
     }
 }
 

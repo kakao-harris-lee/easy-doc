@@ -133,7 +133,20 @@ fun buildIllustrationGenerationPrompt(
         append("Verified source context: ")
         append(suggestion.sourceAnchors.joinToString(" | ") { it.quote }).append(". ")
         append("Do not put important names, numbers, conditions, or instructions in image text. ")
-        append("Do not add unsupported actions or facts. Return one 1024x1024 PNG. ")
+        append("Do not add unsupported actions or facts. ")
+        // 1차 평가(2026-11-10)에서 모델이 원문이 정한 대상을 더 구체적인 다른 것으로 바꾸고
+        // (분변 검사 → 대장내시경), 없는 예시 금액을 그려 넣고, 절차 단계를 하나 더 붙였다.
+        // 계획 §12.4 ①이 그 세 가지를 프롬프트에서 막으라고 정한다.
+        append("Keep the exact kind of every object the source names — tests, procedures, documents, ")
+        append("benefits, and items provided — and never replace one with a different or more specific kind. ")
+        append("If the source does not say how something looks, ")
+        append("keep it generic instead of inventing equipment, places, or methods. ")
+        append("Do not invent example numbers, amounts, dates, or quantities ")
+        append("that are not in the scenes, preserved facts, or verified source context above. ")
+        append("Do not add, repeat, or reorder procedure steps beyond the scenes listed above. ")
+        append("Do not draw a service or benefit as a physical package or box ")
+        append("unless the source says an item is handed over. ")
+        append("Return one 1024x1024 PNG. ")
         append("Accessibility description for the reviewer, not text to render: ")
         append(configuration.altText)
     }

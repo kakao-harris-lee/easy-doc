@@ -177,6 +177,21 @@ class IllustrationEvaluationLaneTest {
     }
 
     @Test
+    fun `2차 표본은 1차 13건에 보류 4건을 더한 17건이다`() {
+        assertThat(ILLUSTRATION_LANE_PLAN_SAMPLE_IDS).hasSize(17).doesNotHaveDuplicates()
+        assertThat(ILLUSTRATION_LANE_PLAN_SAMPLE_IDS)
+            .containsSequence("001", "010", "015", "089")
+            .contains("041", "090", "097", "005", "016", "081", "052", "063", NUMERIC_ONLY_LANE_DOCUMENT.id)
+            .containsSequence("002", "019", "080", "098")
+    }
+
+    @Test
+    fun `산출물 기본 경로는 2차 평가 디렉터리다`() {
+        assertThat(IllustrationLaneArtifacts.DEFAULT_RELATIVE)
+            .isEqualTo("docs/reports/2026-11-10-illustration-p0-1-eval-2-artifacts")
+    }
+
+    @Test
     fun `표본 밖 문서를 고르면 거절한다`() {
         val allowed = listOf("001", "010")
 

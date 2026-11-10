@@ -78,8 +78,8 @@ internal class IllustrationLaneArtifacts private constructor(private val directo
         /** 산출물 디렉터리. 미설정이면 [DEFAULT_RELATIVE] 를 저장소 루트에서 푼다. */
         const val ENV: String = "EASYDOC_LANE_OUT"
 
-        /** 계획 §12.1 이 지정한 기본 경로. */
-        const val DEFAULT_RELATIVE: String = "docs/reports/2026-11-10-illustration-p0-1-eval-artifacts"
+        /** 계획 §12.4 2차 평가의 기본 경로 — 1차 산출물 디렉터리를 덮지 않도록 따로 둔다. */
+        const val DEFAULT_RELATIVE: String = "docs/reports/2026-11-10-illustration-p0-1-eval-2-artifacts"
 
         const val CONDITIONS_FILE_NAME: String = "conditions.txt"
 

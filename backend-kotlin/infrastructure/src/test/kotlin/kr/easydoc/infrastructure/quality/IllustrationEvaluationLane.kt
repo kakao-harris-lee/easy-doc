@@ -138,9 +138,9 @@ internal fun illustrationLaneImageCostOf(raw: String?): BigDecimal? {
 }
 
 /**
- * [LaneDocuments.ENV] 로 고른 표본이 계획 §12.1 의 13건 **안**인가. 맞으면 `null`.
+ * [LaneDocuments.ENV] 로 고른 표본이 계획 §12.4 의 17건([ILLUSTRATION_LANE_PLAN_SAMPLE_IDS]) **안**인가. 맞으면 `null`.
  *
- * 승인받은 것은 그 13건이다 — 밖의 문서를 고르면 승인 범위 밖에 예산을 쓰게 된다
+ * 승인받은 것은 그 17건이다 — 밖의 문서를 고르면 승인 범위 밖에 예산을 쓰게 된다
  * ([LaneDocuments] KDoc 이 막으려는 것과 같은 사고). 문법·중복·미존재 검사는 그대로
  * [LaneDocuments.select] 몫이라 빈 값은 여기서 보지 않는다.
  */
@@ -153,7 +153,7 @@ internal fun illustrationLaneSampleRejection(
     return if (outside.isEmpty()) {
         null
     } else {
-        "${LaneDocuments.ENV}: 계획 §12.1 표본 밖의 문서다 — ${outside.joinToString(", ") { "'$it'" }}. " +
+        "${LaneDocuments.ENV}: 계획 §12.4 표본 밖의 문서다 —${outside.joinToString(", ") { "'$it'" }}. " +
             "승인받은 표본은 ${allowed.joinToString(",")} 뿐이다."
     }
 }
@@ -378,7 +378,7 @@ internal class IllustrationLaneLedger {
 }
 
 /**
- * 계획 §12.1 표본 13건 중 **합성 숫자-only 1건**.
+ * 계획 §12.4 표본 17건 중 **합성 숫자-only 1건**(1차 §12.1 표본에서 그대로 이어진다).
  *
  * 골든 코퍼스에는 숫자만 있는 문서가 없어 레인이 직접 만든다. 금액·날짜·비율만 있는 짧은
  * 표를 본떴고, 실제로 [isNumericOnlySource][kr.easydoc.core.illustration.suggestion.isNumericOnlySource]
@@ -406,6 +406,22 @@ internal val NUMERIC_ONLY_LANE_DOCUMENT: GoldenDocument =
             ).joinToString("\n"),
         requiredFacts = emptyList(),
     )
+
+/**
+ * 2차 평가 표본 — 계획 §12.4 「1차 13건을 그대로 쓰고, 1차에 쓰지 않은 보류 표본 4건
+ * `002·019·080·098` 을 더한다」. 앞 13건은 1차와 같은 순서(절차 `001·010·015·089`, 비교·관계
+ * `041·090·097`, 조건·예외 `005·016·081`, 무제안 예상 `052·063`, 숫자-only 합성)로 두고 보류
+ * 4건을 뒤에 붙인다 — 「고친 효과와 일반화를 나눠 보고」하려면 원장에서 두 묶음이 갈라져
+ * 보여야 한다. 레인은 코퍼스 순서가 아니라 이 순서로 돈다.
+ *
+ * 이 목록이 [IllustrationProviderEvaluationTest] 본문이 아니라 여기 있는 이유는 파일 머리말과
+ * 같다 — 유료 호출의 **승인 범위**를 정하는 값이라 유료 호출 없이 시험할 수 있어야 한다
+ * ([illustrationLaneSampleRejection] 이 이 목록으로 환경변수 선택을 거른다).
+ */
+internal val ILLUSTRATION_LANE_PLAN_SAMPLE_IDS: List<String> =
+    listOf("001", "010", "015", "089", "041", "090", "097", "005", "016", "081", "052", "063") +
+        NUMERIC_ONLY_LANE_DOCUMENT.id +
+        listOf("002", "019", "080", "098")
 
 /**
  * 산출물 JSON. 표본이 공개 행정 문서라 제안 본문·원문 인용을 남기는 것은 허용된다(계획 §12.1) —

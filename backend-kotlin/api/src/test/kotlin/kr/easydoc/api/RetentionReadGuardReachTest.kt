@@ -328,7 +328,7 @@ class RetentionReadGuardReachTest {
                  input_payload_encrypted, encryption_scheme, key_version,
                  status, reserved_credits, settlement)
             SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${fixture.conversionId}',
-                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-2', '$FINGERPRINT',
+                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-3', '$FINGERPRINT',
                    1, 1, '$FINGERPRINT', decode('${hex(input.bytes)}', 'hex'),
                    '${input.scheme}', ${input.keyVersion}, 'succeeded', 0, 'not_charged'
             FROM documents d WHERE d.id = '${fixture.documentId}';

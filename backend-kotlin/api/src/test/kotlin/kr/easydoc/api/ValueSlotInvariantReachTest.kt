@@ -565,7 +565,7 @@ class ValueSlotInvariantReachTest {
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,
                     "suggestion_id":"00000000-0000-0000-0000-000000000002",
-                    "analysis_version":"r7-illustration-suggestion-2",
+                    "analysis_version":"r7-illustration-suggestion-3",
                     "configuration_revision":"${"0".repeat(64)}",
                     "configuration":{"scenes":["장면"],"preserved_facts":[],"alt_text":"대체텍스트"}}""",
                 "GeneratedIllustrationApplicationRequest" to
