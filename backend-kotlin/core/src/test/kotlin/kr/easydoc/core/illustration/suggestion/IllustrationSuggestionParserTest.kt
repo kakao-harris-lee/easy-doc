@@ -86,6 +86,32 @@ class IllustrationSuggestionParserTest {
         assertThat(set.droppedCount).isEqualTo(1)
     }
 
+    /** 평가 표본 041 — 원문의 `10. 서식`을 따옴표로 다시 인용했을 뿐인데 축약 연도로 읽혀 버려졌다. */
+    @Test
+    fun `따옴표로 감싼 항목 번호를 인용한 제안은 버리지 않는다`() {
+        val sourceLine = "해당 참고 양식을 10. 서식 및 참고자료(서식 36호)로 이동"
+        val draft =
+            example(
+                "comparison",
+                sourceLine,
+                "참고 양식이 ‘10. 서식 및 참고자료’로 옮겨지는 모습",
+                "이동한 양식은 모두 ‘10. 서식 및 참고자료’에 속한다.",
+                "참고 양식이 서식 36호로 옮겨지는 것을 보여 주는 그림",
+            )
+
+        val set =
+            validSetOf(
+                IllustrationSuggestionParser.parseAndValidate(
+                    jsonWith(draft),
+                    listOf(sourceLine),
+                    listOf("합성 본문"),
+                ),
+            )
+
+        assertThat(set.suggestions).hasSize(1)
+        assertThat(set.droppedCount).isZero()
+    }
+
     @Test
     @DisplayName("연락처만 있는 문서처럼 제안이 0건이면 '제안 없음'이지 실패가 아니다")
     fun `제안이 0건이면 정상 결과다`() {

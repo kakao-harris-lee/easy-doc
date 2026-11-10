@@ -183,8 +183,13 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
             ),
         // 아포스트로피가 있는 축약 연도만 날짜로 인식해 일반 두 자리 숫자와 구분한다.
         FactKind.DATE to Regex("""$YEAR_APOSTROPHE\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
-        // 일이 없는 축약 연도는 구분자만 lookahead 로 확인해 뒤의 월 숫자를 별도 사실로 남긴다.
-        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+(?=[.\-])"""),
+        // 일이 없는 축약 연도는 구분자와 **그 뒤의 숫자**를 lookahead 로만 확인해, 뒤의 월
+        // 숫자를 별도 사실로 남긴다. 숫자까지 요구하는 것은 `‘10. 서식 및 참고자료’`처럼
+        // 따옴표로 연 항목 번호를 연도로 오인하지 않기 위해서다 — 항목 번호 뒤에는 제목
+        // 글자가 오고, 축약 연도 뒤에는 월 숫자가 온다. 구분자와 월 숫자 사이의 공백은
+        // 허용한다(`’26. 1월`). 걸리지 않은 항목 번호는 뒤의 일반 NUMBER 패턴이 보통
+        // 숫자로 잡아, 원문의 맨 `10` 과 같은 값으로 비교된다.
+        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+(?=[.\-]\h*+\d)"""),
         // 날짜가 아닌 축약 연도도 NUMBER 로 잡아, 변환문이 4자리로 펼친 값과 비교한다.
         FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+년"""),
         // 배수 단위가 있는 금액은 WORD_AMOUNT 가 전체 구간을 소비해 부분 매치를 막는다.

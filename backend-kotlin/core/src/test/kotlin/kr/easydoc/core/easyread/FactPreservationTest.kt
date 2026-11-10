@@ -153,6 +153,16 @@ class FactPreservationTest {
     }
 
     @Test
+    fun `따옴표로 연 항목 번호는 축약 연도가 아니라 보통 숫자다`() {
+        val quoted = "이동한 양식은 모두 ‘10. 서식 및 참고자료’에 속한다."
+        val plain = "해당 참고 양식을 10. 서식 및 참고자료(서식 36호)로 이동"
+
+        assertThat(findMissingFacts(quoted, plain)).isEmpty()
+        assertThat(findMissingFacts("10. 서식 및 참고자료", quoted)).isEmpty()
+        assertThat(findMissingFacts(quoted, "해당 참고 양식을 2010. 서식 및 참고자료로 이동")).isNotEmpty()
+    }
+
+    @Test
     fun `표의 단위 없는 구분자 숫자에 원을 붙여도 같은 수치로 본다`() {
         assertThat(findMissingFacts("건강보험료 125,300", "건강보험료는 125,300원입니다.")).isEmpty()
         assertThat(findMissingFacts("125,300원", "125,300명")).isNotEmpty()
