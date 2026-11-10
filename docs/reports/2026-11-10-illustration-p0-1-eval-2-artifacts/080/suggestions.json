@@ -1,0 +1,27 @@
+{
+  "raw_text" : "{\"schema_version\":1,\"suggestions\":[{\"purpose\":\"procedure\",\"reason\":\"신청하는 곳과 치료받는 곳이 다르므로, 두 장소를 순서대로 연결하면 신청 후 어디로 가야 하는지 이해하기 쉽습니다.\",\"body_range\":{\"start\":21,\"end\":22},\"source_anchors\":[{\"source_unit_indexes\":[15],\"quote\":\"청주시 주민등록 주소지관할 보건소에 신청 후\"},{\"source_unit_indexes\":[16],\"quote\":\"지정한의원 방문하여 한방치료 진행\"}],\"scenes\":[\"성인이 자신의 주민등록 주소지와 연결된 청주시 주민등록 주소지관할 보건소에 신청하는 장면.\",\"앞 장면에서 화살표로 이어져 같은 성인이 지정한의원을 방문하여 한방치료를 받는 장면. 보건소와 지정한의원은 서로 다른 장소로 구분한다.\"],\"preserved_facts\":[\"신청 장소는 청주시 주민등록 주소지관할 보건소이다.\",\"보건소에 신청한 후 지정한의원을 방문하여 한방치료를 진행한다.\"],\"alt_text_draft\":\"청주시 주민등록 주소지관할 보건소에 신청한 뒤, 지정한의원을 방문하여 한방치료를 받는 순서를 보여 주는 그림.\"}]}",
+  "numeric_only_source" : false,
+  "analysis" : "valid",
+  "schema_version" : 1,
+  "analysis_version" : "r7-illustration-suggestion-3",
+  "dropped_count" : 0,
+  "suggestions" : [ {
+    "suggestion_id" : "88cd8078-e89f-4654-ada0-5dd71d773595",
+    "purpose" : "procedure",
+    "reason" : "신청하는 곳과 치료받는 곳이 다르므로, 두 장소를 순서대로 연결하면 신청 후 어디로 가야 하는지 이해하기 쉽습니다.",
+    "body_range" : {
+      "start" : 21,
+      "end" : 22
+    },
+    "source_anchors" : [ {
+      "source_unit_indexes" : [ 15 ],
+      "quote" : "청주시 주민등록 주소지관할 보건소에 신청 후"
+    }, {
+      "source_unit_indexes" : [ 16 ],
+      "quote" : "지정한의원 방문하여 한방치료 진행"
+    } ],
+    "scenes" : [ "성인이 자신의 주민등록 주소지와 연결된 청주시 주민등록 주소지관할 보건소에 신청하는 장면.", "앞 장면에서 화살표로 이어져 같은 성인이 지정한의원을 방문하여 한방치료를 받는 장면. 보건소와 지정한의원은 서로 다른 장소로 구분한다." ],
+    "preserved_facts" : [ "신청 장소는 청주시 주민등록 주소지관할 보건소이다.", "보건소에 신청한 후 지정한의원을 방문하여 한방치료를 진행한다." ],
+    "alt_text_draft" : "청주시 주민등록 주소지관할 보건소에 신청한 뒤, 지정한의원을 방문하여 한방치료를 받는 순서를 보여 주는 그림."
+  } ]
+}
