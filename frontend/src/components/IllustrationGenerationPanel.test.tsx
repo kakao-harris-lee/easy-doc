@@ -20,6 +20,7 @@ import type {
 } from '../api/types'
 import { illustrationConfigurationRevision } from '../api/illustrationConfiguration'
 import { IllustrationGenerationPanel } from './IllustrationGenerationPanel'
+import { ILLUSTRATION_REVIEW_EDIT_HINT, illustrationReviewCopy } from './illustrationReviewCopy'
 
 vi.mock('../api/illustrationConfiguration', async (original) => ({
   ...(await original<typeof import('../api/illustrationConfiguration')>()),
@@ -38,6 +39,8 @@ vi.mock('../api/client', async (original) => ({
   updateGeneratedIllustrationReview: vi.fn(),
 }))
 
+const sceneOnlyCopy = illustrationReviewCopy(false)
+const preservedFactsCopy = illustrationReviewCopy(true)
 const suggestion: IllustrationSuggestion = {
   suggestion_id: 's1',
   configuration_revision: 'a'.repeat(64),
@@ -193,6 +196,101 @@ describe('그림 생성과 적용', () => {
     expect(screen.queryByText(/테스트 그림입니다/)).not.toBeInTheDocument()
     expect(screen.getByText(/이전 버전 본문/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
+    expect(screen.queryByText(sceneOnlyCopy.guidance)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('보존할 사실이 없는 그림은 장면만 대조하도록 안내한다', async () => {
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await screen.findByRole('img', { name: '신청 그림' })
+    expect(screen.getByText(sceneOnlyCopy.guidance)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: sceneOnlyCopy.label })).toHaveAccessibleDescription(
+      sceneOnlyCopy.guidance,
+    )
+  })
+
+  it('보존할 사실이 있는 그림은 장면과 보존할 사실을 함께 대조하도록 안내한다', async () => {
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({
+      content_revision: 1,
+      assets: [{ ...asset, preserved_facts: ['48시간'] }],
+    })
+    render(<IllustrationGenerationPanel {...props} />)
+    await screen.findByRole('img', { name: '신청 그림' })
+    expect(screen.getByText(preservedFactsCopy.guidance)).toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', { name: preservedFactsCopy.label }),
+    ).toHaveAccessibleDescription(preservedFactsCopy.guidance)
+  })
+
+  it('이미 적용된 그림에는 도형 대조 안내를 두지 않는다', async () => {
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({
+      content_revision: 1,
+      assets: [{ ...asset, applied: true }],
+    })
+    render(<IllustrationGenerationPanel {...props} />)
+    await screen.findByRole('img', { name: '신청 그림' })
+    expect(screen.queryByText(sceneOnlyCopy.guidance)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('대체텍스트를 수정하는 동안 검토 확인과 적용을 막고 저장 뒤 되돌린다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    vi.mocked(updateGeneratedIllustrationReview).mockResolvedValue({
+      ...asset,
+      alt_text: '수정한 그림 설명',
+      asset_revision: 2,
+    })
+    render(<IllustrationGenerationPanel {...props} />)
+    await user.click(await screen.findByRole('button', { name: '대체텍스트 수정' }))
+    const checkbox = screen.getByRole('checkbox', { name: sceneOnlyCopy.label })
+    expect(checkbox).toBeDisabled()
+    expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
+    expect(screen.getByText(ILLUSTRATION_REVIEW_EDIT_HINT)).toBeInTheDocument()
+    expect(checkbox).toHaveAccessibleDescription(
+      `${sceneOnlyCopy.guidance} ${ILLUSTRATION_REVIEW_EDIT_HINT}`,
+    )
+    const input = screen.getByLabelText('그림 1 대체텍스트 수정')
+    await user.clear(input)
+    await user.type(input, '수정한 그림 설명')
+    await user.click(screen.getByRole('button', { name: '대체텍스트 저장' }))
+    const saved = await screen.findByRole('checkbox', { name: sceneOnlyCopy.label })
+    expect(saved).toBeEnabled()
+    expect(screen.queryByText(ILLUSTRATION_REVIEW_EDIT_HINT)).not.toBeInTheDocument()
+    await user.click(saved)
+    expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeEnabled()
+  })
+
+  it('대체텍스트를 바꾸지 않고 수정을 취소하면 검토 확인과 적용을 다시 열어 준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await user.click(await screen.findByRole('button', { name: '대체텍스트 수정' }))
+    expect(screen.getByRole('checkbox', { name: sceneOnlyCopy.label })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '수정 취소' }))
+    const checkbox = screen.getByRole('checkbox', { name: sceneOnlyCopy.label })
+    expect(checkbox).toBeEnabled()
+    expect(screen.queryByText(ILLUSTRATION_REVIEW_EDIT_HINT)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '대체텍스트 수정' })).toHaveFocus()
+    await user.click(checkbox)
+    expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeEnabled()
+    expect(vi.mocked(updateGeneratedIllustrationReview)).not.toHaveBeenCalled()
+  })
+
+  it('수정을 취소하면 입력한 대체텍스트를 버리고 원래 문구를 보여 준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await user.click(await screen.findByRole('button', { name: '대체텍스트 수정' }))
+    const input = screen.getByLabelText('그림 1 대체텍스트 수정')
+    await user.clear(input)
+    await user.type(input, '버릴 그림 설명')
+    await user.click(screen.getByRole('button', { name: '수정 취소' }))
+    expect(screen.getByText('대체텍스트: 신청 그림')).toBeInTheDocument()
+    expect(vi.mocked(updateGeneratedIllustrationReview)).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '대체텍스트 수정' }))
+    expect(screen.getByLabelText('그림 1 대체텍스트 수정')).toHaveValue('신청 그림')
   })
 
   it.each([0, 502, 504])('요청 응답이 불명확하면 같은 요청 ID만 재전송한다: %s', async (status) => {

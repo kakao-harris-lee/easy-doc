@@ -27,6 +27,7 @@ import type {
 import { formatCredits } from '../lib/credits'
 import { USAGE_PATH } from '../routes/paths'
 import { GeneratedIllustrationImage } from './GeneratedIllustrationImage'
+import { ILLUSTRATION_REVIEW_EDIT_HINT, illustrationReviewCopy } from './illustrationReviewCopy'
 import { Button } from './ui/Button'
 
 const POLL_INTERVAL_MS = 2500
@@ -121,6 +122,7 @@ export function IllustrationGenerationPanel({
   const previousConversionRef = useRef(conversionId)
   const focusStatusRef = useRef(false)
   const focusErrorRef = useRef(false)
+  const focusEditTriggerRef = useRef<string | null>(null)
 
   const currentScope = loadedScope === scopeKey
   const currentCollection = currentScope ? collection : null
@@ -275,6 +277,12 @@ export function IllustrationGenerationPanel({
       errorRef.current.focus()
     }
   }, [error])
+  useEffect(() => {
+    const target = focusEditTriggerRef.current
+    if (target === null || editingAssetId !== null) return
+    focusEditTriggerRef.current = null
+    document.getElementById(`${id}-asset-alt-edit-${target}`)?.focus()
+  }, [editingAssetId, id])
   useEffect(
     () => () => {
       createControllerRef.current?.abort()
@@ -483,6 +491,16 @@ export function IllustrationGenerationPanel({
     }
   }
 
+  function cancelEditing(asset: GeneratedIllustration) {
+    focusEditTriggerRef.current = asset.asset_id
+    setAssetDrafts((current) => {
+      const next = { ...current }
+      delete next[asset.asset_id]
+      return next
+    })
+    setEditingAssetId(null)
+  }
+
   function discard(asset: GeneratedIllustration) {
     if (asset.applied || asset.stale || busy) return
     if (window.confirm('이 후보를 폐기할까요? 되돌릴 수 없으며 이용량은 반환되지 않습니다.')) {
@@ -672,6 +690,9 @@ export function IllustrationGenerationPanel({
           (item) => item.suggestion_id === asset.suggestion_id,
         )
         const editing = editingAssetId === asset.asset_id
+        const reviewCopy = illustrationReviewCopy(asset.preserved_facts.length > 0)
+        const guidanceId = `${id}-asset-review-guidance-${asset.asset_id}`
+        const editHintId = `${id}-asset-review-edit-hint-${asset.asset_id}`
         return (
           <article key={asset.asset_id} className="space-y-3 border-t border-border pt-3">
             <h4 className="font-semibold">
@@ -759,18 +780,28 @@ export function IllustrationGenerationPanel({
                 {editingInvalid && (
                   <p className="text-sm text-danger">대체텍스트를 300자 이내로 입력해 주세요.</p>
                 )}
-                <Button
-                  type="button"
-                  disabled={
-                    busy ||
-                    isActive(currentJob) ||
-                    editingInvalid ||
-                    editingDraft === asset.alt_text
-                  }
-                  onClick={() => void mutateAsset(asset, 'review', editingDraft)}
-                >
-                  대체텍스트 저장
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={
+                      busy ||
+                      isActive(currentJob) ||
+                      editingInvalid ||
+                      editingDraft === asset.alt_text
+                    }
+                    onClick={() => void mutateAsset(asset, 'review', editingDraft)}
+                  >
+                    대체텍스트 저장
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || isActive(currentJob)}
+                    onClick={() => cancelEditing(asset)}
+                  >
+                    수정 취소
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -778,6 +809,7 @@ export function IllustrationGenerationPanel({
                 {!asset.stale && (
                   <Button
                     type="button"
+                    id={`${id}-asset-alt-edit-${asset.asset_id}`}
                     variant="outline"
                     disabled={busy || isActive(currentJob)}
                     onClick={() => {
@@ -793,20 +825,32 @@ export function IllustrationGenerationPanel({
                 )}
               </>
             )}
-            {!asset.applied && (
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={reviewed[asset.asset_id] ?? false}
-                  onChange={(event) =>
-                    setReviewed((current) => ({
-                      ...current,
-                      [asset.asset_id]: event.target.checked,
-                    }))
-                  }
-                />
-                원문 근거와 그림 구성, 대체텍스트를 확인했습니다.
-              </label>
+            {!asset.applied && !asset.stale && (
+              <>
+                <p id={guidanceId} className="text-sm">
+                  {reviewCopy.guidance}
+                </p>
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={reviewed[asset.asset_id] ?? false}
+                    disabled={editing}
+                    aria-describedby={editing ? `${guidanceId} ${editHintId}` : guidanceId}
+                    onChange={(event) =>
+                      setReviewed((current) => ({
+                        ...current,
+                        [asset.asset_id]: event.target.checked,
+                      }))
+                    }
+                  />
+                  {reviewCopy.label}
+                </label>
+                {editing && (
+                  <p id={editHintId} className="text-sm">
+                    {ILLUSTRATION_REVIEW_EDIT_HINT}
+                  </p>
+                )}
+              </>
             )}
             <div className="flex flex-wrap gap-2">
               <Button
@@ -816,7 +860,7 @@ export function IllustrationGenerationPanel({
                   isActive(currentJob) ||
                   (asset.applied
                     ? removeDisabled
-                    : disabled || asset.stale || !reviewed[asset.asset_id])
+                    : disabled || asset.stale || editing || !reviewed[asset.asset_id])
                 }
                 onClick={() => void mutateAsset(asset, asset.applied ? 'remove' : 'apply')}
               >
