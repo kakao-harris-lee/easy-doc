@@ -4,6 +4,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 /** 사실 보존 기계 검사 — backlog §1.3. `findMissingFacts` 는 결정적이고 보수적이어야 한다. */
 class FactPreservationTest {
@@ -224,11 +226,61 @@ class FactPreservationTest {
     }
 
     @Test
-    fun `목록에 든 프로-낱말을 여는 프로는 비율이 아니다`() {
+    fun `축약 연도와 단위 사이 줄바꿈도 공백과 같게 읽는다`() {
+        // PERCENT 패턴과 축약 연도 lookahead 가 같은 `\s*+` 로 공백을 봐야 두 형태가 갈리지 않는다
+        // — 한쪽만 `\h*+` 면 줄바꿈이 끼인 쪽에서 연도와 비율 읽기가 어긋난다.
+        assertThat(findMissingFacts("’25.10 프로 올랐다", "25.1% 올랐다")).isEmpty()
+        assertThat(findMissingFacts("’25.10\n프로 올랐다", "25.1% 올랐다")).isEmpty()
+        assertThat(findMissingFacts("’25.10\n프로 올랐다", "25.2% 올랐다")).isNotEmpty()
+    }
+
+    @Test
+    fun `프로-낱말 앞의 숫자는 비율이 아니라 변환문의 건수와 같은 숫자다`() {
         assertThat(findMissingFacts("연간 10 프로젝트를 추진", "프로젝트 10건을 추진")).isEmpty()
-        assertThat(findMissingFacts("3 프로그램 운영", "프로그램 3개 운영")).isEmpty()
-        assertThat(findMissingFacts("2 프로토콜 적용", "프로토콜 2종 적용")).isEmpty()
-        assertThat(findMissingFacts("3 프로듀서 배치", "프로듀서 3명 배치")).isEmpty()
+    }
+
+    /** 목록의 항목마다 낱말 하나씩 — 짧은 앞자리가 식구를 함께 덮는지도 함께 고정한다. */
+    @ParameterizedTest(name = "{0} — 비율이 아니다")
+    @ValueSource(
+        strings = [
+            "프로젝트",
+            "프로젝터",
+            "프로그램",
+            "프로그레스",
+            "프로세스",
+            "프로세싱",
+            "프로시저",
+            "프로필",
+            "프로파일",
+            "프로파간다",
+            "프로모션",
+            "프로모터",
+            "프로토콜",
+            "프로듀서",
+            "프로덕트",
+            "프로포즈",
+            "프로포절",
+            "프로페셔널",
+            "프로퍼티",
+            "프로바이오틱스",
+            "프로바이더",
+            "프로틴",
+            "프로펠러",
+            "프로판",
+            "프로야구",
+            "프로축구",
+            "프로농구",
+            "프로배구",
+            "프로골프",
+            "프로골퍼",
+            "프로선수",
+            "프로게이머",
+            "프로레슬링",
+            "프로스포츠",
+        ],
+    )
+    fun `목록에 든 프로-낱말을 여는 프로는 비율이 아니다`(word: String) {
+        assertThat(findMissingFacts("3 $word 운영", "$word 3개 운영")).isEmpty()
     }
 
     @Test
@@ -244,11 +296,16 @@ class FactPreservationTest {
         assertThat(findMissingFacts("30프로면 감면", "30%면 감면")).isEmpty()
         assertThat(findMissingFacts("15프로미만", "15% 미만")).isEmpty()
         assertThat(findMissingFacts("20프로정도 증가", "20%정도 증가")).isEmpty()
+        // `급` 도 비율 뒤에 오는 접미사라 목록에서 뺐다.
+        assertThat(findMissingFacts("30프로급 성장", "30%급 성장")).isEmpty()
+        // `포인트` 가 비율 뒤에 흔히 와 맨 `포` 는 목록에 두지 않는다 — `포즈`·`포절` 만 둔다.
+        assertThat(findMissingFacts("3프로포인트 상승", "3%포인트 상승")).isEmpty()
         // 단위 없는 한 자리 숫자는 사실이 아니라, 비율로 읽히지 않으면 빈 결과로 통과한다
         // — 다른 값과 맞춰 비율로 읽혔음을 함께 고정한다.
         assertThat(findMissingFacts("5프로씩 인상", "5%씩 인상")).isEmpty()
         assertThat(findMissingFacts("5프로씩 인상", "6%씩 인상")).isNotEmpty()
         assertThat(findMissingFacts("5프로부터 적용", "7%부터 적용")).isNotEmpty()
+        assertThat(findMissingFacts("5프로급 성장", "7%급 성장")).isNotEmpty()
     }
 
     @Test
