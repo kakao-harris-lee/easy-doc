@@ -57,6 +57,9 @@ data class FactCoverage(
  * [FactCoverage.sourceFactCount] 는 `kind`·`compareKey` 로 중복 제거한 수다. [missing] 은
  * 중복 제거 전에 `filterNot` 을 적용해야 [FactKind.DATE] 의 연도 비교를 각 원본 인스턴스에
  * 적용할 수 있다. 결과만 `distinctBy` 로 정리한다. [findMissingFacts] 는 이 함수에 위임한다.
+ *
+ * 중의적 표지로 연 축약 연도 NUMBER 는 비교 키가 둘일 수 있다([ExtractedFact.alternateCompareKey])
+ * — 양쪽의 어느 키든 맞으면 보존이다. 중복 제거는 늘 [ExtractedFact.compareKey] 하나로만 한다.
  */
 fun factCoverage(
     source: String,
@@ -65,7 +68,7 @@ fun factCoverage(
     val sourceFactsRaw = extractFacts(source)
     val sourceFactCount = sourceFactsRaw.distinctBy { it.kind to it.compareKey }.size
     val draftFacts = extractFacts(draft)
-    val draftKeys = draftFacts.mapTo(HashSet()) { it.kind to it.compareKey }
+    val draftKeys = draftFacts.flatMapTo(HashSet()) { fact -> fact.compareKeys.map { fact.kind to it } }
     val normalizedDraft = normalizeFullWidthDigits(draft).filterNot(Char::isWhitespace)
 
     val missing =
@@ -76,7 +79,7 @@ fun factCoverage(
                 } else if (fact.kind == FactKind.DATE) {
                     draftFacts.any { it.kind == FactKind.DATE && sameDate(fact, it) }
                 } else {
-                    (fact.kind to fact.compareKey) in draftKeys || untypedAmountKept(fact, draftKeys)
+                    fact.compareKeys.any { (fact.kind to it) in draftKeys } || untypedAmountKept(fact, draftKeys)
                 }
             }.distinctBy { it.kind to it.compareKey }
             .map { FactIssue(it.kind, it.displayValue) }
@@ -92,6 +95,8 @@ fun factCoverage(
  * 규칙 기반 추출이며 LLM 을 부르지 않는다. 같은 추출 규칙을 [source] 와 [draft] 양쪽에
  * 적용해 비교한다 — 값이 같으면 표기가 달라도(구분자·전각·오전오후·한글 수사 등) 보존으로 본다.
  * [FactKind.DATE] 만 예외로 **부분 비교**다: 한쪽에 연도가 없으면 월·일만 맞으면 된다([sameDate] 참고).
+ * 여는 따옴표로도 쓰이는 표지(`‘`·ASCII `'`)로 연 [FactKind.NUMBER] 만 연도(`2010`)와
+ * 맨 숫자(`10`) 두 읽기로 비교한다 — 그 맞바꾼 것은 [ExtractedFact.alternateCompareKey] 에 적었다.
  *
  * [factCoverage] 로 위임한다 — 비교 규칙은 한 곳(그 함수)에만 있다.
  */
@@ -116,14 +121,40 @@ private fun sameDate(
     return sourceFact.year?.let { it == draftFact.year } ?: true
 }
 
-/** 추출된 사실 하나. [compareKey] 가 같으면 같은 사실로 본다(표기가 달라도). [year] 는 [FactKind.DATE] 전용. */
+/**
+ * 추출된 사실 하나. [compareKey] 가 같으면 같은 사실로 본다(표기가 달라도). [year] 는 [FactKind.DATE] 전용.
+ *
+ * [alternateCompareKey] 는 **같은 매치의 두 번째 읽기**이며, 연도 표지가 중의적일 때만 있다.
+ * 여는 따옴표로도 쓰이는 `‘`(U+2018)·ASCII `'` 로 연 NUMBER(`‘10`·`‘10년`)는 인용된 연 항목
+ * 번호와 모양이 같아서(`‘10. 서식 및 참고자료’` 는 2010년이 아니라 10번 항목이다) 표지만으로
+ * 두 쓰임을 구별할 수 없다. 그래서 추출에서 하나를 고르지 않고 연도 읽기(`2010`)를
+ * [compareKey] 로, 맨 숫자 읽기(`10`)를 이 키로 함께 남긴 뒤 어느 키든 맞으면 보존으로
+ * 본다([factCoverage]). 닫는 쪽 표지(`’`(U+2019)·`&rsquo;`)는 인용을 열 수 없어 연도 읽기
+ * 하나만 남긴다 — main 과 같은 단일 판정이다([AMBIGUOUS_YEAR_MARKERS]).
+ *
+ * **맞바꾼 것은 `‘`·`'` 로 연 매치에만 남는다** — 그 매치는 상대 글에 같은 두 자리 숫자만
+ * 있어도 보존으로 인정된다. [findMissingFacts] 는 원문→변환문 보존 검사 외에 **환각 검사**
+ * 에도 쓰이는데(`findMissingFacts(claimed, evidence)` — 그림 제안·행동 안내 검증기가 모델이
+ * 적은 글을 근거 문장과 맞춘다), 그 방향에서는 모델이 적은 `‘25. 시행` 이 근거의 무관한
+ * `25` 에 걸려 통과할 수 있다. 그 둘의 모양 중의성은 구문으로 풀 수 없고 공고 원문에서
+ * 인용부호로도 흔히 쓰여, 이 범위에서는 오탐(멀쩡한 글에 유료 보정 호출을 태우는 쪽)을
+ * 줄이는 편을 골랐다. 닫는 쪽 표지에는 이 위험이 없다.
+ *
+ * **남은 한계** — 인용된 세 단계 항목 번호(`‘10.2.3 항목’`)는 앞의 날짜 패턴이 먼저 점유해
+ * 2010-02-03 으로만 읽히고, 배수 단위가 붙은 인용 소수(`‘12.5억원`)는 앞자리를 연도로
+ * 가져가 뒤에 `5억원` 만 남는다. 둘 다 main 과 같다.
+ */
 internal data class ExtractedFact(
     val kind: FactKind,
     val compareKey: String,
     val displayValue: String,
     val year: Int? = null,
     val untypedGroupedNumber: Boolean = false,
+    val alternateCompareKey: String? = null,
 ) {
+    /** [compareKey] 와, 있으면 [alternateCompareKey]. 보존 판정은 이 중 하나만 맞아도 된다. */
+    val compareKeys: List<String> = listOfNotNull(compareKey, alternateCompareKey)
+
     /** [displayValue] 는 원문·변환문 조각이다 — [SentenceIssue] 와 같은 이유로 값을 찍지 않는다. */
     override fun toString(): String = "ExtractedFact(kind=$kind)"
 }
@@ -184,7 +215,18 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // 아포스트로피가 있는 축약 연도만 날짜로 인식해 일반 두 자리 숫자와 구분한다.
         FactKind.DATE to Regex("""$YEAR_APOSTROPHE\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
         // 일이 없는 축약 연도는 구분자만 lookahead 로 확인해 뒤의 월 숫자를 별도 사실로 남긴다.
-        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+(?=[.\-])"""),
+        // 구분자 뒤에 월 숫자가 오는지는 보지 않는다 — `’25.~’26.`·`’26. 상반기`·`(’26.)` 처럼
+        // 숫자가 뒤따르지 않는 축약 연도도 연도이기 때문이다.
+        //
+        // 이 패턴은 인용부호로 연 항목 번호(`‘10. 서식 및 참고자료’`)와 모양이 같지만 추출에서
+        // 가리지 않는다 — 표지만으로는 두 쓰임을 구별할 수 없어, 중의적 표지일 때 연도 읽기와
+        // 맨 숫자 읽기를 모두 비교 키로 남기고 판정은 비교 시점에 한다
+        // ([ExtractedFact.alternateCompareKey]).
+        // 소수점 비율만 lookahead 로 제외한다: `‘12.5%` 의 앞자리를 연도로 가져가면 뒤의
+        // PERCENT 가 `12.5%` 를 통째로 잡지 못하고 `5%` 만 남는다. `프로` 는 낱말 경계를 함께
+        // 봐야 한다 — `’25.10 프로젝트` 를 비율로 넘기면 PERCENT 가 `25.10 프로` 를 25.1% 로
+        // 읽어 연도와 월이 함께 사라진다.
+        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+(?=[.\-])(?!\.\d++\h*+(?:%|퍼센트|프로(?!\p{L})))"""),
         // 날짜가 아닌 축약 연도도 NUMBER 로 잡아, 변환문이 4자리로 펼친 값과 비교한다.
         FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+년"""),
         // 배수 단위가 있는 금액은 WORD_AMOUNT 가 전체 구간을 소비해 부분 매치를 막는다.
@@ -263,7 +305,15 @@ private fun claimedDateRangeMatches(
         .filter { claim(claimed, it.range) }
         .map { RawMatch(FactKind.DATE, text.substring(it.range), comparisonText = it.canonical) }
 
-private fun compareKeyOf(raw: RawMatch): String =
+/**
+ * 비교 키 하나 — [yearReading] 은 [abbreviatedYearReadings] 가 [RawMatch.comparisonText] 로 낸
+ * 연도 읽기다(축약 연도가 아니면 그 문자열 그대로). DATE·NUMBER 만 쓴다 — 나머지 종류의 매치는
+ * 연도 표지로 시작할 수 없어 어차피 원시 매치와 같은 값이다.
+ */
+private fun compareKeyOf(
+    raw: RawMatch,
+    yearReading: String,
+): String =
     when (raw.kind) {
         FactKind.DOCUMENT_NAME -> {
             raw.text
@@ -285,11 +335,11 @@ private fun compareKeyOf(raw: RawMatch): String =
         }
 
         FactKind.DATE -> {
-            dateCompareKey(expandAbbreviatedYear(raw.comparisonText)).orEmpty()
+            dateCompareKey(yearReading).orEmpty()
         }
 
         FactKind.NUMBER -> {
-            numberCompareKey(expandAbbreviatedYear(raw.text))
+            numberCompareKey(yearReading)
         }
 
         FactKind.PHONE -> {
@@ -301,21 +351,38 @@ private fun compareKeyOf(raw: RawMatch): String =
         }
     }
 
-/** [expandAbbreviatedYear] 가 인정하는 축약 연도의 상한 — 그 함수 KDoc 참고. */
+/** [abbreviatedYearReadings] 가 인정하는 축약 연도의 상한 — 그 함수 KDoc 참고. */
 private const val ABBREVIATED_YEAR_MAX = 49
 
-/** [expandAbbreviatedYear] 가 확정하는 세기 — 이 서비스가 다루는 공공 안내문은 2000년대만 다룬다. */
+/** [abbreviatedYearReadings] 가 확정하는 세기 — 이 서비스가 다루는 공공 안내문은 2000년대만 다룬다. */
 private const val ABBREVIATED_YEAR_CENTURY = 2000
 
-/** 아포스트로피(ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자로 시작하는 접두부. */
+/** 연도 표지([YEAR_APOSTROPHE]) + 두 자리 숫자로 시작하는 접두부 — [abbreviatedYearReadings] 가 한 번만 읽는다. */
 private val ABBREVIATED_YEAR_PREFIX = Regex("""^$YEAR_APOSTROPHE(\d{2}+)""")
 
 /**
- * 공문 관행 연도 축약을 20NN 으로 편다 — [matchText] 가 아포스트로피(ASCII `'` 또는 U+2019
- * `’`) + 두 자리 숫자로 시작하면 그 자리를 4자리 연도로 바꾸고 나머지는 그대로 이어 돌려준다
- * (예: `"’26.9.1"` → `"2026.9.1"`, `"’26년"` → `"2026년"`). 그렇지 않으면(아포스트로피가 없거나
- * 경계를 넘으면) [matchText] 를 그대로 돌려준다 — 무해한 항등 변환이라 [compareKeyOf] ·
- * [extractFacts] 가 모든 NUMBER·DATE 원시 매치에 조건 없이 걸어도 안전하다.
+ * 연도로도, 인용을 여는 따옴표로도 읽히는 표지 — `‘`(U+2018)와 ASCII `'`. 두 쓰임의 모양이
+ * 같아 [AbbreviatedYearReadings.asPlainNumber] 로 맨 숫자 읽기를 함께 남기는 것은 이 둘뿐이다.
+ * 닫는 쪽인 `’`(U+2019)·`&rsquo;` 는 인용을 열 수 없으므로 연도 표지로만 읽는다 — 그 판단의
+ * 근거와 맞바꾼 것은 [ExtractedFact.alternateCompareKey] 에 적었다.
+ */
+private val AMBIGUOUS_YEAR_MARKERS = setOf("'", "‘")
+
+/** 축약 연도 매치의 읽기 — [asPlainNumber] 는 표지가 [AMBIGUOUS_YEAR_MARKERS] 에 있을 때만 있다. */
+private data class AbbreviatedYearReadings(
+    /** 연도 읽기(`"’26.9.1"` → `"2026.9.1"`). 축약 연도가 아니면 원시 매치 그대로다. */
+    val asYear: String,
+    /** 표지만 뗀 맨 숫자 읽기(`"‘10. 서식"` → `"10. 서식"`). 중의적 표지가 아니면 `null`. */
+    val asPlainNumber: String?,
+)
+
+/**
+ * 공문 관행 연도 축약의 읽기를 낸다 — 접두부를 **한 번만** 읽어 두 읽기를 함께 돌려준다.
+ * [matchText] 가 [ABBREVIATED_YEAR_PREFIX](연도 표지 + 두 자리 숫자)로 시작하면 그 자리를
+ * 4자리 연도로 바꾼 것을 [AbbreviatedYearReadings.asYear] 로, 표지만 뗀 것을
+ * [AbbreviatedYearReadings.asPlainNumber] 로 낸다(표지가 중의적일 때만). 그렇지 않으면(표지가
+ * 없거나 경계를 넘으면) [matchText] 를 그대로 돌려준다 — 무해한 항등 변환이라 [compareKeyOf] ·
+ * [extractFacts] 가 모든 원시 매치에 조건 없이 걸어도 안전하다.
  *
  * **세기는 항상 20NN 으로 고정한다.** 이 제품이 다루는 공공 안내문의 축약 연도는 전부
  * 2000년대이므로 19NN 판별 로직을 따로 두지 않는다.
@@ -323,21 +390,22 @@ private val ABBREVIATED_YEAR_PREFIX = Regex("""^$YEAR_APOSTROPHE(\d{2}+)""")
  * **경계를 00~[ABBREVIATED_YEAR_MAX](49) 로 좁힌다.** 50~99 는 관례상(Y2K 이후 널리 쓰는
  * windowing 규칙과 같은 방향) 1950~1999 로도 읽힐 수 있어 애매하다 — 애매한 값을 20NN 으로
  * 확정하면 옛 연도가 엉뚱한 미래 연도로 오판될 위험이 오탐 하나를 고치는 이득보다 크다. 그
- * 경계 밖은 손대지 않고 그대로 둔다 — 결과는 기존 동작(아포스트로피 없이 두 자리 숫자만
- * 남는 것)과 같다.
+ * 경계 밖은 손대지 않고 그대로 둔다 — 결과는 기존 동작(표지 없이 두 자리 숫자만 남는 것)과
+ * 같다. 두 번째 읽기도 그 경계 안에서만 낸다.
  *
- * [matchText] 는 항상 [RawMatch.text](원시 매치)에만 적용한다 — [ExtractedFact.displayValue]
- * 는 이 확장 전 원문 그대로 남는다.
+ * **이미 매칭된 조각에만 적용한다** — 줄 문맥을 보지 않으므로 [RawMatch] 의 텍스트에만 걸고,
+ * [ExtractedFact.displayValue] 는 이 변환 전 원문 그대로 남는다.
  */
-private fun expandAbbreviatedYear(matchText: String): String {
+private fun abbreviatedYearReadings(matchText: String): AbbreviatedYearReadings {
     val prefix = ABBREVIATED_YEAR_PREFIX.find(matchText)
-    val twoDigitYear = prefix?.groupValues?.get(1)?.toInt()
-    return if (prefix == null || twoDigitYear == null || twoDigitYear > ABBREVIATED_YEAR_MAX) {
-        matchText
-    } else {
-        val fourDigitYear = ABBREVIATED_YEAR_CENTURY + twoDigitYear
-        fourDigitYear.toString() + matchText.substring(prefix.range.last + 1)
-    }
+    val twoDigits = prefix?.groupValues?.get(1)?.takeIf { it.toInt() <= ABBREVIATED_YEAR_MAX }
+    if (prefix == null || twoDigits == null) return AbbreviatedYearReadings(matchText, null)
+    val rest = matchText.substring(prefix.range.last + 1)
+    val ambiguous = prefix.value.dropLast(twoDigits.length) in AMBIGUOUS_YEAR_MARKERS
+    return AbbreviatedYearReadings(
+        asYear = (ABBREVIATED_YEAR_CENTURY + twoDigits.toInt()).toString() + rest,
+        asPlainNumber = (twoDigits + rest).takeIf { ambiguous },
+    )
 }
 
 // 단위 정렬도 같은 추출 규칙을 앵커로 재사용한다. 공개 API가 아닌 core 내부 공유다.
@@ -346,12 +414,25 @@ internal fun extractFacts(text: String): List<ExtractedFact> {
     val normalized = normalizeFullWidthDigits(text)
     return extractRawMatches(normalized)
         .map { raw ->
-            val year =
-                if (raw.kind == FactKind.DATE) {
-                    dateComponents(expandAbbreviatedYear(raw.comparisonText))?.first
+            // 축약 연도 접두부는 원시 매치마다 한 번만 읽는다 — 연도 읽기는 DATE·NUMBER 의
+            // 비교 키와 DATE 의 연도 성분이, 맨 숫자 읽기는 NUMBER 의 두 번째 키가 쓴다.
+            // [RawMatch.comparisonText] 로 읽어도 NUMBER 에는 영향이 없다 — 날짜 범위
+            // 조각(유일하게 둘이 다른 경우)은 모두 DATE 다.
+            val readings = abbreviatedYearReadings(raw.comparisonText)
+            val year = if (raw.kind == FactKind.DATE) dateComponents(readings.asYear)?.first else null
+            val plainReading =
+                if (raw.kind == FactKind.NUMBER) {
+                    readings.asPlainNumber?.let { numberCompareKey(it) }?.takeIf { it.isNotEmpty() }
                 } else {
                     null
                 }
-            ExtractedFact(raw.kind, compareKeyOf(raw), raw.text.trim(), year, raw.untypedGroupedNumber)
+            ExtractedFact(
+                kind = raw.kind,
+                compareKey = compareKeyOf(raw, readings.asYear),
+                displayValue = raw.text.trim(),
+                year = year,
+                untypedGroupedNumber = raw.untypedGroupedNumber,
+                alternateCompareKey = plainReading,
+            )
         }.filter { it.compareKey.isNotEmpty() }
 }

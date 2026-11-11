@@ -149,7 +149,78 @@ class FactPreservationTest {
     fun `왼쪽 작은따옴표로 표시한 공고 연도도 같은 연도로 비교한다`() {
         assertThat(findMissingFacts("‘25.7월 시행", "2025년 7월 시행")).isEmpty()
         assertThat(findMissingFacts("‘25년 9월 1일", "2025년 9월 1일")).isEmpty()
+        // 연도가 실제로 바뀌면 두 읽기(2025·25) 어느 쪽도 맞지 않아 그대로 누락이다.
         assertThat(findMissingFacts("‘25.7월 시행", "2026년 7월 시행")).isNotEmpty()
+        assertThat(findMissingFacts("‘25년 사업", "2026년 사업")).isNotEmpty()
+        // 여는 따옴표만 거듭 나오는 기간도 양쪽 모두 연도 표지다.
+        assertThat(findMissingFacts("‘25.~‘26.", "2025년부터 2026년까지")).isEmpty()
+    }
+
+    @Test
+    fun `인용부호로 연 제목이 축약 연도로 시작해도 연도로 읽는다`() {
+        assertThat(findMissingFacts("‘25년 청년 일자리 지원사업’ 공고", "2025년 청년 일자리 지원사업 공고")).isEmpty()
+        assertThat(findMissingFacts("‘25.9.1’", "2025년 9월 1일")).isEmpty()
+        // 인용이 닫혀 있어도(제목 전체를 따옴표로 감싼 공고) 축약 연도는 연도다.
+        assertThat(findMissingFacts("‘25. 하반기 추진 계획’", "2025년 하반기 추진 계획")).isEmpty()
+        assertThat(findMissingFacts("‘25.~‘26. 청년 사업’", "2025년부터 2026년까지 청년 사업")).isEmpty()
+    }
+
+    @Test
+    fun `여는 따옴표와 닫는 따옴표를 섞어 쓴 기간도 양쪽 모두 연도다`() {
+        assertThat(findMissingFacts("‘25.~’26. 추진", "2025년부터 2026년까지 추진")).isEmpty()
+        assertThat(findMissingFacts("‘25.7.1.~’26.6.30.", "2025년 7월 1일부터 2026년 6월 30일까지")).isEmpty()
+    }
+
+    @Test
+    fun `월이 뒤따르지 않는 축약 연도도 연도로 읽는다`() {
+        assertThat(findMissingFacts("추진 기간: ’25.~’26.", "2025년부터 2026년까지")).isEmpty()
+        assertThat(findMissingFacts("’26. 상반기 시행", "2026년 상반기 시행")).isEmpty()
+        assertThat(findMissingFacts("(’26.) 예산", "2026년 예산")).isEmpty()
+    }
+
+    @Test
+    fun `따옴표로 연 항목 번호는 보통 숫자로도 읽어 비교한다`() {
+        val quoted = "이동한 양식은 모두 ‘10. 서식 및 참고자료’에 속한다."
+        val plain = "해당 참고 양식을 10. 서식 및 참고자료(서식 36호)로 이동"
+
+        assertThat(findMissingFacts(quoted, plain)).isEmpty()
+        assertThat(findMissingFacts("10. 서식 및 참고자료", quoted)).isEmpty()
+        // ASCII 아포스트로피로 인용해도 같다 — 표지로는 두 쓰임을 구별할 수 없다.
+        assertThat(findMissingFacts("이동한 양식은 모두 '10. 서식 및 참고자료'에 속한다.", plain)).isEmpty()
+        // 인용 안에 인용이 겹쳐도 같다.
+        assertThat(findMissingFacts("‘10. ‘별표’ 서식’", "10. 별표 서식")).isEmpty()
+    }
+
+    @Test
+    fun `따옴표로 연 두 자리 숫자는 양쪽 방향 모두 같은 사실로 본다`() {
+        assertThat(findMissingFacts("‘10년 이상 근속자’ 대상", "10년 이상 근속자 대상")).isEmpty()
+        assertThat(findMissingFacts("10년 이상 근속자 대상", "‘10년 이상 근속자’ 대상")).isEmpty()
+    }
+
+    @Test
+    fun `따옴표로 연 항목 번호의 다른 모양도 보통 숫자로도 읽는다`() {
+        assertThat(findMissingFacts("‘10-1호 서식’", "10-1호 서식")).isEmpty()
+        assertThat(findMissingFacts("‘10. 2. 세부 절차’", "10. 2. 세부 절차")).isEmpty()
+        // 소수점 비율은 축약 연도 패턴이 앞자리를 가져가지 않는다 — 양쪽 방향 모두 같은 비율이다.
+        assertThat(findMissingFacts("‘12.5%’", "12.5%")).isEmpty()
+        assertThat(findMissingFacts("12.5%", "‘12.5%’")).isEmpty()
+        // HTML 엔티티로 남은 닫는 따옴표도 같다 — 양쪽 방향 모두 보통 숫자로 읽힌다.
+        assertThat(findMissingFacts("‘10. 서식 및 참고자료&rsquo;", "10. 서식 및 참고자료")).isEmpty()
+        assertThat(findMissingFacts("10. 서식 및 참고자료", "‘10. 서식 및 참고자료&rsquo;")).isEmpty()
+    }
+
+    @Test
+    fun `닫는 쪽 연도 표지는 연도 하나로만 읽어 누락을 가리지 않는다`() {
+        // `’`(U+2019)·`&rsquo;` 는 인용을 열 수 없어 두 번째 읽기를 주지 않는다 — 상대 글의
+        // 무관한 두 자리 숫자가 바뀐 연도를 덮지 못한다.
+        assertThat(findMissingFacts("’26. 시행", "2025년 시행 서식 26")).isNotEmpty()
+        assertThat(findMissingFacts("’25. 하반기 추진 (붙임 25)", "2026년 하반기 추진 (붙임 25)")).isNotEmpty()
+        assertThat(findMissingFacts("’25년 근속", "25년 근속")).isNotEmpty()
+    }
+
+    @Test
+    fun `축약 연도 뒤의 프로젝트는 비율이 아니다`() {
+        assertThat(findMissingFacts("’25.10 프로젝트 착수", "2025년 10월 프로젝트 착수")).isEmpty()
     }
 
     @Test

@@ -190,8 +190,9 @@ class SensitiveToStringReachTest {
          * IllustrationSuggestionAnalysis.AllDropped removed (-1).
          * ER-18 generation job/asset ports, views, configuration and HTTP DTOs (+31).
          * GeneratedIllustrationUpdateRequest added for review edits and soft discard (+1).
+         * Abbreviated-year dual reading for quoted section numbers (#203) (+1).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 536
+        const val EXPECTED_SOURCE_DECLARATIONS = 537
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
