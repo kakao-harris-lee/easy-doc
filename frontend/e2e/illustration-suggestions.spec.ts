@@ -136,7 +136,8 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(generation.getByText(/테스트 그림입니다/)).toBeVisible()
     const apply = generation.getByRole('button', { name: '문서에 그림 적용' })
     await expect(apply).toBeDisabled()
-    await generation.getByRole('checkbox', { name: /장면·보존할 사실과 그림/ }).check()
+    // 안내 문구는 보존할 사실 유무로 갈리므로(illustrationReviewCopy) 두 변형에 공통인 도형만 고른다.
+    await generation.getByRole('checkbox', { name: /화살표·갈림길·막대 비례/ }).check()
     await apply.click()
     await expect(documentPreview.locator('img')).toBeVisible()
     await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')

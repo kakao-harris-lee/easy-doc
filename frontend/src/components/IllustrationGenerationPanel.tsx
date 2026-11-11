@@ -27,6 +27,7 @@ import type {
 import { formatCredits } from '../lib/credits'
 import { USAGE_PATH } from '../routes/paths'
 import { GeneratedIllustrationImage } from './GeneratedIllustrationImage'
+import { ILLUSTRATION_REVIEW_EDIT_HINT, illustrationReviewCopy } from './illustrationReviewCopy'
 import { Button } from './ui/Button'
 
 const POLL_INTERVAL_MS = 2500
@@ -672,6 +673,9 @@ export function IllustrationGenerationPanel({
           (item) => item.suggestion_id === asset.suggestion_id,
         )
         const editing = editingAssetId === asset.asset_id
+        const reviewCopy = illustrationReviewCopy(asset.preserved_facts.length > 0)
+        const guidanceId = `${id}-asset-review-guidance-${asset.asset_id}`
+        const editHintId = `${id}-asset-review-edit-hint-${asset.asset_id}`
         return (
           <article key={asset.asset_id} className="space-y-3 border-t border-border pt-3">
             <h4 className="font-semibold">
@@ -793,21 +797,17 @@ export function IllustrationGenerationPanel({
                 )}
               </>
             )}
-            {!asset.applied && (
+            {!asset.applied && !asset.stale && (
               <>
-                {!asset.stale && (
-                  <p id={`${id}-asset-review-guidance-${asset.asset_id}`} className="text-sm">
-                    적용하기 전에 그림의 화살표·갈림길·막대 비례가 위 장면·보존할 사실과 맞는지
-                    확인하세요. 맞지 않으면 적용하지 말고 이 후보를 폐기하세요.
-                  </p>
-                )}
+                <p id={guidanceId} className="text-sm">
+                  {reviewCopy.guidance}
+                </p>
                 <label className="flex items-start gap-2">
                   <input
                     type="checkbox"
                     checked={reviewed[asset.asset_id] ?? false}
-                    aria-describedby={
-                      asset.stale ? undefined : `${id}-asset-review-guidance-${asset.asset_id}`
-                    }
+                    disabled={editing}
+                    aria-describedby={editing ? `${guidanceId} ${editHintId}` : guidanceId}
                     onChange={(event) =>
                       setReviewed((current) => ({
                         ...current,
@@ -815,8 +815,13 @@ export function IllustrationGenerationPanel({
                       }))
                     }
                   />
-                  장면·보존할 사실과 그림(화살표·갈림길·비례), 대체텍스트가 맞는지 확인했습니다.
+                  {reviewCopy.label}
                 </label>
+                {editing && (
+                  <p id={editHintId} className="text-sm">
+                    {ILLUSTRATION_REVIEW_EDIT_HINT}
+                  </p>
+                )}
               </>
             )}
             <div className="flex flex-wrap gap-2">
@@ -827,7 +832,7 @@ export function IllustrationGenerationPanel({
                   isActive(currentJob) ||
                   (asset.applied
                     ? removeDisabled
-                    : disabled || asset.stale || !reviewed[asset.asset_id])
+                    : disabled || asset.stale || editing || !reviewed[asset.asset_id])
                 }
                 onClick={() => void mutateAsset(asset, asset.applied ? 'remove' : 'apply')}
               >
