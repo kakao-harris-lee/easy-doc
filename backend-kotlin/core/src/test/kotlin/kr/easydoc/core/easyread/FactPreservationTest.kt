@@ -224,22 +224,31 @@ class FactPreservationTest {
     }
 
     @Test
-    fun `다른 낱말을 여는 프로는 비율이 아니다`() {
+    fun `목록에 든 프로-낱말을 여는 프로는 비율이 아니다`() {
         assertThat(findMissingFacts("연간 10 프로젝트를 추진", "프로젝트 10건을 추진")).isEmpty()
         assertThat(findMissingFacts("3 프로그램 운영", "프로그램 3개 운영")).isEmpty()
+        assertThat(findMissingFacts("2 프로토콜 적용", "프로토콜 2종 적용")).isEmpty()
+        assertThat(findMissingFacts("3 프로듀서 배치", "프로듀서 3명 배치")).isEmpty()
     }
 
     @Test
-    fun `낱말을 끝내거나 조사가 뒤따르는 프로는 비율이다`() {
+    fun `프로-낱말이 아니면 뒤따르는 글자와 무관하게 비율이다`() {
         assertThat(findMissingFacts("10프로가 줄었다", "10%가 줄었다")).isEmpty()
         assertThat(findMissingFacts("10프로가 줄었다", "20%가 줄었다")).isNotEmpty()
         assertThat(findMissingFacts("30프로는 감면", "30%는 감면")).isEmpty()
         assertThat(findMissingFacts("10프로의 가산", "10%의 가산")).isEmpty()
         assertThat(findMissingFacts("달성률 30 프로", "달성률 30%")).isEmpty()
+        // 조사 whitelist 가 빠뜨렸던 접미사·의존명사 — 비율 뒤에 흔히 온다.
+        assertThat(findMissingFacts("20프로대 유지", "20%대 유지")).isEmpty()
+        assertThat(findMissingFacts("10프로부터 적용", "10%부터 적용")).isEmpty()
+        assertThat(findMissingFacts("30프로면 감면", "30%면 감면")).isEmpty()
+        assertThat(findMissingFacts("15프로미만", "15% 미만")).isEmpty()
+        assertThat(findMissingFacts("20프로정도 증가", "20%정도 증가")).isEmpty()
         // 단위 없는 한 자리 숫자는 사실이 아니라, 비율로 읽히지 않으면 빈 결과로 통과한다
         // — 다른 값과 맞춰 비율로 읽혔음을 함께 고정한다.
         assertThat(findMissingFacts("5프로씩 인상", "5%씩 인상")).isEmpty()
         assertThat(findMissingFacts("5프로씩 인상", "6%씩 인상")).isNotEmpty()
+        assertThat(findMissingFacts("5프로부터 적용", "7%부터 적용")).isNotEmpty()
     }
 
     @Test
