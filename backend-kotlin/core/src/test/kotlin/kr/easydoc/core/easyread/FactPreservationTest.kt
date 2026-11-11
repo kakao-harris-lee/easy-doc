@@ -150,6 +150,15 @@ class FactPreservationTest {
         assertThat(findMissingFacts("‘25.7월 시행", "2025년 7월 시행")).isEmpty()
         assertThat(findMissingFacts("‘25년 9월 1일", "2025년 9월 1일")).isEmpty()
         assertThat(findMissingFacts("‘25.7월 시행", "2026년 7월 시행")).isNotEmpty()
+        // 닫는 ’ 가 없으면 양쪽 모두 왼쪽 따옴표여도 연도 표지다.
+        assertThat(findMissingFacts("‘25.~‘26.", "2025년부터 2026년까지")).isEmpty()
+    }
+
+    @Test
+    fun `월이 뒤따르지 않는 축약 연도도 연도로 읽는다`() {
+        assertThat(findMissingFacts("추진 기간: ’25.~’26.", "2025년부터 2026년까지")).isEmpty()
+        assertThat(findMissingFacts("’26. 상반기 시행", "2026년 상반기 시행")).isEmpty()
+        assertThat(findMissingFacts("(’26.) 예산", "2026년 예산")).isEmpty()
     }
 
     @Test
@@ -160,6 +169,24 @@ class FactPreservationTest {
         assertThat(findMissingFacts(quoted, plain)).isEmpty()
         assertThat(findMissingFacts("10. 서식 및 참고자료", quoted)).isEmpty()
         assertThat(findMissingFacts(quoted, "해당 참고 양식을 2010. 서식 및 참고자료로 이동")).isNotEmpty()
+    }
+
+    @Test
+    fun `따옴표로 연 항목 번호의 다른 모양도 보통 숫자로 읽는다`() {
+        assertThat(findMissingFacts("‘10-1호 서식’", "10-1호 서식")).isEmpty()
+        assertThat(findMissingFacts("‘10. 2. 세부 절차’", "10. 2. 세부 절차")).isEmpty()
+        assertThat(findMissingFacts("‘12.5%’", "12.5%")).isEmpty()
+        assertThat(findMissingFacts("‘10.2.3 항목’", "10.2.3 항목")).isEmpty()
+    }
+
+    /**
+     * 알려진 한계 — 닫힌 ‘…’ 안의 축약 연도는 연도가 아니라 보통 두 자리 숫자로 읽는다.
+     * 여는 ‘ 하나로는 연도 표지와 인용부호를 구분할 수 없고, 공고 원문에서는 항목 번호·제목을
+     * ‘…’ 로 인용하는 쪽이 훨씬 흔해 그쪽을 택했다.
+     */
+    @Test
+    fun `알려진 한계 - 닫힌 따옴표 안의 축약 연도는 보통 숫자로 읽힌다`() {
+        assertThat(findMissingFacts("‘25.7월 시행’", "2025년 7월 시행")).isNotEmpty()
     }
 
     @Test
