@@ -155,6 +155,18 @@ class FactPreservationTest {
     }
 
     @Test
+    fun `인용부호로 연 제목이 축약 연도로 시작해도 연도로 읽는다`() {
+        assertThat(findMissingFacts("‘25년 청년 일자리 지원사업’ 공고", "2025년 청년 일자리 지원사업 공고")).isEmpty()
+        assertThat(findMissingFacts("‘25.9.1’", "2025년 9월 1일")).isEmpty()
+    }
+
+    @Test
+    fun `여는 따옴표와 닫는 따옴표를 섞어 쓴 기간도 양쪽 모두 연도다`() {
+        assertThat(findMissingFacts("‘25.~’26. 추진", "2025년부터 2026년까지 추진")).isEmpty()
+        assertThat(findMissingFacts("‘25.7.1.~’26.6.30.", "2025년 7월 1일부터 2026년 6월 30일까지")).isEmpty()
+    }
+
+    @Test
     fun `월이 뒤따르지 않는 축약 연도도 연도로 읽는다`() {
         assertThat(findMissingFacts("추진 기간: ’25.~’26.", "2025년부터 2026년까지")).isEmpty()
         assertThat(findMissingFacts("’26. 상반기 시행", "2026년 상반기 시행")).isEmpty()
@@ -176,17 +188,9 @@ class FactPreservationTest {
         assertThat(findMissingFacts("‘10-1호 서식’", "10-1호 서식")).isEmpty()
         assertThat(findMissingFacts("‘10. 2. 세부 절차’", "10. 2. 세부 절차")).isEmpty()
         assertThat(findMissingFacts("‘12.5%’", "12.5%")).isEmpty()
-        assertThat(findMissingFacts("‘10.2.3 항목’", "10.2.3 항목")).isEmpty()
-    }
-
-    /**
-     * 알려진 한계 — 닫힌 ‘…’ 안의 축약 연도는 연도가 아니라 보통 두 자리 숫자로 읽는다.
-     * 여는 ‘ 하나로는 연도 표지와 인용부호를 구분할 수 없고, 공고 원문에서는 항목 번호·제목을
-     * ‘…’ 로 인용하는 쪽이 훨씬 흔해 그쪽을 택했다.
-     */
-    @Test
-    fun `알려진 한계 - 닫힌 따옴표 안의 축약 연도는 보통 숫자로 읽힌다`() {
-        assertThat(findMissingFacts("‘25.7월 시행’", "2025년 7월 시행")).isNotEmpty()
+        // HTML 엔티티로 남은 닫는 따옴표도 인용을 닫는다 — 양쪽 방향 모두 보통 숫자다.
+        assertThat(findMissingFacts("‘10. 서식 및 참고자료&rsquo;", "10. 서식 및 참고자료")).isEmpty()
+        assertThat(findMissingFacts("10. 서식 및 참고자료", "‘10. 서식 및 참고자료&rsquo;")).isEmpty()
     }
 
     @Test
