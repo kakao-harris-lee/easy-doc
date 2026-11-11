@@ -99,12 +99,15 @@ internal object IllustrationSuggestionValidator {
      * **제안 단위 탈락**이다(언어는 그 제안 하나의 문제다).
      *
      * 판정은 네 필드를 통째로가 아니라 **항목 하나하나**에 적용한다(`scenes`·`preserved_facts`
-     * 는 배열이다). 항목이 아래 둘 중 하나에 걸리면 그 제안을 버린다.
+     * 는 배열이다). 항목이 아래 셋 중 하나에 걸리면 그 제안을 버린다.
      * - 일본어 가나가 섞여 있다([isKana]).
      * - **센 글자** 중 한글 글자([isCountedHangul])의 비율이
      *   [MIN_HANGUL_LETTER_RATIO_DENOMINATOR] 분의 1 에 못 미친다. 한글 한 자만 섞인
      *   영문·중문 항목이 여기서 걸리고, 「LPG 차량 등록증을 준비하는 모습」처럼 한국어 문장에
      *   섞인 로마자는 남는다.
+     * - **글자가 하나라도 있는데**([isCountedLetter]) 센 한글이 하나도 없다. 비율만 보면
+     *   `Show the bus stop map` 처럼 4자 이하 로마자 낱말로만 쓴 영문이 센 글자 0 개로
+     *   통과한다(#215) — 아래 제외는 비율의 분모에서만 빼고 이 조건에서는 글자로 센다.
      *
      * 비율을 재기 전에 **두 가지를 글자 수에서 뺀다**(#215). 둘 다 한국어 공문서가 그대로
      * 인용하는 값이라 세면 멀쩡한 항목이 로마자 쪽으로 기울어 사라진다.
@@ -115,11 +118,11 @@ internal object IllustrationSuggestionValidator {
      *   `SRT`·`SMS`·`e-mail` 의 `mail` 처럼 약어·단위다. 더 긴 로마자 낱말은 전부 센다.
      *   로마자 아닌 글자(한자 포함)는 모두 센다.
      *
-     * **센 글자가 하나도 없는 항목은 통과시킨다** — 숫자·날짜·기호·공백뿐인 값(예: `2026. 3. 15.`·
-     * `02-123-4567`·`50%`)과 위 두 제외만 남는 값(예: `LPG`·주소뿐인 항목)이다.
-     * `preserved_facts` 는 원문의 숫자·날짜·연락처를 그대로 옮긴 값이 정상인 자리라, 모든
-     * 항목에 한글을 요구하면 멀쩡한 제안이 통째로 사라진다. `reason` 과 `alt_text_draft` 는
-     * 문장이라 약어·주소만으로 채워지지 않으므로 여전히 한글이 있어야 한다.
+     * **글자가 하나도 없는 항목은 통과시킨다** — 숫자·날짜·기호·공백뿐인 값(예: `2026. 3. 15.`·
+     * `02-123-4567`·`50%`)과 [LINK] 를 지우면 글자가 남지 않는 값(예: `www.bokjiro.go.kr`
+     * 뿐인 항목)이다. `preserved_facts` 는 원문의 숫자·날짜·연락처·주소를 그대로 옮긴 값이
+     * 정상인 자리라, 그런 항목까지 버리면 멀쩡한 제안이 통째로 사라진다. 반대로 `LPG` 처럼
+     * 로마자 약어뿐인 항목은 글자가 있는 항목이라 한글이 없으면 버린다.
      *
      * 한글 음절 판정 전에 각 항목을 NFC 로 정규화한다. 자모로 분해된(NFD) 한국어는 음절
      * 구간에 들어오지 않아 한글이 없는 글로 보인다.
@@ -163,8 +166,10 @@ private fun isKorean(text: String): Boolean {
     var letters = 0
     var hangul = 0
     var latinRun = 0
+    var anyLetter = false
     for (code in codePoints) {
         if (isKana(code)) return false
+        anyLetter = anyLetter || isCountedLetter(code)
         if (isLatinLetter(code)) {
             latinRun++
         } else {
@@ -176,8 +181,10 @@ private fun isKorean(text: String): Boolean {
         }
     }
     letters += countedLatinLetters(latinRun)
-    // 센 글자가 하나도 없는 항목은 `0 >= 0` 으로 통과한다 — 위 KDoc 의 숫자·약어·주소뿐인 값이다.
-    return MIN_HANGUL_LETTER_RATIO_DENOMINATOR * hangul >= letters
+    // 글자가 있는 항목에는 한글이 한 자는 있어야 한다 — 비율은 센 글자가 0 이면 `0 >= 0` 으로
+    // 통과하므로 약어뿐인 영문을 비율만으로는 걸러내지 못한다. 글자가 아예 없는 항목(숫자·
+    // 기호·주소뿐인 값)은 두 조건을 모두 통과한다.
+    return (hangul > 0 || !anyLetter) && MIN_HANGUL_LETTER_RATIO_DENOMINATOR * hangul >= letters
 }
 
 /** 로마자 낱말 하나가 글자 수에 더하는 몫 — 약어·단위 길이면 0 이다. */

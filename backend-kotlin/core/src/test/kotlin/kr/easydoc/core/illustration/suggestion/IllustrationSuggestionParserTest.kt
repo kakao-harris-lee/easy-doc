@@ -317,20 +317,24 @@ class IllustrationSuggestionParserTest {
     }
 
     @Test
-    @DisplayName("글자 과반이 한글이 아닌 항목은 reason·scenes·preserved_facts 어디에 있어도 버린다(#206·#215)")
-    fun `한글 비율이 낮은 제안은 버려진다`() {
+    @DisplayName("글자가 있는데 한글이 없거나 과반이 아닌 항목은 reason·scenes·preserved_facts 어디에 있어도 버린다(#206·#215)")
+    fun `한글이 모자란 제안은 버려진다`() {
         val scene = "신청서와 신분증을 준비하는 모습"
         val fact = "서류를 준비한 뒤에 주민센터에 제출합니다"
-        val belowRatio =
+        val withoutEnoughHangul =
             listOf(
                 "This illustration helps compare the two benefit paths 비교",
                 "兩種補助的申請途徑不同 신청",
                 "Please check the application documents 신청",
                 // 한글 채움 문자(U+3164)로 늘린 영문 — 채움 문자는 글자로도 한글로도 세지 않는다.
                 "Please check the application documents" + HANGUL_FILLER.repeat(40),
+                // 4자 이하 낱말뿐인 영문 — 센 글자는 0 이라 비율은 통과하지만 글자가 있으니 한글을 요구한다.
+                "Show the bus stop map",
+                // 로마자 약어뿐인 항목도 글자가 있는 항목이다 — 숫자·기호·주소뿐인 값과 다르다.
+                "LPG",
             )
 
-        belowRatio.forEach { text ->
+        withoutEnoughHangul.forEach { text ->
             // 위 항목에는 숫자·날짜가 없어 원문 대조로는 걸리지 않는다 — 탈락 이유는 언어다.
             listOf(reason, scene, fact).forEach { slot ->
                 val set = validSetOf(analyze(validJson.replace(slot, text)))
@@ -376,8 +380,8 @@ class IllustrationSuggestionParserTest {
                 "문의: help@korea.kr",
                 "KTX/SRT 앱 예매",
                 "SMS·e-mail 안내",
-                // 로마자 낱말 하나뿐인 항목 — 4자 이하 낱말은 세지 않으니 글자가 없는 항목과 같다.
-                "LPG",
+                // 주소뿐인 항목 — URL 구간을 지우면 글자가 하나도 없는 항목과 같다.
+                "www.bokjiro.go.kr",
             )
 
         korean.forEach { text ->
