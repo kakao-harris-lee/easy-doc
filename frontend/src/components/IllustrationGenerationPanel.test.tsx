@@ -38,6 +38,8 @@ vi.mock('../api/client', async (original) => ({
   updateGeneratedIllustrationReview: vi.fn(),
 }))
 
+const reviewGuidance =
+  '적용하기 전에 그림의 화살표·갈림길·막대 비례가 위 장면·보존할 사실과 맞는지 확인하세요. 맞지 않으면 적용하지 말고 이 후보를 폐기하세요.'
 const suggestion: IllustrationSuggestion = {
   suggestion_id: 's1',
   configuration_revision: 'a'.repeat(64),
@@ -193,6 +195,30 @@ describe('그림 생성과 적용', () => {
     expect(screen.queryByText(/테스트 그림입니다/)).not.toBeInTheDocument()
     expect(screen.getByText(/이전 버전 본문/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
+    expect(screen.queryByText(/화살표·갈림길·막대 비례/)).not.toBeInTheDocument()
+  })
+
+  it('적용 전 그림에는 도형 대조 안내를 두고 확인 체크박스의 설명으로 연결한다', async () => {
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await screen.findByRole('img', { name: '신청 그림' })
+    expect(screen.getByText(reviewGuidance)).toBeInTheDocument()
+    expect(
+      screen.getByRole('checkbox', {
+        name: '장면·보존할 사실과 그림(화살표·갈림길·비례), 대체텍스트가 맞는지 확인했습니다.',
+      }),
+    ).toHaveAccessibleDescription(reviewGuidance)
+  })
+
+  it('이미 적용된 그림에는 도형 대조 안내를 두지 않는다', async () => {
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({
+      content_revision: 1,
+      assets: [{ ...asset, applied: true }],
+    })
+    render(<IllustrationGenerationPanel {...props} />)
+    await screen.findByRole('img', { name: '신청 그림' })
+    expect(screen.queryByText(reviewGuidance)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
   it.each([0, 502, 504])('요청 응답이 불명확하면 같은 요청 ID만 재전송한다: %s', async (status) => {

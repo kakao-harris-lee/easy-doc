@@ -794,19 +794,30 @@ export function IllustrationGenerationPanel({
               </>
             )}
             {!asset.applied && (
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  checked={reviewed[asset.asset_id] ?? false}
-                  onChange={(event) =>
-                    setReviewed((current) => ({
-                      ...current,
-                      [asset.asset_id]: event.target.checked,
-                    }))
-                  }
-                />
-                원문 근거와 그림 구성, 대체텍스트를 확인했습니다.
-              </label>
+              <>
+                {!asset.stale && (
+                  <p id={`${id}-asset-review-guidance-${asset.asset_id}`} className="text-sm">
+                    적용하기 전에 그림의 화살표·갈림길·막대 비례가 위 장면·보존할 사실과 맞는지
+                    확인하세요. 맞지 않으면 적용하지 말고 이 후보를 폐기하세요.
+                  </p>
+                )}
+                <label className="flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={reviewed[asset.asset_id] ?? false}
+                    aria-describedby={
+                      asset.stale ? undefined : `${id}-asset-review-guidance-${asset.asset_id}`
+                    }
+                    onChange={(event) =>
+                      setReviewed((current) => ({
+                        ...current,
+                        [asset.asset_id]: event.target.checked,
+                      }))
+                    }
+                  />
+                  장면·보존할 사실과 그림(화살표·갈림길·비례), 대체텍스트가 맞는지 확인했습니다.
+                </label>
+              </>
             )}
             <div className="flex flex-wrap gap-2">
               <Button

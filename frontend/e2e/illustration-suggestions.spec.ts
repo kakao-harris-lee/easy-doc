@@ -136,7 +136,7 @@ test.describe('ER-17 문맥 기반 그림 제안', () => {
     await expect(generation.getByText(/테스트 그림입니다/)).toBeVisible()
     const apply = generation.getByRole('button', { name: '문서에 그림 적용' })
     await expect(apply).toBeDisabled()
-    await generation.getByRole('checkbox', { name: /원문 근거와 그림 구성/ }).check()
+    await generation.getByRole('checkbox', { name: /장면·보존할 사실과 그림/ }).check()
     await apply.click()
     await expect(documentPreview.locator('img')).toBeVisible()
     await expect(documentPreview.locator('img')).toHaveAttribute('alt', '')
