@@ -1,0 +1,10 @@
+{
+  "suggestion_id" : "1230888e-602b-4327-9084-fe7041cb686f",
+  "purpose" : "procedure",
+  "configuration_revision" : "f5c0bcacb732c9cdd9043b334851b3bb8670adee12f015402655690f56ae1191",
+  "prompt_version" : "r7-illustration-generation-2",
+  "prompt_code_points" : 1662,
+  "scenes" : [ "성인 신청자가 청주시 주민등록 주소지관할 보건소에 신청하는 장면. 주민등록 주소와 관할 보건소를 연결해 신청 장소의 관계를 보여준다.", "앞선 신청 장면에서 화살표로 이어지는 지정한의원 방문 및 한방치료 장면. 보건소와 지정한의원을 구분해 그린다." ],
+  "preserved_facts" : [ "신청 장소는 청주시 주민등록 주소지관할 보건소이다.", "보건소에 신청한 뒤 지정한의원을 방문하여 한방치료를 진행한다." ],
+  "alt_text" : "청주시 주민등록 주소지관할 보건소에 신청한 뒤, 지정한의원을 방문해 한방치료를 받는 순서입니다."
+}
