@@ -308,7 +308,7 @@ object DerivedRows {
                  expected_content_revision, based_on_content_revision, input_fingerprint,
                  input_payload_encrypted, encryption_scheme, key_version,
                  status, reserved_credits, settlement)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'r7-illustration-suggestion-4', ?,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'r7-illustration-suggestion-5', ?,
                     1, 1, ?, ?, 'aes256gcm-v1', 1, 'succeeded', ?, 'consumed')
             """,
             job.jobId,
