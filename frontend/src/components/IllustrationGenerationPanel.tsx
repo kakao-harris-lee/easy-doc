@@ -122,6 +122,7 @@ export function IllustrationGenerationPanel({
   const previousConversionRef = useRef(conversionId)
   const focusStatusRef = useRef(false)
   const focusErrorRef = useRef(false)
+  const focusEditTriggerRef = useRef<string | null>(null)
 
   const currentScope = loadedScope === scopeKey
   const currentCollection = currentScope ? collection : null
@@ -276,6 +277,12 @@ export function IllustrationGenerationPanel({
       errorRef.current.focus()
     }
   }, [error])
+  useEffect(() => {
+    const target = focusEditTriggerRef.current
+    if (target === null || editingAssetId !== null) return
+    focusEditTriggerRef.current = null
+    document.getElementById(`${id}-asset-alt-edit-${target}`)?.focus()
+  }, [editingAssetId, id])
   useEffect(
     () => () => {
       createControllerRef.current?.abort()
@@ -482,6 +489,16 @@ export function IllustrationGenerationPanel({
         setBusy(false)
       }
     }
+  }
+
+  function cancelEditing(asset: GeneratedIllustration) {
+    focusEditTriggerRef.current = asset.asset_id
+    setAssetDrafts((current) => {
+      const next = { ...current }
+      delete next[asset.asset_id]
+      return next
+    })
+    setEditingAssetId(null)
   }
 
   function discard(asset: GeneratedIllustration) {
@@ -763,18 +780,28 @@ export function IllustrationGenerationPanel({
                 {editingInvalid && (
                   <p className="text-sm text-danger">대체텍스트를 300자 이내로 입력해 주세요.</p>
                 )}
-                <Button
-                  type="button"
-                  disabled={
-                    busy ||
-                    isActive(currentJob) ||
-                    editingInvalid ||
-                    editingDraft === asset.alt_text
-                  }
-                  onClick={() => void mutateAsset(asset, 'review', editingDraft)}
-                >
-                  대체텍스트 저장
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    disabled={
+                      busy ||
+                      isActive(currentJob) ||
+                      editingInvalid ||
+                      editingDraft === asset.alt_text
+                    }
+                    onClick={() => void mutateAsset(asset, 'review', editingDraft)}
+                  >
+                    대체텍스트 저장
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || isActive(currentJob)}
+                    onClick={() => cancelEditing(asset)}
+                  >
+                    수정 취소
+                  </Button>
+                </div>
               </>
             ) : (
               <>
@@ -782,6 +809,7 @@ export function IllustrationGenerationPanel({
                 {!asset.stale && (
                   <Button
                     type="button"
+                    id={`${id}-asset-alt-edit-${asset.asset_id}`}
                     variant="outline"
                     disabled={busy || isActive(currentJob)}
                     onClick={() => {

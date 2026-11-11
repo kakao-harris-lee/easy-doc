@@ -262,6 +262,37 @@ describe('그림 생성과 적용', () => {
     expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeEnabled()
   })
 
+  it('대체텍스트를 바꾸지 않고 수정을 취소하면 검토 확인과 적용을 다시 열어 준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await user.click(await screen.findByRole('button', { name: '대체텍스트 수정' }))
+    expect(screen.getByRole('checkbox', { name: sceneOnlyCopy.label })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: '수정 취소' }))
+    const checkbox = screen.getByRole('checkbox', { name: sceneOnlyCopy.label })
+    expect(checkbox).toBeEnabled()
+    expect(screen.queryByText(ILLUSTRATION_REVIEW_EDIT_HINT)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '대체텍스트 수정' })).toHaveFocus()
+    await user.click(checkbox)
+    expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeEnabled()
+    expect(vi.mocked(updateGeneratedIllustrationReview)).not.toHaveBeenCalled()
+  })
+
+  it('수정을 취소하면 입력한 대체텍스트를 버리고 원래 문구를 보여 준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getGeneratedIllustrations).mockResolvedValue({ content_revision: 1, assets: [asset] })
+    render(<IllustrationGenerationPanel {...props} />)
+    await user.click(await screen.findByRole('button', { name: '대체텍스트 수정' }))
+    const input = screen.getByLabelText('그림 1 대체텍스트 수정')
+    await user.clear(input)
+    await user.type(input, '버릴 그림 설명')
+    await user.click(screen.getByRole('button', { name: '수정 취소' }))
+    expect(screen.getByText('대체텍스트: 신청 그림')).toBeInTheDocument()
+    expect(vi.mocked(updateGeneratedIllustrationReview)).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '대체텍스트 수정' }))
+    expect(screen.getByLabelText('그림 1 대체텍스트 수정')).toHaveValue('신청 그림')
+  })
+
   it.each([0, 502, 504])('요청 응답이 불명확하면 같은 요청 ID만 재전송한다: %s', async (status) => {
     const user = userEvent.setup()
     const uuid = vi.spyOn(crypto, 'randomUUID')
