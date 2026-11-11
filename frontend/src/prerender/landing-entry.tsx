@@ -18,6 +18,7 @@ import { StaticRouter } from 'react-router-dom'
 import { Footer } from '../components/Footer'
 import { CONTAINER } from '../components/layoutStyles'
 import { COMPANY_INFO } from '../config/company'
+import { GUIDE_LEAD } from '../content/guide/userGuide'
 import {
   GUIDE_DESCRIPTION,
   GUIDE_PAGE_TITLE,
@@ -34,12 +35,14 @@ import {
   EXAMPLES_DESCRIPTION,
   EXAMPLES_PATH,
   EXAMPLES_TITLE,
+  exampleDescription,
   examplePath,
 } from '../content/documentExamples'
 import { GUIDE_PATH, HOME_PATH } from '../routes/paths'
 import {
   CANONICAL_URL,
   GUIDE_CANONICAL_URL,
+  SITE_ORIGIN,
   buildBreadcrumbJsonLd,
   buildExampleArticleJsonLd,
   buildLandingHtml,
@@ -65,7 +68,7 @@ export const ORGANIZATION_NAME = COMPANY_INFO.name
 /** 두 단계는 모든 예시 경로가 공유한다. 상세 페이지는 여기에 자기 제목만 더한다. */
 const EXAMPLES_BREADCRUMB = [
   { name: '홈', url: CANONICAL_URL },
-  { name: '쉬운 글 예시', url: `https://easydoc.kr${EXAMPLES_PATH}` },
+  { name: '쉬운 글 예시', url: `${SITE_ORIGIN}${EXAMPLES_PATH}` },
 ] as const
 
 export interface LandingArtifacts {
@@ -99,8 +102,9 @@ export function buildLandingArtifacts({
       jsonLd: [buildBreadcrumbJsonLd(EXAMPLES_BREADCRUMB)],
     },
     ...DOCUMENT_EXAMPLES.map((example) => {
-      const url = `https://easydoc.kr${examplePath(example)}`
-      const description = `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`
+      const url = `${SITE_ORIGIN}${examplePath(example)}`
+      // 상세 페이지 머리말과 같은 문장이다 — 본문에 없는 설명을 메타에만 싣지 않는다.
+      const description = exampleDescription(example)
       return {
         path: examplePath(example),
         filename: `examples/${example.id}.html`,
@@ -114,7 +118,8 @@ export function buildLandingArtifacts({
             headline: example.title,
             description,
             url,
-            publishedDate: example.publishedDate,
+            datePublished: example.datePublished,
+            dateModified: example.dateModified,
           }),
           buildBreadcrumbJsonLd([...EXAMPLES_BREADCRUMB, { name: example.title, url }]),
         ],
@@ -141,7 +146,9 @@ export function buildLandingArtifacts({
           <Footer />
         </StaticRouter>,
       ),
-      description: GUIDE_DESCRIPTION,
+      // 본문 검사는 가이드 문서의 첫 문장이 받는다 — 검색용 설명문은 메타에만 쓴다.
+      description: GUIDE_LEAD,
+      metaDescription: GUIDE_DESCRIPTION,
       title: GUIDE_PAGE_TITLE,
       canonicalUrl: GUIDE_CANONICAL_URL,
       jsonLd: [],
@@ -158,7 +165,7 @@ export function buildLandingArtifacts({
         ),
         description: page.description,
         title: page.title,
-        canonicalUrl: `https://easydoc.kr${page.path}`,
+        canonicalUrl: `${SITE_ORIGIN}${page.path}`,
         jsonLd: page.jsonLd,
       }),
     })),
@@ -168,7 +175,7 @@ export function buildLandingArtifacts({
     })),
     sitemapXml: buildSitemap(
       seoulDateString(now),
-      publicExamples.map((page) => `https://easydoc.kr${page.path}`),
+      publicExamples.map((page) => `${SITE_ORIGIN}${page.path}`),
     ),
   }
 }

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { SERVICE_PAGE_TITLE } from '../content/identity'
+import { LANDING_META_DESCRIPTION, SERVICE_PAGE_TITLE } from '../content/identity'
 
 /**
  * SPA 셸 템플릿의 색인 규칙을 소스 파일에서 직접 고정한다.
@@ -44,6 +44,19 @@ describe('frontend/index.html (SPA 셸)', () => {
       const tag = shell.match(new RegExp(`<meta[^>]*${attribute}[^>]*>`))?.[0]
       expect(tag).toBeDefined()
       expect(tag).toContain(`content="${SERVICE_PAGE_TITLE}"`)
+    }
+  })
+
+  it('description·og:description·twitter:description은 identity.ts의 설명문과 같다', () => {
+    // 프리렌더가 랜딩에 채우는 문장과 같은 값이다 — 셸만 옛 문구로 남지 않게 한다.
+    for (const attribute of [
+      'name="description"',
+      'property="og:description"',
+      'name="twitter:description"',
+    ]) {
+      const tag = shell.match(new RegExp(`<meta[^>]*${attribute}[^>]*>`))?.[0]
+      expect(tag).toBeDefined()
+      expect(tag).toContain(`content="${LANDING_META_DESCRIPTION}"`)
     }
   })
 

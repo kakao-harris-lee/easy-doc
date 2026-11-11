@@ -7,6 +7,7 @@ import {
   DOCUMENT_EXAMPLES,
   EXAMPLE_NOTICE,
   EXAMPLES_INTRO,
+  exampleDescription,
   examplePath,
 } from '../content/documentExamples'
 import { DocumentExamplePage, ExamplesPage } from './ExamplesPage'
@@ -52,6 +53,8 @@ describe('공개 문서 예시', () => {
         </MemoryRouter>,
       )
       expect(screen.getByRole('heading', { level: 1, name: example.title })).toBeInTheDocument()
+      // 검색 결과 설명문과 같은 문장을 머리말에 보여 준다.
+      expect(screen.getByText(exampleDescription(example))).toBeVisible()
       expect(screen.getByText(EXAMPLE_NOTICE)).toBeVisible()
       expect(document.getElementById('example-simplified')).toHaveClass('bg-selection')
       expect(document.getElementById('example-original')).not.toHaveClass('bg-selection')

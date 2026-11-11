@@ -11,14 +11,23 @@
 import { SERVICE_NAME } from '../content/identity'
 
 /**
+ * 공개 사이트의 출처(scheme + host). canonical·sitemap·JSON-LD의 모든 절대 주소를
+ * 이 값에서 파생한다 — 도메인이 바뀔 때 고쳐야 할 곳을 하나로 둔다.
+ */
+export const SITE_ORIGIN = 'https://easydoc.kr'
+
+/**
  * `/`의 정본 주소. 랜딩·sitemap·JSON-LD가 같은 값을 쓴다 — 셸은 noindex라
  * canonical을 두지 않는다.
  */
-export const CANONICAL_URL = 'https://easydoc.kr/'
-export const GUIDE_CANONICAL_URL = 'https://easydoc.kr/guide'
+export const CANONICAL_URL = `${SITE_ORIGIN}/`
+export const GUIDE_CANONICAL_URL = `${SITE_ORIGIN}/guide`
 
 /** JSON-LD `Organization.logo`. 1200×630 OG 이미지가 아니라 정사각 로고를 쓴다. */
-export const ORGANIZATION_LOGO_URL = 'https://easydoc.kr/icons/icon-320.png'
+export const ORGANIZATION_LOGO_URL = `${SITE_ORIGIN}/icons/icon-320.png`
+
+/** 공유 카드와 `Article.image`가 함께 쓰는 1200×630 이미지. 셸의 og:image와 같다. */
+export const OG_IMAGE_URL = `${SITE_ORIGIN}/og/landing.png`
 
 export type JsonLdNode = Readonly<Record<string, unknown>>
 
@@ -28,7 +37,9 @@ export interface BuildLandingHtmlInput {
   /** `renderToStaticMarkup(<LandingPage/>)` 결과. */
   readonly markup: string
   /**
-   * `SERVICE_DEFINITION`. 결과 HTML에 반드시 남아 있어야 하는 문장이다 —
+   * 프리렌더 **본문**(`markup`)에 반드시 있어야 하는 문장이다. 랜딩은
+   * `SERVICE_DEFINITION`, 예시 상세는 머리말 문장, 가이드는 가이드 첫 문장을 준다.
+   *
    * `metaDescription`을 주지 않으면 description 계열 메타도 이 문장으로 채운다.
    */
   readonly description: string
@@ -51,6 +62,22 @@ const ROBOTS_META = /[ \t]*<meta\b[^>]*name="robots"[^>]*>\n?/g
 const CONTENT_ATTRIBUTE = /content="[^"]*"/
 const HEAD_CLOSE = /([ \t]*)<\/head>/
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * 달력에 실제로 있는 `YYYY-MM-DD`인지 본다. 모양만 보면 `2026-02-30`·`2026-13-45`가
+ * 통과해 구조화 데이터·사이트맵에 없는 날짜가 실린다. UTC로 파싱한 뒤 되돌려 비교해
+ * 월말을 넘긴 날이 다른 날짜로 넘어가는 것까지 잡는다.
+ */
+function assertCalendarDate(value: string, label: string): void {
+  const parsed = Date.parse(`${value}T00:00:00.000Z`)
+  if (
+    !ISO_DATE.test(value) ||
+    Number.isNaN(parsed) ||
+    new Date(parsed).toISOString().slice(0, 10) !== value
+  ) {
+    throw new Error(`${label}가 달력에 있는 YYYY-MM-DD 날짜가 아니다: ${value}`)
+  }
+}
 
 /**
  * 랜딩에 싣는 구조화 데이터. `Organization`·`WebSite` 두 타입만 넣는다.
@@ -90,11 +117,13 @@ export interface ExampleArticleInput {
   readonly description: string
   /** 페이지의 대표 주소(canonical). */
   readonly url: string
+  /** 예시를 처음 실은 날짜. */
+  readonly datePublished: string
   /**
-   * 예시 내용이 정해진 날짜. 빌드 시각을 쓰지 않는다 — 내용이 그대로인데도
+   * 예시 문구를 마지막으로 고친 날짜. 빌드 시각을 쓰지 않는다 — 내용이 그대로인데도
    * 배포마다 `dateModified`가 움직이면 검색 엔진에 거짓 신호를 준다.
    */
-  readonly publishedDate: string
+  readonly dateModified: string
 }
 
 /**
@@ -109,10 +138,17 @@ export function buildExampleArticleJsonLd({
   headline,
   description,
   url,
-  publishedDate,
+  datePublished,
+  dateModified,
 }: ExampleArticleInput): JsonLdNode {
-  if (!ISO_DATE.test(publishedDate)) {
-    throw new Error(`예시 날짜가 YYYY-MM-DD 형식이 아니다: ${publishedDate}`)
+  assertCalendarDate(datePublished, '예시 날짜')
+  assertCalendarDate(dateModified, '예시 날짜')
+  // 예시 글을 쓴 주체와 펴낸 주체가 같다 — 같은 노드를 author·publisher에 모두 싣는다.
+  const organization = {
+    '@type': 'Organization',
+    name: organizationName,
+    url: CANONICAL_URL,
+    logo: ORGANIZATION_LOGO_URL,
   }
   return {
     '@context': 'https://schema.org',
@@ -121,19 +157,16 @@ export function buildExampleArticleJsonLd({
     description,
     inLanguage: 'ko',
     url,
-    datePublished: publishedDate,
-    dateModified: publishedDate,
+    image: OG_IMAGE_URL,
+    datePublished,
+    dateModified,
     isPartOf: {
       '@type': 'WebSite',
       name: SERVICE_NAME,
       url: CANONICAL_URL,
     },
-    publisher: {
-      '@type': 'Organization',
-      name: organizationName,
-      url: CANONICAL_URL,
-      logo: ORGANIZATION_LOGO_URL,
-    },
+    author: organization,
+    publisher: organization,
   }
 }
 
@@ -212,6 +245,13 @@ export function buildLandingHtml({
   if (description.trim() === '') {
     throw new Error('랜딩 description이 비어 있다')
   }
+  // 메타가 아니라 본문을 본다 — 결과 HTML 전체를 뒤지면 바로 아래에서 채우는
+  // description 메타가 자기 자신을 만족시켜, 본문이 비어도 통과한다.
+  // 비교는 이스케이프한 형태로 한다 — React 본문은 `&`를 `&amp;`로 쓰므로 원문
+  // 그대로 찾으면 `&`가 든 문장에서 빌드가 헛되게 실패한다.
+  if (!markup.includes(escapeAttribute(description))) {
+    throw new Error('프리렌더 본문에 description 문장이 없다 — 메타만 채운 페이지다')
+  }
   if (!ROOT_PLACEHOLDER.test(template)) {
     throw new Error('셸 템플릿에서 빈 #root 요소를 찾지 못했다')
   }
@@ -252,11 +292,6 @@ export function buildLandingHtml({
   if (!html.includes('<h1')) {
     throw new Error('결과 HTML에 h1이 없다')
   }
-  // 비교는 이스케이프한 형태로 한다 — 메타 content와 React 본문 모두 `&`를
-  // `&amp;`로 쓰므로, 원문 그대로 찾으면 `&`가 든 문장에서 빌드가 헛되게 실패한다.
-  if (!html.includes(escapeAttribute(description))) {
-    throw new Error('결과 HTML에 서비스 정의 문장(description)이 없다')
-  }
   if (html.includes('noindex')) {
     throw new Error('결과 HTML에 noindex가 남아 있다 — 랜딩이 색인되지 않는다')
   }
@@ -269,9 +304,7 @@ export function buildLandingHtml({
 
 /** 공개 페이지 주소만 검색 대상으로 전달한다. */
 export function buildSitemap(lastmod: string, additionalUrls: readonly string[] = []): string {
-  if (!ISO_DATE.test(lastmod)) {
-    throw new Error(`sitemap lastmod가 YYYY-MM-DD 형식이 아니다: ${lastmod}`)
-  }
+  assertCalendarDate(lastmod, 'sitemap lastmod')
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',

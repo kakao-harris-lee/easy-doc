@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import { SERVICE_NAME } from '../content/identity'
 import {
   CANONICAL_URL,
+  GUIDE_CANONICAL_URL,
+  OG_IMAGE_URL,
   ORGANIZATION_LOGO_URL,
+  SITE_ORIGIN,
   buildBreadcrumbJsonLd,
   buildExampleArticleJsonLd,
   buildLandingHtml,
@@ -36,9 +39,10 @@ const TEMPLATE = `<!doctype html>
 </html>
 `
 
-const MARKUP = '<article><h1>다양한 안내·설명문을 쉬운 글로</h1><p>본문</p></article>'
-
 const DESCRIPTION = '행정·복지·법률 안내문을 쉬운 글 초안으로 바꿉니다.'
+
+/** description 문장은 본문에도 있어야 한다 — 메타만 채운 페이지는 빌드가 거부한다. */
+const MARKUP = `<article><h1>다양한 안내·설명문을 쉬운 글로</h1><p>${DESCRIPTION}</p></article>`
 
 const JSON_LD = buildLandingJsonLd({ organizationName: '몬딱 솔루션' })
 
@@ -132,7 +136,23 @@ describe('buildLandingHtml', () => {
 
   it('metaDescription만 채우고 본문에 description이 없으면 빌드를 실패시킨다', () => {
     // 메타용 긴 문장으로 본문 검사를 우회하지 못하게 한다.
-    expect(() => build({ metaDescription: '검색 결과용 설명문' })).toThrow(/description/)
+    expect(() =>
+      build({
+        markup: '<article><h1>제목</h1><p>본문</p></article>',
+        metaDescription: '검색 결과용 설명문',
+      }),
+    ).toThrow(/description/)
+  })
+
+  it('metaDescription이 description으로 시작해도 본문에 없으면 빌드를 실패시킨다', () => {
+    // 랜딩이 쓰는 모양이다 — 메타가 description으로 시작하면 결과 HTML 전체를 뒤지는
+    // 검사는 메타만 보고 통과한다. 본문을 봐야 빈 페이지를 잡는다.
+    expect(() =>
+      build({
+        markup: '<article><h1>제목</h1><p>본문</p></article>',
+        metaDescription: `${DESCRIPTION} 검색 결과에만 덧붙이는 문장입니다.`,
+      }),
+    ).toThrow(/description/)
   })
 
   it('JSON-LD 하나에 Organization과 WebSite를 담는다', () => {
@@ -168,7 +188,8 @@ describe('buildLandingHtml', () => {
 
   it('마크업·설명의 $& 같은 치환 패턴이 그대로 남는다', () => {
     // String.replace에 치환 문자열을 넘기면 `$&`·`` $` ``가 주변 텍스트로 바뀐다.
-    const markup = '<article><h1>제목 $& 뒤</h1><p>$` 앞 · $$ · $1</p></article>'
+    // 본문 쪽 문장은 React가 그리는 모양이라 `&`가 이미 `&amp;`다.
+    const markup = '<article><h1>제목 $& 뒤</h1><p>설명 $&amp; 와 $` 와 $1</p></article>'
 
     const html = buildLandingHtml({
       template: TEMPLATE,
@@ -227,11 +248,18 @@ describe('buildExampleArticleJsonLd', () => {
     headline: '학교 독서 행사 신청 안내',
     description: '신청 기한·준비물·귀가 방법을 한눈에.',
     url: 'https://easydoc.kr/examples/school-notice',
-    publishedDate: '2026-10-21',
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   } as const
 
   it('예시 글을 Article로 싣고 날짜는 주어진 고정값을 쓴다', () => {
     const node = buildExampleArticleJsonLd(ARTICLE)
+    const organization = {
+      '@type': 'Organization',
+      name: '몬딱 솔루션',
+      url: CANONICAL_URL,
+      logo: ORGANIZATION_LOGO_URL,
+    }
 
     expect(node).toEqual({
       '@context': 'https://schema.org',
@@ -240,6 +268,7 @@ describe('buildExampleArticleJsonLd', () => {
       description: '신청 기한·준비물·귀가 방법을 한눈에.',
       inLanguage: 'ko',
       url: 'https://easydoc.kr/examples/school-notice',
+      image: OG_IMAGE_URL,
       // 빌드 시각이 아니라 내용이 바뀐 날짜다 — 빌드마다 날짜가 움직이면 안 된다.
       datePublished: '2026-10-21',
       dateModified: '2026-10-21',
@@ -248,20 +277,46 @@ describe('buildExampleArticleJsonLd', () => {
         name: SERVICE_NAME,
         url: CANONICAL_URL,
       },
-      publisher: {
-        '@type': 'Organization',
-        name: '몬딱 솔루션',
-        url: CANONICAL_URL,
-        logo: ORGANIZATION_LOGO_URL,
-      },
+      // 예시 글을 쓴 주체와 펴낸 주체가 같다 — 같은 Organization을 둘 다에 싣는다.
+      author: organization,
+      publisher: organization,
     })
   })
 
+  it('수정일만 따로 올릴 수 있다', () => {
+    const node = buildExampleArticleJsonLd({ ...ARTICLE, dateModified: '2026-11-02' })
+
+    expect(node).toMatchObject({ datePublished: '2026-10-21', dateModified: '2026-11-02' })
+  })
+
   it('YYYY-MM-DD가 아닌 날짜는 거부한다', () => {
-    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, publishedDate: '2026-10-2' })).toThrow(
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, datePublished: '2026-10-2' })).toThrow(
       /날짜/,
     )
-    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, publishedDate: '' })).toThrow(/날짜/)
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, datePublished: '' })).toThrow(/날짜/)
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, dateModified: '2026-10-2' })).toThrow(
+      /날짜/,
+    )
+  })
+
+  it('형식은 맞아도 달력에 없는 날짜는 거부한다', () => {
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, datePublished: '2026-02-30' })).toThrow(
+      /날짜/,
+    )
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, dateModified: '2026-13-45' })).toThrow(
+      /날짜/,
+    )
+  })
+})
+
+describe('공개 주소 상수', () => {
+  it('모든 공개 주소는 SITE_ORIGIN 하나에서 파생한다', () => {
+    expect(SITE_ORIGIN).toBe('https://easydoc.kr')
+    expect(CANONICAL_URL).toBe('https://easydoc.kr/')
+    expect(GUIDE_CANONICAL_URL).toBe('https://easydoc.kr/guide')
+    expect(ORGANIZATION_LOGO_URL).toBe('https://easydoc.kr/icons/icon-320.png')
+    // 셸(`index.html`)의 og:image와 같은 1200×630 카드다.
+    expect(OG_IMAGE_URL).toBe('https://easydoc.kr/og/landing.png')
   })
 })
 
@@ -308,6 +363,11 @@ describe('buildSitemap', () => {
   it('YYYY-MM-DD가 아닌 lastmod는 거부한다', () => {
     expect(() => buildSitemap('2026-10-2')).toThrow(/lastmod/)
     expect(() => buildSitemap('')).toThrow(/lastmod/)
+  })
+
+  it('형식은 맞아도 달력에 없는 lastmod는 거부한다', () => {
+    expect(() => buildSitemap('2026-02-30')).toThrow(/lastmod/)
+    expect(() => buildSitemap('2026-13-45')).toThrow(/lastmod/)
   })
 })
 

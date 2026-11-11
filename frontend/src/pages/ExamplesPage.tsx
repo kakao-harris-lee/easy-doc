@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { DocumentExampleCards } from '../components/DocumentExampleCards'
+import { TEXT_LINK } from '../components/layoutStyles'
 import {
   DOCUMENT_EXAMPLES,
   EXAMPLE_NOTICE,
   EXAMPLES_DESCRIPTION,
   EXAMPLES_INTRO,
   EXAMPLES_PATH,
+  exampleDescription,
   examplePath,
   findDocumentExample,
   type DocumentExample,
@@ -15,7 +17,6 @@ import {
 import { GUIDE_PATH, HOME_PATH, LOGIN_PATH, SIGNUP_PATH } from '../routes/paths'
 import { NotFoundPage } from './NotFoundPage'
 
-const TEXT_LINK = 'font-semibold text-primary underline underline-offset-4'
 const PANEL = 'rounded-xl border border-border bg-card p-4 sm:p-6'
 
 export function ExamplesPage() {
@@ -89,6 +90,10 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
         </a>
         <p className="mt-2 text-sm font-semibold text-primary">{example.category}</p>
         <h1 className="page-title mt-2">{example.title}</h1>
+        {/* 검색 결과 설명문과 같은 문장이다 — 설명을 메타에만 두지 않는다. */}
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {exampleDescription(example)}
+        </p>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
       </header>
       <div className="space-y-3">

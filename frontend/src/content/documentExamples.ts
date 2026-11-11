@@ -13,12 +13,14 @@ export interface DocumentExample {
   readonly audience: string
   /** 원문과 쉬운 글에 실제로 있는 표현을 근거로 든 변경 세 가지. */
   readonly rationale: readonly string[]
+  /** 예시를 처음 실은 날짜(`YYYY-MM-DD`). 구조화 데이터의 `datePublished`다. */
+  readonly datePublished: string
   /**
-   * 예시 내용이 정해진 날짜(`YYYY-MM-DD`). 구조화 데이터의 `datePublished`·
-   * `dateModified`가 이 값을 쓴다 — 빌드 시각을 쓰면 내용이 그대로인데도
-   * 배포마다 날짜가 움직인다. 예시 문구를 고칠 때 함께 올린다.
+   * 예시 문구를 마지막으로 고친 날짜(`YYYY-MM-DD`). 구조화 데이터의 `dateModified`다 —
+   * 빌드 시각을 쓰면 내용이 그대로인데도 배포마다 날짜가 움직인다. 예시 문구를 고칠
+   * 때 `dateModified`만 올린다.
    */
-  readonly publishedDate: string
+  readonly dateModified: string
 }
 
 export const EXAMPLES_PATH = '/examples'
@@ -76,7 +78,8 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       '원문은 한 문단에 행사 목적·날짜·대상·신청 기한을 함께 담았습니다. 쉬운 글은 ‘신청 방법’, ‘준비할 것’, ‘취소와 귀가’로 제목을 나눠 지금 필요한 칸만 찾아 읽을 수 있게 했습니다.',
       '원문의 ‘모집 인원 충족 시 기한 이전에 접수가 종료될 수 있습니다’는 몇 명이 모여야 끝나는지 앞 문장으로 돌아가야 알 수 있습니다. 쉬운 글은 ‘20명이 모이면 신청 기간이 끝나기 전에 접수를 마칠 수 있습니다’로 인원을 그 자리에 적었습니다.',
     ],
-    publishedDate: '2026-10-21',
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
   {
     id: 'customer-notice',
@@ -127,7 +130,8 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       '원문은 ‘단, 예약 내역 조회는 정상적으로 이용하실 수 있습니다’를 못 하는 일 뒤에 붙였습니다. 쉬운 글은 ‘점검 중에도 할 수 있는 일’을 따로 묶어 예약 조회와 기존 예약 유지를 한곳에서 읽게 했습니다.',
       '원문의 ‘점검 종료 시각은 작업 상황에 따라 변경될 수 있으며’로 시작하는 긴 문장을 두 문장으로 끊었습니다. 시간이 바뀔 수 있다는 사실과 바뀌면 어디서 알려 주는지를 따로 읽게 했습니다.',
     ],
-    publishedDate: '2026-10-21',
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
   {
     id: 'product-guide',
@@ -183,12 +187,21 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       '원문은 시간 설정·시작·일시 정지를 한 문단씩 이어 붙였습니다. 쉬운 글은 ‘1. 시간을 정하세요’부터 ‘4. 알림을 끄세요’까지 번호를 붙여 사용자가 지금 몇 번째 단계에 있는지 알 수 있게 했습니다.',
       '원문의 ‘같은 버튼을 한 번 더 누르면’은 앞 문장으로 돌아가야 어떤 버튼인지 알 수 있습니다. 쉬운 글은 멈추는 단계에서 ‘시작’ 버튼이라고 이름을 적었고, 편집 제안은 ‘멈춘 상태에서 ‘시작’ 버튼을 한 번 더 누르면’으로 누르는 시점까지 밝혔습니다.',
     ],
-    publishedDate: '2026-10-21',
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
 ]
 
 export function examplePath(example: DocumentExample): string {
   return `${EXAMPLES_PATH}/${example.id}`
+}
+
+/**
+ * 상세 페이지의 머리말 문장. description 계열 메타와 `Article.description`도 이 값을
+ * 쓴다 — 한 출처에서 읽어 화면에 없는 설명을 검색 결과에만 주장하지 않는다.
+ */
+export function exampleDescription(example: DocumentExample): string {
+  return `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`
 }
 
 export function findDocumentExample(id: string | undefined): DocumentExample | undefined {

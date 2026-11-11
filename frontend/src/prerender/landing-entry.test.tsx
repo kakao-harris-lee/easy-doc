@@ -2,16 +2,19 @@ import { describe, expect, it } from 'vitest'
 
 import { COMPANY_INFO } from '../config/company'
 import {
+  GUIDE_DESCRIPTION,
   GUIDE_PAGE_TITLE,
   LANDING_META_DESCRIPTION,
   SERVICE_DEFINITION,
   SERVICE_PAGE_TITLE,
 } from '../content/identity'
+import { GUIDE_LEAD } from '../content/guide/userGuide'
 import { buildLandingArtifacts } from './landing-entry'
 import {
   DOCUMENT_EXAMPLES,
   EXAMPLE_NOTICE,
   EXAMPLES_INTRO,
+  exampleDescription,
   examplePath,
 } from '../content/documentExamples'
 
@@ -45,6 +48,11 @@ function countOf(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1
 }
 
+/** 메타가 아니라 사람이 읽는 본문만 잘라 본다. */
+function bodyOf(html: string): string {
+  return html.slice(html.indexOf('<div id="root">'))
+}
+
 function parseJsonLd(html: string): Array<Record<string, unknown>> {
   const payload = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1]
   expect(payload).toBeDefined()
@@ -61,7 +69,7 @@ describe('buildLandingArtifacts', () => {
 
   it('description 메타 세 곳은 검색용 설명문이고 본문은 정체성 문장을 유지한다', () => {
     const head = artifacts.landingHtml.slice(0, artifacts.landingHtml.indexOf('</head>'))
-    const body = artifacts.landingHtml.slice(artifacts.landingHtml.indexOf('<div id="root">'))
+    const body = bodyOf(artifacts.landingHtml)
 
     expect(countOf(head, `content="${LANDING_META_DESCRIPTION}"`)).toBe(3)
     // 검색용 설명문은 정체성 문장으로 시작한다 — 화면과 검색 결과의 첫 문장이 같다.
@@ -99,6 +107,15 @@ describe('buildLandingArtifacts', () => {
     expect(artifacts.guideHtml).not.toContain('noindex')
     expect(artifacts.sitemapXml).toContain('<loc>https://easydoc.kr/guide</loc>')
     expect(countOf(artifacts.sitemapXml, '<loc>')).toBe(6)
+  })
+
+  it('가이드의 검색용 설명문은 메타에만 쓰고 본문 검사는 가이드 첫 문장이 받는다', () => {
+    const head = artifacts.guideHtml.slice(0, artifacts.guideHtml.indexOf('</head>'))
+
+    expect(countOf(head, `content="${GUIDE_DESCRIPTION}"`)).toBe(3)
+    // 가이드 문구의 출처는 `user-guide.md` 하나다 — 그 첫 문장이 본문에 있어야 한다.
+    expect(GUIDE_LEAD).not.toBe('')
+    expect(bodyOf(artifacts.guideHtml)).toContain(GUIDE_LEAD)
   })
 
   it('검색로봇도 회사 정보와 무료 체험 조건을 읽을 수 있다', () => {
@@ -145,13 +162,18 @@ describe('buildLandingArtifacts', () => {
       expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'BreadcrumbList'])
       expect(nodes[0]).toMatchObject({
         headline: example.title,
+        description: exampleDescription(example),
         inLanguage: 'ko',
         url: `https://easydoc.kr/examples/${example.id}`,
-        datePublished: example.publishedDate,
-        dateModified: example.publishedDate,
+        image: 'https://easydoc.kr/og/landing.png',
+        datePublished: example.datePublished,
+        dateModified: example.dateModified,
         isPartOf: { '@type': 'WebSite', url: 'https://easydoc.kr/' },
+        author: { '@type': 'Organization', name: COMPANY_INFO.name },
         publisher: { '@type': 'Organization', name: COMPANY_INFO.name },
       })
+      // 검색 결과 설명문은 화면에도 보이는 문장이다 — 메타만 채우지 않는다.
+      expect(bodyOf(page?.html ?? '')).toContain(exampleDescription(example))
       expect(nodes[1]?.['itemListElement']).toEqual([
         { '@type': 'ListItem', position: 1, name: '홈', item: 'https://easydoc.kr/' },
         {
