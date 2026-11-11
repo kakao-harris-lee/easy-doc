@@ -663,7 +663,7 @@ describe('ER-18 그림 생성 API', () => {
       request_id: 'request-9',
       expected_content_revision: 7,
       suggestion_id: 'suggestion-9',
-      analysis_version: 'r7-illustration-suggestion-3',
+      analysis_version: 'r7-illustration-suggestion-4',
       configuration_revision: 'a'.repeat(64),
       configuration: { scenes: ['신청 장면'], preserved_facts: [], alt_text: '신청 그림' },
     }

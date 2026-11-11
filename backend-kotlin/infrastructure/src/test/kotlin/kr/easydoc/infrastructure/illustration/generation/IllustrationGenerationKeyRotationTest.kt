@@ -285,7 +285,7 @@ class IllustrationGenerationKeyRotationTest {
                 UUID.randomUUID(),
                 suggestionResultId,
                 UUID.randomUUID(),
-                "r7-illustration-suggestion-3",
+                "r7-illustration-suggestion-4",
                 FINGERPRINT,
                 1,
                 FINGERPRINT,
