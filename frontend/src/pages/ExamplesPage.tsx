@@ -2,17 +2,21 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import { DocumentExampleCards } from '../components/DocumentExampleCards'
+import { TEXT_LINK } from '../components/layoutStyles'
 import {
+  DOCUMENT_EXAMPLES,
   EXAMPLE_NOTICE,
   EXAMPLES_DESCRIPTION,
+  EXAMPLES_INTRO,
   EXAMPLES_PATH,
+  exampleDescription,
+  examplePath,
   findDocumentExample,
   type DocumentExample,
 } from '../content/documentExamples'
 import { GUIDE_PATH, HOME_PATH, LOGIN_PATH, SIGNUP_PATH } from '../routes/paths'
 import { NotFoundPage } from './NotFoundPage'
 
-const TEXT_LINK = 'font-semibold text-primary underline underline-offset-4'
 const PANEL = 'rounded-xl border border-border bg-card p-4 sm:p-6'
 
 export function ExamplesPage() {
@@ -24,6 +28,7 @@ export function ExamplesPage() {
         </a>
         <h1 className="page-title mt-2">쉬운 글 예시</h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">{EXAMPLES_DESCRIPTION}</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{EXAMPLES_INTRO}</p>
       </header>
       <DocumentExampleCards heading="h2" />
       <p className="text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
@@ -56,6 +61,12 @@ function ExampleStart() {
           로그인
         </a>
       </div>
+      {/* 버튼 라벨(가입하기·로그인)만으로는 링크가 어디로 가는지 읽히지 않아 설명이 있는 본문 링크를 함께 둔다. */}
+      <p className="mt-3 text-sm leading-6">
+        <a href={HOME_PATH} className={TEXT_LINK}>
+          내 문서를 쉬운 글로 바꿔 보기
+        </a>
+      </p>
       <p className="mt-3 text-sm leading-6 text-muted-foreground">
         가입·휴대폰 인증 후 5크레딧
         <br />
@@ -79,6 +90,10 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
         </a>
         <p className="mt-2 text-sm font-semibold text-primary">{example.category}</p>
         <h1 className="page-title mt-2">{example.title}</h1>
+        {/* 검색 결과 설명문과 같은 문장이다 — 설명을 메타에만 두지 않는다. */}
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {exampleDescription(example)}
+        </p>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">{EXAMPLE_NOTICE}</p>
       </header>
       <div className="space-y-3">
@@ -137,6 +152,7 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
           원문 TXT 다운로드
         </a>
       </div>
+      <ExampleRationale example={example} />
       <div className="space-y-2">
         <details className="help-disclosure">
           <summary>
@@ -172,8 +188,55 @@ export function DocumentExampleArticle({ example }: { readonly example: Document
           </ul>
         </details>
       </div>
+      <OtherExamples currentId={example.id} />
       <ExampleStart />
     </article>
+  )
+}
+
+/**
+ * 「이 예시에서 바꾼 점」. 접는 상자에 넣지 않는다 — 이 글이 예시 페이지에서
+ * 원문·쉬운 글 말고 유일하게 사람이 쓴 설명이라, 접으면 읽을 사람도 검색 엔진도
+ * 본문으로 보지 않는다.
+ */
+function ExampleRationale({ example }: { readonly example: DocumentExample }) {
+  return (
+    <section className={PANEL} aria-labelledby="example-rationale-heading">
+      <h2 id="example-rationale-heading" className="section-title">
+        이 예시에서 바꾼 점
+      </h2>
+      <h3 className="mt-4 text-sm font-semibold text-foreground">누구를 위한 문서인지</h3>
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">{example.audience}</p>
+      <h3 className="mt-4 text-sm font-semibold text-foreground">바꾼 점 3가지</h3>
+      <ol className="mt-1 list-decimal space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
+        {example.rationale.map((point) => (
+          <li key={point}>{point}</li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/** 지금 보는 예시를 뺀 나머지로 가는 길. 목록 페이지를 거치지 않아도 옮겨 갈 수 있다. */
+function OtherExamples({ currentId }: { readonly currentId: string }) {
+  return (
+    <section aria-labelledby="other-examples-heading">
+      <h2 id="other-examples-heading" className="section-title">
+        다른 예시
+      </h2>
+      <ul className="mt-2 space-y-1 text-sm leading-6">
+        {DOCUMENT_EXAMPLES.filter((item) => item.id !== currentId).map((item) => (
+          <li key={item.id}>
+            <a
+              href={examplePath(item)}
+              className={`inline-flex min-h-11 items-center ${TEXT_LINK}`}
+            >
+              {`${item.category} 쉬운 글 예시: ${item.title}`}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

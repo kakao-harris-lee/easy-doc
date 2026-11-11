@@ -18,9 +18,11 @@ import { StaticRouter } from 'react-router-dom'
 import { Footer } from '../components/Footer'
 import { CONTAINER } from '../components/layoutStyles'
 import { COMPANY_INFO } from '../config/company'
+import { GUIDE_LEAD } from '../content/guide/userGuide'
 import {
   GUIDE_DESCRIPTION,
   GUIDE_PAGE_TITLE,
+  LANDING_META_DESCRIPTION,
   SERVICE_DEFINITION,
   SERVICE_PAGE_TITLE,
 } from '../content/identity'
@@ -33,12 +35,16 @@ import {
   EXAMPLES_DESCRIPTION,
   EXAMPLES_PATH,
   EXAMPLES_TITLE,
+  exampleDescription,
   examplePath,
 } from '../content/documentExamples'
 import { GUIDE_PATH, HOME_PATH } from '../routes/paths'
 import {
   CANONICAL_URL,
   GUIDE_CANONICAL_URL,
+  SITE_ORIGIN,
+  buildBreadcrumbJsonLd,
+  buildExampleArticleJsonLd,
   buildLandingHtml,
   buildLandingJsonLd,
   buildSitemap,
@@ -58,6 +64,12 @@ export function renderLandingMarkup(): string {
 
 /** JSON-LD `Organization.name`. 푸터가 쓰는 사업자 상호와 같은 출처다. */
 export const ORGANIZATION_NAME = COMPANY_INFO.name
+
+/** 두 단계는 모든 예시 경로가 공유한다. 상세 페이지는 여기에 자기 제목만 더한다. */
+const EXAMPLES_BREADCRUMB = [
+  { name: '홈', url: CANONICAL_URL },
+  { name: '쉬운 글 예시', url: `${SITE_ORIGIN}${EXAMPLES_PATH}` },
+] as const
 
 export interface LandingArtifacts {
   readonly landingHtml: string
@@ -87,20 +99,39 @@ export function buildLandingArtifacts({
       title: EXAMPLES_TITLE,
       description: EXAMPLES_DESCRIPTION,
       element: <ExamplesPage />,
+      jsonLd: [buildBreadcrumbJsonLd(EXAMPLES_BREADCRUMB)],
     },
-    ...DOCUMENT_EXAMPLES.map((example) => ({
-      path: examplePath(example),
-      filename: `examples/${example.id}.html`,
-      title: `${example.category} 쉬운 글 예시: ${example.title} | EASY-DOC AI`,
-      description: `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`,
-      element: <DocumentExampleArticle example={example} />,
-    })),
+    ...DOCUMENT_EXAMPLES.map((example) => {
+      const url = `${SITE_ORIGIN}${examplePath(example)}`
+      // 상세 페이지 머리말과 같은 문장이다 — 본문에 없는 설명을 메타에만 싣지 않는다.
+      const description = exampleDescription(example)
+      return {
+        path: examplePath(example),
+        filename: `examples/${example.id}.html`,
+        title: `${example.category} 쉬운 글 예시: ${example.title} | EASY-DOC AI`,
+        description,
+        element: <DocumentExampleArticle example={example} />,
+        jsonLd: [
+          buildExampleArticleJsonLd({
+            organizationName: ORGANIZATION_NAME,
+            // h1과 같은 문장이다 — 구조화 데이터가 화면에 없는 제목을 주장하지 않는다.
+            headline: example.title,
+            description,
+            url,
+            datePublished: example.datePublished,
+            dateModified: example.dateModified,
+          }),
+          buildBreadcrumbJsonLd([...EXAMPLES_BREADCRUMB, { name: example.title, url }]),
+        ],
+      }
+    }),
   ]
   return {
     landingHtml: buildLandingHtml({
       template,
       markup: renderLandingMarkup(),
       description: SERVICE_DEFINITION,
+      metaDescription: LANDING_META_DESCRIPTION,
       title: SERVICE_PAGE_TITLE,
       canonicalUrl: CANONICAL_URL,
       jsonLd: buildLandingJsonLd({ organizationName: ORGANIZATION_NAME }),
@@ -115,7 +146,9 @@ export function buildLandingArtifacts({
           <Footer />
         </StaticRouter>,
       ),
-      description: GUIDE_DESCRIPTION,
+      // 본문 검사는 가이드 문서의 첫 문장이 받는다 — 검색용 설명문은 메타에만 쓴다.
+      description: GUIDE_LEAD,
+      metaDescription: GUIDE_DESCRIPTION,
       title: GUIDE_PAGE_TITLE,
       canonicalUrl: GUIDE_CANONICAL_URL,
       jsonLd: [],
@@ -132,8 +165,8 @@ export function buildLandingArtifacts({
         ),
         description: page.description,
         title: page.title,
-        canonicalUrl: `https://easydoc.kr${page.path}`,
-        jsonLd: [],
+        canonicalUrl: `${SITE_ORIGIN}${page.path}`,
+        jsonLd: page.jsonLd,
       }),
     })),
     exampleFiles: DOCUMENT_EXAMPLES.map((example) => ({
@@ -142,7 +175,7 @@ export function buildLandingArtifacts({
     })),
     sitemapXml: buildSitemap(
       seoulDateString(now),
-      publicExamples.map((page) => `https://easydoc.kr${page.path}`),
+      publicExamples.map((page) => `${SITE_ORIGIN}${page.path}`),
     ),
   }
 }

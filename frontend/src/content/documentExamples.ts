@@ -9,11 +9,26 @@ export interface DocumentExample {
   readonly changes: readonly string[]
   readonly checkPoints: readonly string[]
   readonly editing: { readonly before: string; readonly after: string; readonly reason: string }
+  /** 이 문서를 실제로 읽는 사람. 상세 페이지의 「이 예시에서 바꾼 점」 첫 단락이다. */
+  readonly audience: string
+  /** 원문과 쉬운 글에 실제로 있는 표현을 근거로 든 변경 세 가지. */
+  readonly rationale: readonly string[]
+  /** 예시를 처음 실은 날짜(`YYYY-MM-DD`). 구조화 데이터의 `datePublished`다. */
+  readonly datePublished: string
+  /**
+   * 예시 문구를 마지막으로 고친 날짜(`YYYY-MM-DD`). 구조화 데이터의 `dateModified`다 —
+   * 빌드 시각을 쓰면 내용이 그대로인데도 배포마다 날짜가 움직인다. 예시 문구를 고칠
+   * 때 `dateModified`만 올린다.
+   */
+  readonly dateModified: string
 }
 
 export const EXAMPLES_PATH = '/examples'
 export const EXAMPLES_TITLE = '쉬운 글 예시: 가정통신문·고객 안내문·제품 설명 | EASY-DOC AI'
 export const EXAMPLES_DESCRIPTION = '가정통신문·고객 안내문·제품 설명을 비교해 보세요.'
+/** 목록 화면에서 어떤 문서를 다루는지 알려 주는 소개. */
+export const EXAMPLES_INTRO =
+  '학교 가정통신문, 고객 안내문, 제품 설명서를 원문과 쉬운 글로 나란히 놓고 비교할 수 있습니다. 예시마다 어떤 표현을 왜 바꿨는지와 공유하기 전에 확인할 내용을 함께 적었습니다.'
 export const EXAMPLE_NOTICE =
   'AI가 만든 가상 예시입니다. 실제 서비스 변환·사람의 검수 결과가 아닙니다.'
 
@@ -56,6 +71,15 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       after: '신청한 학생이 20명이 되면, 11월 10일 오후 6시 전에도 신청을 마칠 수 있습니다.',
       reason: '신청 기간을 원문의 날짜·시간으로 명확하게 썼습니다.',
     },
+    audience:
+      '이 가정통신문을 받는 사람은 3~4학년 학생의 보호자입니다. 신청서를 보내고, 준비물을 챙기고, 행사가 끝난 뒤 학생을 데려가는 일을 모두 보호자가 합니다. 가정통신문을 쉬운 말로 바꿀 때는 보호자가 언제까지 무엇을 해야 하는지가 먼저 읽혀야 합니다.',
+    rationale: [
+      '원문의 ‘지참하여 주시기 바랍니다’를 ‘가져오세요’로, ‘제출하여 주시기 바랍니다’를 ‘보내 주세요’로 바꿨습니다. 보호자가 할 행동을 짧은 동사 하나로 읽게 했습니다.',
+      '원문은 한 문단에 행사 목적·날짜·대상·신청 기한을 함께 담았습니다. 쉬운 글은 ‘신청 방법’, ‘준비할 것’, ‘취소와 귀가’로 제목을 나눠 지금 필요한 칸만 찾아 읽을 수 있게 했습니다.',
+      '원문의 ‘모집 인원 충족 시 기한 이전에 접수가 종료될 수 있습니다’는 몇 명이 모여야 끝나는지 앞 문장으로 돌아가야 알 수 있습니다. 쉬운 글은 ‘20명이 모이면 신청 기간이 끝나기 전에 접수를 마칠 수 있습니다’로 인원을 그 자리에 적었습니다.',
+    ],
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
   {
     id: 'customer-notice',
@@ -99,6 +123,15 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       after: '점검이 끝나는 시간이 바뀌면, 서비스 첫 화면의 공지에서 알려 드립니다.',
       reason: '어떤 시간인지 구체적으로 썼습니다.',
     },
+    audience:
+      '이 안내문을 받는 사람은 온라인으로 예약을 해 둔 고객입니다. 고객이 알고 싶은 것은 점검 시간에 자기 예약이 어떻게 되는지, 그리고 예약을 바꾸거나 취소하려면 언제 해야 하는지입니다. 고객 안내문 쉬운 글은 이 두 가지를 먼저 답합니다.',
+    rationale: [
+      '원문의 ‘변경·취소 기능 이용이 제한됩니다’를 ‘점검 중에 할 수 없는 일’ 제목 아래 ‘새로 예약하거나, 기존 예약을 바꾸거나 취소할 수 없습니다’로 풀었습니다. ‘제한’ 한 낱말에 묶여 있던 세 가지 일을 각각 적었습니다.',
+      '원문은 ‘단, 예약 내역 조회는 정상적으로 이용하실 수 있습니다’를 못 하는 일 뒤에 붙였습니다. 쉬운 글은 ‘점검 중에도 할 수 있는 일’을 따로 묶어 예약 조회와 기존 예약 유지를 한곳에서 읽게 했습니다.',
+      '원문의 ‘점검 종료 시각은 작업 상황에 따라 변경될 수 있으며’로 시작하는 긴 문장을 두 문장으로 끊었습니다. 시간이 바뀔 수 있다는 사실과 바뀌면 어디서 알려 주는지를 따로 읽게 했습니다.',
+    ],
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
   {
     id: 'product-guide',
@@ -147,11 +180,28 @@ export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
       after: '멈춘 상태에서 ‘시작’ 버튼을 한 번 더 누르면, 남은 시간부터 다시 작동합니다.',
       reason: '버튼 이름과 누르는 시점을 밝혔습니다.',
     },
+    audience:
+      '이 설명서를 읽는 사람은 타이머를 막 꺼내 버튼을 눌러 보려는 사용자입니다. 설명서를 펼친 목적은 지금 누를 버튼 하나를 찾는 것입니다. 제품 설명서를 쉬운 표현으로 바꿀 때는 문장 순서가 손이 움직이는 순서와 같아야 합니다.',
+    rationale: [
+      '원문의 ‘시간이 경과하면’, ‘작동을 재개합니다’, ‘설정을 초기화하려면’을 각각 ‘시간이 지나면’, ‘다시 작동합니다’, ‘설정한 시간을 0분으로 바꾸기’로 바꿨습니다. 초기화는 이름보다 결과를 적는 편이 손에 잡힙니다.',
+      '원문은 시간 설정·시작·일시 정지를 한 문단씩 이어 붙였습니다. 쉬운 글은 ‘1. 시간을 정하세요’부터 ‘4. 알림을 끄세요’까지 번호를 붙여 사용자가 지금 몇 번째 단계에 있는지 알 수 있게 했습니다.',
+      '원문의 ‘같은 버튼을 한 번 더 누르면’은 앞 문장으로 돌아가야 어떤 버튼인지 알 수 있습니다. 쉬운 글은 멈추는 단계에서 ‘시작’ 버튼이라고 이름을 적었고, 편집 제안은 ‘멈춘 상태에서 ‘시작’ 버튼을 한 번 더 누르면’으로 누르는 시점까지 밝혔습니다.',
+    ],
+    datePublished: '2026-10-21',
+    dateModified: '2026-10-21',
   },
 ]
 
 export function examplePath(example: DocumentExample): string {
   return `${EXAMPLES_PATH}/${example.id}`
+}
+
+/**
+ * 상세 페이지의 머리말 문장. description 계열 메타와 `Article.description`도 이 값을
+ * 쓴다 — 한 출처에서 읽어 화면에 없는 설명을 검색 결과에만 주장하지 않는다.
+ */
+export function exampleDescription(example: DocumentExample): string {
+  return `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`
 }
 
 export function findDocumentExample(id: string | undefined): DocumentExample | undefined {

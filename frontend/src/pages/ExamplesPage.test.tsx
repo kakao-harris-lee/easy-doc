@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
-import { DOCUMENT_EXAMPLES, EXAMPLE_NOTICE, examplePath } from '../content/documentExamples'
+import {
+  DOCUMENT_EXAMPLES,
+  EXAMPLE_NOTICE,
+  EXAMPLES_INTRO,
+  exampleDescription,
+  examplePath,
+} from '../content/documentExamples'
 import { DocumentExamplePage, ExamplesPage } from './ExamplesPage'
 
 describe('공개 문서 예시', () => {
@@ -11,6 +17,11 @@ describe('공개 문서 예시', () => {
     render(<ExamplesPage />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
     expect(screen.getByText(EXAMPLE_NOTICE)).toBeInTheDocument()
+    expect(screen.getByText(EXAMPLES_INTRO)).toBeVisible()
+    expect(screen.getByRole('link', { name: '내 문서를 쉬운 글로 바꿔 보기' })).toHaveAttribute(
+      'href',
+      '/',
+    )
     DOCUMENT_EXAMPLES.forEach((example) => {
       expect(screen.getByRole('link', { name: example.title })).toHaveAttribute(
         'href',
@@ -42,6 +53,8 @@ describe('공개 문서 예시', () => {
         </MemoryRouter>,
       )
       expect(screen.getByRole('heading', { level: 1, name: example.title })).toBeInTheDocument()
+      // 검색 결과 설명문과 같은 문장을 머리말에 보여 준다.
+      expect(screen.getByText(exampleDescription(example))).toBeVisible()
       expect(screen.getByText(EXAMPLE_NOTICE)).toBeVisible()
       expect(document.getElementById('example-simplified')).toHaveClass('bg-selection')
       expect(document.getElementById('example-original')).not.toHaveClass('bg-selection')
@@ -70,6 +83,34 @@ describe('공개 문서 예시', () => {
       ).toHaveTextContent(example.original.split('\n')[0] ?? '')
       await user.click(easyButton)
       expect(easyButton).toHaveAttribute('aria-pressed', 'true')
+    },
+  )
+
+  it.each(DOCUMENT_EXAMPLES)(
+    '$category 상세는 바꾼 점 설명과 다른 예시 링크를 펼치지 않고 보여준다',
+    (example) => {
+      render(
+        <MemoryRouter initialEntries={[examplePath(example)]}>
+          <Routes>
+            <Route path="/examples/:exampleId" element={<DocumentExamplePage />} />
+          </Routes>
+        </MemoryRouter>,
+      )
+      expect(screen.getByRole('heading', { level: 2, name: '이 예시에서 바꾼 점' })).toBeVisible()
+      expect(screen.getByText(example.audience)).toBeVisible()
+      example.rationale.forEach((point) => {
+        expect(screen.getByText(point)).toBeVisible()
+      })
+      DOCUMENT_EXAMPLES.filter((other) => other.id !== example.id).forEach((other) => {
+        expect(
+          screen.getByRole('link', { name: `${other.category} 쉬운 글 예시: ${other.title}` }),
+        ).toHaveAttribute('href', examplePath(other))
+      })
+      expect(screen.getByRole('link', { name: '모든 예시' })).toHaveAttribute('href', '/examples')
+      expect(screen.getByRole('link', { name: '내 문서를 쉬운 글로 바꿔 보기' })).toHaveAttribute(
+        'href',
+        '/',
+      )
     },
   )
 

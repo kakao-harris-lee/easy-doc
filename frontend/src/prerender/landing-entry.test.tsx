@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import { COMPANY_INFO } from '../config/company'
-import { GUIDE_PAGE_TITLE, SERVICE_DEFINITION, SERVICE_PAGE_TITLE } from '../content/identity'
+import {
+  GUIDE_DESCRIPTION,
+  GUIDE_PAGE_TITLE,
+  LANDING_META_DESCRIPTION,
+  SERVICE_DEFINITION,
+  SERVICE_PAGE_TITLE,
+} from '../content/identity'
+import { GUIDE_LEAD } from '../content/guide/userGuide'
 import { buildLandingArtifacts } from './landing-entry'
-import { DOCUMENT_EXAMPLES, EXAMPLE_NOTICE } from '../content/documentExamples'
+import {
+  DOCUMENT_EXAMPLES,
+  EXAMPLE_NOTICE,
+  EXAMPLES_INTRO,
+  exampleDescription,
+  examplePath,
+} from '../content/documentExamples'
 
 /** Vite가 내보내는 `dist/index.html`의 모양을 줄인 템플릿. */
 const TEMPLATE = `<!doctype html>
@@ -35,17 +48,33 @@ function countOf(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1
 }
 
+/** 메타가 아니라 사람이 읽는 본문만 잘라 본다. */
+function bodyOf(html: string): string {
+  return html.slice(html.indexOf('<div id="root">'))
+}
+
+function parseJsonLd(html: string): Array<Record<string, unknown>> {
+  const payload = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1]
+  expect(payload).toBeDefined()
+  const parsed: unknown = JSON.parse((payload ?? '').replace(/\\u003c/g, '<'))
+  expect(Array.isArray(parsed)).toBe(true)
+  return parsed as Array<Record<string, unknown>>
+}
+
 describe('buildLandingArtifacts', () => {
   const artifacts = buildLandingArtifacts({
     template: TEMPLATE,
     now: new Date('2026-10-02T15:30:00Z'),
   })
 
-  it('서비스 정의 문장을 본문과 description 메타 세 곳에 함께 싣는다', () => {
+  it('description 메타 세 곳은 검색용 설명문이고 본문은 정체성 문장을 유지한다', () => {
     const head = artifacts.landingHtml.slice(0, artifacts.landingHtml.indexOf('</head>'))
-    const body = artifacts.landingHtml.slice(artifacts.landingHtml.indexOf('<div id="root">'))
+    const body = bodyOf(artifacts.landingHtml)
 
-    expect(countOf(head, `content="${SERVICE_DEFINITION}"`)).toBe(3)
+    expect(countOf(head, `content="${LANDING_META_DESCRIPTION}"`)).toBe(3)
+    // 검색용 설명문은 정체성 문장으로 시작한다 — 화면과 검색 결과의 첫 문장이 같다.
+    expect(LANDING_META_DESCRIPTION.startsWith(SERVICE_DEFINITION)).toBe(true)
+    expect(LANDING_META_DESCRIPTION).not.toContain('발달장애인')
     // 메타만 채우고 본문이 비면 색인해도 읽을 내용이 없다.
     expect(body).toContain(SERVICE_DEFINITION)
     expect(body).toContain('<h1')
@@ -80,6 +109,15 @@ describe('buildLandingArtifacts', () => {
     expect(countOf(artifacts.sitemapXml, '<loc>')).toBe(6)
   })
 
+  it('가이드의 검색용 설명문은 메타에만 쓰고 본문 검사는 가이드 첫 문장이 받는다', () => {
+    const head = artifacts.guideHtml.slice(0, artifacts.guideHtml.indexOf('</head>'))
+
+    expect(countOf(head, `content="${GUIDE_DESCRIPTION}"`)).toBe(3)
+    // 가이드 문구의 출처는 `user-guide.md` 하나다 — 그 첫 문장이 본문에 있어야 한다.
+    expect(GUIDE_LEAD).not.toBe('')
+    expect(bodyOf(artifacts.guideHtml)).toContain(GUIDE_LEAD)
+  })
+
   it('검색로봇도 회사 정보와 무료 체험 조건을 읽을 수 있다', () => {
     expect(artifacts.landingHtml).toContain('카드 등록 없이 체험 5크레딧')
     expect(artifacts.landingHtml).toContain('가입·휴대폰 인증')
@@ -112,6 +150,85 @@ describe('buildLandingArtifacts', () => {
     }
     expect(artifacts.sitemapXml).not.toContain('/login')
     expect(artifacts.sitemapXml).not.toContain('/example-files')
+  })
+
+  it('예시 상세는 Article과 BreadcrumbList 구조화 데이터를 싣는다', () => {
+    for (const example of DOCUMENT_EXAMPLES) {
+      const page = artifacts.examplePages.find(
+        (item) => item.filename === `examples/${example.id}.html`,
+      )
+      const nodes = parseJsonLd(page?.html ?? '')
+
+      expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'BreadcrumbList'])
+      expect(nodes[0]).toMatchObject({
+        headline: example.title,
+        description: exampleDescription(example),
+        inLanguage: 'ko',
+        url: `https://easydoc.kr/examples/${example.id}`,
+        image: 'https://easydoc.kr/og/landing.png',
+        datePublished: example.datePublished,
+        dateModified: example.dateModified,
+        isPartOf: { '@type': 'WebSite', url: 'https://easydoc.kr/' },
+        author: { '@type': 'Organization', name: COMPANY_INFO.name },
+        publisher: { '@type': 'Organization', name: COMPANY_INFO.name },
+      })
+      // 검색 결과 설명문은 화면에도 보이는 문장이다 — 메타만 채우지 않는다.
+      expect(bodyOf(page?.html ?? '')).toContain(exampleDescription(example))
+      expect(nodes[1]?.['itemListElement']).toEqual([
+        { '@type': 'ListItem', position: 1, name: '홈', item: 'https://easydoc.kr/' },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: '쉬운 글 예시',
+          item: 'https://easydoc.kr/examples',
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: example.title,
+          item: `https://easydoc.kr/examples/${example.id}`,
+        },
+      ])
+      // 뒷받침할 질문·답 본문이 없는 FAQPage는 넣지 않는다.
+      expect(page?.html).not.toContain('FAQPage')
+      expect(page?.html).not.toContain('SoftwareApplication')
+    }
+  })
+
+  it('예시 목록에는 BreadcrumbList만 싣고 어떤 문서를 다루는지 소개한다', () => {
+    const page = artifacts.examplePages.find((item) => item.filename === 'examples/index.html')
+    const nodes = parseJsonLd(page?.html ?? '')
+
+    expect(nodes.map((node) => node['@type'])).toEqual(['BreadcrumbList'])
+    expect(nodes[0]?.['itemListElement']).toEqual([
+      { '@type': 'ListItem', position: 1, name: '홈', item: 'https://easydoc.kr/' },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: '쉬운 글 예시',
+        item: 'https://easydoc.kr/examples',
+      },
+    ])
+    expect(page?.html).toContain(EXAMPLES_INTRO)
+  })
+
+  it('예시 상세 본문에 바꾼 점 설명과 다른 예시 링크를 함께 싣는다', () => {
+    for (const example of DOCUMENT_EXAMPLES) {
+      const page = artifacts.examplePages.find(
+        (item) => item.filename === `examples/${example.id}.html`,
+      )
+
+      // 접힌 details 안이 아니라 항상 보이는 본문이어야 색인에 쓸 분량이 된다.
+      expect(page?.html).toContain('이 예시에서 바꾼 점')
+      expect(page?.html).toContain(example.audience)
+      for (const point of example.rationale) {
+        expect(page?.html).toContain(point)
+      }
+      for (const other of DOCUMENT_EXAMPLES.filter((item) => item.id !== example.id)) {
+        expect(page?.html).toContain(`href="${examplePath(other)}"`)
+      }
+      expect(page?.html).toContain('내 문서를 쉬운 글로 바꿔 보기')
+    }
   })
 
   it('다운로드 원문에도 가상 자료 표시를 포함하고 원문을 그대로 보존한다', () => {
