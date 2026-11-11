@@ -99,50 +99,36 @@ internal object IllustrationSuggestionValidator {
      * **제안 단위 탈락**이다(언어는 그 제안 하나의 문제다).
      *
      * 판정은 네 필드를 통째로가 아니라 **항목 하나하나**에 적용한다(`scenes`·`preserved_facts`
-     * 는 배열이다). 항목이 아래 둘 중 하나에 걸리면 그 제안을 버린다.
+     * 는 배열이다). 항목이 아래 셋 중 하나에 걸리면 그 제안을 버린다.
      * - 일본어 가나가 섞여 있다([isKana]).
-     * - **글자**([Character.isLetter])가 하나라도 있는데 한글 음절(U+AC00~U+D7A3)이 없다.
-     *   로마자 낱말만 적은 항목(예: `LPG`)이 여기서 걸리고, 「LPG 차량 등록증을 준비하는
-     *   모습」처럼 한국어 문장에 섞인 로마자는 남는다.
+     * - **센 글자** 중 한글 글자([isCountedHangul])의 비율이
+     *   [MIN_HANGUL_LETTER_RATIO_DENOMINATOR] 분의 1 에 못 미친다. 한글 한 자만 섞인
+     *   영문·중문 항목이 여기서 걸리고, 「LPG 차량 등록증을 준비하는 모습」처럼 한국어 문장에
+     *   섞인 로마자는 남는다.
+     * - **글자가 하나라도 있는데**([isCountedLetter]) 센 한글이 하나도 없다. 비율만 보면
+     *   `Show the bus stop map` 처럼 4자 이하 로마자 낱말로만 쓴 영문이 센 글자 0 개로
+     *   통과한다(#215) — 아래 제외는 비율의 분모에서만 빼고 이 조건에서는 글자로 센다.
+     *
+     * 비율을 재기 전에 **두 가지를 글자 수에서 뺀다**(#215). 둘 다 한국어 공문서가 그대로
+     * 인용하는 값이라 세면 멀쩡한 항목이 로마자 쪽으로 기울어 사라진다.
+     * - URL·이메일 구간([LINK])을 지운다. 「복지로 누리집 www.bokjiro.go.kr」·
+     *   「문의: help@korea.kr」의 로마자는 글이 아니라 주소다.
+     * - 로마자 낱말([isLatinLetter] 의 최대 연속 구간) 중 길이가
+     *   [MAX_ACRONYM_LATIN_LETTERS] 이하인 것을 세지 않는다 — `PC`·`LH`·`kg`·`kWh`·`KTX`·
+     *   `SRT`·`SMS`·`e-mail` 의 `mail` 처럼 약어·단위다. 더 긴 로마자 낱말은 전부 센다.
+     *   로마자 아닌 글자(한자 포함)는 모두 센다.
      *
      * **글자가 하나도 없는 항목은 통과시킨다** — 숫자·날짜·기호·공백뿐인 값(예: `2026. 3. 15.`·
-     * `02-123-4567`·`50%`)이다. `preserved_facts` 는 원문의 숫자·날짜를 그대로 옮긴 값이 정상인
-     * 자리라, 모든 항목에 한글을 요구하면 멀쩡한 제안이 통째로 사라진다. `reason` 과
-     * `alt_text_draft` 는 문장이라 늘 글자를 포함하므로 여전히 한글이 있어야 한다.
+     * `02-123-4567`·`50%`)과 [LINK] 를 지우면 글자가 남지 않는 값(예: `www.bokjiro.go.kr`
+     * 뿐인 항목)이다. `preserved_facts` 는 원문의 숫자·날짜·연락처·주소를 그대로 옮긴 값이
+     * 정상인 자리라, 그런 항목까지 버리면 멀쩡한 제안이 통째로 사라진다. 반대로 `LPG` 처럼
+     * 로마자 약어뿐인 항목은 글자가 있는 항목이라 한글이 없으면 버린다.
      *
      * 한글 음절 판정 전에 각 항목을 NFC 로 정규화한다. 자모로 분해된(NFD) 한국어는 음절
      * 구간에 들어오지 않아 한글이 없는 글로 보인다.
      */
     private fun isKoreanUserVisibleText(draft: IllustrationSuggestionDraft): Boolean =
         (listOf(draft.reason, draft.altTextDraft) + draft.scenes + draft.preservedFacts).all(::isKorean)
-
-    private fun isKorean(text: String): Boolean {
-        val codePoints = Normalizer.normalize(text, Normalizer.Form.NFC).codePoints().toArray()
-        if (codePoints.any(::isKana)) return false
-        return codePoints.none { Character.isLetter(it) } || codePoints.any { it in HANGUL_SYLLABLES }
-    }
-
-    private fun isKana(code: Int): Boolean = KANA_RANGES.any { code in it } && code !in KANA_PUNCTUATION
-
-    /** 한글 음절 U+AC00~U+D7A3. 글자가 아니라 코드 포인트로 비교해 가독성을 지킨다. */
-    private val HANGUL_SYLLABLES = 0xAC00..0xD7A3
-
-    /**
-     * 일본어 가나 구간 — 히라가나 U+3040~U+309F 와 가타카나 U+30A0~U+30FF 는 맞붙은 한 구간이고,
-     * 가타카나 음성 확장(U+31F0~U+31FF)과 반각 가타카나(U+FF66~U+FF9D)가 따로 떨어져 있다.
-     * 떨어진 두 구간도 함께 보는 이유는 「ｼﾝｾｲ 신청」처럼 한글과 섞여 오면 위 글자 규칙만으로는
-     * 걸리지 않기 때문이다.
-     */
-    private val KANA_RANGES = listOf(0x3040..0x30FF, 0x31F0..0x31FF, 0xFF66..0xFF9D)
-
-    /**
-     * 가나 구간에 있지만 일본어로 보지 않는 `・`(U+30FB)·`ー`(U+30FC).
-     *
-     * 한국어 공문서가 가운뎃점(`·`)이나 줄표(`—`) 자리에 **잘못 가져다 쓰는** 글자다(예:
-     * 「수집・이용」). 한국어에 이런 장음 부호가 있어서가 아니라, 오용이 흔해서 버리면 멀쩡한
-     * 제안이 사라지기 때문에 빼 둔다.
-     */
-    private val KANA_PUNCTUATION = setOf(0x30FB, 0x30FC)
 
     /**
      * 앵커가 원문과 맞고, 그림으로 그릴 내용에 **근거에 없는 사실**이 없는가.
@@ -171,6 +157,127 @@ internal object IllustrationSuggestionValidator {
 
     private val ORDINAL_BEON = Regex("번(?=\\s*째)")
 }
+
+// 언어 판정의 글자 세기는 제안 초안을 모르는 **글 하나의 규칙**이라 검증기 바깥에 둔다.
+// 위 [IllustrationSuggestionValidator.isKoreanUserVisibleText] 가 네 필드의 항목마다 호출한다.
+
+private fun isKorean(text: String): Boolean {
+    val codePoints = Normalizer.normalize(LINK.replace(text, " "), Normalizer.Form.NFC).codePoints().toArray()
+    var letters = 0
+    var hangul = 0
+    var latinRun = 0
+    var anyLetter = false
+    for (code in codePoints) {
+        if (isKana(code)) return false
+        anyLetter = anyLetter || isCountedLetter(code)
+        if (isLatinLetter(code)) {
+            latinRun++
+        } else {
+            // 로마자 아닌 코드 포인트에서 낱말이 끝난다 — 끝난 낱말의 몫만 글자 수에 더한다.
+            letters += countedLatinLetters(latinRun)
+            latinRun = 0
+            if (isCountedLetter(code)) letters++
+            if (isCountedHangul(code)) hangul++
+        }
+    }
+    letters += countedLatinLetters(latinRun)
+    // 글자가 있는 항목에는 한글이 한 자는 있어야 한다 — 비율은 센 글자가 0 이면 `0 >= 0` 으로
+    // 통과하므로 약어뿐인 영문을 비율만으로는 걸러내지 못한다. 글자가 아예 없는 항목(숫자·
+    // 기호·주소뿐인 값)은 두 조건을 모두 통과한다.
+    return (hangul > 0 || !anyLetter) && MIN_HANGUL_LETTER_RATIO_DENOMINATOR * hangul >= letters
+}
+
+/** 로마자 낱말 하나가 글자 수에 더하는 몫 — 약어·단위 길이면 0 이다. */
+private fun countedLatinLetters(latinRun: Int): Int = if (latinRun > MAX_ACRONYM_LATIN_LETTERS) latinRun else 0
+
+private fun isKana(code: Int): Boolean = KANA_RANGES.any { code in it } && code !in KANA_PUNCTUATION
+
+private fun isLatinLetter(code: Int): Boolean =
+    Character.isLetter(code) && Character.UnicodeScript.of(code) == Character.UnicodeScript.LATIN
+
+/** 비율의 분모에 드는 글자인가 — 글자 모양이 없는 한글 채움 문자([HANGUL_FILLERS])는 뺀다. */
+private fun isCountedLetter(code: Int): Boolean = Character.isLetter(code) && code !in HANGUL_FILLERS
+
+/** 비율의 분자에 드는 한글인가. [isCountedLetter] 의 부분집합이어야 비율이 1 을 넘지 않는다. */
+private fun isCountedHangul(code: Int): Boolean = isCountedLetter(code) && HANGUL_LETTER_RANGES.any { code in it }
+
+/**
+ * 한글 글자 하한 비율 1/2 의 분모 — `2 * hangul >= letters` 가 `hangul / letters >= 0.5` 다.
+ * 부동소수점 비교를 피하려고 분모만 상수로 둔다.
+ *
+ * 계약과 함께 고정되는 **검증기 불변식**이라 운영 구성값이 아니다. 운영자가 올리거나
+ * 내릴 값이 아니고, 바뀌면 저장된 제안의 판정이 달라진다.
+ *
+ * 하한을 0.5 로 잡은 근거는 P0-1 1·2·3차 평가의 실측이다. 그 세 번에서 유효 판정을 받은
+ * 사용자 노출 필드 598 개의 한글 비율 최저값이 0.88 이었다(예: 「두 경우 모두 복지용 쌀
+ * 10kg 1포 기준이다.」·「…전기·도시가스·지역난방·등유·연탄·LPG다.」). 탈락한 유일한
+ * 필드는 0.00 — 일본어로 돌아온 `reason` 하나다. 0.5 는 그 0.88 과 0.00 사이에 넉넉히
+ * 들어간다. 원문이 로마자로 쓰는 낱말은 비율이 아니라 [MAX_ACRONYM_LATIN_LETTERS] 와
+ * [LINK] 가 지킨다 — 비율만으로는 짧은 항목이 약어 한둘에 뒤집힌다.
+ */
+private const val MIN_HANGUL_LETTER_RATIO_DENOMINATOR = 2
+
+/**
+ * 약어·단위로 보는 로마자 낱말의 최대 길이 — 이보다 짧거나 같은 낱말은 글자 수에서 뺀다.
+ *
+ * 역시 검증기 불변식이다. 4 는 P0-1 평가와 원문 표본에 나온 낱말의 길이다 — `PC`·`LH`·
+ * `kg`·`kWh`·`KTX`·`SRT`·`SMS` 와 `e-mail` 이 쪼개지는 `e`·`mail` 이 모두 4 자 이하이고,
+ * 버려야 하는 영문 문장의 낱말(`application`·`documents`·`illustration`)은 모두 그보다 길다.
+ */
+private const val MAX_ACRONYM_LATIN_LETTERS = 4
+
+/**
+ * URL·이메일 구간. 글자 수를 재기 전에 공백으로 바꿔 주소의 로마자를 글에서 뺀다.
+ *
+ * `core.easyread` 의 사실 추출도 같은 모양을 쓰지만(`FactKind.EMAIL_OR_URL` 의 패턴) 그
+ * 정규식은 비공개 `PATTERNS` 목록 안에 익명으로 들어 있어 이름으로 참조할 수 없다. 사실
+ * 추출의 내부 구조를 공개 경계로 끌어올리는 대신 여기에 따로 둔다 — 쓰임이 다르다(한쪽은
+ * 사실 비교 키, 이쪽은 글자 수 제외 구간).
+ *
+ * 주소 뒤에 공백 없이 한글이 붙으면(`www.example.kr에서`) 그 한글까지 지워진다. 한글과
+ * 로마자를 함께 빼므로 비율은 한쪽으로 기울지 않고, 항목 길이가 300 코드 포인트 이하라
+ * 되추적 비용도 상한이 있다.
+ */
+private val LINK = Regex("""https?://\S++|www\.\S++|[\w.+-]++@[\w-]++\.[\w.-]++""")
+
+/**
+ * 한글 글자 구간 — 음절 U+AC00~U+D7A3, 자모 U+1100~U+11FF, 호환 자모 U+3131~U+318E,
+ * 자모 확장-A U+A960~U+A97F, 확장-B U+D7B0~U+D7FF, 반각 U+FFA0~U+FFDC.
+ * 글자가 아니라 코드 포인트로 비교해 가독성을 지킨다.
+ *
+ * 음절만 세면 NFC 로 합쳐지지 않는 낱자(예: 「ㄱ」·초성만 남은 자모)가 한글이 아닌 글자로
+ * 세어져 비율이 로마자 쪽으로 기울기 때문에 자모 구간까지 함께 본다. 확장 자모와 반각
+ * 한글도 같은 이유로 넣는다 — 한글인데 빠지면 한국어 항목의 비율을 떨어뜨린다.
+ */
+private val HANGUL_LETTER_RANGES =
+    listOf(0xAC00..0xD7A3, 0x1100..0x11FF, 0x3131..0x318E, 0xA960..0xA97F, 0xD7B0..0xD7FF, 0xFFA0..0xFFDC)
+
+/**
+ * 한글 구간에 있지만 글자 모양이 없는 채움 문자 — 초성 U+115F, 중성 U+1160, 호환 U+3164,
+ * 반각 U+FFA0.
+ *
+ * 글자로도 한글로도 세지 않는다. 한글로 세면 영문에 이 문자를 덧대 비율을 넘길 수 있고
+ * (`Please check the application documents` + `ㅤ`), 글자로만 세면 거꾸로 멀쩡한 한국어
+ * 항목의 비율을 떨어뜨린다.
+ */
+private val HANGUL_FILLERS = setOf(0x115F, 0x1160, 0x3164, 0xFFA0)
+
+/**
+ * 일본어 가나 구간 — 히라가나 U+3040~U+309F 와 가타카나 U+30A0~U+30FF 는 맞붙은 한 구간이고,
+ * 가타카나 음성 확장(U+31F0~U+31FF)과 반각 가타카나(U+FF66~U+FF9D)가 따로 떨어져 있다.
+ * 떨어진 두 구간도 함께 보는 이유는 「ｼﾝｾｲ 신청」처럼 한글과 섞여 오면 위 글자 규칙만으로는
+ * 걸리지 않기 때문이다.
+ */
+private val KANA_RANGES = listOf(0x3040..0x30FF, 0x31F0..0x31FF, 0xFF66..0xFF9D)
+
+/**
+ * 가나 구간에 있지만 일본어로 보지 않는 `・`(U+30FB)·`ー`(U+30FC).
+ *
+ * 한국어 공문서가 가운뎃점(`·`)이나 줄표(`—`) 자리에 **잘못 가져다 쓰는** 글자다(예:
+ * 「수집・이용」). 한국어에 이런 장음 부호가 있어서가 아니라, 오용이 흔해서 버리면 멀쩡한
+ * 제안이 사라지기 때문에 빼 둔다.
+ */
+private val KANA_PUNCTUATION = setOf(0x30FB, 0x30FC)
 
 private fun IllustrationSuggestionDraft.withId(suggestionId: UUID): IllustrationSuggestion =
     IllustrationSuggestion(

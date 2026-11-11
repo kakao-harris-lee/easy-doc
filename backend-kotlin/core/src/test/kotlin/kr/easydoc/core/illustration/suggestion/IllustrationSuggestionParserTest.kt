@@ -54,7 +54,7 @@ class IllustrationSuggestionParserTest {
 
         val set = validSetOf(result)
         assertThat(set.schemaVersion).isEqualTo(1)
-        assertThat(set.analysisVersion).isEqualTo("r7-illustration-suggestion-4")
+        assertThat(set.analysisVersion).isEqualTo("r7-illustration-suggestion-5")
         assertThat(set.droppedCount).isZero()
         val suggestion = set.suggestions.single()
         assertThat(suggestion.suggestionId).isEqualTo(FIRST_ID)
@@ -305,7 +305,6 @@ class IllustrationSuggestionParserTest {
                 validJson.replace(reason, "申請の順番がわかりやすくなります"),
                 validJson.replace(reason, "It shows the order of the application."),
                 validJson.replace(reason, "신청 순서를 보여 줍니다ですね"),
-                validJson.replace(scene, "LPG"),
                 validJson.replace(fact, "申請書を準備します"),
                 validJson.replace(altTextDraft, "Application order illustration"),
             )
@@ -314,6 +313,93 @@ class IllustrationSuggestionParserTest {
             val set = validSetOf(analyze(json))
             assertThat(set.suggestions).describedAs(json).isEmpty()
             assertThat(set.droppedCount).describedAs(json).isEqualTo(1)
+        }
+    }
+
+    @Test
+    @DisplayName("글자가 있는데 한글이 없거나 과반이 아닌 항목은 reason·scenes·preserved_facts 어디에 있어도 버린다(#206·#215)")
+    fun `한글이 모자란 제안은 버려진다`() {
+        val scene = "신청서와 신분증을 준비하는 모습"
+        val fact = "서류를 준비한 뒤에 주민센터에 제출합니다"
+        val withoutEnoughHangul =
+            listOf(
+                "This illustration helps compare the two benefit paths 비교",
+                "兩種補助的申請途徑不同 신청",
+                "Please check the application documents 신청",
+                // 한글 채움 문자(U+3164)로 늘린 영문 — 채움 문자는 글자로도 한글로도 세지 않는다.
+                "Please check the application documents" + HANGUL_FILLER.repeat(40),
+                // 4자 이하 낱말뿐인 영문 — 센 글자는 0 이라 비율은 통과하지만 글자가 있으니 한글을 요구한다.
+                "Show the bus stop map",
+                // 로마자 약어뿐인 항목도 글자가 있는 항목이다 — 숫자·기호·주소뿐인 값과 다르다.
+                "LPG",
+            )
+
+        withoutEnoughHangul.forEach { text ->
+            // 위 항목에는 숫자·날짜가 없어 원문 대조로는 걸리지 않는다 — 탈락 이유는 언어다.
+            listOf(reason, scene, fact).forEach { slot ->
+                val set = validSetOf(analyze(validJson.replace(slot, text)))
+
+                assertThat(set.suggestions).describedAs("%s / %s", slot, text).isEmpty()
+                assertThat(set.droppedCount).describedAs("%s / %s", slot, text).isEqualTo(1)
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("한국어 문장에 섞인 원문 로마자(kg·PC·LH)는 비율 하한에 걸리지 않는다")
+    fun `로마자가 섞인 한국어 제안은 남는다`() {
+        val korean =
+            listOf(
+                "두 경우 모두 복지용 쌀 10kg 1포 기준이다.",
+                "복지로 웹사이트(PC/모바일앱)에서도 ‘서비스 신청’을 할 수 있다.",
+                "LH 공공임대 신청",
+                // 한글 4 자(또는·신청)와 로마자 4 자(PC·LH) — 하한 0.5 바로 위에 있는 경계값이다.
+                "PC 또는 LH 신청",
+            )
+
+        korean.forEach { text ->
+            val set = validSetOf(analyze(validJson.replace(reason, text)))
+
+            assertThat(set.suggestions).describedAs(text).hasSize(1)
+            assertThat(set.droppedCount).describedAs(text).isZero()
+        }
+    }
+
+    @Test
+    @DisplayName("원문이 인용한 URL·이메일과 4자 이하 로마자 낱말은 장면·보존 사실에서도 남는다(#215)")
+    fun `링크와 약어가 섞인 한국어 항목은 남는다`() {
+        val source =
+            listOf(
+                "자세한 내용은 복지로 누리집 www.bokjiro.go.kr 에서 보고, 문의: help@korea.kr 로 합니다. " +
+                    "전기 요금은 kWh당 120원이고 KTX/SRT 앱 예매와 SMS·e-mail 안내를 제공합니다.",
+            )
+        val korean =
+            listOf(
+                "복지로 누리집 www.bokjiro.go.kr",
+                "kWh당 120원",
+                "문의: help@korea.kr",
+                "KTX/SRT 앱 예매",
+                "SMS·e-mail 안내",
+                // 주소뿐인 항목 — URL 구간을 지우면 글자가 하나도 없는 항목과 같다.
+                "www.bokjiro.go.kr",
+            )
+
+        korean.forEach { text ->
+            val slots =
+                listOf(
+                    example("relationship", "복지로 누리집", text, "신청 방법을 함께 보는 모습", "신청 안내 그림"),
+                    example("relationship", "복지로 누리집", "신청 방법을 함께 보는 모습", text, "신청 안내 그림"),
+                )
+
+            slots.forEach { draft ->
+                val set =
+                    validSetOf(
+                        IllustrationSuggestionParser.parseAndValidate(jsonWith(draft), source, listOf("합성 본문")),
+                    )
+
+                assertThat(set.suggestions).describedAs(draft).hasSize(1)
+                assertThat(set.droppedCount).describedAs(draft).isZero()
+            }
         }
     }
 
@@ -521,5 +607,8 @@ class IllustrationSuggestionParserTest {
     private companion object {
         val FIRST_ID: UUID = UUID.fromString("11111111-1111-4111-8111-111111111111")
         val SECOND_ID: UUID = UUID.fromString("22222222-2222-4222-8222-222222222222")
+
+        /** `ㅤ` — 한글 호환 자모 구간에 있지만 글자가 아닌 채움 문자(U+3164). */
+        const val HANGUL_FILLER = "ㅤ"
     }
 }

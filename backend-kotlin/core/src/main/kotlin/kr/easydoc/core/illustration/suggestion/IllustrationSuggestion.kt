@@ -17,10 +17,13 @@ import java.util.UUID
  * 잇는다(명세 §4 `analysis_version`). LLM 출력이 아니라 **서버가 찍는 계약 고정값**이다.
  *
  * `LlmPrompt.forIllustrationSuggestions` 의 시스템 프롬프트 문구나 출력 스키마를 바꾸면 이
- * 값을 함께 올린다. 상수가 프롬프트가 아니라 제안 패키지에 있는 이유는 이 값을 읽는 쪽이
- * 검증기·저장이기 때문이다 — 도메인 규칙이 프롬프트 생성기에 의존하게 두지 않는다.
+ * 값을 함께 올린다. **검증기의 남김·버림 규칙이 바뀔 때도 올린다** — 같은 프롬프트 출력에서
+ * 다른 제안이 남으므로 이전 값으로 저장된 결과와 섞어 읽을 수 없다(`-5` 는 언어 판정이
+ * 주소·약어를 글자 수에서 빼게 된 #215 다). 상수가 프롬프트가 아니라 제안 패키지에 있는
+ * 이유는 이 값을 읽는 쪽이 검증기·저장이기 때문이다 — 도메인 규칙이 프롬프트 생성기에
+ * 의존하게 두지 않는다.
  */
-const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-4"
+const val ILLUSTRATION_SUGGESTION_ANALYSIS_VERSION: String = "r7-illustration-suggestion-5"
 
 /** 제안 한 건이 그림으로 설명하려는 것. 계약 wire 값과 1:1 이다(명세 §4). */
 enum class IllustrationSuggestionPurpose(val wireName: String) {
