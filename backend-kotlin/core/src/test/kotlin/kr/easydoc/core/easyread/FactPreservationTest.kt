@@ -210,6 +210,20 @@ class FactPreservationTest {
     }
 
     @Test
+    fun `닫는 쪽 연도 표지는 연도 하나로만 읽어 누락을 가리지 않는다`() {
+        // `’`(U+2019)·`&rsquo;` 는 인용을 열 수 없어 두 번째 읽기를 주지 않는다 — 상대 글의
+        // 무관한 두 자리 숫자가 바뀐 연도를 덮지 못한다.
+        assertThat(findMissingFacts("’26. 시행", "2025년 시행 서식 26")).isNotEmpty()
+        assertThat(findMissingFacts("’25. 하반기 추진 (붙임 25)", "2026년 하반기 추진 (붙임 25)")).isNotEmpty()
+        assertThat(findMissingFacts("’25년 근속", "25년 근속")).isNotEmpty()
+    }
+
+    @Test
+    fun `축약 연도 뒤의 프로젝트는 비율이 아니다`() {
+        assertThat(findMissingFacts("’25.10 프로젝트 착수", "2025년 10월 프로젝트 착수")).isEmpty()
+    }
+
+    @Test
     fun `표의 단위 없는 구분자 숫자에 원을 붙여도 같은 수치로 본다`() {
         assertThat(findMissingFacts("건강보험료 125,300", "건강보험료는 125,300원입니다.")).isEmpty()
         assertThat(findMissingFacts("125,300원", "125,300명")).isNotEmpty()

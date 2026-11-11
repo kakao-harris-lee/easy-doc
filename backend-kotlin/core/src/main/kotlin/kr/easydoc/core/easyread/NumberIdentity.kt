@@ -55,20 +55,6 @@ internal fun numberCompareKey(matchText: String): String {
     return if (value.isEmpty()) "" else "$value:$unit"
 }
 
-/**
- * 축약 연도 표지로 시작하는 NUMBER 매치의 **맨 숫자 읽기** 비교 키 — [ABBREVIATED_YEAR_PREFIX]
- * 의 표지만 떼고 [numberCompareKey] 를 그대로 적용한다(`‘10` → `10` 의 키, `‘10년` → `10년` 의
- * 키). 표지로 시작하지 않으면 `null` 이다.
- *
- * **펼침이 실제로 일어난 매치에만 적용한다** — 두 읽기를 함께 두는 이유와 그 맞바꾼 것은
- * [ExtractedFact.alternateCompareKey] 에 적었다.
- */
-internal fun plainNumberCompareKey(matchText: String): String? {
-    val prefix = ABBREVIATED_YEAR_PREFIX.find(matchText) ?: return null
-    val markerLength = prefix.value.length - prefix.groupValues[1].length
-    return numberCompareKey(matchText.substring(markerLength)).takeIf { it.isNotEmpty() }
-}
-
 /** `1.5%` 를 "15" 로 뭉개지 않도록 소수점을 보존해 [BigDecimal] 로 정규화한다(리뷰 HIGH-1). */
 internal fun percentCompareKey(matchText: String): String {
     val numeric = Regex("""\d++(?:\.\d++)?""").find(matchText.substringAfter("분의"))?.value ?: return ""
