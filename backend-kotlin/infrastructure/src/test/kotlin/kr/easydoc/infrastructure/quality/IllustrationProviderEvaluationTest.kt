@@ -19,6 +19,8 @@ import kr.easydoc.core.illustration.generation.IllustrationGenerationRequest
 import kr.easydoc.core.illustration.generation.MAX_GENERATION_FACTS
 import kr.easydoc.core.illustration.generation.MAX_GENERATION_SCENES
 import kr.easydoc.core.illustration.generation.buildIllustrationGenerationPrompt
+import kr.easydoc.core.illustration.generation.illustrationConfigurationRevision
+import kr.easydoc.core.illustration.generation.illustrationGenerationMetadata
 import kr.easydoc.core.illustration.generation.validateIllustrationGenerationConfiguration
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestion
 import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionAnalysis
@@ -485,7 +487,9 @@ private class IllustrationLaneDocumentRun(
         suggestions.suggestions
             .take(ILLUSTRATION_LANE_IMAGES_PER_DOCUMENT)
             .forEachIndexed { index, suggestion ->
-                if (!materials.stopRules.stopped) generateOne(documentId, index + 1, suggestion)
+                if (!materials.stopRules.stopped) {
+                    generateOne(documentId, index + 1, suggestion, suggestions.analysisVersion)
+                }
             }
     }
 
@@ -493,6 +497,7 @@ private class IllustrationLaneDocumentRun(
         documentId: String,
         index: Int,
         suggestion: IllustrationSuggestion,
+        analysisVersion: String,
     ) {
         val configuration =
             IllustrationGenerationConfiguration(
@@ -509,7 +514,7 @@ private class IllustrationLaneDocumentRun(
             record(IllustrationLaneLedgerRow(documentId, stepOf(index), "configuration_invalid"))
             return
         }
-        callImage(documentId, index, suggestion, configuration)
+        callImage(documentId, index, suggestion, configuration, analysisVersion)
     }
 
     private fun callImage(
@@ -517,8 +522,18 @@ private class IllustrationLaneDocumentRun(
         index: Int,
         suggestion: IllustrationSuggestion,
         configuration: IllustrationGenerationConfiguration,
+        analysisVersion: String,
     ) {
         val prompt = buildIllustrationGenerationPrompt(suggestion, configuration)
+        // 산출물은 제품이 저장하는 생성 입력과 같은 출처를 읽는다 — 프롬프트 개정도 구성 해시도
+        // 여기서 한 번 만든 메타데이터가 찍는다(이슈 #207 리뷰 ④).
+        val metadata =
+            illustrationGenerationMetadata(
+                suggestion,
+                analysisVersion,
+                configuration,
+                illustrationConfigurationRevision(configuration),
+            )
         val reservation = materials.budget.reserveImage()
         val startedAt = System.nanoTime()
         var generated: GeneratedIllustration? = null
@@ -546,7 +561,7 @@ private class IllustrationLaneDocumentRun(
         materials.artifacts.writeImageMetadata(
             documentId,
             index,
-            IllustrationLaneJson.image(suggestion, configuration, prompt),
+            IllustrationLaneJson.image(metadata, prompt),
         )
         record(
             IllustrationLaneLedgerRow(

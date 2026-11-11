@@ -295,7 +295,7 @@ class DocumentDeleteSettlementLockOrderTest {
             }
         val generationValues =
             if (table == GENERATION_JOBS) {
-                ", gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-3', '$FINGERPRINT'," +
+                ", gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-4', '$FINGERPRINT'," +
                     " '\\x03'::bytea, 'aes256gcm-v1', 1"
             } else {
                 ""

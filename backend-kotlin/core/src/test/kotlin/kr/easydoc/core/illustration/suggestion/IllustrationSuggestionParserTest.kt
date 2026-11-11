@@ -54,7 +54,7 @@ class IllustrationSuggestionParserTest {
 
         val set = validSetOf(result)
         assertThat(set.schemaVersion).isEqualTo(1)
-        assertThat(set.analysisVersion).isEqualTo("r7-illustration-suggestion-3")
+        assertThat(set.analysisVersion).isEqualTo("r7-illustration-suggestion-4")
         assertThat(set.droppedCount).isZero()
         val suggestion = set.suggestions.single()
         assertThat(suggestion.suggestionId).isEqualTo(FIRST_ID)
