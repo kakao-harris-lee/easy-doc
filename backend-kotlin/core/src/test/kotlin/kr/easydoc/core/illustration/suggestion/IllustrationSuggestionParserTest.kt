@@ -318,6 +318,43 @@ class IllustrationSuggestionParserTest {
     }
 
     @Test
+    @DisplayName("한글 음절이 섞여 있어도 글자 과반이 한글이 아니면 제안 단위로 버린다(#206)")
+    fun `한글 비율이 낮은 제안은 버려진다`() {
+        val belowRatio =
+            listOf(
+                "This illustration helps compare the two benefit paths 비교",
+                "兩種補助的申請途徑不同 신청",
+            )
+
+        belowRatio.forEach { text ->
+            val set = validSetOf(analyze(validJson.replace(reason, text)))
+
+            assertThat(set.suggestions).describedAs(text).isEmpty()
+            assertThat(set.droppedCount).describedAs(text).isEqualTo(1)
+        }
+    }
+
+    @Test
+    @DisplayName("한국어 문장에 섞인 원문 로마자(kg·PC·LH)는 비율 하한에 걸리지 않는다")
+    fun `로마자가 섞인 한국어 제안은 남는다`() {
+        val korean =
+            listOf(
+                "두 경우 모두 복지용 쌀 10kg 1포 기준이다.",
+                "복지로 웹사이트(PC/모바일앱)에서도 ‘서비스 신청’을 할 수 있다.",
+                "LH 공공임대 신청",
+                // 한글 4 자(또는·신청)와 로마자 4 자(PC·LH) — 하한 0.5 바로 위에 있는 경계값이다.
+                "PC 또는 LH 신청",
+            )
+
+        korean.forEach { text ->
+            val set = validSetOf(analyze(validJson.replace(reason, text)))
+
+            assertThat(set.suggestions).describedAs(text).hasSize(1)
+            assertThat(set.droppedCount).describedAs(text).isZero()
+        }
+    }
+
+    @Test
     @DisplayName("가나 구간에 있지만 한국어 공문서가 쓰는 구분점 `・`는 일본어가 아니다")
     fun `구분점이 섞인 한국어 제안은 남는다`() {
         val separated =

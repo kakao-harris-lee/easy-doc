@@ -101,9 +101,10 @@ internal object IllustrationSuggestionValidator {
      * 판정은 네 필드를 통째로가 아니라 **항목 하나하나**에 적용한다(`scenes`·`preserved_facts`
      * 는 배열이다). 항목이 아래 둘 중 하나에 걸리면 그 제안을 버린다.
      * - 일본어 가나가 섞여 있다([isKana]).
-     * - **글자**([Character.isLetter])가 하나라도 있는데 한글 음절(U+AC00~U+D7A3)이 없다.
-     *   로마자 낱말만 적은 항목(예: `LPG`)이 여기서 걸리고, 「LPG 차량 등록증을 준비하는
-     *   모습」처럼 한국어 문장에 섞인 로마자는 남는다.
+     * - **글자**([Character.isLetter]) 중 한글 글자([isHangulLetter])의 비율이
+     *   [MIN_HANGUL_LETTER_RATIO_DENOMINATOR] 분의 1 에 못 미친다. 로마자 낱말만 적은
+     *   항목(예: `LPG`)과 한글 한 자만 섞인 영문·중문 항목이 여기서 걸리고, 「LPG 차량
+     *   등록증을 준비하는 모습」처럼 한국어 문장에 섞인 로마자는 남는다.
      *
      * **글자가 하나도 없는 항목은 통과시킨다** — 숫자·날짜·기호·공백뿐인 값(예: `2026. 3. 15.`·
      * `02-123-4567`·`50%`)이다. `preserved_facts` 는 원문의 숫자·날짜를 그대로 옮긴 값이 정상인
@@ -119,13 +120,39 @@ internal object IllustrationSuggestionValidator {
     private fun isKorean(text: String): Boolean {
         val codePoints = Normalizer.normalize(text, Normalizer.Form.NFC).codePoints().toArray()
         if (codePoints.any(::isKana)) return false
-        return codePoints.none { Character.isLetter(it) } || codePoints.any { it in HANGUL_SYLLABLES }
+        val letters = codePoints.count { Character.isLetter(it) }
+        val hangul = codePoints.count(::isHangulLetter)
+        // 글자가 하나도 없는 항목은 `0 >= 0` 으로 통과한다 — 위 KDoc 의 숫자·기호뿐인 값이다.
+        return MIN_HANGUL_LETTER_RATIO_DENOMINATOR * hangul >= letters
     }
 
     private fun isKana(code: Int): Boolean = KANA_RANGES.any { code in it } && code !in KANA_PUNCTUATION
 
-    /** 한글 음절 U+AC00~U+D7A3. 글자가 아니라 코드 포인트로 비교해 가독성을 지킨다. */
-    private val HANGUL_SYLLABLES = 0xAC00..0xD7A3
+    private fun isHangulLetter(code: Int): Boolean = HANGUL_LETTER_RANGES.any { code in it }
+
+    /**
+     * 한글 글자 하한 비율 1/2 의 분모 — `2 * hangul >= letters` 가 `hangul / letters >= 0.5` 다.
+     * 부동소수점 비교를 피하려고 분모만 상수로 둔다.
+     *
+     * 계약과 함께 고정되는 **검증기 불변식**이라 운영 구성값이 아니다. 운영자가 올리거나
+     * 내릴 값이 아니고, 바뀌면 저장된 제안의 판정이 달라진다.
+     *
+     * 하한을 0.5 로 잡은 근거는 P0-1 1·2·3차 평가의 실측이다. 그 세 번에서 유효 판정을 받은
+     * 사용자 노출 필드 598 개의 한글 비율 최저값이 0.88 이었다(예: 「두 경우 모두 복지용 쌀
+     * 10kg 1포 기준이다.」·「…전기·도시가스·지역난방·등유·연탄·LPG다.」). 탈락한 유일한
+     * 필드는 0.00 — 일본어로 돌아온 `reason` 하나다. 0.5 는 그 0.88 과 0.00 사이에 넉넉히
+     * 들어가면서 `PC`·`LPG`·`kg`·`LH` 처럼 원문이 로마자로 쓰는 낱말을 지킨다.
+     */
+    private const val MIN_HANGUL_LETTER_RATIO_DENOMINATOR = 2
+
+    /**
+     * 한글 글자 구간 — 음절 U+AC00~U+D7A3, 호환 자모 U+3131~U+318E, 자모 U+1100~U+11FF.
+     * 글자가 아니라 코드 포인트로 비교해 가독성을 지킨다.
+     *
+     * 음절만 세면 NFC 로 합쳐지지 않는 낱자(예: 「ㄱ」·초성만 남은 자모)가 한글이 아닌 글자로
+     * 세어져 비율이 로마자 쪽으로 기울기 때문에 자모 구간까지 함께 본다.
+     */
+    private val HANGUL_LETTER_RANGES = listOf(0xAC00..0xD7A3, 0x3131..0x318E, 0x1100..0x11FF)
 
     /**
      * 일본어 가나 구간 — 히라가나 U+3040~U+309F 와 가타카나 U+30A0~U+30FF 는 맞붙은 한 구간이고,
