@@ -17,6 +17,11 @@ describe('간결한 이용 가이드', () => {
     expect(container.querySelectorAll('details[open]')).toHaveLength(0)
     expect(screen.getByRole('link', { name: '시작하기' })).toHaveAttribute('href', '/')
     expect(screen.getByRole('link', { name: '예시 보기' })).toHaveAttribute('href', '/examples')
+    // 버튼 라벨만으로는 검색 엔진이 링크 대상을 읽지 못해 설명이 있는 본문 링크를 함께 둔다.
+    expect(screen.getByRole('link', { name: '내 문서를 쉬운 글로 바꿔 보기' })).toHaveAttribute(
+      'href',
+      '/',
+    )
   })
 
   it('파일 도움말을 펼치면 기존 다운로드 형식과 제약을 확인할 수 있다', async () => {

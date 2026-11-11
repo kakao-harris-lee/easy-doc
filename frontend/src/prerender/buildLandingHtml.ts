@@ -27,8 +27,18 @@ export interface BuildLandingHtmlInput {
   readonly template: string
   /** `renderToStaticMarkup(<LandingPage/>)` 결과. */
   readonly markup: string
-  /** `SERVICE_DEFINITION`. description 계열 메타 세 개를 모두 이 문장으로 채운다. */
+  /**
+   * `SERVICE_DEFINITION`. 결과 HTML에 반드시 남아 있어야 하는 문장이다 —
+   * `metaDescription`을 주지 않으면 description 계열 메타도 이 문장으로 채운다.
+   */
   readonly description: string
+  /**
+   * description 계열 메타 세 개에만 쓰는 문장. 기본값은 `description`이다.
+   *
+   * 검색 결과 설명문은 화면 문장보다 길고 구체적일 수 있지만, 본문 검사 대상은
+   * 바뀌지 않는다 — 메타만 길게 채우고 본문이 비면 색인해도 읽을 내용이 없다.
+   */
+  readonly metaDescription?: string
   readonly title?: string
   readonly canonicalUrl: string
   readonly jsonLd: readonly JsonLdNode[]
@@ -40,6 +50,7 @@ const CANONICAL_LINK = /[ \t]*<link\b[^>]*rel="canonical"[^>]*>\n?/g
 const ROBOTS_META = /[ \t]*<meta\b[^>]*name="robots"[^>]*>\n?/g
 const CONTENT_ATTRIBUTE = /content="[^"]*"/
 const HEAD_CLOSE = /([ \t]*)<\/head>/
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /**
  * 랜딩에 싣는 구조화 데이터. `Organization`·`WebSite` 두 타입만 넣는다.
@@ -69,6 +80,83 @@ export function buildLandingJsonLd({
       inLanguage: 'ko',
     },
   ]
+}
+
+export interface ExampleArticleInput {
+  /** 푸터와 같은 출처(`COMPANY_INFO.name`)의 사업자 상호. */
+  readonly organizationName: string
+  /** 페이지의 h1과 같은 문장. */
+  readonly headline: string
+  readonly description: string
+  /** 페이지의 대표 주소(canonical). */
+  readonly url: string
+  /**
+   * 예시 내용이 정해진 날짜. 빌드 시각을 쓰지 않는다 — 내용이 그대로인데도
+   * 배포마다 `dateModified`가 움직이면 검색 엔진에 거짓 신호를 준다.
+   */
+  readonly publishedDate: string
+}
+
+/**
+ * 예시 상세 페이지의 `Article` 노드.
+ *
+ * 본문에 실제로 있는 것만 싣는다 — 질문·답 목록이 없으므로 `FAQPage`는 넣지 않고,
+ * 설치할 앱이 없으므로 `SoftwareApplication`도 넣지 않는다(`buildLandingJsonLd` 주석과
+ * 같은 규칙이다).
+ */
+export function buildExampleArticleJsonLd({
+  organizationName,
+  headline,
+  description,
+  url,
+  publishedDate,
+}: ExampleArticleInput): JsonLdNode {
+  if (!ISO_DATE.test(publishedDate)) {
+    throw new Error(`예시 날짜가 YYYY-MM-DD 형식이 아니다: ${publishedDate}`)
+  }
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline,
+    description,
+    inLanguage: 'ko',
+    url,
+    datePublished: publishedDate,
+    dateModified: publishedDate,
+    isPartOf: {
+      '@type': 'WebSite',
+      name: SERVICE_NAME,
+      url: CANONICAL_URL,
+    },
+    publisher: {
+      '@type': 'Organization',
+      name: organizationName,
+      url: CANONICAL_URL,
+      logo: ORGANIZATION_LOGO_URL,
+    },
+  }
+}
+
+export interface BreadcrumbItem {
+  readonly name: string
+  readonly url: string
+}
+
+/** 홈에서 현재 페이지까지의 경로를 `BreadcrumbList`로 싣는다. */
+export function buildBreadcrumbJsonLd(items: readonly BreadcrumbItem[]): JsonLdNode {
+  if (items.length === 0) {
+    throw new Error('breadcrumb 항목이 비어 있다')
+  }
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: items.map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: item.url,
+    })),
+  }
 }
 
 function escapeAttribute(value: string): string {
@@ -113,6 +201,7 @@ export function buildLandingHtml({
   template,
   markup,
   description,
+  metaDescription,
   title,
   canonicalUrl,
   jsonLd,
@@ -132,13 +221,14 @@ export function buildLandingHtml({
   }
   const indent = headClose[1] ?? ''
   const childIndent = `${indent}  `
+  const metaText = metaDescription ?? description
 
   // 마크업에 `$&` 같은 치환 패턴이 있어도 그대로 들어가도록 함수로 넘긴다.
   let html = template.replace(ROOT_PLACEHOLDER, () => `<div id="root">${markup}</div>`)
   html = html.replace(CANONICAL_LINK, '').replace(ROBOTS_META, '')
-  html = setMetaContent(html, 'name="description"', description)
-  html = setMetaContent(html, 'property="og:description"', description)
-  html = setMetaContent(html, 'name="twitter:description"', description)
+  html = setMetaContent(html, 'name="description"', metaText)
+  html = setMetaContent(html, 'property="og:description"', metaText)
+  html = setMetaContent(html, 'name="twitter:description"', metaText)
   if (title !== undefined) {
     if (!/<title>[^<]*<\/title>/.test(html)) {
       throw new Error('셸 템플릿에 title이 없다')
@@ -177,11 +267,9 @@ export function buildLandingHtml({
   return html
 }
 
-const LASTMOD_FORMAT = /^\d{4}-\d{2}-\d{2}$/
-
 /** 공개 페이지 주소만 검색 대상으로 전달한다. */
 export function buildSitemap(lastmod: string, additionalUrls: readonly string[] = []): string {
-  if (!LASTMOD_FORMAT.test(lastmod)) {
+  if (!ISO_DATE.test(lastmod)) {
     throw new Error(`sitemap lastmod가 YYYY-MM-DD 형식이 아니다: ${lastmod}`)
   }
   return [

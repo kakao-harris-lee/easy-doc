@@ -21,6 +21,7 @@ import { COMPANY_INFO } from '../config/company'
 import {
   GUIDE_DESCRIPTION,
   GUIDE_PAGE_TITLE,
+  LANDING_META_DESCRIPTION,
   SERVICE_DEFINITION,
   SERVICE_PAGE_TITLE,
 } from '../content/identity'
@@ -39,6 +40,8 @@ import { GUIDE_PATH, HOME_PATH } from '../routes/paths'
 import {
   CANONICAL_URL,
   GUIDE_CANONICAL_URL,
+  buildBreadcrumbJsonLd,
+  buildExampleArticleJsonLd,
   buildLandingHtml,
   buildLandingJsonLd,
   buildSitemap,
@@ -58,6 +61,12 @@ export function renderLandingMarkup(): string {
 
 /** JSON-LD `Organization.name`. 푸터가 쓰는 사업자 상호와 같은 출처다. */
 export const ORGANIZATION_NAME = COMPANY_INFO.name
+
+/** 두 단계는 모든 예시 경로가 공유한다. 상세 페이지는 여기에 자기 제목만 더한다. */
+const EXAMPLES_BREADCRUMB = [
+  { name: '홈', url: CANONICAL_URL },
+  { name: '쉬운 글 예시', url: `https://easydoc.kr${EXAMPLES_PATH}` },
+] as const
 
 export interface LandingArtifacts {
   readonly landingHtml: string
@@ -87,20 +96,37 @@ export function buildLandingArtifacts({
       title: EXAMPLES_TITLE,
       description: EXAMPLES_DESCRIPTION,
       element: <ExamplesPage />,
+      jsonLd: [buildBreadcrumbJsonLd(EXAMPLES_BREADCRUMB)],
     },
-    ...DOCUMENT_EXAMPLES.map((example) => ({
-      path: examplePath(example),
-      filename: `examples/${example.id}.html`,
-      title: `${example.category} 쉬운 글 예시: ${example.title} | EASY-DOC AI`,
-      description: `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`,
-      element: <DocumentExampleArticle example={example} />,
-    })),
+    ...DOCUMENT_EXAMPLES.map((example) => {
+      const url = `https://easydoc.kr${examplePath(example)}`
+      const description = `${example.summary} 원문과 쉬운 표현을 비교하는 가상 예시입니다.`
+      return {
+        path: examplePath(example),
+        filename: `examples/${example.id}.html`,
+        title: `${example.category} 쉬운 글 예시: ${example.title} | EASY-DOC AI`,
+        description,
+        element: <DocumentExampleArticle example={example} />,
+        jsonLd: [
+          buildExampleArticleJsonLd({
+            organizationName: ORGANIZATION_NAME,
+            // h1과 같은 문장이다 — 구조화 데이터가 화면에 없는 제목을 주장하지 않는다.
+            headline: example.title,
+            description,
+            url,
+            publishedDate: example.publishedDate,
+          }),
+          buildBreadcrumbJsonLd([...EXAMPLES_BREADCRUMB, { name: example.title, url }]),
+        ],
+      }
+    }),
   ]
   return {
     landingHtml: buildLandingHtml({
       template,
       markup: renderLandingMarkup(),
       description: SERVICE_DEFINITION,
+      metaDescription: LANDING_META_DESCRIPTION,
       title: SERVICE_PAGE_TITLE,
       canonicalUrl: CANONICAL_URL,
       jsonLd: buildLandingJsonLd({ organizationName: ORGANIZATION_NAME }),
@@ -133,7 +159,7 @@ export function buildLandingArtifacts({
         description: page.description,
         title: page.title,
         canonicalUrl: `https://easydoc.kr${page.path}`,
-        jsonLd: [],
+        jsonLd: page.jsonLd,
       }),
     })),
     exampleFiles: DOCUMENT_EXAMPLES.map((example) => ({

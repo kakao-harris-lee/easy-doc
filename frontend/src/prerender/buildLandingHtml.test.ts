@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { SERVICE_NAME } from '../content/identity'
 import {
   CANONICAL_URL,
+  ORGANIZATION_LOGO_URL,
+  buildBreadcrumbJsonLd,
+  buildExampleArticleJsonLd,
   buildLandingHtml,
   buildLandingJsonLd,
   buildSitemap,
@@ -106,6 +109,32 @@ describe('buildLandingHtml', () => {
     }
   })
 
+  it('metaDescription을 주면 description 메타 세 개는 그 문장으로 채운다', () => {
+    const META = '가정통신문·공공기관 안내문을 쉬운 말로 고칩니다.'
+
+    const html = build({
+      metaDescription: META,
+      markup: `<article><h1>제목</h1><p>${DESCRIPTION}</p></article>`,
+    })
+
+    for (const attribute of [
+      'name="description"',
+      'property="og:description"',
+      'name="twitter:description"',
+    ]) {
+      const tag = html.match(new RegExp(`<meta[^>]*${attribute}[^>]*>`))?.[0]
+      expect(tag).toBeDefined()
+      expect(tag).toContain(`content="${META}"`)
+    }
+    // 본문 검사 대상은 여전히 description(정체성 문장)이다 — 본문에 한 번만 남는다.
+    expect(countOf(html, DESCRIPTION)).toBe(1)
+  })
+
+  it('metaDescription만 채우고 본문에 description이 없으면 빌드를 실패시킨다', () => {
+    // 메타용 긴 문장으로 본문 검사를 우회하지 못하게 한다.
+    expect(() => build({ metaDescription: '검색 결과용 설명문' })).toThrow(/description/)
+  })
+
   it('JSON-LD 하나에 Organization과 WebSite를 담는다', () => {
     const html = build()
 
@@ -189,6 +218,77 @@ describe('buildLandingHtml', () => {
 
   it('빈 description이면 빌드를 실패시킨다', () => {
     expect(() => build({ description: '' })).toThrow(/description/)
+  })
+})
+
+describe('buildExampleArticleJsonLd', () => {
+  const ARTICLE = {
+    organizationName: '몬딱 솔루션',
+    headline: '학교 독서 행사 신청 안내',
+    description: '신청 기한·준비물·귀가 방법을 한눈에.',
+    url: 'https://easydoc.kr/examples/school-notice',
+    publishedDate: '2026-10-21',
+  } as const
+
+  it('예시 글을 Article로 싣고 날짜는 주어진 고정값을 쓴다', () => {
+    const node = buildExampleArticleJsonLd(ARTICLE)
+
+    expect(node).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: '학교 독서 행사 신청 안내',
+      description: '신청 기한·준비물·귀가 방법을 한눈에.',
+      inLanguage: 'ko',
+      url: 'https://easydoc.kr/examples/school-notice',
+      // 빌드 시각이 아니라 내용이 바뀐 날짜다 — 빌드마다 날짜가 움직이면 안 된다.
+      datePublished: '2026-10-21',
+      dateModified: '2026-10-21',
+      isPartOf: {
+        '@type': 'WebSite',
+        name: SERVICE_NAME,
+        url: CANONICAL_URL,
+      },
+      publisher: {
+        '@type': 'Organization',
+        name: '몬딱 솔루션',
+        url: CANONICAL_URL,
+        logo: ORGANIZATION_LOGO_URL,
+      },
+    })
+  })
+
+  it('YYYY-MM-DD가 아닌 날짜는 거부한다', () => {
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, publishedDate: '2026-10-2' })).toThrow(
+      /날짜/,
+    )
+    expect(() => buildExampleArticleJsonLd({ ...ARTICLE, publishedDate: '' })).toThrow(/날짜/)
+  })
+})
+
+describe('buildBreadcrumbJsonLd', () => {
+  it('주어진 순서대로 position을 매긴다', () => {
+    const node = buildBreadcrumbJsonLd([
+      { name: '홈', url: CANONICAL_URL },
+      { name: '쉬운 글 예시', url: 'https://easydoc.kr/examples' },
+    ])
+
+    expect(node).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: '홈', item: CANONICAL_URL },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: '쉬운 글 예시',
+          item: 'https://easydoc.kr/examples',
+        },
+      ],
+    })
+  })
+
+  it('빈 경로는 거부한다', () => {
+    expect(() => buildBreadcrumbJsonLd([])).toThrow(/breadcrumb/)
   })
 })
 
