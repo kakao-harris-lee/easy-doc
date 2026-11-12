@@ -140,9 +140,13 @@ class GeneratedIllustrationAssetService(
                     ?: throw NotFoundException(GENERATED_ILLUSTRATION_NOT_FOUND_MESSAGE)
             val input = asset.input()
             if (input.metadata.discarded) throw ConflictException(GENERATED_ILLUSTRATION_DISCARDED_MESSAGE)
-            if (context.contentRevision != expectedContentRevision ||
-                asset.basedOnContentRevision != context.contentRevision
-            ) {
+            if (context.contentRevision != expectedContentRevision) {
+                throw ConflictException(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
+            }
+            // stale 자산(생성 당시 본문 ≠ 현재 본문)의 대체텍스트 수정만 막는다. 지금 본문에
+            // 쓸 수 없는 후보를 목록에 영원히 남기지 않으려면 폐기는 열어 둬야 한다. 폐기를
+            // 겸한 수정 요청은 수정이 섞여 있으므로 그대로 거절된다.
+            if (altText != null && asset.basedOnContentRevision != context.contentRevision) {
                 throw ConflictException(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
             }
             if (shouldDiscard && asset.applied) throw ConflictException(GENERATED_ILLUSTRATION_APPLIED_DISCARD_MESSAGE)

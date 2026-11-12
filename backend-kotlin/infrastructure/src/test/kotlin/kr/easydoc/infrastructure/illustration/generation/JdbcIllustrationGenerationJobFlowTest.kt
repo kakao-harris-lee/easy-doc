@@ -399,7 +399,7 @@ class JdbcIllustrationGenerationJobFlowTest {
     }
 
     @Test
-    fun `자산 검토 수정은 metadata PNG와 revision을 CAS로 바꾸고 stale·적용 폐기를 거부한다`() {
+    fun `자산 검토 수정은 CAS로 바꾸고 stale 수정·적용 폐기는 막되 stale 미적용 폐기는 허용한다`() {
         val fixture = seed()
         val job = fixture.job()
         insertReserved(fixture, job)
@@ -437,6 +437,14 @@ class JdbcIllustrationGenerationJobFlowTest {
         assertThat(
             assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 3, metadata, png, discard = false),
         ).isFalse()
+        assertThat(assets.updateApplication(fixture.ownerId, fixture.conversionId, assetId, 2, 3, false)).isTrue()
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 4, metadata, png, discard = false),
+        ).isFalse()
+        assertThat(
+            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 4, metadata, png, discard = true),
+        ).isTrue()
+        assertThat(assets.findOwned(fixture.ownerId, fixture.conversionId, assetId)!!.assetRevision).isEqualTo(5)
         assertThat(count("generated_illustration_assets", "id", assetId)).isEqualTo(1)
         assertThat(count("credit_transactions", "illustration_generation_job_id", job.jobId, "release")).isZero()
     }

@@ -213,8 +213,8 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
               AND c.id = a.conversion_id AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
               AND c.content_revision = :expectedContentRevision
-              AND a.based_on_content_revision = :expectedContentRevision
               AND a.asset_revision = :expectedAssetRevision
+              AND (CAST(:discard AS boolean) = true OR a.based_on_content_revision = :expectedContentRevision)
               AND (CAST(:discard AS boolean) = false OR a.applied = false)
             """.trimIndent()
     }

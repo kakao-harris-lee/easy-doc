@@ -290,7 +290,7 @@ internal class RecordingGenerationAssets : GeneratedIllustrationAssetRepository 
         val index = inserted.indexOfFirst { it.assetId == assetId }
         val current = inserted.getOrNull(index) ?: return false
         if (current.assetRevision != expectedAssetRevision ||
-            current.basedOnContentRevision != expectedContentRevision ||
+            (!discard && current.basedOnContentRevision != expectedContentRevision) ||
             (discard && current.applied)
         ) {
             return false

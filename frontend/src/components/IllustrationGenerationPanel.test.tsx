@@ -361,7 +361,9 @@ describe('그림 생성과 적용', () => {
         removeDisabled={false}
       />,
     )
-    await user.click(await screen.findByRole('button', { name: '문서에서 그림 제거' }))
+    expect(await screen.findByRole('button', { name: '문서에서 그림 제거' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '이 후보 폐기' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '문서에서 그림 제거' }))
     expect(updateGeneratedIllustrationApplication).toHaveBeenCalledWith(
       'c1',
       'a1',
@@ -746,6 +748,39 @@ it('미적용 후보를 soft 폐기하고 목록에서 제외하며 이용량 �
     'c1',
     'a1',
     { expected_content_revision: 1, expected_asset_revision: 1, discarded: true },
+    expect.any(AbortSignal),
+  )
+  await waitFor(() => expect(screen.queryByRole('img')).not.toBeInTheDocument())
+  expect(screen.getByRole('status')).toHaveTextContent(/이용량은 반환되지 않습니다/)
+})
+
+it('stale 미적용 후보는 현재 본문 revision으로 폐기하고 수정·적용은 막는다', async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal(
+    'confirm',
+    vi.fn(() => true),
+  )
+  const staleAsset = { ...asset, stale: true, asset_revision: 3 }
+  vi.mocked(getGeneratedIllustrations).mockResolvedValue({
+    content_revision: 2,
+    assets: [staleAsset],
+  })
+  vi.mocked(updateGeneratedIllustrationReview).mockResolvedValue({
+    ...staleAsset,
+    discarded: true,
+    asset_revision: 4,
+  })
+  render(<IllustrationGenerationPanel {...props} contentRevision={2} />)
+  expect(await screen.findByRole('img', { name: '신청 그림' })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '대체텍스트 수정' })).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: '이 후보 폐기' }))
+
+  expect(updateGeneratedIllustrationReview).toHaveBeenCalledWith(
+    'c1',
+    'a1',
+    { expected_content_revision: 2, expected_asset_revision: 3, discarded: true },
     expect.any(AbortSignal),
   )
   await waitFor(() => expect(screen.queryByRole('img')).not.toBeInTheDocument())

@@ -120,7 +120,36 @@ class GeneratedIllustrationAssetServiceTest {
             service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, null, true)
         }.isInstanceOf(ConflictException::class.java)
             .hasMessage(GENERATED_ILLUSTRATION_APPLIED_DISCARD_MESSAGE)
+
+        jobs.context = defaultGenerationContext().copy(contentRevision = 4)
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, null, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATED_ILLUSTRATION_APPLIED_DISCARD_MESSAGE)
         assertThat(assets.inserted.single().assetRevision).isEqualTo(1)
+    }
+
+    @Test
+    fun `stale 미적용 후보는 현재 본문 revision으로 폐기만 할 수 있다`() {
+        jobs.context = defaultGenerationContext().copy(contentRevision = 4)
+
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, "수정", true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, null, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
+        assertThat(assets.inserted.single().assetRevision).isEqualTo(1)
+
+        val discarded =
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, null, true)
+
+        assertThat(discarded.stale).isTrue()
+        assertThat(discarded.discarded).isTrue()
+        assertThat(discarded.assetRevision).isEqualTo(2)
+        assertThat(service().list(GENERATION_OWNER, GENERATION_CONVERSION).assets).isEmpty()
     }
 
     @Test
