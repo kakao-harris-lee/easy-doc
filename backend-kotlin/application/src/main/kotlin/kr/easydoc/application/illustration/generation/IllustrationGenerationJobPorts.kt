@@ -256,6 +256,13 @@ interface GeneratedIllustrationAssetRepository {
         applied: Boolean,
     ): Boolean
 
+    /**
+     * [allowStale] 는 생성 당시 본문이 현재 본문과 달라도(= stale) 쓰기를 허용할지다. 지금 본문에
+     * 쓸 수 없는 후보를 목록에 영원히 남기지 않으려고 **폐기만 하는 요청**에만 참이며, 대체텍스트를
+     * 함께 바꾸는 요청에는 거짓이다 — 이 저장소는 암호화된 [metadata] 만 받아 수정 여부를 스스로
+     * 알 수 없으므로, 그 판단은 호출자가 내려 이 자리로 넘긴다.
+     */
+    @Suppress("LongParameterList")
     fun updateReview(
         ownerId: UUID,
         conversionId: UUID,
@@ -265,6 +272,7 @@ interface GeneratedIllustrationAssetRepository {
         metadata: EncryptedContent,
         png: EncryptedContent,
         discard: Boolean,
+        allowStale: Boolean,
     ): Boolean
 }
 

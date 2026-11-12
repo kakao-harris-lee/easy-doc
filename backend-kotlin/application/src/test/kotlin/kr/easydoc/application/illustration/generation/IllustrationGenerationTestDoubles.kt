@@ -276,7 +276,7 @@ internal class RecordingGenerationAssets : GeneratedIllustrationAssetRepository 
         return true
     }
 
-    @Suppress("ReturnCount", "ComplexCondition")
+    @Suppress("ReturnCount", "ComplexCondition", "LongParameterList")
     override fun updateReview(
         ownerId: UUID,
         conversionId: UUID,
@@ -286,11 +286,12 @@ internal class RecordingGenerationAssets : GeneratedIllustrationAssetRepository 
         metadata: EncryptedContent,
         png: EncryptedContent,
         discard: Boolean,
+        allowStale: Boolean,
     ): Boolean {
         val index = inserted.indexOfFirst { it.assetId == assetId }
         val current = inserted.getOrNull(index) ?: return false
         if (current.assetRevision != expectedAssetRevision ||
-            current.basedOnContentRevision != expectedContentRevision ||
+            (!allowStale && current.basedOnContentRevision != expectedContentRevision) ||
             (discard && current.applied)
         ) {
             return false

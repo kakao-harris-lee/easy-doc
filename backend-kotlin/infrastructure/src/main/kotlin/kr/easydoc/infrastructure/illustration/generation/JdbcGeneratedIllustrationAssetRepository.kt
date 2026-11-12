@@ -78,6 +78,7 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
             .param("applied", applied)
             .update() == 1
 
+    @Suppress("LongParameterList")
     override fun updateReview(
         ownerId: UUID,
         conversionId: UUID,
@@ -87,6 +88,7 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
         metadata: EncryptedContent,
         png: EncryptedContent,
         discard: Boolean,
+        allowStale: Boolean,
     ): Boolean =
         jdbc
             .sql(UPDATE_REVIEW_SQL)
@@ -100,6 +102,7 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
             .param("scheme", metadata.scheme)
             .param("keyVersion", metadata.keyVersion)
             .param("discard", discard)
+            .param("allowStale", allowStale)
             .update() == 1
 
     private fun mapAsset(
@@ -213,8 +216,8 @@ class JdbcGeneratedIllustrationAssetRepository(private val jdbc: JdbcClient) : G
               AND c.id = a.conversion_id AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
               AND c.content_revision = :expectedContentRevision
-              AND a.based_on_content_revision = :expectedContentRevision
               AND a.asset_revision = :expectedAssetRevision
+              AND (CAST(:allowStale AS boolean) = true OR a.based_on_content_revision = :expectedContentRevision)
               AND (CAST(:discard AS boolean) = false OR a.applied = false)
             """.trimIndent()
     }

@@ -93,6 +93,19 @@ class GeneratedIllustrationAssetServiceTest {
     }
 
     @Test
+    fun `현재 본문 자산은 대체텍스트 수정과 폐기를 한 번에 저장한다`() {
+        val altText = "폐기 전에 고쳐 두는 한국어 설명"
+
+        val updated = service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, altText, true)
+
+        assertThat(updated.metadata.altText).isEqualTo(altText)
+        assertThat(updated.discarded).isTrue()
+        assertThat(updated.assetRevision).isEqualTo(2)
+        assertThat(decode(assets.inserted.single()).metadata.altText).isEqualTo(altText)
+        assertThat(service().list(GENERATION_OWNER, GENERATION_CONVERSION).assets).isEmpty()
+    }
+
+    @Test
     fun `폐기는 일반 목록과 적용에서만 숨기고 소유자의 기존 이미지 URL은 유지한다`() {
         val discarded =
             service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, null, true)
@@ -120,7 +133,36 @@ class GeneratedIllustrationAssetServiceTest {
             service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, null, true)
         }.isInstanceOf(ConflictException::class.java)
             .hasMessage(GENERATED_ILLUSTRATION_APPLIED_DISCARD_MESSAGE)
+
+        jobs.context = defaultGenerationContext().copy(contentRevision = 4)
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, null, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATED_ILLUSTRATION_APPLIED_DISCARD_MESSAGE)
         assertThat(assets.inserted.single().assetRevision).isEqualTo(1)
+    }
+
+    @Test
+    fun `stale 미적용 후보는 현재 본문 revision으로 폐기만 할 수 있다`() {
+        jobs.context = defaultGenerationContext().copy(contentRevision = 4)
+
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, "수정", true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
+        assertThatThrownBy {
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 3, 1, null, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(GENERATION_CONTENT_REVISION_CONFLICT_MESSAGE)
+        assertThat(assets.inserted.single().assetRevision).isEqualTo(1)
+
+        val discarded =
+            service().updateReview(GENERATION_OWNER, GENERATION_CONVERSION, ASSET_ID, 4, 1, null, true)
+
+        assertThat(discarded.stale).isTrue()
+        assertThat(discarded.discarded).isTrue()
+        assertThat(discarded.assetRevision).isEqualTo(2)
+        assertThat(service().list(GENERATION_OWNER, GENERATION_CONVERSION).assets).isEmpty()
     }
 
     @Test

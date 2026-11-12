@@ -502,7 +502,7 @@ export function IllustrationGenerationPanel({
   }
 
   function discard(asset: GeneratedIllustration) {
-    if (asset.applied || asset.stale || busy) return
+    if (asset.applied || busy) return
     if (window.confirm('이 후보를 폐기할까요? 되돌릴 수 없으며 이용량은 반환되지 않습니다.')) {
       void mutateAsset(asset, 'discard')
     }
@@ -744,8 +744,11 @@ export function IllustrationGenerationPanel({
             )}
             {asset.stale && (
               <p>
-                이전 버전 본문으로 만든 그림입니다. 현재 본문에는 적용하거나 수정·폐기할 수
-                없습니다.
+                이전 버전 본문으로 만든 그림입니다. 현재 본문에는 적용하거나 대체텍스트를 수정할 수
+                없습니다.{' '}
+                {asset.applied
+                  ? '적용된 그림은 먼저 적용을 해제하면 폐기할 수 있습니다.'
+                  : '이 후보는 폐기만 할 수 있습니다.'}
               </p>
             )}
             <GeneratedIllustrationImage conversionId={conversionId} asset={asset} />
@@ -866,7 +869,7 @@ export function IllustrationGenerationPanel({
               >
                 {asset.applied ? '문서에서 그림 제거' : '문서에 그림 적용'}
               </Button>
-              {!asset.applied && !asset.stale && (
+              {!asset.applied && (
                 <Button
                   type="button"
                   variant="outline"
