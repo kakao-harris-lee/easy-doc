@@ -80,6 +80,15 @@ interface IllustrationSuggestionJobRepository {
         conversionId: UUID,
     ): IllustrationSuggestionJobContext?
 
+    /**
+     * 같은 스냅샷을 **변환 행 잠금 없이** 읽는다 — 조회·폴링 트랜잭션이 열려 있는 동안 본문 저장이
+     * 기다리지 않게 한다. 문서 삭제와의 직렬화는 그대로 유지한다(명세 §6).
+     */
+    fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext?
+
     fun findByRequestId(
         ownerId: UUID,
         conversionId: UUID,

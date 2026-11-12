@@ -672,9 +672,9 @@ class OwnershipPredicateGuardTest {
                 "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
                 "$GENERATION/JdbcIllustrationGenerationJobRepository.kt | UPDATE [illustration_generation_jobs]",
                 "$GENERATION/JdbcIllustrationGenerationLlmCallLedger.kt | SELECT [documents]",
-                // R7 ER-17 그림 제안(V35). provider 입력·접수 잠금·호출 원장·결과 저장/조회는
-                // 전부 사용자 소유 매개변수로 좁힌다. 가운데 세 문장(키 회전)만 운영자 경로라
-                // 아래 미방어 목록에도 같은 이름으로 있다.
+                // R7 ER-17 그림 제안(V35). provider 입력·문서 잠금·접수/조회 context·호출 원장·
+                // 결과 저장/조회는 전부 사용자 소유 매개변수로 좁힌다. 가운데 세 문장(키 회전)만
+                // 운영자 경로라 아래 미방어 목록에도 같은 이름으로 있다.
                 "$SUGGESTION/IllustrationSuggestionGenerationInput.kt | SELECT [conversions, documents]",
                 "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
                     "SELECT [illustration_suggestion_results]",
@@ -682,6 +682,7 @@ class OwnershipPredicateGuardTest {
                     "SELECT [illustration_suggestion_results]",
                 "$SUGGESTION/IllustrationSuggestionResultKeyRotation.kt | " +
                     "UPDATE [illustration_suggestion_results]",
+                "$SUGGESTION/JdbcIllustrationSuggestionJobRepository.kt | SELECT [conversions, documents]",
                 "$SUGGESTION/JdbcIllustrationSuggestionJobRepository.kt | SELECT [conversions, documents]",
                 "$SUGGESTION/JdbcIllustrationSuggestionJobRepository.kt | SELECT [conversions, documents]",
                 "$SUGGESTION/JdbcIllustrationSuggestionLlmCallLedger.kt | SELECT [documents]",

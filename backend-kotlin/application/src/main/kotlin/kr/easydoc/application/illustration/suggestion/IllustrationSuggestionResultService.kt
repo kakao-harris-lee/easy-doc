@@ -59,7 +59,7 @@ class IllustrationSuggestionResultService(
         if (!readEnabled) throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
         return transaction.inTransaction {
             val context =
-                jobs.lockOwnedContext(ownerId, conversionId)
+                jobs.readOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             val required = creditsPer100Chars?.let { requiredCreditsFor(context.charCount, it).amount }
             val stored =

@@ -51,12 +51,25 @@ internal open class FakeSuggestionJobs(var context: IllustrationSuggestionJobCon
     var currentInput = true
     var currentInputCheck: (() -> Boolean)? = null
     var terminalWriteSucceeds = true
+    var lockContextCalls = 0
+    var readContextCalls = 0
     val terminalWrites = mutableListOf<Pair<IllustrationSuggestionJobStatus, IllustrationSuggestionJobFailureCode?>>()
 
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationSuggestionJobContext? = context
+    ): IllustrationSuggestionJobContext? {
+        lockContextCalls++
+        return context
+    }
+
+    override fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext? {
+        readContextCalls++
+        return context
+    }
 
     override fun findByRequestId(
         ownerId: UUID,

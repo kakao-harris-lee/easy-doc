@@ -15,6 +15,7 @@ import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -32,7 +33,9 @@ import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** V35 의 동시성·과금 경계를 실제 PostgreSQL 트랜잭션과 제약으로 확인한다(명세 §2·§3). */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -70,6 +73,81 @@ class JdbcIllustrationSuggestionJobFlowTest {
                 transaction = SpringTransactionRunner(tx),
                 clock = Clock.fixed(NOW, ZoneOffset.UTC),
             )
+    }
+
+    @Test
+    @DisplayName("읽기 context 트랜잭션이 열려 있어도 같은 변환의 본문 저장이 잠금을 기다리지 않는다")
+    fun `읽기 context 조회는 본문 저장과 동시에 끝난다`() {
+        val fixture = seed()
+        val pool = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        try {
+            lateinit var save: Future<Int>
+            tx.executeWithoutResult {
+                assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                save =
+                    pool.submit<Int> {
+                        tx.execute<Int> {
+                            started.countDown()
+                            jdbc
+                                .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
+                                .param("id", fixture.conversionId)
+                                .update()
+                        }
+                    }
+                assertThat(started.await(HANDOFF_SECONDS, TimeUnit.SECONDS)).isTrue()
+                assertThat(save.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(1)
+            }
+            assertThat(currentRevision(fixture.conversionId)).isEqualTo(2)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
+    @DisplayName("읽기 context 도 남의 변환과 보존 만료를 거부하고 최신 본문 버전을 돌려준다")
+    fun `읽기 context는 소유권과 만료를 거부한다`() {
+        val fixture = seed()
+
+        assertThat(jobs.readOwnedContext(UUID.randomUUID(), fixture.conversionId)).isNull()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(1)
+        jdbc
+            .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
+            .param("id", fixture.conversionId)
+            .update()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(2)
+
+        jdbc
+            .sql("UPDATE documents SET retention_expires_at = now() WHERE id = :id")
+            .param("id", fixture.documentId)
+            .update()
+        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+    }
+
+    @Test
+    @DisplayName("변환 잠금을 놓아도 문서 삭제는 읽기 context 와 직렬화된다")
+    fun `읽기 context는 문서 삭제와 직렬화된다`() {
+        val fixture = seed()
+        val pool = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        try {
+            lateinit var deletion: Future<Int>
+            tx.executeWithoutResult {
+                assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                deletion =
+                    pool.submit<Int> {
+                        started.countDown()
+                        jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", fixture.documentId).update()
+                    }
+                assertThat(started.await(HANDOFF_SECONDS, TimeUnit.SECONDS)).isTrue()
+                assertThatThrownBy { deletion.get(BLOCKED_MILLIS, TimeUnit.MILLISECONDS) }
+                    .isInstanceOf(TimeoutException::class.java)
+            }
+            assertThat(deletion.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(1)
+            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+        } finally {
+            pool.shutdownNow()
+        }
     }
 
     @Test

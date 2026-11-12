@@ -104,6 +104,17 @@ class IllustrationSuggestionResultServiceTest {
     }
 
     @Test
+    @DisplayName("결과 조회는 변환 행을 잠그지 않는다 — 폴링이 본문 저장을 막지 않는다")
+    fun `결과 조회는 읽기 context 를 쓴다`() {
+        storeResult(suggestionSet(count = 1), basedOn = 3)
+
+        service().get(SUGGESTION_OWNER, SUGGESTION_CONVERSION)
+
+        assertThat(jobs.readContextCalls).isEqualTo(1)
+        assertThat(jobs.lockContextCalls).isZero()
+    }
+
+    @Test
     fun `읽기가 꺼져 있거나 남의 변환이면 404다`() {
         assertThatThrownBy { service(readEnabled = false).get(SUGGESTION_OWNER, SUGGESTION_CONVERSION) }
             .isInstanceOf(NotFoundException::class.java)

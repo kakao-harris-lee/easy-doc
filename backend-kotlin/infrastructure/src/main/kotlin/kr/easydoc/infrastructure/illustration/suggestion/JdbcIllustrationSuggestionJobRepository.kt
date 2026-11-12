@@ -42,9 +42,31 @@ class JdbcIllustrationSuggestionJobRepository(
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationSuggestionJobContext? =
-        jdbc
-            .sql(LOCK_CONTEXT_SQL)
+    ): IllustrationSuggestionJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+
+    override fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext? = ownedContext(CONTEXT_SQL, ownerId, conversionId)
+
+    private fun ownedContext(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext? {
+        // 삭제는 문서 잠금으로 계속 직렬화하고, 더 강한 변환 잠금은 접수(쓰기)만 잡는다 —
+        // 조회·폴링이 열려 있는 동안 본문 저장이 그 잠금을 기다리지 않게 한다.
+        val documentExists =
+            jdbc
+                .sql(LOCK_DOCUMENT_SQL)
+                .param("ownerId", ownerId)
+                .param("conversionId", conversionId)
+                .query { _, _ -> true }
+                .optional()
+                .orElse(false)
+        if (!documentExists) return null
+        return jdbc
+            .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
             .query { rs, _ ->
@@ -58,6 +80,7 @@ class JdbcIllustrationSuggestionJobRepository(
                 )
             }.optional()
             .orElse(null)
+    }
 
     override fun findByRequestId(
         ownerId: UUID,
@@ -323,7 +346,7 @@ class JdbcIllustrationSuggestionJobRepository(
             failure_code, provider_execution_id, provider_started_at, created_at, updated_at
             """.trimIndent()
 
-        val LOCK_CONTEXT_SQL =
+        val CONTEXT_SQL =
             """
             SELECT d.workspace_id, d.id AS document_id, c.id AS conversion_id,
                    c.content_revision, c.status AS conversion_status, d.char_count
@@ -332,7 +355,16 @@ class JdbcIllustrationSuggestionJobRepository(
             WHERE c.id = :conversionId
               AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
-            FOR NO KEY UPDATE OF c
+            """.trimIndent()
+
+        val LOCK_CONTEXT_SQL = "$CONTEXT_SQL FOR NO KEY UPDATE OF c"
+
+        val LOCK_DOCUMENT_SQL =
+            """
+            SELECT d.id FROM documents d
+            JOIN conversions c ON c.document_id = d.id
+            WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
+            FOR KEY SHARE OF d
             """.trimIndent()
 
         val STARTED_ATTEMPTS_SQL =
