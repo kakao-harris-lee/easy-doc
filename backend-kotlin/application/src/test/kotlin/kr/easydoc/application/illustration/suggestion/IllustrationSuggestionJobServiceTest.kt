@@ -131,6 +131,19 @@ class IllustrationSuggestionJobServiceTest {
     }
 
     @Test
+    @DisplayName("목록과 단건 조회는 변환 행을 잠그지 않는다 — 접수만 잠금 context 를 쓴다")
+    fun `조회는 읽기 context 를 쓴다`() {
+        val service = service()
+        val jobId = service.create(SUGGESTION_OWNER, SUGGESTION_CONVERSION, SUGGESTION_REQUEST, 3).job.jobId
+
+        service.list(SUGGESTION_OWNER, SUGGESTION_CONVERSION)
+        service.get(SUGGESTION_OWNER, SUGGESTION_CONVERSION, jobId)
+
+        assertThat(jobs.readContextCalls).isEqualTo(2)
+        assertThat(jobs.lockContextCalls).isEqualTo(1)
+    }
+
+    @Test
     fun `제안 읽기가 꺼지면 목록과 단건은 404다`() {
         val disabled = service(readEnabled = false)
 

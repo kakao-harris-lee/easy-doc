@@ -42,9 +42,38 @@ class JdbcIllustrationSuggestionJobRepository(
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
+    ): IllustrationSuggestionJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+
+    /**
+     * 변환 행을 잠그지 않는 대신 **문서 행만** `FOR KEY SHARE` 로 잡아 삭제와의 직렬화를 지킨다.
+     *
+     * 이 문서 잠금은 접수 경로([lockOwnedContext])에 **두지 않는다.** 문서 삭제
+     * (`DocumentService.delete`)가 변환 행을 먼저 잠그고 문서를 지우므로, 접수가 문서→변환 순으로
+     * 잡으면 두 순서가 엇갈려 ABBA 교착이 된다. 읽기는 변환 행을 잠그지 않아 순환이 생기지 않는다.
+     */
+    override fun readOwnedContext(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext? {
+        val documentExists =
+            jdbc
+                .sql(LOCK_DOCUMENT_SQL)
+                .param("ownerId", ownerId)
+                .param("conversionId", conversionId)
+                .query { _, _ -> true }
+                .optional()
+                .orElse(false)
+        if (!documentExists) return null
+        return ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    }
+
+    private fun ownedContext(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
     ): IllustrationSuggestionJobContext? =
         jdbc
-            .sql(LOCK_CONTEXT_SQL)
+            .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
             .query { rs, _ ->
@@ -323,7 +352,7 @@ class JdbcIllustrationSuggestionJobRepository(
             failure_code, provider_execution_id, provider_started_at, created_at, updated_at
             """.trimIndent()
 
-        val LOCK_CONTEXT_SQL =
+        val CONTEXT_SQL =
             """
             SELECT d.workspace_id, d.id AS document_id, c.id AS conversion_id,
                    c.content_revision, c.status AS conversion_status, d.char_count
@@ -332,7 +361,16 @@ class JdbcIllustrationSuggestionJobRepository(
             WHERE c.id = :conversionId
               AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
-            FOR NO KEY UPDATE OF c
+            """.trimIndent()
+
+        val LOCK_CONTEXT_SQL = "$CONTEXT_SQL FOR NO KEY UPDATE OF c"
+
+        val LOCK_DOCUMENT_SQL =
+            """
+            SELECT d.id FROM documents d
+            JOIN conversions c ON c.document_id = d.id
+            WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
+            FOR KEY SHARE OF d
             """.trimIndent()
 
         val STARTED_ATTEMPTS_SQL =

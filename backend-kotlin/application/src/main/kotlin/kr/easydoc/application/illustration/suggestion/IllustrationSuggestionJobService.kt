@@ -165,7 +165,7 @@ class IllustrationSuggestionJobService(
         requireReadEnabled()
         return transaction.inTransaction {
             val context =
-                jobs.lockOwnedContext(ownerId, conversionId)
+                jobs.readOwnedContext(ownerId, conversionId)
                     ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             val active = jobs.findActiveOwned(ownerId, conversionId)
             IllustrationSuggestionJobCollectionView(
@@ -184,7 +184,7 @@ class IllustrationSuggestionJobService(
     ): IllustrationSuggestionJobView {
         requireReadEnabled()
         return transaction.inTransaction {
-            jobs.lockOwnedContext(ownerId, conversionId)
+            jobs.readOwnedContext(ownerId, conversionId)
                 ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
             jobs.findOwned(ownerId, conversionId, jobId)?.toView()
                 ?: throw NotFoundException(SUGGESTION_JOB_NOT_FOUND_MESSAGE)
