@@ -44,18 +44,17 @@ class JdbcIllustrationSuggestionJobRepository(
         conversionId: UUID,
     ): IllustrationSuggestionJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
 
+    /**
+     * 변환 행을 잠그지 않는 대신 **문서 행만** `FOR KEY SHARE` 로 잡아 삭제와의 직렬화를 지킨다.
+     *
+     * 이 문서 잠금은 접수 경로([lockOwnedContext])에 **두지 않는다.** 문서 삭제
+     * (`DocumentService.delete`)가 변환 행을 먼저 잠그고 문서를 지우므로, 접수가 문서→변환 순으로
+     * 잡으면 두 순서가 엇갈려 ABBA 교착이 된다. 읽기는 변환 행을 잠그지 않아 순환이 생기지 않는다.
+     */
     override fun readOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationSuggestionJobContext? = ownedContext(CONTEXT_SQL, ownerId, conversionId)
-
-    private fun ownedContext(
-        sql: String,
-        ownerId: UUID,
-        conversionId: UUID,
     ): IllustrationSuggestionJobContext? {
-        // 삭제는 문서 잠금으로 계속 직렬화하고, 더 강한 변환 잠금은 접수(쓰기)만 잡는다 —
-        // 조회·폴링이 열려 있는 동안 본문 저장이 그 잠금을 기다리지 않게 한다.
         val documentExists =
             jdbc
                 .sql(LOCK_DOCUMENT_SQL)
@@ -65,7 +64,15 @@ class JdbcIllustrationSuggestionJobRepository(
                 .optional()
                 .orElse(false)
         if (!documentExists) return null
-        return jdbc
+        return ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    }
+
+    private fun ownedContext(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
+    ): IllustrationSuggestionJobContext? =
+        jdbc
             .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
@@ -80,7 +87,6 @@ class JdbcIllustrationSuggestionJobRepository(
                 )
             }.optional()
             .orElse(null)
-    }
 
     override fun findByRequestId(
         ownerId: UUID,

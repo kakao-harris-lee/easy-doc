@@ -109,19 +109,22 @@ class JdbcIllustrationSuggestionJobFlowTest {
     fun `읽기 context는 소유권과 만료를 거부한다`() {
         val fixture = seed()
 
-        assertThat(jobs.readOwnedContext(UUID.randomUUID(), fixture.conversionId)).isNull()
-        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(1)
-        jdbc
-            .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
-            .param("id", fixture.conversionId)
-            .update()
-        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(2)
+        // 문서 잠금이 문장 하나로 풀리지 않도록 조회는 트랜잭션 안에서 부른다(포트 KDoc).
+        tx.executeWithoutResult {
+            assertThat(jobs.readOwnedContext(UUID.randomUUID(), fixture.conversionId)).isNull()
+            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(1)
+            jdbc
+                .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
+                .param("id", fixture.conversionId)
+                .update()
+            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)?.contentRevision).isEqualTo(2)
 
-        jdbc
-            .sql("UPDATE documents SET retention_expires_at = now() WHERE id = :id")
-            .param("id", fixture.documentId)
-            .update()
-        assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+            jdbc
+                .sql("UPDATE documents SET retention_expires_at = now() WHERE id = :id")
+                .param("id", fixture.documentId)
+                .update()
+            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+        }
     }
 
     @Test
