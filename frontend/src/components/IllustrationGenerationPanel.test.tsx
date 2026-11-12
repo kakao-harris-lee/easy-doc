@@ -363,6 +363,7 @@ describe('그림 생성과 적용', () => {
     )
     expect(await screen.findByRole('button', { name: '문서에서 그림 제거' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '이 후보 폐기' })).not.toBeInTheDocument()
+    expect(screen.getByText(/먼저 적용을 해제하면 폐기할 수 있습니다/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '문서에서 그림 제거' }))
     expect(updateGeneratedIllustrationApplication).toHaveBeenCalledWith(
       'c1',
@@ -774,6 +775,7 @@ it('stale 미적용 후보는 현재 본문 revision으로 폐기하고 수정·
   expect(await screen.findByRole('img', { name: '신청 그림' })).toBeInTheDocument()
   expect(screen.queryByRole('button', { name: '대체텍스트 수정' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '문서에 그림 적용' })).toBeDisabled()
+  expect(screen.getByText(/이 후보는 폐기만 할 수 있습니다/)).toBeInTheDocument()
 
   await user.click(screen.getByRole('button', { name: '이 후보 폐기' }))
 

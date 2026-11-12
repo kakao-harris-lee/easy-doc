@@ -745,7 +745,10 @@ export function IllustrationGenerationPanel({
             {asset.stale && (
               <p>
                 이전 버전 본문으로 만든 그림입니다. 현재 본문에는 적용하거나 대체텍스트를 수정할 수
-                없고, 미적용 후보는 폐기만 할 수 있습니다.
+                없습니다.{' '}
+                {asset.applied
+                  ? '적용된 그림은 먼저 적용을 해제하면 폐기할 수 있습니다.'
+                  : '이 후보는 폐기만 할 수 있습니다.'}
               </p>
             )}
             <GeneratedIllustrationImage conversionId={conversionId} asset={asset} />

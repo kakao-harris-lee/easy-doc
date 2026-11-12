@@ -180,6 +180,7 @@ class GeneratedIllustrationAssetService(
                     metadata,
                     png,
                     shouldDiscard,
+                    allowStale = altText == null && shouldDiscard,
                 )
             ) {
                 throw ConflictException(GENERATION_ASSET_REVISION_CONFLICT_MESSAGE)

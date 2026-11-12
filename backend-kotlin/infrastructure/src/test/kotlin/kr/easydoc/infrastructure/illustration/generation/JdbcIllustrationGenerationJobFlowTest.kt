@@ -415,35 +415,44 @@ class JdbcIllustrationGenerationJobFlowTest {
         val metadata = EncryptedContent(byteArrayOf(99, 98), "aes256gcm-v1", 2)
         val png = EncryptedContent(byteArrayOf(97, 96), "aes256gcm-v1", 2)
 
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 1, metadata, png, discard = false),
-        ).isTrue()
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 1, metadata, png, discard = false),
-        ).isFalse()
+        fun review(
+            expectedContentRevision: Long,
+            expectedAssetRevision: Long,
+            discard: Boolean = false,
+            allowStale: Boolean = false,
+        ) = assets.updateReview(
+            fixture.ownerId,
+            fixture.conversionId,
+            assetId,
+            expectedContentRevision,
+            expectedAssetRevision,
+            metadata,
+            png,
+            discard,
+            allowStale,
+        )
+
+        assertThat(review(1, 1)).isTrue()
+        assertThat(review(1, 1)).isFalse()
         val updated = assets.findOwned(fixture.ownerId, fixture.conversionId, assetId)!!
         assertThat(updated.assetRevision).isEqualTo(2)
         assertThat(updated.metadata).isEqualTo(metadata)
         assertThat(updated.png).isEqualTo(png)
         assertThat(assets.updateApplication(fixture.ownerId, fixture.conversionId, assetId, 1, 2, true)).isTrue()
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 1, 3, metadata, png, discard = true),
-        ).isFalse()
+        assertThat(review(1, 3, discard = true)).isFalse()
 
         jdbc
             .sql("UPDATE conversions SET content_revision = 2 WHERE id = :id")
             .param("id", fixture.conversionId)
             .update()
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 3, metadata, png, discard = false),
-        ).isFalse()
+        assertThat(review(2, 3)).isFalse()
         assertThat(assets.updateApplication(fixture.ownerId, fixture.conversionId, assetId, 2, 3, false)).isTrue()
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 4, metadata, png, discard = false),
-        ).isFalse()
-        assertThat(
-            assets.updateReview(fixture.ownerId, fixture.conversionId, assetId, 2, 4, metadata, png, discard = true),
-        ).isTrue()
+        assertThat(review(2, 4)).isFalse()
+        // allowStale 없이는 폐기도 stale 자산을 건드리지 못한다 — 우회는 `discard` 가 아니라 이 깃발이다.
+        assertThat(review(2, 4, discard = true)).isFalse()
+        // allowStale 이어도 현재 본문 revision은 그대로 요구한다.
+        assertThat(review(1, 4, discard = true, allowStale = true)).isFalse()
+        assertThat(review(2, 4, discard = true, allowStale = true)).isTrue()
         assertThat(assets.findOwned(fixture.ownerId, fixture.conversionId, assetId)!!.assetRevision).isEqualTo(5)
         assertThat(count("generated_illustration_assets", "id", assetId)).isEqualTo(1)
         assertThat(count("credit_transactions", "illustration_generation_job_id", job.jobId, "release")).isZero()
