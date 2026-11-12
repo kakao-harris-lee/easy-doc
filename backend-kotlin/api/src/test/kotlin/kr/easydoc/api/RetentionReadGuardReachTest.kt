@@ -6,6 +6,12 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
+import kr.easydoc.core.illustration.generation.IllustrationGenerationInput
+import kr.easydoc.core.illustration.generation.IllustrationGenerationMetadata
+import kr.easydoc.core.illustration.generation.IllustrationGenerationStorageCodec
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionBodyRange
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionPurpose
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionSourceAnchor
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -32,7 +38,9 @@ import java.util.UUID
  * 이 파일이 재는 것이고, 술어(`retention_expires_at > now()`)는 파기 배치의 `<= now()` 와
  * **정확한 여집합**이라 겹치지도 벌어지지도 않는다.
  *
- * 세 오퍼레이션에 **같은 경계 셋**을 건다 — 지난 것 · 정각 · 아직 남은 것.
+ * 조회·내보내기·검수 저장·피드백 저장에는 **같은 경계 셋**을 건다 — 지난 것 · 정각 · 아직 남은 것.
+ * 생성 그림 경로(목록·PNG·수정·적용)는 지난 것과 아직 남은 것 두 자리만 건다 — 술어가 같은
+ * `retention_expires_at > now()` 하나라 정각은 위 셋이 이미 못박았다.
  * `GET /documents/{document_id}/source` 의 같은 경계는 `DocumentSourceReachTest` 가 잰다.
  */
 @SpringBootTest(
@@ -308,11 +316,135 @@ class RetentionReadGuardReachTest {
         )
     }
 
+    @Test
+    @DisplayName("만료된 문서의 생성 그림 수정은 404 다 — **404 이고, 자산 행이 움직이지 않는다**")
+    fun `만료된 문서의 생성 그림 수정은 404 다`() {
+        val fixture = completedConversion(allowIllustrations = true)
+        val assetId = seedGeneratedAsset(fixture)
+        val path = GENERATED_ILLUSTRATION_PATH.forConversionAsset(fixture.conversionId, assetId)
+        expireIn(fixture.documentId, PAST)
+        val untouched = assetState(assetId)
+
+        val response = send(patch(fixture.token, path, altTextEdit()))
+
+        assertDeclaredStatus(response, GENERATED_ILLUSTRATION_PATH, PATCH, NOT_FOUND)
+        assertThat(assetState(assetId))
+            .describedAs("파기 대상 자산에 새 대체텍스트·폐기가 쓰이면 다음 배치가 방금 쓴 내용을 지운다")
+            .isEqualTo(untouched)
+    }
+
+    @Test
+    @DisplayName("**만료 직전 문서의 생성 그림은 정상 수정된다** — 술어가 산 문서까지 접지 않는다")
+    fun `만료 직전 문서의 생성 그림 수정은 200 이다`() {
+        val fixture = completedConversion(allowIllustrations = true)
+        val assetId = seedGeneratedAsset(fixture)
+        val path = GENERATED_ILLUSTRATION_PATH.forConversionAsset(fixture.conversionId, assetId)
+        expireIn(fixture.documentId, ALMOST_EXPIRED)
+
+        val response = send(patch(fixture.token, path, altTextEdit()))
+
+        assertDeclaredStatus(
+            response,
+            GENERATED_ILLUSTRATION_PATH,
+            PATCH,
+            ContractSpec.successStatus(GENERATED_ILLUSTRATION_PATH, PATCH),
+        )
+        assertThat(bodyOf(response)[ALT_TEXT_PROPERTY])
+            .describedAs("응답만 200 이고 값이 그대로면 저장이 되지 않은 것이다")
+            .isEqualTo(EDITED_ALT_TEXT)
+    }
+
+    @Test
+    @DisplayName("만료된 문서의 생성 그림 적용 저장은 404 다 — **404 이고, 적용 상태가 움직이지 않는다**")
+    fun `만료된 문서의 생성 그림 적용 저장은 404 다`() {
+        val fixture = completedConversion(allowIllustrations = true)
+        val assetId = seedGeneratedAsset(fixture)
+        val path = GENERATED_APPLICATION_PATH.forConversionAsset(fixture.conversionId, assetId)
+        expireIn(fixture.documentId, PAST)
+        val untouched = assetState(assetId)
+
+        val response = send(put(fixture.token, path, applicationChange()))
+
+        assertDeclaredStatus(response, GENERATED_APPLICATION_PATH, PUT, NOT_FOUND)
+        assertThat(assetState(assetId))
+            .describedAs("파기 대상 자산이 본문에 적용되면 곧 지워질 그림이 안내문에 붙는다")
+            .isEqualTo(untouched)
+    }
+
+    @Test
+    @DisplayName("**만료 직전 문서의 생성 그림은 정상 적용된다** — 수정과 같은 술어라 판정도 같다")
+    fun `만료 직전 문서의 생성 그림 적용 저장은 200 이다`() {
+        val fixture = completedConversion(allowIllustrations = true)
+        val assetId = seedGeneratedAsset(fixture)
+        val path = GENERATED_APPLICATION_PATH.forConversionAsset(fixture.conversionId, assetId)
+        expireIn(fixture.documentId, ALMOST_EXPIRED)
+
+        val response = send(put(fixture.token, path, applicationChange()))
+
+        assertDeclaredStatus(
+            response,
+            GENERATED_APPLICATION_PATH,
+            PUT,
+            ContractSpec.successStatus(GENERATED_APPLICATION_PATH, PUT),
+        )
+        assertThat(bodyOf(response)[APPLIED_PROPERTY]).isEqualTo(true)
+    }
+
+    /** 자산 행이 움직였는지 보는 한 줄. **폐기 flag 는 열이 아니라 암호문 안**이라 함께 본다. */
+    private fun assetState(assetId: UUID): String = database.queryFirstColumn(ASSET_STATE_SQL.format(assetId)).single()
+
+    private fun altTextEdit(): String =
+        json.writeValueAsString(
+            mapOf(
+                EXPECTED_CONTENT_REVISION_PROPERTY to 1,
+                EXPECTED_ASSET_REVISION_PROPERTY to 1,
+                ALT_TEXT_PROPERTY to EDITED_ALT_TEXT,
+            ),
+        )
+
+    private fun applicationChange(): String =
+        json.writeValueAsString(
+            mapOf(
+                EXPECTED_CONTENT_REVISION_PROPERTY to 1,
+                EXPECTED_ASSET_REVISION_PROPERTY to 1,
+                APPLIED_PROPERTY to true,
+            ),
+        )
+
+    /** 자산에 저장된 입력 한 벌. 저장 코덱이 왕복할 수 있는 값이어야 응답이 조립된다. */
+    private fun storedInput(): IllustrationGenerationInput =
+        IllustrationGenerationInput(
+            STORED_PROMPT,
+            IllustrationGenerationMetadata(
+                suggestionId = UUID.randomUUID(),
+                analysisVersion = ANALYSIS_VERSION,
+                configurationRevision = FINGERPRINT,
+                purpose = IllustrationSuggestionPurpose.PROCEDURE,
+                reason = STORED_REASON,
+                bodyRange = IllustrationSuggestionBodyRange(0, 1),
+                sourceAnchors = listOf(IllustrationSuggestionSourceAnchor(listOf(0), STORED_QUOTE)),
+                scenes = listOf(STORED_SCENE),
+                preservedFacts = listOf(STORED_FACT),
+                altText = STORED_ALT_TEXT,
+            ),
+            FAKE_EXECUTION_MODE,
+        )
+
+    /**
+     * 성공한 생성 자산 한 건. 메타데이터는 **실제로 복호화돼 읽히므로**(수정·적용 응답이 그 값을
+     * 싣는다) 저장 코덱이 쓴 형태 그대로 적고, 변환의 본문 revision 도 자산과 같은 1 로 맞춘다 —
+     * 어긋나면 쓰기 경로가 만료가 아니라 stale 로 거절해 이 파일이 재려는 것을 가린다.
+     */
     private fun seedGeneratedAsset(fixture: Fixture): UUID {
         val jobId = UUID.randomUUID()
         val assetId = UUID.randomUUID()
         val input = cipher.encrypt(PlainBody("입력"), jobId, EncryptedField.ILLUSTRATION_GENERATION_JOB_INPUT)
-        val metadata = cipher.encrypt(PlainBody("메타"), assetId, EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA)
+        val metadata =
+            cipher.encrypt(
+                PlainBody(IllustrationGenerationStorageCodec.encode(storedInput())),
+                assetId,
+                EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA,
+            )
         val png =
             cipher.encryptBytes(
                 PlainBytes(byteArrayOf(1, 2, 3)),
@@ -321,6 +453,7 @@ class RetentionReadGuardReachTest {
             )
         database.execute(
             """
+            UPDATE conversions SET content_revision = 1 WHERE id = '${fixture.conversionId}';
             INSERT INTO illustration_generation_jobs
                 (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
                  suggestion_result_id, suggestion_id, analysis_version, configuration_revision,
@@ -328,7 +461,7 @@ class RetentionReadGuardReachTest {
                  input_payload_encrypted, encryption_scheme, key_version,
                  status, reserved_credits, settlement)
             SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${fixture.conversionId}',
-                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-5', '$FINGERPRINT',
+                   gen_random_uuid(), gen_random_uuid(), '$ANALYSIS_VERSION', '$FINGERPRINT',
                    1, 1, '$FINGERPRINT', decode('${hex(input.bytes)}', 'hex'),
                    '${input.scheme}', ${input.keyVersion}, 'succeeded', 0, 'not_charged'
             FROM documents d WHERE d.id = '${fixture.documentId}';
@@ -530,6 +663,30 @@ class RetentionReadGuardReachTest {
             .header(AUTHORIZATION, "Bearer $token")
             .GET()
 
+    private fun patch(
+        token: String,
+        path: String,
+        body: String,
+    ): HttpRequest.Builder = bodyRequest(token, path).method(PATCH_METHOD, bodyPublisher(body))
+
+    private fun put(
+        token: String,
+        path: String,
+        body: String,
+    ): HttpRequest.Builder = bodyRequest(token, path).PUT(bodyPublisher(body))
+
+    private fun bodyPublisher(body: String): HttpRequest.BodyPublisher =
+        HttpRequest.BodyPublishers.ofString(body, Charsets.UTF_8)
+
+    private fun bodyRequest(
+        token: String,
+        path: String,
+    ): HttpRequest.Builder =
+        HttpRequest
+            .newBuilder(URI.create("http://localhost:$port$path"))
+            .header(AUTHORIZATION, "Bearer $token")
+            .header(CONTENT_TYPE, JSON_MEDIA_TYPE)
+
     private fun post(
         token: String?,
         body: String,
@@ -586,10 +743,17 @@ class RetentionReadGuardReachTest {
             "/conversions/{conversion_id}/generated-illustrations/{asset_id}/image"
         private const val GENERATED_DOWNLOAD_PATH =
             "/conversions/{conversion_id}/generated-illustrations/{asset_id}/download"
+        private const val GENERATED_ILLUSTRATION_PATH =
+            "/conversions/{conversion_id}/generated-illustrations/{asset_id}"
+        private const val GENERATED_APPLICATION_PATH = "$GENERATED_ILLUSTRATION_PATH/application"
 
         private const val GET = "get"
         private const val POST = "post"
         private const val PUT = "put"
+        private const val PATCH = "patch"
+
+        /** 계약 메서드 이름([PATCH])과 달리 HTTP 요청 줄에는 대문자가 실린다. */
+        private const val PATCH_METHOD = "PATCH"
 
         private const val OK = 200
         private const val NOT_FOUND = 404
@@ -610,6 +774,22 @@ class RetentionReadGuardReachTest {
         private const val QUALITY_SCORE_PROPERTY = "quality_score"
         private const val MINUTES_SPENT_PROPERTY = "minutes_spent"
         private const val PUBLISH_INTENT_SCHEMA = "PublishIntent"
+        private const val EXPECTED_CONTENT_REVISION_PROPERTY = "expected_content_revision"
+        private const val EXPECTED_ASSET_REVISION_PROPERTY = "expected_asset_revision"
+        private const val ALT_TEXT_PROPERTY = "alt_text"
+        private const val APPLIED_PROPERTY = "applied"
+
+        private const val ANALYSIS_VERSION = "r7-illustration-suggestion-5"
+        private const val FAKE_EXECUTION_MODE = "fake"
+
+        /** 심은 자산이 들고 있는 값들. 이 파일은 내용이 아니라 **만료 뒤에 열려 있는가**만 잰다. */
+        private const val STORED_PROMPT = "보존 만료 경계를 재는 그림 프롬프트"
+        private const val STORED_REASON = "신청 절차를 그림으로 설명한다"
+        private const val STORED_QUOTE = "신청서를 제출합니다"
+        private const val STORED_SCENE = "신청서를 내미는 장면"
+        private const val STORED_FACT = "신청은 한 번만 한다"
+        private const val STORED_ALT_TEXT = "신청서를 제출하는 그림입니다."
+        private const val EDITED_ALT_TEXT = "만료 창에서 저장을 시도한 대체텍스트입니다."
 
         /** 척도 둘의 배경 값. 범위의 정본은 `core/pilot/ConversionFeedback.kt` 다. */
         private const val SAMPLE_QUALITY_SCORE = 4
@@ -677,6 +857,11 @@ class RetentionReadGuardReachTest {
         private const val REVIEWED_AT_SQL = "SELECT coalesce(reviewed_at::text, '') FROM conversions WHERE id = '%s'"
 
         private const val FEEDBACK_ROWS_SQL = "SELECT count(*) FROM conversion_feedback WHERE conversion_id = '%s'"
+
+        /** 자산 한 줄의 가시 상태 — 판본·적용과, 폐기 flag 가 든 메타데이터 암호문까지 함께 읽는다. */
+        private const val ASSET_STATE_SQL =
+            "SELECT asset_revision || '/' || applied || '/' || encode(metadata_encrypted, 'hex') " +
+                "FROM generated_illustration_assets WHERE id = '%s'"
 
         private var counter = 0
 

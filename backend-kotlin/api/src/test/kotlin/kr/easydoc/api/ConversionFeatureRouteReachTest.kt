@@ -5,6 +5,13 @@ import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
+import kr.easydoc.core.illustration.generation.IllustrationGenerationInput
+import kr.easydoc.core.illustration.generation.IllustrationGenerationMetadata
+import kr.easydoc.core.illustration.generation.IllustrationGenerationStorageCodec
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionBodyRange
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionPurpose
+import kr.easydoc.core.illustration.suggestion.IllustrationSuggestionSourceAnchor
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -210,6 +217,185 @@ class ConversionFeatureRouteReachTest {
         )
     }
 
+    @Test
+    @DisplayName("타인 생성 그림의 대체텍스트 수정(PATCH) → 404 · 남의 변환으로도 내 변환 위의 남의 자산으로도 존재가 새지 않는다")
+    fun `타인 생성 그림의 수정은 404 다`() {
+        val mine = newAccount(allowIllustrations = true)
+        val theirs = doneConversion(newAccount())
+        val theirAsset = seedGeneratedAsset(theirs)
+        val myDone = doneConversion(mine)
+        val myConversion = myDone.conversionId
+        val myAsset = seedGeneratedAsset(myDone)
+        val untouched = assetState(theirAsset)
+
+        // 대조군 — 내 자산 수정이 200 이 아니면 아래 두 팔이 404 대 404 뿐이라 판정이 공회전한다.
+        assertThat(patchBytes(mine, assetPath(myConversion, myAsset), altTextEdit()).statusCode())
+            .withFailMessage("내 변환의 내 자산 수정이 200 이 아니다 — 모든 팔이 404 라 소유권 판정이 아무것도 재지 못한다")
+            .isEqualTo(OK)
+
+        val foreignConversion = patchBytes(mine, assetPath(theirs.conversionId, theirAsset), altTextEdit())
+        val absentConversion = patchBytes(mine, assetPath(UUID.randomUUID(), UUID.randomUUID()), altTextEdit())
+        assertThat(foreignConversion.statusCode()).isEqualTo(NOT_FOUND)
+        assertThat(foreignConversion.statusCode()).isNotEqualTo(FORBIDDEN)
+        OwnershipConcealment.assertIndistinguishable(
+            "PATCH $GENERATED_ILLUSTRATION_PATH (남의 변환)",
+            absentConversion,
+            foreignConversion,
+        )
+
+        // 변환은 내 것인데 자산 id 만 남의 것 — 이 팔이 갈리면 asset id 로 남의 자산 존재를 확인할 수 있다.
+        val foreignAsset = patchBytes(mine, assetPath(myConversion, theirAsset), altTextEdit())
+        val absentAsset = patchBytes(mine, assetPath(myConversion, UUID.randomUUID()), altTextEdit())
+        assertThat(foreignAsset.statusCode()).isEqualTo(NOT_FOUND)
+        OwnershipConcealment.assertIndistinguishable(
+            "PATCH $GENERATED_ILLUSTRATION_PATH (내 변환·남의 자산)",
+            absentAsset,
+            foreignAsset,
+        )
+
+        assertThat(assetState(theirAsset))
+            .withFailMessage("404 를 냈는데도 남의 자산 행이 움직였다 — 거절이 쓰기를 막지 못한 것이다")
+            .isEqualTo(untouched)
+    }
+
+    @Test
+    @DisplayName("타인 생성 그림의 적용 저장(PUT) → 404 · 남의 변환으로도 내 변환 위의 남의 자산으로도 존재가 새지 않는다")
+    fun `타인 생성 그림의 적용 저장은 404 다`() {
+        val mine = newAccount(allowIllustrations = true)
+        val theirs = doneConversion(newAccount())
+        val theirAsset = seedGeneratedAsset(theirs)
+        val myDone = doneConversion(mine)
+        val myConversion = myDone.conversionId
+        val myAsset = seedGeneratedAsset(myDone)
+        val untouched = assetState(theirAsset)
+
+        assertThat(putBytes(mine, applicationPath(myConversion, myAsset), applicationChange()).statusCode())
+            .withFailMessage("내 변환의 내 자산 적용이 200 이 아니다 — 모든 팔이 404 라 소유권 판정이 아무것도 재지 못한다")
+            .isEqualTo(OK)
+
+        val foreignConversion = putBytes(mine, applicationPath(theirs.conversionId, theirAsset), applicationChange())
+        val absentPath = applicationPath(UUID.randomUUID(), UUID.randomUUID())
+        val absentConversion = putBytes(mine, absentPath, applicationChange())
+        assertThat(foreignConversion.statusCode()).isEqualTo(NOT_FOUND)
+        assertThat(foreignConversion.statusCode()).isNotEqualTo(FORBIDDEN)
+        OwnershipConcealment.assertIndistinguishable(
+            "PUT $GENERATED_APPLICATION_PATH (남의 변환)",
+            absentConversion,
+            foreignConversion,
+        )
+
+        val foreignAsset = putBytes(mine, applicationPath(myConversion, theirAsset), applicationChange())
+        val absentAsset = putBytes(mine, applicationPath(myConversion, UUID.randomUUID()), applicationChange())
+        assertThat(foreignAsset.statusCode()).isEqualTo(NOT_FOUND)
+        OwnershipConcealment.assertIndistinguishable(
+            "PUT $GENERATED_APPLICATION_PATH (내 변환·남의 자산)",
+            absentAsset,
+            foreignAsset,
+        )
+
+        assertThat(assetState(theirAsset))
+            .withFailMessage("404 를 냈는데도 남의 자산 행이 움직였다 — 거절이 적용 상태 쓰기를 막지 못한 것이다")
+            .isEqualTo(untouched)
+    }
+
+    /**
+     * 자산 행이 움직였는지 보는 한 줄. **폐기 flag 는 열이 아니라 암호문 안**이라
+     * (`generated_illustration_assets` 에 `discarded` 열이 없다) 메타데이터 암호문까지 함께 본다 —
+     * 대체텍스트 수정도 폐기도 이 암호문을 다시 쓴다.
+     */
+    private fun assetState(assetId: UUID): String =
+        database
+            .queryFirstColumn(
+                "SELECT asset_revision || '/' || applied || '/' || encode(metadata_encrypted, 'hex') " +
+                    "FROM generated_illustration_assets WHERE id = '$assetId'",
+            ).single()
+
+    private fun altTextEdit(): String =
+        json.writeValueAsString(
+            mapOf(
+                EXPECTED_CONTENT_REVISION to 1,
+                EXPECTED_ASSET_REVISION to 1,
+                ALT_TEXT to EDITED_ALT_TEXT,
+            ),
+        )
+
+    private fun applicationChange(): String =
+        json.writeValueAsString(
+            mapOf(EXPECTED_CONTENT_REVISION to 1, EXPECTED_ASSET_REVISION to 1, APPLIED to true),
+        )
+
+    private fun assetPath(
+        conversionId: UUID,
+        assetId: UUID,
+    ): String =
+        GENERATED_ILLUSTRATION_PATH.forConversion(conversionId).replace("{$ASSET_ID_VARIABLE}", assetId.toString())
+
+    private fun applicationPath(
+        conversionId: UUID,
+        assetId: UUID,
+    ): String =
+        GENERATED_APPLICATION_PATH.forConversion(conversionId).replace("{$ASSET_ID_VARIABLE}", assetId.toString())
+
+    /**
+     * 성공한 생성 자산 한 건 — 작업 행과 자산 행을 함께 심는다. 메타데이터는 **실제로 복호화돼
+     * 읽히므로**(수정·적용 응답이 그 값을 싣는다) 저장 코덱이 쓴 형태 그대로 적는다.
+     */
+    private fun seedGeneratedAsset(seeded: Seeded): UUID {
+        val jobId = UUID.randomUUID()
+        val assetId = UUID.randomUUID()
+        val metadata =
+            cipher.encrypt(
+                PlainBody(IllustrationGenerationStorageCodec.encode(storedInput())),
+                assetId,
+                EncryptedField.ILLUSTRATION_GENERATION_ASSET_METADATA,
+            )
+        val png = cipher.encryptBytes(PlainBytes(STORED_PNG), assetId, EncryptedField.ILLUSTRATION_GENERATION_ASSET_PNG)
+        database.execute(
+            """
+            INSERT INTO illustration_generation_jobs
+                (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                 suggestion_result_id, suggestion_id, analysis_version, configuration_revision,
+                 expected_content_revision, based_on_content_revision, input_fingerprint,
+                 input_payload_encrypted, encryption_scheme, key_version,
+                 status, reserved_credits, settlement)
+            SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${seeded.conversionId}',
+                   gen_random_uuid(), gen_random_uuid(), '$ANALYSIS_VERSION', '$FINGERPRINT',
+                   1, 1, '$FINGERPRINT', '\\x03'::bytea, 'aes256gcm-v1', 1,
+                   'succeeded', 1.0, 'consumed'
+            FROM documents d WHERE d.id = '${seeded.documentId}';
+            INSERT INTO generated_illustration_assets
+                (id, job_id, conversion_id, based_on_content_revision,
+                 metadata_encrypted, png_encrypted, encryption_scheme, key_version,
+                 png_byte_size, width, height, provenance)
+            VALUES ('$assetId', '$jobId', '${seeded.conversionId}', 1,
+                    decode('${hex(metadata.bytes)}', 'hex'), decode('${hex(png.bytes)}', 'hex'),
+                    '${metadata.scheme}', ${metadata.keyVersion}, ${STORED_PNG.size}, $IMAGE_SIZE, $IMAGE_SIZE, 'fake')
+            """.trimIndent(),
+        )
+        return assetId
+    }
+
+    /** 자산에 저장된 입력 한 벌. 저장 코덱이 왕복할 수 있는 값이어야 응답이 조립된다. */
+    private fun storedInput(): IllustrationGenerationInput =
+        IllustrationGenerationInput(
+            STORED_PROMPT,
+            IllustrationGenerationMetadata(
+                suggestionId = UUID.randomUUID(),
+                analysisVersion = ANALYSIS_VERSION,
+                configurationRevision = FINGERPRINT,
+                purpose = IllustrationSuggestionPurpose.PROCEDURE,
+                reason = STORED_REASON,
+                bodyRange = IllustrationSuggestionBodyRange(0, 1),
+                sourceAnchors = listOf(IllustrationSuggestionSourceAnchor(listOf(0), STORED_QUOTE)),
+                scenes = listOf(STORED_SCENE),
+                preservedFacts = listOf(STORED_FACT),
+                altText = STORED_ALT_TEXT,
+            ),
+            FAKE_EXECUTION_MODE,
+        )
+
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it) }
+
     private fun generationJobPath(
         conversionId: UUID,
         jobId: UUID,
@@ -226,7 +412,7 @@ class ConversionFeatureRouteReachTest {
                  input_payload_encrypted, encryption_scheme, key_version,
                  status, reserved_credits, settlement)
             SELECT '$jobId', gen_random_uuid(), d.user_id, d.workspace_id, d.id, '${seeded.conversionId}',
-                   gen_random_uuid(), gen_random_uuid(), 'r7-illustration-suggestion-5', '$FINGERPRINT',
+                   gen_random_uuid(), gen_random_uuid(), '$ANALYSIS_VERSION', '$FINGERPRINT',
                    1, 1, '$FINGERPRINT', '\\x03'::bytea, 'aes256gcm-v1', 1,
                    'succeeded', 1.0, 'consumed'
             FROM documents d WHERE d.id = '${seeded.documentId}'
@@ -345,6 +531,12 @@ class ConversionFeatureRouteReachTest {
         body: String,
     ): HttpResponse<ByteArray> = sendBytes(jsonRequest(path, token).PUT(bodyPublisher(body)))
 
+    private fun patchBytes(
+        token: String,
+        path: String,
+        body: String,
+    ): HttpResponse<ByteArray> = sendBytes(jsonRequest(path, token).method(PATCH_METHOD, bodyPublisher(body)))
+
     private fun bodyPublisher(body: String): HttpRequest.BodyPublisher =
         HttpRequest.BodyPublishers.ofByteArray(body.toByteArray(Charsets.UTF_8))
 
@@ -381,8 +573,12 @@ class ConversionFeatureRouteReachTest {
         private const val DOCUMENTS_PATH = "/documents"
         private const val POST = "post"
 
+        /** HTTP 요청 줄에 실리는 메서드 이름. `HttpRequest.Builder` 에 `PATCH` 갈래가 없다. */
+        private const val PATCH_METHOD = "PATCH"
+
         private const val CONVERSION_ID_VARIABLE = "conversion_id"
         private const val JOB_ID_VARIABLE = "job_id"
+        private const val ASSET_ID_VARIABLE = "asset_id"
 
         private const val REVIEW_SUPPORT_PATH = "/conversions/{conversion_id}/review-support"
         private const val REVIEW_HISTORY_PATH = "/conversions/{conversion_id}/review-history"
@@ -397,9 +593,32 @@ class ConversionFeatureRouteReachTest {
         private const val JOB_PATH = "$ACTION_GUIDE_JOBS_PATH/{job_id}"
         private const val SUGGESTION_JOB_PATH = "$SUGGESTION_JOBS_PATH/{job_id}"
         private const val GENERATION_JOB_PATH = "$GENERATION_JOBS_PATH/{job_id}"
+        private const val GENERATED_ILLUSTRATION_PATH = "$GENERATED_ILLUSTRATIONS_PATH/{asset_id}"
+        private const val GENERATED_APPLICATION_PATH = "$GENERATED_ILLUSTRATION_PATH/application"
 
         /** `ck_action_guide_jobs_fingerprint_length` 이 정확히 64자를 요구한다. */
         private const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+        private const val ANALYSIS_VERSION = "r7-illustration-suggestion-5"
+
+        private const val EXPECTED_CONTENT_REVISION = "expected_content_revision"
+        private const val EXPECTED_ASSET_REVISION = "expected_asset_revision"
+        private const val ALT_TEXT = "alt_text"
+        private const val APPLIED = "applied"
+
+        /** 심은 자산이 들고 있는 값들. 이 파일은 내용이 아니라 **누구의 것인가**만 잰다. */
+        private const val STORED_PROMPT = "소유권 은닉 판정 대상 그림 프롬프트"
+        private const val STORED_REASON = "신청 절차를 그림으로 설명한다"
+        private const val STORED_QUOTE = "신청서를 제출합니다"
+        private const val STORED_SCENE = "신청서를 내미는 장면"
+        private const val STORED_FACT = "신청은 한 번만 한다"
+        private const val STORED_ALT_TEXT = "신청서를 제출하는 그림입니다."
+        private const val EDITED_ALT_TEXT = "수정한 대체텍스트입니다."
+        private const val FAKE_EXECUTION_MODE = "fake"
+        private val STORED_PNG = byteArrayOf(1, 2, 3)
+
+        /** `ck_generated_illustration_assets_dimensions` 이 1024x1024 를 요구한다. */
+        private const val IMAGE_SIZE = 1024
 
         private const val OK = 200
         private const val NOT_FOUND = 404
