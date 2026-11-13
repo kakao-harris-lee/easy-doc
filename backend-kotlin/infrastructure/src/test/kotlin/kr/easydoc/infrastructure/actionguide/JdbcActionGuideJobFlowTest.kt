@@ -33,6 +33,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -224,6 +225,50 @@ class JdbcActionGuideJobFlowTest {
 
             assertThat(loser?.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(ActionGuideJobInsert.ActiveConflict)
             assertThat(jobCount(fixture.conversionId)).isEqualTo(1)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    /**
+     * 접수가 문서 행을 쥐지 않으면 **삭제 정산이 그 작업을 건너뛴다.**
+     *
+     * 문서 삭제 정산은 `documents` 의 BEFORE DELETE 트리거가 한다(V29·V36). `action_guide_jobs`
+     * 에는 문서로 가는 외래키가 없어 작업 행이 삭제에 딸려가지도 않으므로, 트리거가 **접수보다
+     * 먼저** 돌면 그 작업만 `queued` 로 남아 예약이 영원히 묶인다. 접수가 변환 행에 이어 문서 행을
+     * 잡아야 삭제가 접수의 커밋을 기다리고, 트리거가 새 작업까지 함께 정산한다.
+     */
+    @Test
+    @DisplayName("접수와 삭제가 경합하면 새 작업은 삭제 정산에 포함된다")
+    fun `접수와 삭제가 경합하면 새 작업은 삭제 정산에 포함된다`() {
+        val fixture = seed()
+        val job = fixture.job()
+        val pool = Executors.newSingleThreadExecutor()
+        val started = CountDownLatch(1)
+        try {
+            lateinit var deletion: Future<Int>
+            tx.executeWithoutResult {
+                assertThat(jobs.lockOwnedContext(fixture.ownerId, fixture.conversionId)).isNotNull()
+                deletion =
+                    pool.submit<Int> {
+                        started.countDown()
+                        jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", fixture.documentId).update()
+                    }
+                assertThat(started.await(HANDOFF_SECONDS, TimeUnit.SECONDS)).isTrue()
+                assertThatThrownBy { deletion.get(BLOCKED_MILLIS, TimeUnit.MILLISECONDS) }
+                    .describedAs("삭제가 접수를 기다리지 않았다 — 트리거가 새 작업을 보지 못한다")
+                    .isInstanceOf(TimeoutException::class.java)
+                assertThat(jobs.insert(job)).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
+                credits.reserve(job.ownerId, job.workspaceId, job.documentId, job.jobId, Credits(job.reservedCredits))
+            }
+
+            assertThat(deletion.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(1)
+            assertThat(status(job.jobId)).isEqualTo("superseded")
+            assertThat(settlement(job.jobId)).isEqualTo("released")
+            assertThat(transactionCount(job.jobId, "release")).isEqualTo(1)
+            assertThat(accountReserved(fixture.workspaceId))
+                .describedAs("삭제 정산이 새 작업의 예약까지 풀어야 한다")
+                .isEqualByComparingTo(BigDecimal.ZERO)
         } finally {
             pool.shutdownNow()
         }
@@ -671,6 +716,13 @@ class JdbcActionGuideJobFlowTest {
     private fun settlement(jobId: UUID): String =
         jdbc
             .sql("SELECT settlement FROM action_guide_jobs WHERE id=:id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
+    private fun status(jobId: UUID): String =
+        jdbc
+            .sql("SELECT status FROM action_guide_jobs WHERE id=:id")
             .param("id", jobId)
             .query { rs, _ -> rs.getString(1) }
             .single()

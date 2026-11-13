@@ -75,6 +75,7 @@ sealed interface IllustrationSuggestionJobAcquire {
 /** 접수·조회와 worker fencing 을 함께 제공하는 `illustration_suggestion_jobs` 저장소 포트. */
 @Suppress("TooManyFunctions")
 interface IllustrationSuggestionJobRepository {
+    /** 변환 행을 잠그고 이어서 문서 행을 잡는다 — **반드시 트랜잭션 안에서 부른다.** */
     fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,

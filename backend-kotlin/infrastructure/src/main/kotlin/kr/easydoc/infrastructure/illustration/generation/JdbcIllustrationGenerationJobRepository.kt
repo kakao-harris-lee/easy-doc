@@ -47,32 +47,87 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .query { rs, _ -> rs.getInt(1) }
             .single()
 
+    /**
+     * Intake path: locks the conversion row, then takes the document `FOR KEY SHARE SKIP LOCKED`.
+     *
+     * **Conversion before document**, because intake must not hold the document row while waiting
+     * for the conversion row (issue #219). **And the document is taken `SKIP LOCKED`, because a
+     * deleter's effective order is the opposite one.** `DocumentService.delete` reaches the
+     * conversion row through `lockPendingReservation`, which matches only a `pending`/`processing`
+     * conversion with credits still reserved. For the `done` conversion intake actually requires it
+     * matches nothing, so the delete's only route to the conversion row is the FK cascade
+     * (`conversions.document_id ON DELETE CASCADE`), which runs *after* the document row — making
+     * the delete d→c. A blocking document lock here would close that cycle; skipping never waits.
+     *
+     * Skipping is also the right answer, not a compromise. `FOR KEY SHARE` conflicts only with
+     * `FOR UPDATE`, key updates and deletes; the sole `FOR UPDATE OF d` in product code is the
+     * expired-retention purge (itself `SKIP LOCKED`), the conversion worker's
+     * `FOR NO KEY UPDATE OF c, d` does not conflict, and ordinary document updates are non-key. So
+     * a skipped row means a delete or a purge holds this document, and the caller's `null` → 404 is
+     * exactly what the client should see.
+     *
+     * The one inaccuracy is transient: if that deleter or purge batch later rolls back, the document
+     * is still there and this 404 was wrong. A retry then succeeds, which is the right trade against
+     * a deadlock that aborts a transaction outright.
+     *
+     * Taking the document row still matters when intake gets there first: a delete arriving
+     * afterwards waits for this transaction, so the BEFORE DELETE trigger
+     * (`settle_document_jobs_before_delete`) sees the job this transaction is inserting. The job
+     * rows have no foreign key to `documents`, so a delete that slipped in between would settle and
+     * purge every job *except* the one being accepted, leaking its reservation and leaving its
+     * encrypted input behind.
+     *
+     * Both locks last only as long as the transaction, so this **must be called inside one**.
+     */
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+    ): IllustrationGenerationJobContext? {
+        val context = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId) ?: return null
+        return if (lockDocument(SKIP_LOCKED_DOCUMENT_SQL, ownerId, conversionId)) context else null
+    }
 
+    /**
+     * Reads the same snapshot without locking the conversion row, holding only the `FOR KEY SHARE`
+     * document lock so deletion still serializes against the read.
+     *
+     * A read takes no conversion lock, so it can never close the cycle described on
+     * [lockOwnedContext] — it waits on the document row and nothing waits on it. **That is the rule
+     * to keep: a transaction holding this document lock must never afterwards wait on a conversion
+     * row.** It blocks here rather than skipping precisely because it cannot be part of a cycle; a
+     * caller that added a conversion lock after this call would turn that back into one, and would
+     * have to take the conversion row first, as [lockOwnedContext] does.
+     *
+     * The lock is what keeps the serialization, so this **must be called inside a transaction** —
+     * outside one it is released with the statement and the document can vanish mid-read.
+     */
     override fun readOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? = ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    ): IllustrationGenerationJobContext? {
+        if (!lockDocument(LOCK_DOCUMENT_SQL, ownerId, conversionId)) return null
+        return ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    }
+
+    private fun lockDocument(
+        sql: String,
+        ownerId: UUID,
+        conversionId: UUID,
+    ): Boolean =
+        jdbc
+            .sql(sql)
+            .param("ownerId", ownerId)
+            .param("conversionId", conversionId)
+            .query { _, _ -> true }
+            .optional()
+            .orElse(false)
 
     private fun ownedContext(
         sql: String,
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? {
-        // Keep deletion behind the document lock; only conversion writes need the stronger conversion lock.
-        val documentExists =
-            jdbc
-                .sql(LOCK_DOCUMENT_SQL)
-                .param("ownerId", ownerId)
-                .param("conversionId", conversionId)
-                .query { _, _ -> true }
-                .optional()
-                .orElse(false)
-        if (!documentExists) return null
-        return jdbc
+    ): IllustrationGenerationJobContext? =
+        jdbc
             .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
@@ -86,7 +141,6 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
                 )
             }.optional()
             .orElse(null)
-    }
 
     override fun findByRequestId(
         ownerId: UUID,
@@ -335,7 +389,8 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
 
     private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
 
-    private companion object {
+    /** `internal` 이라 잠금 순서 시험이 SQL 을 베껴 쓰지 않고 접수의 두 문장을 그대로 돌린다. */
+    internal companion object {
         const val NOT_CHARGED = "not_charged"
         const val ACQUIRE_LOCK_KEY: Long = 7_218_930_647L
 
@@ -365,6 +420,9 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
             FOR KEY SHARE OF d
             """.trimIndent()
+
+        /** Intake's document step — never waits behind a deleter; see [lockOwnedContext]. */
+        val SKIP_LOCKED_DOCUMENT_SQL = "$LOCK_DOCUMENT_SQL SKIP LOCKED"
 
         val OWNED_REQUEST_SQL =
             "SELECT $JOB_COLUMNS FROM illustration_generation_jobs WHERE owner_user_id = :ownerId " +

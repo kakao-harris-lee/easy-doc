@@ -19,6 +19,18 @@ import java.util.UUID
  * 않은 채로 문서가 지워지면 그 크레딧이 영원히 묶인다. 이 경로는 사용자 요청이 아니라
  * worker 의 보존 만료 배치라 소유자를 인자로 받을 자리가 없다 — [lockPendingReservations]
  * 의 SQL 이 소유 술어 없이 `ids` 로만 좁힌다(`OwnershipPredicateGuardTest` 미방어 목록).
+ *
+ * **접수와의 잠금 순서(이슈 #219).** 이 배치는 문서 → 작업 → 변환 순으로 잡아 접수(변환 → 문서)와
+ * 방향이 반대다. 그래도 사이클이 닫히지 않는 이유는 둘이다.
+ *
+ * ⑴ 접수의 문서 문장이 `SKIP LOCKED` 다(`…JobRepository.lockOwnedContext`). 접수는 이 배치가 쥔
+ *    문서 행을 **기다리지 않고** 건너뛰어 `null` → 404 로 끝난다. 기다리는 변이 없으니 사이클도 없다.
+ * ⑵ 애초에 겹칠 수 있는 구간이 보존 만료의 **그 순간 하나**다. 이 배치는
+ *    `retention_expires_at <= now()` 인 문서만 고르고, 접수의 context 질의는
+ *    `retention_expires_at > now()` 인 문서만 본다. 두 술어는 서로 배타적이라, 한 문서가 두 질의에
+ *    동시에 걸리려면 두 문장 사이에서 만료 시각이 지나가야 한다.
+ *
+ * 그래서 이 파일의 잠금 순서는 그대로 둔다 — 바꿀 이유가 접수 쪽에서 오지 않는다.
  */
 class JdbcExpiredDocumentPurge(
     private val jdbc: JdbcClient,
@@ -183,6 +195,17 @@ class JdbcExpiredDocumentPurge(
               )
             """.trimIndent()
 
+        /**
+         * **제품 코드에서 `documents` 를 막는 잠금은 지금 이 문장 하나뿐이고, 그 사실에 기대는
+         * 곳이 있다.** 세 가족의 접수(`…JobRepository.lockOwnedContext`)는 문서 행을
+         * `FOR KEY SHARE … SKIP LOCKED` 로 집어, 건너뛴 행을 「지워지거나 파기되는 중」으로 읽고
+         * 404 를 돌려준다. 그 해석이 맞는 것은 `FOR KEY SHARE` 와 충돌하는 잠금이 삭제와 이 배치
+         * 말고 없기 때문이다.
+         *
+         * 그러니 `documents` 에 **막는 잠금**(`FOR UPDATE`·키 갱신)을 새로 들이면, 접수가 그것까지
+         * 「삭제 중」으로 읽어 멀쩡한 문서에 404 를 준다. 그런 잠금을 추가할 때는 세
+         * `lockOwnedContext` KDoc 을 함께 고친다.
+         */
         val LOCK_EXPIRED_SQL =
             """
             SELECT d.id
