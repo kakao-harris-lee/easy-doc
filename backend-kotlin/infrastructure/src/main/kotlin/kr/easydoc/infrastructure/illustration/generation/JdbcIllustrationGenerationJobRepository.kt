@@ -48,19 +48,30 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .single()
 
     /**
-     * Intake path: locks the conversion row, then pins the document with `FOR KEY SHARE`.
+     * Intake path: locks the conversion row, then takes the document `FOR KEY SHARE SKIP LOCKED`.
      *
-     * **Conversion before document**, because that is the order deletion takes.
-     * `DocumentService.delete` locks the conversion row (`lockPendingReservation`) and only then
-     * deletes the document; taking the document first crossed the two orders into an ABBA deadlock
-     * that PostgreSQL resolved by killing one transaction (issue #219).
+     * **Conversion before document**, because intake must not hold the document row while waiting
+     * for the conversion row (issue #219). **And the document is taken `SKIP LOCKED`, because a
+     * deleter's effective order is the opposite one.** `DocumentService.delete` reaches the
+     * conversion row through `lockPendingReservation`, which matches only a `pending`/`processing`
+     * conversion with credits still reserved. For the `done` conversion intake actually requires it
+     * matches nothing, so the delete's only route to the conversion row is the FK cascade
+     * (`conversions.document_id ON DELETE CASCADE`), which runs *after* the document row — making
+     * the delete d→c. A blocking document lock here would close that cycle; skipping never waits.
      *
-     * The document lock itself has to stay. Deleting a document settles that document's jobs in a
-     * BEFORE DELETE trigger (`settle_document_jobs_before_delete`), and the job rows have no foreign
-     * key to carry them along, so a deletion slipping between this read and the insert would settle
-     * and purge every job *except* the one being accepted — leaking its reservation and leaving its
-     * encrypted input behind. Holding the document row makes the deletion wait for this transaction
-     * and settle the new job with the rest.
+     * Skipping is also the right answer, not a compromise. `FOR KEY SHARE` conflicts only with
+     * `FOR UPDATE`, key updates and deletes; the sole `FOR UPDATE OF d` in product code is the
+     * expired-retention purge (itself `SKIP LOCKED`), the conversion worker's
+     * `FOR NO KEY UPDATE OF c, d` does not conflict, and ordinary document updates are non-key. So
+     * a skipped row means a delete or a purge holds this document, and the caller's `null` → 404 is
+     * exactly what the client should see.
+     *
+     * Taking the document row still matters when intake gets there first: a delete arriving
+     * afterwards waits for this transaction, so the BEFORE DELETE trigger
+     * (`settle_document_jobs_before_delete`) sees the job this transaction is inserting. The job
+     * rows have no foreign key to `documents`, so a delete that slipped in between would settle and
+     * purge every job *except* the one being accepted, leaking its reservation and leaving its
+     * encrypted input behind.
      *
      * Both locks last only as long as the transaction, so this **must be called inside one**.
      */
@@ -69,7 +80,7 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
         conversionId: UUID,
     ): IllustrationGenerationJobContext? {
         val context = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId) ?: return null
-        return if (lockDocument(ownerId, conversionId)) context else null
+        return if (lockDocument(SKIP_LOCKED_DOCUMENT_SQL, ownerId, conversionId)) context else null
     }
 
     /**
@@ -86,16 +97,17 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
         ownerId: UUID,
         conversionId: UUID,
     ): IllustrationGenerationJobContext? {
-        if (!lockDocument(ownerId, conversionId)) return null
+        if (!lockDocument(LOCK_DOCUMENT_SQL, ownerId, conversionId)) return null
         return ownedContext(CONTEXT_SQL, ownerId, conversionId)
     }
 
     private fun lockDocument(
+        sql: String,
         ownerId: UUID,
         conversionId: UUID,
     ): Boolean =
         jdbc
-            .sql(LOCK_DOCUMENT_SQL)
+            .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
             .query { _, _ -> true }
@@ -369,7 +381,8 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
 
     private fun utc(instant: Instant): OffsetDateTime = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC)
 
-    private companion object {
+    /** `internal` 이라 잠금 순서 시험이 SQL 을 베껴 쓰지 않고 접수의 두 문장을 그대로 돌린다. */
+    internal companion object {
         const val NOT_CHARGED = "not_charged"
         const val ACQUIRE_LOCK_KEY: Long = 7_218_930_647L
 
@@ -399,6 +412,9 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
             FOR KEY SHARE OF d
             """.trimIndent()
+
+        /** Intake's document step — never waits behind a deleter; see [lockOwnedContext]. */
+        val SKIP_LOCKED_DOCUMENT_SQL = "$LOCK_DOCUMENT_SQL SKIP LOCKED"
 
         val OWNED_REQUEST_SQL =
             "SELECT $JOB_COLUMNS FROM illustration_generation_jobs WHERE owner_user_id = :ownerId " +

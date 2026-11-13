@@ -24,17 +24,26 @@ import java.util.UUID
 @Suppress("TooManyFunctions")
 class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJobRepository {
     /**
-     * 접수 경로 — 변환 행을 잠근 **뒤에** 문서 행을 `FOR KEY SHARE` 로 잡는다.
+     * 접수 경로 — 변환 행을 잠근 **뒤에** 문서 행을 `FOR KEY SHARE SKIP LOCKED` 로 잡는다.
      *
-     * **변환이 먼저인 이유는 그것이 삭제의 순서이기 때문이다.** 문서 삭제
-     * (`DocumentService.delete`)는 `lockPendingReservation` 으로 변환 행을 잠그고 그다음 문서를
-     * 지운다. 접수가 문서를 먼저 잡으면 두 순서가 엇갈려 ABBA 교착이 된다(이슈 #219).
+     * **변환이 먼저인 이유는** 접수가 문서 행을 쥔 채 변환 행을 기다리면 안 되기 때문이고
+     * (이슈 #219), **문서를 건너뛰며 잡는 이유는 삭제의 실질 순서가 그 반대이기 때문이다.**
+     * `DocumentService.delete` 가 변환 행에 닿는 길인 `lockPendingReservation` 은 예약이 남은
+     * `pending`·`processing` 변환만 고른다. 접수가 요구하는 `done` 변환에서는 한 행도 고르지
+     * 않으므로 삭제는 FK CASCADE(`conversions.document_id ON DELETE CASCADE`)로만 변환 행에
+     * 닿고, 그것은 문서 행 **뒤**다 — 삭제가 문서→변환이 된다. 여기서 문서 행을 기다리면 그
+     * 사이클이 닫히지만, 건너뛰면 기다리지 않는다.
      *
-     * **문서 잠금 자체는 빠뜨릴 수 없다.** 문서 삭제 정산은 `documents` 의 BEFORE DELETE
-     * 트리거(`settle_document_jobs_before_delete`)가 하고, `action_guide_jobs` 에는 문서로 가는
-     * 외래키가 없어 삭제에 딸려가지도 않는다. 그래서 이 조회와 삽입 사이로 삭제가 끼어들면 **지금
-     * 접수 중인 작업만** 정산에서 빠져 `queued` 로 남고 예약이 영원히 묶인다. 문서 행을 쥐고
-     * 있으면 삭제가 이 트랜잭션을 기다리므로 트리거가 새 작업까지 함께 정산한다.
+     * 건너뛰는 것이 타협이 아니라 **옳은 답**이다. `FOR KEY SHARE` 는 `FOR UPDATE`·키 갱신·삭제
+     * 와만 충돌한다. 제품 코드의 유일한 `FOR UPDATE OF d` 는 보존 만료 파기(그 자신도
+     * `SKIP LOCKED`)이고, 변환 worker 의 `FOR NO KEY UPDATE OF c, d` 는 충돌하지 않으며 보통의
+     * 문서 갱신은 키 갱신이 아니다. 그러니 건너뛴 행은 **지금 지워지는 중인 문서**이고,
+     * 호출자의 `null` → 404 가 사용자에게 보여야 할 바로 그 답이다.
+     *
+     * 접수가 **먼저** 닿았을 때 문서 행을 잡는 의미는 그대로다. 뒤이어 오는 삭제가 이 트랜잭션을
+     * 기다리므로 BEFORE DELETE 트리거(`settle_document_jobs_before_delete`)가 지금 삽입 중인
+     * 작업까지 함께 정산한다 — `action_guide_jobs` 에는 문서로 가는 외래키가 없어, 중간에 끼어든
+     * 삭제는 **지금 접수 중인 작업만** 정산에서 빠뜨려 예약을 영원히 묶어 둔다.
      *
      * 두 잠금 모두 트랜잭션과 함께 풀리므로 **반드시 트랜잭션 안에서 부른다.**
      */
@@ -61,7 +70,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
                 .orElse(null) ?: return null
         val documentExists =
             jdbc
-                .sql(LOCK_DOCUMENT_SQL)
+                .sql(SKIP_LOCKED_DOCUMENT_SQL)
                 .param("ownerId", ownerId)
                 .param("conversionId", conversionId)
                 .query { _, _ -> true }
@@ -369,13 +378,16 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             FOR NO KEY UPDATE OF c
             """.trimIndent()
 
-        /** 접수가 변환 행 **다음에** 잡는 문서 잠금 — 두 가족의 같은 이름 문장과 같은 모양이다. */
-        val LOCK_DOCUMENT_SQL =
+        /**
+         * 접수가 변환 행 **다음에** 잡는 문서 잠금 — 두 가족의 같은 이름 문장과 같은 모양이다.
+         * 접수에는 조회가 없어 `SKIP LOCKED` 한 벌만 둔다([lockOwnedContext]).
+         */
+        val SKIP_LOCKED_DOCUMENT_SQL =
             """
             SELECT d.id FROM documents d
             JOIN conversions c ON c.document_id = d.id
             WHERE c.id = :conversionId AND d.user_id = :ownerId AND d.retention_expires_at > now()
-            FOR KEY SHARE OF d
+            FOR KEY SHARE OF d SKIP LOCKED
             """.trimIndent()
 
         val OWNED_REQUEST_SQL =
