@@ -105,6 +105,7 @@ sealed interface IllustrationGenerationJobAcquire {
 }
 
 interface IllustrationGenerationJobRepository {
+    /** Locks the conversion row and then the document, in that order — must be called inside a transaction. */
     fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,

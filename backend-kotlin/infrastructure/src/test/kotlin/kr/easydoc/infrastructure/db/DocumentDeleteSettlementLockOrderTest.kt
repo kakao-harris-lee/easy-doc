@@ -1,8 +1,12 @@
 package kr.easydoc.infrastructure.db
 
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.actionguide.JdbcActionGuideJobRepository
 import kr.easydoc.infrastructure.auth.JdbcAccountDeletionRepository
 import kr.easydoc.infrastructure.document.DocumentJobLocks
+import kr.easydoc.infrastructure.document.JdbcConversionRepository
+import kr.easydoc.infrastructure.illustration.generation.JdbcIllustrationGenerationJobRepository
+import kr.easydoc.infrastructure.illustration.suggestion.JdbcIllustrationSuggestionJobRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
@@ -19,6 +23,7 @@ import java.sql.Connection
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import javax.sql.DataSource
@@ -43,6 +48,10 @@ import javax.sql.DataSource
  *
  * 두 경우 모두 「삭제가 작업 행 앞에서 멈춰 서 있는 동안 worker 가 계정을 잡을 수 있는가」로
  * 잰다 — 잡히면 순서가 같은 것이고, 교착하면 삭제가 계정을 먼저 쥔 것이다.
+ *
+ * **접수도 같은 규칙 아래 있다**(이슈 #219). 삭제는 「변환 행 → 문서 행」 순으로 잡으므로 세
+ * 가족의 접수(`lockOwnedContext`)가 문서 행을 먼저 잡으면 안 된다 —
+ * [assertAcceptanceDoesNotDeadlockWithDelete] 가 가족마다 그것을 지킨다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DocumentDeleteSettlementLockOrderTest {
@@ -50,6 +59,7 @@ class DocumentDeleteSettlementLockOrderTest {
     private lateinit var jdbc: JdbcClient
     private lateinit var tx: TransactionTemplate
     private lateinit var accountDeletion: JdbcAccountDeletionRepository
+    private lateinit var conversions: JdbcConversionRepository
     private lateinit var pool: ExecutorService
 
     @BeforeEach
@@ -65,6 +75,7 @@ class DocumentDeleteSettlementLockOrderTest {
         jdbc = JdbcClient.create(dataSource)
         tx = TransactionTemplate(DataSourceTransactionManager(dataSource))
         accountDeletion = JdbcAccountDeletionRepository(jdbc, DocumentJobLocks(jdbc))
+        conversions = JdbcConversionRepository(jdbc)
         pool = Executors.newSingleThreadExecutor()
     }
 
@@ -123,6 +134,81 @@ class DocumentDeleteSettlementLockOrderTest {
         raceDeletionAgainstHolderOf(seeded, ACTION_GUIDE_JOBS) { deleteAccount(seeded.ownerId) }
 
         assertSettledAfterAccountDeletion(seeded)
+    }
+
+    @Test
+    @DisplayName("문서 삭제가 그림 생성 접수와 교착하지 않는다")
+    fun `문서 삭제가 그림 생성 접수와 교착하지 않는다`() {
+        val jobs = JdbcIllustrationGenerationJobRepository(jdbc)
+
+        assertAcceptanceDoesNotDeadlockWithDelete { ownerId, conversionId ->
+            jobs.lockOwnedContext(ownerId, conversionId)
+        }
+    }
+
+    @Test
+    @DisplayName("문서 삭제가 그림 제안 접수와 교착하지 않는다")
+    fun `문서 삭제가 그림 제안 접수와 교착하지 않는다`() {
+        val jobs = JdbcIllustrationSuggestionJobRepository(jdbc, MAX_PROVIDER_ATTEMPTS)
+
+        assertAcceptanceDoesNotDeadlockWithDelete { ownerId, conversionId ->
+            jobs.lockOwnedContext(ownerId, conversionId)
+        }
+    }
+
+    @Test
+    @DisplayName("문서 삭제가 행동 안내 접수와 교착하지 않는다")
+    fun `문서 삭제가 행동 안내 접수와 교착하지 않는다`() {
+        val jobs = JdbcActionGuideJobRepository(jdbc)
+
+        assertAcceptanceDoesNotDeadlockWithDelete { ownerId, conversionId ->
+            jobs.lockOwnedContext(ownerId, conversionId)
+        }
+    }
+
+    /**
+     * **접수와 삭제가 변환 행과 문서 행을 같은 순서로 잡는가**(이슈 #219).
+     *
+     * 삭제는 변환 → 문서 순이다 — `DocumentService.delete` 가 `lockPendingReservation`
+     * (`FOR NO KEY UPDATE OF c`)로 예약을 잠근 뒤 `DELETE FROM documents` 로 문서 행에 닿는다.
+     * 접수([lock])가 문서 행을 먼저 잡으면 두 순서가 엇갈려 ABBA 가 닫히고, PostgreSQL 이 둘 중
+     * 하나를 죽인다 — 접수가 죽으면 409·404 자리에 500 이, 삭제가 죽으면 되돌려진 삭제가 남는다.
+     *
+     * 순서를 못박아 잰다. 삭제가 변환 행을 **먼저** 쥔 채 접수를 띄우면 접수는 변환 행 앞에서 멈춘다.
+     * 그때 접수가 쥐고 있는 것이 갈림길이다 — 변환을 먼저 잡는 지금 구현은 그 자리에서 **아무것도**
+     * 쥐지 않아 삭제가 문서 행으로 그냥 나아가고, 문서를 먼저 잡던 구현은 그 문서 잠금 때문에
+     * 사이클을 닫아 아래 `DELETE` 가 `deadlock detected` 로 끊긴다.
+     *
+     * 반대 순서(접수가 먼저 커밋될 때까지 삭제가 기다리는 쪽)는 어느 구현에서도 교착하지 않아
+     * 회귀를 잡지 못한다 — 이 순서 하나가 시험의 전부다.
+     */
+    private fun assertAcceptanceDoesNotDeadlockWithDelete(lock: (UUID, UUID) -> Unit) {
+        val seeded = seedReservedConversion()
+        lateinit var acceptance: Future<*>
+        tx.executeWithoutResult {
+            assertThat(conversions.lockPendingReservation(seeded.ownerId, seeded.documentId))
+                .describedAs("삭제가 잠글 미정산 예약")
+                .isNotNull()
+            acceptance =
+                pool.submit {
+                    tx.executeWithoutResult { lock(seeded.ownerId, seeded.conversionId) }
+                }
+            assertThatThrownBy { acceptance.get(BLOCKED_MILLIS, TimeUnit.MILLISECONDS) }
+                .describedAs("접수가 변환 행을 기다리지 않았다 — 경합이 성립하지 않았다")
+                .isInstanceOf(TimeoutException::class.java)
+
+            deleteDocument(seeded.documentId)
+        }
+
+        acceptance.get(HANDOFF_SECONDS, TimeUnit.SECONDS)
+        assertThat(documentCount(seeded.ownerId)).isZero()
+    }
+
+    /** 삭제가 실제로 예약을 잠그려면 변환이 **처리 중이고 예약이 남아 있어야** 한다. */
+    private fun seedReservedConversion(): SeededConversion {
+        val owner = insertOwner()
+        val document = insertDocument(owner, conversionStatus = "processing", creditsReserved = "1.0")
+        return SeededConversion(owner.ownerId, document.documentId, document.conversionId)
     }
 
     /**
@@ -245,7 +331,11 @@ class DocumentDeleteSettlementLockOrderTest {
         return Owner(ownerId, workspaceId)
     }
 
-    private fun insertDocument(owner: Owner): SeededDocument {
+    private fun insertDocument(
+        owner: Owner,
+        conversionStatus: String = "done",
+        creditsReserved: String = "0",
+    ): SeededDocument {
         val documentId = UUID.randomUUID()
         val conversionId = UUID.randomUUID()
         execute(
@@ -260,8 +350,10 @@ class DocumentDeleteSettlementLockOrderTest {
         execute(
             """
             INSERT INTO conversions
-                (id,document_id,status,easy_text_encrypted,encryption_scheme,key_version,content_revision)
-            VALUES ('$conversionId','$documentId','done','\x02'::bytea,'aes256gcm-v1',1,1)
+                (id,document_id,status,easy_text_encrypted,encryption_scheme,key_version,content_revision,
+                 credits_reserved)
+            VALUES ('$conversionId','$documentId','$conversionStatus','\x02'::bytea,'aes256gcm-v1',1,1,
+                    $creditsReserved)
             """.trimIndent(),
         )
         return SeededDocument(documentId, conversionId)
@@ -376,6 +468,12 @@ class DocumentDeleteSettlementLockOrderTest {
         val conversionId: UUID,
     )
 
+    private class SeededConversion(
+        val ownerId: UUID,
+        val documentId: UUID,
+        val conversionId: UUID,
+    )
+
     private class Seeded(
         val owner: Owner,
         val documentIds: List<UUID>,
@@ -390,6 +488,9 @@ class DocumentDeleteSettlementLockOrderTest {
         const val GENERATION_JOBS = "illustration_generation_jobs"
         const val SUGGESTION_JOBS = "illustration_suggestion_jobs"
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
+
+        /** 접수 저장소를 세우는 데만 쓴다 — 이 시험은 상한이 아니라 잠금 순서를 잰다. */
+        const val MAX_PROVIDER_ATTEMPTS = 1
 
         /** 두 작업 표의 `…_fingerprint_length` 가 정확히 64자를 요구한다. */
         const val FINGERPRINT = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

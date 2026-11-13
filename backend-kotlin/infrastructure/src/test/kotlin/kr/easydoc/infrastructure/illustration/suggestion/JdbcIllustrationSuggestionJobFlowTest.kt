@@ -147,7 +147,10 @@ class JdbcIllustrationSuggestionJobFlowTest {
                     .isInstanceOf(TimeoutException::class.java)
             }
             assertThat(deletion.get(HANDOFF_SECONDS, TimeUnit.SECONDS)).isEqualTo(1)
-            assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+            // 문서 잠금이 문장 하나로 풀리지 않도록 조회도 트랜잭션 안에서 부른다(포트 규약).
+            tx.executeWithoutResult {
+                assertThat(jobs.readOwnedContext(fixture.ownerId, fixture.conversionId)).isNull()
+            }
         } finally {
             pool.shutdownNow()
         }

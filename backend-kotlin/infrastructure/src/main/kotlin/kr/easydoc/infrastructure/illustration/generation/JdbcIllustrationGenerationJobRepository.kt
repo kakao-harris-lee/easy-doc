@@ -47,32 +47,67 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
             .query { rs, _ -> rs.getInt(1) }
             .single()
 
+    /**
+     * Intake path: locks the conversion row, then pins the document with `FOR KEY SHARE`.
+     *
+     * **Conversion before document**, because that is the order deletion takes.
+     * `DocumentService.delete` locks the conversion row (`lockPendingReservation`) and only then
+     * deletes the document; taking the document first crossed the two orders into an ABBA deadlock
+     * that PostgreSQL resolved by killing one transaction (issue #219).
+     *
+     * The document lock itself has to stay. Deleting a document settles that document's jobs in a
+     * BEFORE DELETE trigger (`settle_document_jobs_before_delete`), and the job rows have no foreign
+     * key to carry them along, so a deletion slipping between this read and the insert would settle
+     * and purge every job *except* the one being accepted — leaking its reservation and leaving its
+     * encrypted input behind. Holding the document row makes the deletion wait for this transaction
+     * and settle the new job with the rest.
+     *
+     * Both locks last only as long as the transaction, so this **must be called inside one**.
+     */
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+    ): IllustrationGenerationJobContext? {
+        val context = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId) ?: return null
+        return if (lockDocument(ownerId, conversionId)) context else null
+    }
 
+    /**
+     * Reads the same snapshot without locking the conversion row, holding only the `FOR KEY SHARE`
+     * document lock so deletion still serializes against the read.
+     *
+     * A read takes no conversion lock, so it can never close the cycle described on
+     * [lockOwnedContext] — it waits on the document row and nothing waits on it.
+     *
+     * The lock is what keeps the serialization, so this **must be called inside a transaction** —
+     * outside one it is released with the statement and the document can vanish mid-read.
+     */
     override fun readOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? = ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    ): IllustrationGenerationJobContext? {
+        if (!lockDocument(ownerId, conversionId)) return null
+        return ownedContext(CONTEXT_SQL, ownerId, conversionId)
+    }
+
+    private fun lockDocument(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): Boolean =
+        jdbc
+            .sql(LOCK_DOCUMENT_SQL)
+            .param("ownerId", ownerId)
+            .param("conversionId", conversionId)
+            .query { _, _ -> true }
+            .optional()
+            .orElse(false)
 
     private fun ownedContext(
         sql: String,
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationGenerationJobContext? {
-        // Keep deletion behind the document lock; only conversion writes need the stronger conversion lock.
-        val documentExists =
-            jdbc
-                .sql(LOCK_DOCUMENT_SQL)
-                .param("ownerId", ownerId)
-                .param("conversionId", conversionId)
-                .query { _, _ -> true }
-                .optional()
-                .orElse(false)
-        if (!documentExists) return null
-        return jdbc
+    ): IllustrationGenerationJobContext? =
+        jdbc
             .sql(sql)
             .param("ownerId", ownerId)
             .param("conversionId", conversionId)
@@ -86,7 +121,6 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
                 )
             }.optional()
             .orElse(null)
-    }
 
     override fun findByRequestId(
         ownerId: UUID,
