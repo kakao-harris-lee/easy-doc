@@ -40,6 +40,10 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
      * 문서 갱신은 키 갱신이 아니다. 그러니 건너뛴 행은 **지금 지워지는 중인 문서**이고,
      * 호출자의 `null` → 404 가 사용자에게 보여야 할 바로 그 답이다.
      *
+     * 틀릴 수 있는 한 갈래는 **일시적이다.** 그 삭제나 파기 배치가 나중에 롤백하면 문서는 그대로
+     * 남아 있고 방금의 404 는 틀린 답이 된다. 그때는 다시 요청하면 통과한다 — 트랜잭션을 통째로
+     * 죽이는 교착과 맞바꿀 만한 오차다.
+     *
      * 접수가 **먼저** 닿았을 때 문서 행을 잡는 의미는 그대로다. 뒤이어 오는 삭제가 이 트랜잭션을
      * 기다리므로 BEFORE DELETE 트리거(`settle_document_jobs_before_delete`)가 지금 삽입 중인
      * 작업까지 함께 정산한다 — `action_guide_jobs` 에는 문서로 가는 외래키가 없어, 중간에 끼어든

@@ -195,6 +195,17 @@ class JdbcExpiredDocumentPurge(
               )
             """.trimIndent()
 
+        /**
+         * **제품 코드에서 `documents` 를 막는 잠금은 지금 이 문장 하나뿐이고, 그 사실에 기대는
+         * 곳이 있다.** 세 가족의 접수(`…JobRepository.lockOwnedContext`)는 문서 행을
+         * `FOR KEY SHARE … SKIP LOCKED` 로 집어, 건너뛴 행을 「지워지거나 파기되는 중」으로 읽고
+         * 404 를 돌려준다. 그 해석이 맞는 것은 `FOR KEY SHARE` 와 충돌하는 잠금이 삭제와 이 배치
+         * 말고 없기 때문이다.
+         *
+         * 그러니 `documents` 에 **막는 잠금**(`FOR UPDATE`·키 갱신)을 새로 들이면, 접수가 그것까지
+         * 「삭제 중」으로 읽어 멀쩡한 문서에 404 를 준다. 그런 잠금을 추가할 때는 세
+         * `lockOwnedContext` KDoc 을 함께 고친다.
+         */
         val LOCK_EXPIRED_SQL =
             """
             SELECT d.id

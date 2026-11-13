@@ -66,6 +66,10 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
      * a skipped row means a delete or a purge holds this document, and the caller's `null` → 404 is
      * exactly what the client should see.
      *
+     * The one inaccuracy is transient: if that deleter or purge batch later rolls back, the document
+     * is still there and this 404 was wrong. A retry then succeeds, which is the right trade against
+     * a deadlock that aborts a transaction outright.
+     *
      * Taking the document row still matters when intake gets there first: a delete arriving
      * afterwards waits for this transaction, so the BEFORE DELETE trigger
      * (`settle_document_jobs_before_delete`) sees the job this transaction is inserting. The job
@@ -88,7 +92,11 @@ class JdbcIllustrationGenerationJobRepository(private val jdbc: JdbcClient) : Il
      * document lock so deletion still serializes against the read.
      *
      * A read takes no conversion lock, so it can never close the cycle described on
-     * [lockOwnedContext] — it waits on the document row and nothing waits on it.
+     * [lockOwnedContext] — it waits on the document row and nothing waits on it. **That is the rule
+     * to keep: a transaction holding this document lock must never afterwards wait on a conversion
+     * row.** It blocks here rather than skipping precisely because it cannot be part of a cycle; a
+     * caller that added a conversion lock after this call would turn that back into one, and would
+     * have to take the conversion row first, as [lockOwnedContext] does.
      *
      * The lock is what keeps the serialization, so this **must be called inside a transaction** —
      * outside one it is released with the statement and the document can vanish mid-read.

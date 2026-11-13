@@ -372,10 +372,13 @@ class DocumentDeleteSettlementLockOrderTest {
     }
 
     /**
-     * **스냅샷을 먼저 버린다.** `pg_stat_activity` 는 트랜잭션 안에서 **얼어 있다**
-     * (`stats_fetch_consistency = cache` 가 기본값) — 이 트랜잭션이 시작된 뒤에 다른 백엔드가
-     * 기다리기 시작하면, 다시 읽어도 처음 본 스냅샷이 그대로 돌아온다. 그래서 폴링마다
-     * `pg_stat_clear_snapshot()` 으로 캐시를 버리고 새로 읽는다.
+     * 폴링마다 `pg_stat_clear_snapshot()` 을 먼저 부르는 것은 **방어적 조치**다.
+     *
+     * `pg_stat_activity` 자체는 트랜잭션 안에서도 갱신된다 — `stats_fetch_consistency` 가 다스리는
+     * 것은 누적 통계 뷰이지 이 뷰가 아니고, PG16 에서 clear 없이도 대기 백엔드가 보이는 것을
+     * 확인했다. 다만 PostgreSQL 문서가 **반복 폴링에는 스냅샷을 버리라고 권하고**,
+     * `stats_fetch_consistency = snapshot` 으로 운영하는 서버에서는 실제로 필요해진다. 한 문장
+     * 값으로 그 변수에 대한 의존을 지우는 편이 낫다.
      */
     private fun blockedBackends(): Int {
         jdbc.sql("SELECT pg_stat_clear_snapshot()").query { _, _ -> true }.single()
