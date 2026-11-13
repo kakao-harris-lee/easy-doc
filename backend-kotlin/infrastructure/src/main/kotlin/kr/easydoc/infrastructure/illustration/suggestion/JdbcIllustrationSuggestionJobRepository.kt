@@ -39,33 +39,56 @@ class JdbcIllustrationSuggestionJobRepository(
         }
     }
 
+    /**
+     * 접수 경로 — 변환 행을 잠근 **뒤에** 문서 행을 `FOR KEY SHARE` 로 잡는다.
+     *
+     * **변환이 먼저인 이유는 그것이 삭제의 순서이기 때문이다.** 문서 삭제
+     * (`DocumentService.delete`)는 `lockPendingReservation` 으로 변환 행을 잠그고 그다음 문서를
+     * 지운다. 접수가 문서를 먼저 잡으면 두 순서가 엇갈려 ABBA 교착이 되고 PostgreSQL 이 둘 중
+     * 하나를 죽인다(이슈 #219).
+     *
+     * **문서 잠금 자체는 빠뜨릴 수 없다.** 문서 삭제 정산은 `documents` 의 BEFORE DELETE
+     * 트리거(`settle_document_jobs_before_delete`)가 하고, 작업 행에는 문서로 가는 외래키가 없어
+     * 삭제에 딸려가지도 않는다. 그래서 이 조회와 삽입 사이로 삭제가 끼어들면 **지금 접수 중인
+     * 작업만** 정산에서 빠져 `queued` 로 남고 예약이 영원히 묶인다. 문서 행을 쥐고 있으면 삭제가
+     * 이 트랜잭션을 기다리므로 트리거가 새 작업까지 함께 정산한다.
+     *
+     * 두 잠금 모두 트랜잭션과 함께 풀리므로 **반드시 트랜잭션 안에서 부른다.**
+     */
     override fun lockOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
-    ): IllustrationSuggestionJobContext? = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId)
+    ): IllustrationSuggestionJobContext? {
+        val context = ownedContext(LOCK_CONTEXT_SQL, ownerId, conversionId) ?: return null
+        return if (lockDocument(ownerId, conversionId)) context else null
+    }
 
     /**
-     * 변환 행을 잠그지 않는 대신 **문서 행만** `FOR KEY SHARE` 로 잡아 삭제와의 직렬화를 지킨다.
+     * 같은 스냅샷을 변환 행 잠금 없이, **문서 행만** `FOR KEY SHARE` 로 잡아 읽는다 — 삭제와의
+     * 직렬화는 그 문서 잠금이 지킨다.
      *
-     * 이 문서 잠금은 접수 경로([lockOwnedContext])에 **두지 않는다.** 문서 삭제
-     * (`DocumentService.delete`)가 변환 행을 먼저 잠그고 문서를 지우므로, 접수가 문서→변환 순으로
-     * 잡으면 두 순서가 엇갈려 ABBA 교착이 된다. 읽기는 변환 행을 잠그지 않아 순환이 생기지 않는다.
+     * 읽기는 변환 행을 잠그지 않으므로 [lockOwnedContext] 가 설명한 순환에 끼지 못한다 —
+     * 문서 행을 기다릴 뿐 아무도 이 트랜잭션을 기다리지 않는다.
      */
     override fun readOwnedContext(
         ownerId: UUID,
         conversionId: UUID,
     ): IllustrationSuggestionJobContext? {
-        val documentExists =
-            jdbc
-                .sql(LOCK_DOCUMENT_SQL)
-                .param("ownerId", ownerId)
-                .param("conversionId", conversionId)
-                .query { _, _ -> true }
-                .optional()
-                .orElse(false)
-        if (!documentExists) return null
+        if (!lockDocument(ownerId, conversionId)) return null
         return ownedContext(CONTEXT_SQL, ownerId, conversionId)
     }
+
+    private fun lockDocument(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): Boolean =
+        jdbc
+            .sql(LOCK_DOCUMENT_SQL)
+            .param("ownerId", ownerId)
+            .param("conversionId", conversionId)
+            .query { _, _ -> true }
+            .optional()
+            .orElse(false)
 
     private fun ownedContext(
         sql: String,

@@ -432,7 +432,9 @@ class OwnershipPredicateGuardTest {
                 "$ACTION_GUIDE_CONTENT | UPDATE [action_guides, conversions, documents]",
                 // 행동 안내 접수의 소유/보존 검증과 worker 완료 직전 본문 버전 재검증.
                 // 호출 시작 원장의 문서 글자 수 스냅샷도 소유자 매개변수로 좁힌다.
+                // 접수는 변환 잠금 뒤에 문서 잠금을 한 문장 더 잡는다(이슈 #219) — 둘 다 소유 술어가 있다.
                 "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [action_guides, conversions, documents]",
+                "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideLlmCallLedger.kt | SELECT [documents]",
                 // ER-28 user paths all enforce owner and retention in SQL.
