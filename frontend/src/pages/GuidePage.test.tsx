@@ -70,7 +70,14 @@ describe('간결한 이용 가이드', () => {
     expect(details).toHaveTextContent('실제 승인일부터 한 달')
     expect(details).toHaveTextContent('다음 결제가 중단')
     expect(details).toHaveTextContent('이미 결제한 이용 기간은 유지')
-    expect(details).toHaveTextContent('고객 지원')
+    // 환불은 「고객 지원에서 확인합니다」가 아니라 terms-2026-11-17 제9조의 기준을 그대로 안내한다.
+    expect(details).toHaveTextContent(
+      '결제 승인일로부터 7일 이내에 크레딧을 사용하지 않았다면 전액',
+    )
+    expect(details).toHaveTextContent('사용하지 않은 크레딧 비율만큼 환불합니다')
+    expect(details).toHaveTextContent('확정 후 3영업일 이내에 카드 승인을 취소합니다')
+    expect(details).toHaveTextContent('이용약관 제9조')
+    expect(details).not.toHaveTextContent('적용 법령, 공개 약관, 결제·이용 내역에 따라')
     expect(details).toHaveTextContent(
       'Basic·Pro는 판매하지 않으며 가격·제공량·출시 시점을 약속하지 않습니다.',
     )
