@@ -7,13 +7,41 @@ import java.time.Instant
 class LegalSnapshotTest {
     @Test
     fun `스냅샷 버전은 공개한 약관 파일 이름과 같다`() {
-        assertThat(LegalSnapshot.VERSION).isEqualTo("2026-11-01")
+        assertThat(LegalSnapshot.TERMS_VERSION).isEqualTo("2026-11-17")
     }
 
     @Test
-    fun `시행 시각은 버전 날짜의 한국 시간 자정이다`() {
+    fun `약관 버전 이력은 게시 순서대로이고 현재 버전이 마지막이다`() {
+        assertThat(LegalSnapshot.TERMS_VERSIONS).containsExactly("2026-11-01", "2026-11-17")
+        assertThat(LegalSnapshot.TERMS_VERSIONS.last()).isEqualTo(LegalSnapshot.TERMS_VERSION)
+        assertThat(LegalSnapshot.TERMS_VERSIONS).isSorted()
+    }
+
+    @Test
+    fun `시행 시각은 첫 약관 버전 날짜의 한국 시간 자정이다`() {
         assertThat(LegalSnapshot.EFFECTIVE_AT).isEqualTo(Instant.parse("2026-11-01T00:00:00+09:00"))
         assertThat(LegalSnapshot.ZONE.id).isEqualTo("Asia/Seoul")
+    }
+
+    @Test
+    fun `동의 시점의 약관 버전은 그 시점에 시행 중이던 약관이다`() {
+        assertThat(LegalSnapshot.termsVersionAt(Instant.parse("2026-10-31T15:00:00Z"))).isEqualTo("2026-11-01")
+        assertThat(LegalSnapshot.termsVersionAt(Instant.parse("2026-11-16T23:59:59+09:00"))).isEqualTo("2026-11-01")
+        assertThat(LegalSnapshot.termsVersionAt(Instant.parse("2026-11-17T00:00:00+09:00"))).isEqualTo("2026-11-17")
+        assertThat(LegalSnapshot.termsVersionAt(Instant.parse("2026-12-01T12:00:00+09:00"))).isEqualTo("2026-11-17")
+    }
+
+    @Test
+    fun `첫 약관 시행 전 동의에는 가리킬 약관이 없다`() {
+        assertThat(LegalSnapshot.termsVersionAt(Instant.parse("2026-10-31T14:59:59Z"))).isNull()
+    }
+
+    @Test
+    fun `약관 개정은 유료 실결제 시행 시각을 옮기지 않는다`() {
+        assertThat(LegalSnapshot.TERMS_VERSION).isNotEqualTo(LegalSnapshot.TERMS_VERSIONS.first())
+        assertThat(LegalSnapshot.EFFECTIVE_AT).isEqualTo(Instant.parse("2026-11-01T00:00:00+09:00"))
+        assertThat(LegalSnapshot.termsVersionAt(LegalSnapshot.EFFECTIVE_AT))
+            .isEqualTo(LegalSnapshot.TERMS_VERSIONS.first())
     }
 
     @Test
@@ -49,8 +77,7 @@ class LegalSnapshotTest {
 
     @Test
     fun `방침 개정은 유료 시행 시각을 옮기지 않는다`() {
-        assertThat(LegalSnapshot.PRIVACY_VERSION).isNotEqualTo(LegalSnapshot.VERSION)
-        assertThat(LegalSnapshot.VERSION).isEqualTo("2026-11-01")
+        assertThat(LegalSnapshot.PRIVACY_VERSION).isNotEqualTo(LegalSnapshot.TERMS_VERSIONS.first())
         assertThat(LegalSnapshot.EFFECTIVE_AT).isEqualTo(Instant.parse("2026-11-01T00:00:00+09:00"))
     }
 }
