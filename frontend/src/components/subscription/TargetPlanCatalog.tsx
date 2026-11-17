@@ -4,9 +4,16 @@ import { TARGET_PLANS, type TargetPlan } from '../../content/plans/targetPlans'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { formatCredits } from '../../lib/credits'
+import { COMPANY_INFO } from '../../config/company'
 
 // 결제대행 심사 기준으로 판매 중인 상품은 Start 하나다 — 고지 항목도 같은 가격표를 읽는다.
 const START_PLAN = TARGET_PLANS.find((plan) => plan.id === 'start')!
+
+// 환불 신청 창구는 회사 정보 구성값 한 곳에서 읽는다. 전화번호는 미확정이면 `null`이라 빼고 적는다.
+const REFUND_CONTACT =
+  COMPANY_INFO.phoneNumber === null
+    ? COMPANY_INFO.supportEmail
+    : `${COMPANY_INFO.supportEmail} 또는 ${COMPANY_INFO.phoneNumber}`
 
 interface TargetPlanCatalogProps {
   workspaceId: string | null
@@ -44,7 +51,7 @@ export function TargetPlanCatalog({
     (!(live || tossEnabled) || consent)
   const buttonLabel =
     selectedPlanId === 'start'
-      ? 'Start 월 99,000원 정기결제 시작'
+      ? `${START_PLAN.name} 월 ${START_PLAN.monthlyPriceLabel} 정기결제 시작`
       : `${selectedPlanName} 결제 준비 중`
 
   return (
@@ -103,32 +110,33 @@ export function TargetPlanCatalog({
       </ul>
       <div className="mt-4 border-t border-border pt-4">
         <div className="space-y-2 text-sm">
-          <dl
-            aria-label="Start 월 정기결제 안내"
-            className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1"
-          >
-            <dt className="font-semibold">상품명</dt>
-            <dd>{START_PLAN.name} 월 정기결제</dd>
-            <dt className="font-semibold">제공 내용</dt>
-            <dd>
-              매월 {formatCredits(START_PLAN.monthlyCredits)}크레딧 ({START_PLAN.pageEquivalent})
-            </dd>
-            <dt className="font-semibold">결제 금액</dt>
-            <dd>월 {START_PLAN.monthlyPriceLabel} (VAT 포함)</dd>
-            <dt className="font-semibold">제공 기간</dt>
-            <dd>1개월 (결제 승인일부터), 매월 자동결제</dd>
-            <dt className="font-semibold">해지 방법</dt>
-            <dd>
-              이 사용량 화면의 「구독 갱신 중단」 버튼으로 언제든 다음 결제를 멈출 수 있고, 이미
-              결제한 기간은 끝까지 이용할 수 있습니다.
-            </dd>
-            <dt className="font-semibold">환불</dt>
-            <dd>
-              <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
-                이용약관 제9조(환불) 보기
-              </a>
-            </dd>
-          </dl>
+          <section aria-label="Start 월 정기결제 안내">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              <dt className="font-semibold">상품명</dt>
+              <dd>{START_PLAN.name} 월 정기결제</dd>
+              <dt className="font-semibold">제공 내용</dt>
+              <dd>
+                매월 {formatCredits(START_PLAN.monthlyCredits)}크레딧 ({START_PLAN.pageEquivalent})
+              </dd>
+              <dt className="font-semibold">결제 금액</dt>
+              <dd>월 {START_PLAN.monthlyPriceLabel} (VAT 포함)</dd>
+              <dt className="font-semibold">제공 기간</dt>
+              <dd>1개월 (결제 승인일부터), 매월 자동결제</dd>
+              <dt className="font-semibold">해지 방법</dt>
+              <dd>
+                구독 중에는 사용량 화면에 나타나는 「구독 갱신 중단」 버튼으로 다음 결제를 멈출 수
+                있고, 이미 결제한 기간은 끝까지 이용할 수 있습니다.
+              </dd>
+              <dt className="font-semibold">환불</dt>
+              <dd>
+                결제 후 7일 이내·크레딧 미사용 시 전액 환불, 그 밖에는 사용하지 않은 크레딧 비율만큼
+                환불합니다. {REFUND_CONTACT}로 신청하세요.{' '}
+                <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
+                  이용약관 제9조(유료 이용) 해지·환불 기준 보기
+                </a>
+              </dd>
+            </dl>
+          </section>
           {live && <p>유료 서비스 적용일: 2026년 11월 1일</p>}
           {checkoutEnabled && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
