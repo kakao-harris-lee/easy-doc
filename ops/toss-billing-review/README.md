@@ -29,8 +29,14 @@ playwright를 찾는다.
 node ops/toss-billing-review/capture.mjs
 
 # 로그인 이후 단계까지 (04b · 05a · 05b · 06)
-TOSS_REVIEW_PW='…' node ops/toss-billing-review/capture.mjs
+# 비밀번호를 명령줄에 쓰지 않는다 — 셸 히스토리와 `ps`에 그대로 남는다.
+read -rsp 'PW: ' TOSS_REVIEW_PW && export TOSS_REVIEW_PW && node ops/toss-billing-review/capture.mjs; unset TOSS_REVIEW_PW
 ```
+
+실행할 때마다 `out/`를 **통째로 지우고** 다시 만든다 — 앞서 만들어 둔
+`out/결제경로_몬딱솔루션_빌링.pptx`도 함께 사라지므로, 남겨야 할 결과물은 미리 다른
+곳으로 옮기고 캡처가 끝난 뒤 `build_pptx.py`를 다시 돌린다. 운영자 최종 캡처는
+`final/`에 두므로 이 삭제의 영향을 받지 않는다.
 
 | 환경변수 | 기본값 | 설명 |
 | --- | --- | --- |

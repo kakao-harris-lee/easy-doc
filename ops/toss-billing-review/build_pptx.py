@@ -151,10 +151,30 @@ def load_manifest(manifest_path: Path) -> dict:
 
 
 def load_final_highlights(final_dir: Path) -> dict:
+    """`final/highlights.json`을 읽는다 — 손으로 쓰는 파일이라 오류를 친절히 알린다."""
     path = final_dir / "highlights.json"
     if not path.is_file():
         return {}
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"{path}: JSON 형식이 아닙니다 ({error.lineno}행 {error.colno}열: {error.msg}). "
+            "README의 형식 예시를 확인하세요."
+        ) from error
+    if not isinstance(data, dict):
+        raise SystemExit(f"{path}: 최상위가 객체여야 합니다(파일 이름 → 좌표).")
+    for name, override in data.items():
+        if not isinstance(override, dict):
+            raise SystemExit(f'{path}: "{name}" 값이 객체여야 합니다.')
+        for index, rect in enumerate(override.get("rects", [])):
+            missing = [key for key in ("x", "y", "width", "height") if key not in rect]
+            if missing:
+                raise SystemExit(
+                    f'{path}: "{name}"의 {index + 1}번째 rect에 {", ".join(missing)} 값이 없습니다. '
+                    "x·y·width·height 는 모두 있어야 합니다."
+                )
+    return data
 
 
 def build_panels(manifest: dict, out_dir: Path, final_dir: Path) -> dict[int, list[Panel]]:
@@ -232,18 +252,27 @@ def place_image(slide, panel: Panel, left: Emu, top: Emu, box_w: Emu, box_h: Emu
     reference = panel.reference_size or (img_w, img_h)
     # manifest 좌표는 뷰포트 CSS px, 그림은 그 뷰포트를 찍은 픽셀이다 — 두 크기가
     # 다를 수 있으므로(고해상도 캡처 등) 먼저 그림 픽셀로 환산한 뒤 EMU로 옮긴다.
-    px_to_emu = scale * (img_w / reference[0])
+    # 가로·세로 비가 다른 기준 크기(운영자가 다른 해상도에서 좌표를 잰 경우)도 있으므로
+    # 두 축을 따로 환산한다.
+    px_to_emu = (scale * (img_w / reference[0]), scale * (img_h / reference[1]))
     for rect in panel.rects:
         draw_highlight(slide, rect, pic_left, pic_top, px_to_emu, render_w, render_h)
 
 
 def draw_highlight(
-    slide, rect: dict, pic_left: Emu, pic_top: Emu, px_to_emu: float, render_w: int, render_h: int
+    slide,
+    rect: dict,
+    pic_left: Emu,
+    pic_top: Emu,
+    px_to_emu: tuple[float, float],
+    render_w: int,
+    render_h: int,
 ) -> None:
-    left = int(pic_left + rect["x"] * px_to_emu)
-    top = int(pic_top + rect["y"] * px_to_emu)
-    width = int(rect["width"] * px_to_emu)
-    height = int(rect["height"] * px_to_emu)
+    scale_x, scale_y = px_to_emu
+    left = int(pic_left + rect["x"] * scale_x)
+    top = int(pic_top + rect["y"] * scale_y)
+    width = int(rect["width"] * scale_x)
+    height = int(rect["height"] * scale_y)
     # 그림 밖으로 나가는 테두리는 캡처에 없는 영역을 가리키게 되므로 잘라낸다.
     right = min(left + width, int(pic_left) + render_w)
     bottom = min(top + height, int(pic_top) + render_h)

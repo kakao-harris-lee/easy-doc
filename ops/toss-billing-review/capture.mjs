@@ -110,6 +110,12 @@ function padBox(box, padding = 6) {
   }
 }
 
+/** 이 환경에서는 찍을 화면 자체가 없다는 뜻 — 실패가 아니라 건너뜀으로 기록된다. */
+class SkipStep extends Error {}
+
+/** 종료 경로가 어디든 닫을 수 있도록 실행 중인 브라우저를 들고 있는다. */
+let activeBrowser = null
+
 class Manifest {
   constructor() {
     this.data = {
@@ -156,6 +162,11 @@ async function shoot(page, id) {
 }
 
 async function run() {
+  // playwright의 디버그 로그는 요청 본문까지 stderr로 흘린다 — 비밀번호가 새지 않도록
+  // 호출자가 켜 두었더라도 이 프로세스에서는 끈다.
+  delete process.env.DEBUG
+  delete process.env.PWDEBUG
+
   const { chromium } = loadPlaywright()
 
   rmSync(OUT_DIR, { recursive: true, force: true })
@@ -163,6 +174,7 @@ async function run() {
 
   const manifest = new Manifest()
   const browser = await chromium.launch({ headless: !HEADED })
+  activeBrowser = browser
   // 기록 옵션(recordVideo / recordHar)과 tracing은 의도적으로 켜지 않는다 — 비밀번호 입력이
   // 파일로 남지 않게 하기 위해서다.
   const context = await browser.newContext({ viewport: VIEWPORT, locale: 'ko-KR' })
@@ -204,19 +216,23 @@ async function run() {
       log(`ok   ${id} -> out/${result.image}`)
       return true
     } catch (error) {
+      // 「이 환경에는 그 화면이 없다」와 「찍으려다 실패했다」는 다르다 — 전자는 운영자가
+      // 고칠 것이 없으므로 실패가 아니라 skipped로 남긴다.
+      const skipped = error instanceof SkipStep
+      const reason = redact(error instanceof Error ? error.message : error)
       manifest.add({
         id,
         slide: meta.slide,
         slide_title: meta.slide_title,
-        status: 'failed',
-        reason: redact(error instanceof Error ? error.message : error),
+        status: skipped ? 'skipped' : 'failed',
+        reason,
         url,
         state,
         image: null,
         viewport: VIEWPORT,
         highlights: [],
       })
-      log(`FAIL ${id}: ${error instanceof Error ? error.message : error}`)
+      log(`${skipped ? 'skip' : 'FAIL'} ${id}: ${reason}`)
       return false
     }
   }
@@ -290,7 +306,7 @@ async function run() {
   )
 
   // ── 04b 로그인 정보 입력 ───────────────────────────────────────────────────
-  await step(
+  const filledLogin = await step(
     '04b-login-filled',
     `${BASE_URL}/login`,
     '아이디·비밀번호 입력 완료(비밀번호는 가려진 상태), 제출 직전',
@@ -312,10 +328,8 @@ async function run() {
   // ── 05a 플랜 선택 화면 ─────────────────────────────────────────────────────
   const planSection = page.locator('section[aria-label="플랜 선택 및 결제"]').first()
   const startRadio = planSection.getByRole('radio', { name: 'Start' }).first()
-  const payButton = planSection
-    .getByRole('button')
-    .filter({ hasText: 'Start 월 99,000원 정기결제 시작' })
-    .first()
+  // 금액·플랜 이름은 바뀔 수 있다 — 버튼을 가려내는 데 필요한 만큼만 본다.
+  const payButton = planSection.getByRole('button').filter({ hasText: /정기결제 시작/ }).first()
   const consentCheckbox = planSection.locator('input[type="checkbox"]').first()
 
   const loggedIn = await step(
@@ -323,6 +337,7 @@ async function run() {
     `${BASE_URL}/usage`,
     '로그인 후 이용량 화면에서 플랜 선택 영역으로 스크롤',
     async () => {
+      if (!filledLogin) throw new Error('앞 단계(04b)가 끝나지 않아 로그인할 수 없습니다')
       await loginForm.first().locator('button[type="submit"]').first().click()
       await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30000 })
       if (!page.url().includes('/usage')) {
@@ -377,12 +392,17 @@ async function run() {
   )
 
   // ── 05b 동의 체크 ──────────────────────────────────────────────────────────
-  const consented = await step(
+  await step(
     '05b-plan-consent',
     `${BASE_URL}/usage`,
     '금액·자동결제 동의 체크 완료, 결제 버튼 활성화 상태',
     async () => {
       if (!loggedIn) throw new Error('앞 단계(05a)가 끝나지 않아 진행할 수 없습니다')
+      // 동의 체크박스는 결제가 열린 환경에서만 그려진다(`checkoutEnabled && (live || tossEnabled)`).
+      // 없는 환경이라면 운영자가 고칠 것이 없으므로 실패가 아니라 건너뜀이다.
+      if ((await consentCheckbox.count()) === 0) {
+        throw new SkipStep('이 환경에는 결제 동의 체크박스가 없습니다(결제 비활성 설정)')
+      }
       await consentCheckbox.waitFor({ state: 'visible', timeout: 15000 })
       if (!(await consentCheckbox.isChecked())) await consentCheckbox.check()
       await page.waitForTimeout(300)
@@ -408,13 +428,41 @@ async function run() {
     `${BASE_URL}/usage`,
     '정기결제 시작 클릭 → 토스페이먼츠 카드 등록창이 열린 상태 (카드 정보 미입력)',
     async () => {
-      if (!consented) throw new Error('앞 단계(05b)가 끝나지 않아 진행할 수 없습니다')
-      const popupPromise = context.waitForEvent('page', { timeout: 20000 }).catch(() => null)
+      // 05b가 건너뛰어졌더라도 버튼이 눌리는 환경이면 찍는다 — 결제 버튼이 실제로
+      // 활성화되어 있는지를 기준으로 삼는 편이 앞 단계 상태보다 정확하다.
+      if (!loggedIn) throw new Error('앞 단계(05a)가 끝나지 않아 진행할 수 없습니다')
+      if ((await payButton.count()) === 0) {
+        throw new SkipStep('이 환경에는 정기결제 시작 버튼이 없습니다(결제 비활성 설정)')
+      }
+      if (!(await payButton.isEnabled())) {
+        throw new SkipStep(
+          '정기결제 시작 버튼이 비활성 상태입니다 — 이미 구독 중이거나 동의 체크가 필요합니다',
+        )
+      }
+
+      // 토스 SDK v2는 PC에서 `windowTarget: 'iframe'`이 기본이고(@tosspayments/tosspayments-sdk
+      // 타입 정의의 `BaseBillingAuthRequest.windowTarget`), 설정에 따라 별도 창으로도 열린다.
+      // 팝업을 기다렸다가 타임아웃 후에 iframe을 보면 기본 경로에서 20초를 버리므로 둘을
+      // 경주시킨다.
+      const tossFrame = page
+        .locator('iframe[src*="tosspayments.com"], iframe[src*="toss.im"]')
+        .first()
+      const popupPromise = context.waitForEvent('page', { timeout: 25000 }).catch(() => null)
+      const framePromise = tossFrame
+        .waitFor({ state: 'visible', timeout: 25000 })
+        .then(() => 'iframe')
+        .catch(() => null)
       await payButton.click()
 
-      /** 토스 SDK v2는 팝업 창 또는 iframe 오버레이 중 하나로 열린다 — 둘 다 받는다. */
-      const popup = await popupPromise
-      if (popup !== null && popup !== undefined) {
+      const opened = await Promise.race([
+        popupPromise.then((popup) => (popup === null ? null : { popup })),
+        framePromise.then((hit) => (hit === null ? null : { frame: true })),
+        // 둘 다 끝까지 비면 아래에서 명시적으로 실패시킨다.
+        Promise.all([popupPromise, framePromise]).then(() => null),
+      ])
+
+      if (opened !== null && opened.popup !== undefined) {
+        const popup = opened.popup
         await popup.waitForLoadState('domcontentloaded', { timeout: 20000 })
         await popup.waitForTimeout(2500)
         const size = await popup.evaluate(() => ({
@@ -424,43 +472,50 @@ async function run() {
         const image = '06-billing-window.png'
         await popup.screenshot({ path: join(OUT_DIR, image), fullPage: false })
         // 카드 정보는 입력하지 않는다 — 화면이 열린 것까지가 심사 자료다.
+        // 캡처 전체가 결제창이므로 그림 테두리와 겹치는 강조 사각형은 그리지 않는다.
         return {
           url: popup.url(),
           state: '토스페이먼츠 카드 등록 창(별도 창) — 카드 정보 미입력',
           image,
           viewport: size,
-          highlights: [
-            {
-              label: '토스페이먼츠 카드 등록창',
-              x: 0,
-              y: 0,
-              width: size.width,
-              height: size.height,
-            },
-          ],
+          highlights: [],
         }
       }
 
-      const tossFrame = page.locator('iframe[src*="tosspayments.com"]').first()
-      await tossFrame.waitFor({ state: 'visible', timeout: 20000 })
+      if (opened === null) {
+        throw new Error('토스페이먼츠 카드 등록창(팝업·iframe 어느 쪽도)이 열리지 않았습니다')
+      }
+
       await page.waitForTimeout(2500)
-      const rect = clampRect(padBox(await tossFrame.boundingBox()), '토스페이먼츠 카드 등록창')
+      const frameBox = await tossFrame.boundingBox()
+      const rect = clampRect(padBox(frameBox), '토스페이먼츠 카드 등록창')
+      // 결제창이 화면을 거의 다 덮으면 강조 사각형이 그림 테두리와 겹쳐 의미가 없다.
+      const coversViewport =
+        rect !== null && rect.width >= VIEWPORT.width * 0.97 && rect.height >= VIEWPORT.height * 0.97
       return {
         url: page.url(),
         state: '토스페이먼츠 카드 등록 창(오버레이) — 카드 정보 미입력',
         image: await shoot(page, '06-billing-window'),
-        highlights: [rect],
+        highlights: coversViewport ? [] : [rect],
       }
     },
   )
 
-  await context.close()
-  await browser.close()
   manifest.flush()
   log(`manifest: ${MANIFEST_PATH}`)
 }
 
-run().catch((error) => {
-  log(`캡처 실패: ${error instanceof Error ? (error.stack ?? error.message) : error}`)
-  process.exitCode = 1
-})
+/**
+ * 브라우저는 어떤 경로로 끝나든 반드시 닫는다 — 중간에 예외가 나면 헤드리스 크로뮴이
+ * 남아 다음 실행과 호스트 메모리를 갉아먹는다. `browser.close()`가 컨텍스트까지 닫는다.
+ */
+run()
+  .catch((error) => {
+    log(`캡처 실패: ${error instanceof Error ? (error.stack ?? error.message) : error}`)
+    process.exitCode = 1
+  })
+  .finally(async () => {
+    if (activeBrowser !== null) {
+      await activeBrowser.close().catch(() => {})
+    }
+  })
