@@ -44,10 +44,12 @@ class JdbcRetainedTransactionRepositoryTest {
         assertThat(terms).contains(
             "해지(갱신 중단)",
             "청약철회(전액 환불)",
-            "결제일로부터 7일 이내",
+            "결제 승인일로부터 7일 이내",
             "부분 환불",
             "10원 미만은 버립니다",
             "3영업일 이내",
+            "환불 시점에 남아 있는 크레딧은 회수하고 구독은 해지됩니다",
+            "이 약관(terms-2026-11-17)은 2026년 11월 17일부터 시행합니다",
         )
 
         val privacy = legalResource("legal/privacy-${LegalSnapshot.PRIVACY_VERSION}.md")
@@ -92,6 +94,34 @@ class JdbcRetainedTransactionRepositoryTest {
                 .describedAs(version)
                 .isNotNull()
         }
+    }
+
+    /**
+     * 버전은 골랐는데 그 판의 리소스가 빠진 경우(배포 사고)에도 `terms_snapshot: null` 을 완전한
+     * 증거처럼 남기지 않고 격리한다. 선언한 판의 리소스가 실제로 빠지는 것은 위 보존 검사가 먼저
+     * 막지만, 막지 못했을 때 떨어질 자리는 빈 증거가 아니라 수동 검토다.
+     */
+    @Test
+    fun `consent evidence is incomplete unless both legal snapshots were loaded`() {
+        val consentAt = Instant.parse("2026-11-17T00:00:00+09:00")
+
+        fun complete(
+            snapshotEligible: Boolean = true,
+            consentVersion: String? = "start-monthly-v1",
+            at: Instant? = consentAt,
+            terms: String? = "약관 본문",
+            privacy: String? = "방침 본문",
+        ) = consentEvidenceIsComplete(snapshotEligible, consentVersion, at, terms, privacy)
+
+        assertThat(complete()).isTrue()
+        assertThat(complete(terms = null)).isFalse()
+        assertThat(complete(privacy = null)).isFalse()
+        assertThat(complete(snapshotEligible = false)).isFalse()
+        assertThat(complete(consentVersion = "start-monthly-v0")).isFalse()
+        assertThat(complete(consentVersion = null)).isFalse()
+        assertThat(complete(at = null)).isFalse()
+        assertThat(complete(at = LegalSnapshot.EFFECTIVE_AT.minusSeconds(1))).isFalse()
+        assertThat(complete(at = LegalSnapshot.EFFECTIVE_AT)).isTrue()
     }
 
     @Test
@@ -257,8 +287,11 @@ class JdbcRetainedTransactionRepositoryTest {
         val archivedConsent = repository.find(UUID.nameUUIDFromBytes("consent:$session".toByteArray()))!!
         assertThat(archivedConsent.summary.occurredAt).isEqualTo(consent.consentAt)
         assertThat(archivedConsent.summary.retainedUntil).isEqualTo(Instant.parse("2032-10-07T00:00:00Z"))
-        assertThat(archivedConsent.payloadJson).contains("terms_snapshot", "2026-11-01")
-        assertThat(archivedConsent.payloadJson).contains("privacy_snapshot", "2026-11-01")
+        // 갱신은 원래 동의 증거를 다시 쓰지 않는다 — 담긴 판은 최초 동의 시점의 것 그대로다.
+        val renewalPayload = ObjectMapper().readTree(archivedConsent.payloadJson)
+        assertThat(renewalPayload["terms_version"].asString()).isEqualTo("terms-2026-11-01")
+        assertThat(renewalPayload["terms_snapshot"].asString()).isEqualTo(legalResource("legal/terms-2026-11-01.md"))
+        assertThat(renewalPayload["privacy_version"].asString()).isEqualTo("privacy-2026-11-01")
         assertThat(archivedConsent.payloadJson).contains("2026년 11월 1일", "99,000원", "50크레딧")
         assertThat(archivedConsent.summary.manualReview).isFalse()
     }

@@ -71,7 +71,9 @@ describe('간결한 이용 가이드', () => {
     expect(details).toHaveTextContent('다음 결제가 중단')
     expect(details).toHaveTextContent('이미 결제한 이용 기간은 유지')
     // 환불은 「고객 지원에서 확인합니다」가 아니라 terms-2026-11-17 제9조의 기준을 그대로 안내한다.
-    expect(details).toHaveTextContent('결제 후 7일 이내에 크레딧을 사용하지 않았다면 전액')
+    expect(details).toHaveTextContent(
+      '결제 승인일로부터 7일 이내에 크레딧을 사용하지 않았다면 전액',
+    )
     expect(details).toHaveTextContent('사용하지 않은 크레딧 비율만큼 환불합니다')
     expect(details).toHaveTextContent('확정 후 3영업일 이내에 카드 승인을 취소합니다')
     expect(details).toHaveTextContent('이용약관 제9조')

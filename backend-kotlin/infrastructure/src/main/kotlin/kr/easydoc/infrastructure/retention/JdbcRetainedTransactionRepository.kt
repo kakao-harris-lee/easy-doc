@@ -590,14 +590,20 @@ class JdbcRetainedTransactionRepository(
         // 동의 버전은 결제 화면 **체크박스 문구**의 판이고 약관 버전은 문서의 판이다 — 약관을
         // 고쳐도 동의받은 문구가 그대로면 start-monthly-v1 을 올리지 않는다.
         // 약관·방침 스냅샷은 모두 동의 **시점에 시행 중이던** 판이다. 지금 판을 박으면 과거의
-        // 동의가 보지도 못한 약관·방침에 동의한 것처럼 기록된다. EFFECTIVE_AT 이 첫 약관·방침 시행
-        // 시각과 같아 아래 null 은 나오지 않지만, 셋이 갈라지면 증거를 지어내는 대신 격리한다.
+        // 동의가 보지도 못한 약관·방침에 동의한 것처럼 기록된다. 본문을 먼저 읽어 두고 그 결과까지
+        // 조건에 넣는다 — 판은 골랐는데 리소스가 빠지면 null 을 완전한 증거처럼 남기는 대신 격리한다.
         val termsVersion = occurredAt?.let { LegalSnapshot.termsVersionAt(it) }
         val privacyVersion = occurredAt?.let { LegalSnapshot.privacyVersionAt(it) }
+        val termsSnapshot = termsVersion?.let { legalResource("legal/terms-$it.md") }
+        val privacySnapshot = privacyVersion?.let { legalResource("legal/privacy-$it.md") }
         val current =
-            snapshotEligible && session.consentVersion == CURRENT_CONSENT_VERSION &&
-                occurredAt != null && !occurredAt.isBefore(LegalSnapshot.EFFECTIVE_AT) &&
-                termsVersion != null && privacyVersion != null
+            consentEvidenceIsComplete(
+                snapshotEligible,
+                session.consentVersion,
+                occurredAt,
+                termsSnapshot,
+                privacySnapshot,
+            )
         upsertRecord(
             id = id,
             type = RetainedRecordType.CONSENT,
@@ -614,10 +620,9 @@ class JdbcRetainedTransactionRepository(
                     "consent_version" to session.consentVersion,
                     "consent_at" to occurredAt?.toString(),
                     "terms_version" to if (current) "terms-$termsVersion" else null,
-                    "terms_snapshot" to if (current) legalResource("legal/terms-$termsVersion.md") else null,
+                    "terms_snapshot" to if (current) termsSnapshot else null,
                     "privacy_version" to if (current) "privacy-$privacyVersion" else null,
-                    "privacy_snapshot" to
-                        if (current) legalResource("legal/privacy-$privacyVersion.md") else null,
+                    "privacy_snapshot" to if (current) privacySnapshot else null,
                 ),
         )
     }
@@ -1050,11 +1055,35 @@ class JdbcRetainedTransactionRepository(
 
         fun consentId(sessionId: UUID): UUID = UUID.nameUUIDFromBytes("consent:$sessionId".toByteArray())
 
-        const val CURRENT_CONSENT_VERSION = "start-monthly-v1"
-
         fun refundId(
             orderId: UUID,
             refunded: Int,
         ): UUID = UUID.nameUUIDFromBytes("refund:$orderId:$refunded".toByteArray())
     }
 }
+
+/** 결제 화면 동의 체크박스 문구의 현재 판. 문구가 바뀔 때만 올린다 — 약관 개정은 이것을 올리지 않는다. */
+internal const val CURRENT_CONSENT_VERSION = "start-monthly-v1"
+
+/**
+ * 동의 증거를 「완전한 증거」로 보존해도 되는가. 아니면 수동 검토로 격리한다.
+ *
+ * 다섯 조건이 모두 서야 한다 — 성공한 결제가 공급한 동의여야 하고([snapshotEligible]), 동의 문구가
+ * 지금 게시된 판이어야 하며([consentVersion]), 동의 시각이 있고 유료 시행 시각 이후여야 하고,
+ * 그 시점의 약관·방침 본문을 실제로 읽어 왔어야 한다. 버전은 골랐는데 리소스가 빠진 경우까지
+ * 조건에 넣는 이유는, 빈 본문을 완전한 증거처럼 남기면 나중에 「무엇에 동의받았는가」를 그 행으로
+ * 입증할 수 없기 때문이다. 격리는 증거를 지어내지 않고 사람이 보게 남기는 쪽이다.
+ */
+internal fun consentEvidenceIsComplete(
+    snapshotEligible: Boolean,
+    consentVersion: String?,
+    consentAt: Instant?,
+    termsSnapshot: String?,
+    privacySnapshot: String?,
+): Boolean =
+    snapshotEligible &&
+        consentVersion == CURRENT_CONSENT_VERSION &&
+        consentAt != null &&
+        !consentAt.isBefore(LegalSnapshot.EFFECTIVE_AT) &&
+        termsSnapshot != null &&
+        privacySnapshot != null
