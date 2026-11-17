@@ -5,6 +5,9 @@ import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { formatCredits } from '../../lib/credits'
 
+// 결제대행 심사 기준으로 판매 중인 상품은 Start 하나다 — 고지 항목도 같은 가격표를 읽는다.
+const START_PLAN = TARGET_PLANS.find((plan) => plan.id === 'start')!
+
 interface TargetPlanCatalogProps {
   workspaceId: string | null
   checkoutEnabled?: boolean
@@ -100,17 +103,32 @@ export function TargetPlanCatalog({
       </ul>
       <div className="mt-4 border-t border-border pt-4">
         <div className="space-y-2 text-sm">
-          <p>
-            Start는 월 99,000원에 50크레딧을 제공합니다. 실제 승인일부터 한 달 동안 이용하며 매월
-            자동 결제됩니다.
-          </p>
-          <p>
-            갱신 중단 시 이미 결제한 이용 기간은 유지됩니다. 환불은 이용 내역과 적용 약관에 따라
-            고객 지원을 통해 확인합니다.
-          </p>
-          <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
-            이용약관 및 환불 안내
-          </a>
+          <dl
+            aria-label="Start 월 정기결제 안내"
+            className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1"
+          >
+            <dt className="font-semibold">상품명</dt>
+            <dd>{START_PLAN.name} 월 정기결제</dd>
+            <dt className="font-semibold">제공 내용</dt>
+            <dd>
+              매월 {formatCredits(START_PLAN.monthlyCredits)}크레딧 ({START_PLAN.pageEquivalent})
+            </dd>
+            <dt className="font-semibold">결제 금액</dt>
+            <dd>월 {START_PLAN.monthlyPriceLabel} (VAT 포함)</dd>
+            <dt className="font-semibold">제공 기간</dt>
+            <dd>1개월 (결제 승인일부터), 매월 자동결제</dd>
+            <dt className="font-semibold">해지 방법</dt>
+            <dd>
+              이 사용량 화면의 「구독 갱신 중단」 버튼으로 언제든 다음 결제를 멈출 수 있고, 이미
+              결제한 기간은 끝까지 이용할 수 있습니다.
+            </dd>
+            <dt className="font-semibold">환불</dt>
+            <dd>
+              <a className="underline" href="/terms" target="_blank" rel="noopener noreferrer">
+                이용약관 제9조(환불) 보기
+              </a>
+            </dd>
+          </dl>
           {live && <p>유료 서비스 적용일: 2026년 11월 1일</p>}
           {checkoutEnabled && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
