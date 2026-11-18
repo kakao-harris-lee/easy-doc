@@ -114,6 +114,79 @@ it('shows the fixed paid effective date beside live consent', () => {
   expect(screen.getByLabelText(/금액, 제공량, 매월 자동결제/)).toBeInTheDocument()
 })
 
+// 이용 중인 구독이 있으면 신규 결제 동의·버튼은 혼동을 줄 뿐이라 감춘다.
+// 갱신 중단(canceling) 상태에서도 참이어야 하므로 「구독 갱신 중단」 같은 조작을 문구에 약속하지 않는다.
+const SUBSCRIBED_LINE =
+  '이미 이용 중인 구독이 있습니다. 구독 상태와 결제 카드는 위 구독 정보에서 확인·변경할 수 있습니다.'
+const SUBSCRIBED_CASES: [string, { live?: boolean }][] = [
+  ['결제 연동 확인', {}],
+  ['live 결제', { live: true }],
+]
+
+it.each(SUBSCRIBED_CASES)(
+  '이미 이용 중인 구독이 있으면 %s 화면에서도 동의와 결제 버튼을 감춘다',
+  (_label, props) => {
+    render(
+      <TargetPlanCatalog
+        workspaceId="w1"
+        checkoutEnabled
+        tossEnabled
+        activePlanId="start"
+        {...props}
+      />,
+    )
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/금액, 제공량, 매월 자동결제/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/실제 금액은 청구되지 않습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/현재 신규 구독 접수를 준비하고 있습니다/)).not.toBeInTheDocument()
+    expect(screen.getByText(SUBSCRIBED_LINE)).toBeInTheDocument()
+
+    // 플랜 목록·「이용 중」 배지·상품 고지·크레딧 계산 안내는 그대로 남는다.
+    const catalog = screen.getByRole('list', { name: '월 플랜 선택' })
+    expect(within(catalog).getByRole('radio', { name: 'Start' })).toBeInTheDocument()
+    expect(within(catalog).getByText('이용 중')).toBeInTheDocument()
+    expectFullDisclosure(screen.getByRole('region', { name: 'Start 월 정기결제 안내' }))
+    expect(screen.getByText(/재변환도 대상 원문 분량만큼 이용량에 포함/)).toBeInTheDocument()
+  },
+)
+
+it('구독이 없으면 동의 체크박스와 결제 버튼을 그대로 보여준다', () => {
+  render(<TargetPlanCatalog workspaceId="w1" checkoutEnabled tossEnabled activePlanId={null} />)
+
+  expect(screen.getByLabelText(/금액, 제공량, 매월 자동결제/)).toBeInTheDocument()
+  expect(
+    screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' }),
+  ).toBeInTheDocument()
+  expect(screen.queryByText(SUBSCRIBED_LINE)).not.toBeInTheDocument()
+})
+
+it('구독이 생겼다 사라지면 동의 체크박스가 체크된 상태로 돌아오지 않는다', async () => {
+  const user = userEvent.setup()
+  const { rerender } = render(
+    <TargetPlanCatalog workspaceId="w1" checkoutEnabled tossEnabled activePlanId={null} />,
+  )
+
+  await user.click(screen.getByLabelText(/금액, 제공량, 매월 자동결제/))
+  expect(screen.getByLabelText(/금액, 제공량, 매월 자동결제/)).toBeChecked()
+
+  rerender(<TargetPlanCatalog workspaceId="w1" checkoutEnabled tossEnabled activePlanId="start" />)
+  rerender(<TargetPlanCatalog workspaceId="w1" checkoutEnabled tossEnabled activePlanId={null} />)
+
+  expect(screen.getByLabelText(/금액, 제공량, 매월 자동결제/)).not.toBeChecked()
+  expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
+})
+
+it('결제를 열지 않은 화면에서도 이용 중이면 구독 접수 준비 문구 대신 이용 중 안내만 보여준다', () => {
+  render(<TargetPlanCatalog workspaceId="w1" activePlanId="start" />)
+
+  expect(screen.getByText(SUBSCRIBED_LINE)).toBeInTheDocument()
+  expect(screen.queryByText(/현재 신규 구독 접수를 준비하고 있습니다/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+})
+
 it('모든 플랜을 선택할 수 있지만 Start만 구독을 시작한다', async () => {
   const user = userEvent.setup()
   const checkout = vi.fn()

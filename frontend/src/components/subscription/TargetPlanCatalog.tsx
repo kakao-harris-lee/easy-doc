@@ -40,13 +40,21 @@ export function TargetPlanCatalog({
 }: TargetPlanCatalogProps) {
   const [selectedPlanId, setSelectedPlanId] = useState<TargetPlan['id']>('start')
   const [consent, setConsent] = useState(false)
+  // 이용 중인 구독(갱신 중단 포함)이 있으면 신규 결제 동의·버튼은 혼동만 주므로 감춘다.
+  const subscribed = activePlanId !== null
   const selectedPlanName =
     TARGET_PLANS.find((plan) => plan.id === selectedPlanId)?.name ?? selectedPlanId
+  // 구독 상태가 바뀌면 동의를 거둔다 — 환불·만료로 다시 결제할 때 체크된 상태로 돌아오지 않게 한다.
+  const [consentedPlanId, setConsentedPlanId] = useState(activePlanId)
+  if (consentedPlanId !== activePlanId) {
+    setConsentedPlanId(activePlanId)
+    setConsent(false)
+  }
   const startCanCheckout =
     selectedPlanId === 'start' &&
     workspaceId !== null &&
     checkoutEnabled &&
-    activePlanId === null &&
+    !subscribed &&
     !pending &&
     (!(live || tossEnabled) || consent)
   const buttonLabel =
@@ -138,7 +146,7 @@ export function TargetPlanCatalog({
             </dl>
           </section>
           {live && <p>유료 서비스 적용일: 2026년 11월 1일</p>}
-          {checkoutEnabled && (live || tossEnabled) && (
+          {checkoutEnabled && !subscribed && (live || tossEnabled) && (
             <label className="flex items-start gap-2">
               <input
                 type="checkbox"
@@ -155,12 +163,17 @@ export function TargetPlanCatalog({
           공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다. 재변환도 대상
           원문 분량만큼 이용량에 포함됩니다. 남은 이용량은 다음 결제 주기로 이월되지 않습니다.
         </p>
-        {!live && checkoutEnabled && (
+        {!live && checkoutEnabled && !subscribed && (
           <p className="mt-3 text-xs text-muted-foreground">
             결제 연동 확인 중이며 실제 금액은 청구되지 않습니다.
           </p>
         )}
-        {checkoutEnabled ? (
+        {subscribed ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            이미 이용 중인 구독이 있습니다. 구독 상태와 결제 카드는 위 구독 정보에서 확인·변경할 수
+            있습니다.
+          </p>
+        ) : checkoutEnabled ? (
           <Button
             className="mt-3"
             disabled={!startCanCheckout || busy}
