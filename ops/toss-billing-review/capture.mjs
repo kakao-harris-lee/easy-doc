@@ -398,10 +398,13 @@ async function run() {
     '금액·자동결제 동의 체크 완료, 결제 버튼 활성화 상태',
     async () => {
       if (!loggedIn) throw new Error('앞 단계(05a)가 끝나지 않아 진행할 수 없습니다')
-      // 동의 체크박스는 결제가 열린 환경에서만 그려진다(`checkoutEnabled && (live || tossEnabled)`).
+      // 동의 체크박스는 결제가 열렸고 구독이 없는 계정에서만 그려진다
+      // (`checkoutEnabled && !subscribed && (live || tossEnabled)`).
       // 없는 환경이라면 운영자가 고칠 것이 없으므로 실패가 아니라 건너뜀이다.
       if ((await consentCheckbox.count()) === 0) {
-        throw new SkipStep('이 환경에는 결제 동의 체크박스가 없습니다(결제 비활성 설정)')
+        throw new SkipStep(
+          '이 환경에는 결제 동의 체크박스가 없습니다(결제 비활성 설정이거나 이미 구독 중인 계정)',
+        )
       }
       await consentCheckbox.waitFor({ state: 'visible', timeout: 15000 })
       if (!(await consentCheckbox.isChecked())) await consentCheckbox.check()
@@ -432,12 +435,12 @@ async function run() {
       // 활성화되어 있는지를 기준으로 삼는 편이 앞 단계 상태보다 정확하다.
       if (!loggedIn) throw new Error('앞 단계(05a)가 끝나지 않아 진행할 수 없습니다')
       if ((await payButton.count()) === 0) {
-        throw new SkipStep('이 환경에는 정기결제 시작 버튼이 없습니다(결제 비활성 설정)')
+        throw new SkipStep(
+          '이 환경에는 정기결제 시작 버튼이 없습니다(결제 비활성 설정이거나 이미 구독 중인 계정)',
+        )
       }
       if (!(await payButton.isEnabled())) {
-        throw new SkipStep(
-          '정기결제 시작 버튼이 비활성 상태입니다 — 이미 구독 중이거나 동의 체크가 필요합니다',
-        )
+        throw new SkipStep('정기결제 시작 버튼이 비활성 상태입니다 — 동의 체크가 필요합니다')
       }
 
       // 토스 SDK v2는 PC에서 `windowTarget: 'iframe'`이 기본이고(@tosspayments/tosspayments-sdk
