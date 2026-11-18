@@ -17,6 +17,9 @@ vi.mock('../../api/subscriptions', () => ({
   checkoutSubscription: vi.fn(),
   cancelSubscription: vi.fn(),
 }))
+// 이용 중(갱신 중단 포함)인 구독에서 플랜 카탈로그가 신규 결제 UI 대신 보여주는 한 줄.
+const SUBSCRIBED_LINE =
+  '이미 이용 중인 구독이 있습니다. 구독 상태와 결제 카드는 위 구독 정보에서 확인·변경할 수 있습니다.'
 const available: SubscriptionOverview = {
   mock_enabled: true,
   plans: [{ id: 'start', name: 'Start', allowance: 50, monthly_price: 99_000 }],
@@ -275,9 +278,29 @@ it('labels review transactions without implying a real charge or tax receipt', a
   expect(screen.getByRole('button', { name: '결제 기록 확인' })).toBeInTheDocument()
   // 이용 중인 구독이 있으면 신규 결제 버튼은 비활성이 아니라 아예 나타나지 않는다.
   expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
-  expect(
-    screen.getByText(/이미 이용 중인 구독이 있습니다\. 갱신 중단과 카드 변경은/),
-  ).toBeInTheDocument()
+  expect(screen.getByText(SUBSCRIBED_LINE)).toBeInTheDocument()
+})
+
+it('갱신을 중단한 구독에도 신규 결제 버튼 대신 이용 중 안내를 보여준다', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+    billing_environment: 'toss_live',
+    purchase_enabled: true,
+    subscription: {
+      plan_id: 'start',
+      allowance: 50,
+      monthly_price: 99_000,
+      status: 'canceling',
+      cycle_ends_at: '2026-12-01T00:00:00Z',
+    },
+  })
+  render(<SubscriptionCard workspaceId="w1" />)
+  expect(await screen.findByText('구독 종료 예정', { exact: false })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  expect(screen.getByText(SUBSCRIBED_LINE)).toBeInTheDocument()
 })
 
 it.each([false, undefined])(

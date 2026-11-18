@@ -44,11 +44,17 @@ export function TargetPlanCatalog({
   const subscribed = activePlanId !== null
   const selectedPlanName =
     TARGET_PLANS.find((plan) => plan.id === selectedPlanId)?.name ?? selectedPlanId
+  // 구독 상태가 바뀌면 동의를 거둔다 — 환불·만료로 다시 결제할 때 체크된 상태로 돌아오지 않게 한다.
+  const [consentedPlanId, setConsentedPlanId] = useState(activePlanId)
+  if (consentedPlanId !== activePlanId) {
+    setConsentedPlanId(activePlanId)
+    setConsent(false)
+  }
   const startCanCheckout =
     selectedPlanId === 'start' &&
     workspaceId !== null &&
     checkoutEnabled &&
-    activePlanId === null &&
+    !subscribed &&
     !pending &&
     (!(live || tossEnabled) || consent)
   const buttonLabel =
@@ -163,8 +169,9 @@ export function TargetPlanCatalog({
           </p>
         )}
         {subscribed ? (
-          <p role="status" className="mt-3 text-sm text-muted-foreground">
-            이미 이용 중인 구독이 있습니다. 갱신 중단과 카드 변경은 위 구독 정보에서 할 수 있습니다.
+          <p className="mt-3 text-sm text-muted-foreground">
+            이미 이용 중인 구독이 있습니다. 구독 상태와 결제 카드는 위 구독 정보에서 확인·변경할 수
+            있습니다.
           </p>
         ) : checkoutEnabled ? (
           <Button
