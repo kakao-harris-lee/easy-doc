@@ -899,6 +899,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     expect(after?.height).toBe(before?.height)
     expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1)
     await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)')
+    await expect(card).toHaveCSS('border-color', 'rgb(122, 130, 143)')
     await tabTo(page, card)
     await expectFocusRing(card, 'rgb(36, 87, 214)')
     await page.keyboard.press('Enter')

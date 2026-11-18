@@ -24,9 +24,9 @@ export function TrialCreditSteps({ className }: { className?: string }) {
       <p className="mt-1 text-sm leading-6 text-muted-foreground">
         가입·로그인 후 휴대폰 인증을 완료하면 샘플 변환용 5크레딧을 한 번 드립니다.
       </p>
-      <ol className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+      <ol className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
         {STEPS.map((step, index) => (
-          <li className="flex items-start gap-3" key={step.title}>
+          <li className="flex min-w-0 items-start gap-3" key={step.title}>
             <span
               className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
               aria-hidden="true"
@@ -34,8 +34,12 @@ export function TrialCreditSteps({ className }: { className?: string }) {
               {index + 1}
             </span>
             <span className="min-w-0">
-              <span className="block text-sm font-semibold text-foreground">{step.title}</span>
-              <span className="block text-sm leading-6 text-muted-foreground">{step.detail}</span>
+              <span className="block break-keep text-sm font-semibold text-foreground">
+                {step.title}
+              </span>
+              <span className="block break-keep text-sm leading-6 text-muted-foreground">
+                {step.detail}
+              </span>
             </span>
           </li>
         ))}

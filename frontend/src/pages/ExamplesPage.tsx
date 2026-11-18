@@ -75,7 +75,7 @@ function ExampleStart() {
           </div>
           {/* 버튼 라벨(가입하기·로그인)만으로는 링크가 어디로 가는지 읽히지 않아 설명이 있는 본문 링크를 함께 둔다. */}
           <p className="mt-4 text-center text-base leading-6">
-            <a href={HOME_PATH} className={TEXT_LINK}>
+            <a href={HOME_PATH} className={`inline-flex min-h-11 items-center ${TEXT_LINK}`}>
               내 문서를 쉬운 글로 바꿔 보기
             </a>
           </p>
