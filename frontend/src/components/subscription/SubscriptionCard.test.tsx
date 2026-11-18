@@ -273,7 +273,11 @@ it('labels review transactions without implying a real charge or tax receipt', a
   expect(screen.queryByText(/다음 청구 예정:/)).not.toBeInTheDocument()
   expect(screen.getByText(/실제 청구가 없는 결제 연동 확인 기록/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '결제 기록 확인' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: 'Start 월 99,000원 정기결제 시작' })).toBeDisabled()
+  // 이용 중인 구독이 있으면 신규 결제 버튼은 비활성이 아니라 아예 나타나지 않는다.
+  expect(screen.queryByRole('button', { name: /정기결제 시작/ })).not.toBeInTheDocument()
+  expect(
+    screen.getByText(/이미 이용 중인 구독이 있습니다\. 갱신 중단과 카드 변경은/),
+  ).toBeInTheDocument()
 })
 
 it.each([false, undefined])(
