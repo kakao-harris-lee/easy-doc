@@ -83,7 +83,7 @@ export function AdminErrorsTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-3 rounded-[12px] border border-border bg-card p-4">
+      <fieldset className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <legend className="px-1 text-[15px] font-semibold text-foreground">조회 기간</legend>
         <div className="flex flex-wrap gap-4">
           <label className="flex min-h-11 cursor-pointer items-center gap-2 font-medium">
@@ -156,7 +156,7 @@ export function AdminErrorsTab() {
 
       {!loading && error === null && data !== null && (
         <>
-          <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
+          <div className="rounded-xl border border-border bg-card px-5 pb-5">
             <table className="usage-table">
               <caption>이 기간 실패 원인별 건수입니다.</caption>
               <thead>
@@ -184,7 +184,7 @@ export function AdminErrorsTab() {
             </table>
           </div>
 
-          <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
+          <div className="rounded-xl border border-border bg-card px-5 pb-5">
             {/* llm_calls(V18) provider 실패 — 위 표(conversions.failure_code)와 다른 축이다.
             개별 LLM 호출이 완성 자체를 못 받은 사유이며, 재시도로 결국 성공한 변환의
             실패 호출도 잡힌다(계약 2.26.0). */}

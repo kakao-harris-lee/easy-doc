@@ -124,7 +124,7 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
           <p className="supporting-copy mt-2 text-sm text-muted-foreground">
             문서 {count(usage.documents)}건 · {count(usage.characters)}자
           </p>
-          <p className="supporting-copy mt-1 text-xs text-muted-foreground">
+          <p className="supporting-copy mt-1 text-sm text-muted-foreground">
             {credits?.cycle_started_at !== null && credits?.cycle_started_at !== undefined
               ? `${usageDate(credits.cycle_started_at)} 이용 시작일부터 오늘까지`
               : '현재 이용 기간 시작일부터 오늘까지'}

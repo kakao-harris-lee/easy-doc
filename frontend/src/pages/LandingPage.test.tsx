@@ -36,8 +36,8 @@ describe('랜딩 화면', () => {
   it('랜딩 제목과 설명에 공통 반응형 규칙을 적용한다', () => {
     renderLanding()
 
-    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('page-title')
-    expect(screen.getByText(SERVICE_DEFINITION)).toHaveClass('body-copy')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('hero-title')
+    expect(screen.getByText(SERVICE_DEFINITION)).toHaveClass('lead-copy')
     expect(screen.getByRole('heading', { name: '뜻은 그대로, 문장은 쉽게' })).toHaveClass(
       'section-title',
     )
@@ -88,7 +88,7 @@ describe('랜딩 화면', () => {
     ).toBeInTheDocument()
   })
 
-  it('핵심 예시만 파란 강조를 쓰고 설명 카드와 일러스트 번짐은 낮춘다', () => {
+  it('재작성 예시만 왼쪽 막대로 강조하고 섹션은 상자 없이 띠와 여백으로 나눈다', () => {
     const { container } = renderLanding()
 
     const example = screen.getByRole('region', { name: '뜻은 그대로, 문장은 쉽게' })
@@ -98,16 +98,12 @@ describe('랜딩 화면', () => {
     })
     const simplified = screen.getByText(/행사에 참여하려면 신청 기간 안에/).closest('figure')
 
-    expect(example).toHaveClass('border-primary/40')
-    expect(example).not.toHaveClass('shadow-card')
-    expect(fit).not.toHaveClass('shadow-card')
-    expect(workflow).not.toHaveClass('shadow-card')
-    expect(simplified).toHaveClass('bg-selection')
-    expect(simplified).not.toHaveClass('bg-brand-surface/70')
-    expect(container.querySelectorAll('.landing-glow')).toHaveLength(2)
-    expect(container.querySelector('.landing-glow')).toHaveClass('landing-glow', 'blur-xl')
-    expect(container.querySelector('.landing-glow')).not.toHaveClass('opacity-40')
-    expect(container.querySelector('.landing-glow')).not.toHaveClass('blur-2xl')
+    expect(example).toHaveClass('bg-muted')
+    expect(example).not.toHaveClass('border')
+    expect(fit).not.toHaveClass('border')
+    expect(workflow).not.toHaveClass('border')
+    expect(simplified).toHaveClass('border-l-4', 'border-l-primary')
+    expect(container.querySelector('.landing-glow')).toBeNull()
   })
 
   it('가입과 이용 가이드로 바로 보낸다', () => {

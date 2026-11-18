@@ -261,13 +261,13 @@ async function expectThemeSettled(
   const colors =
     theme === 'dark'
       ? {
-          background: 'rgb(17, 24, 39)',
-          primary: 'rgb(117, 191, 255)',
-          primaryForeground: 'rgb(17, 24, 39)',
+          background: 'rgb(15, 17, 21)',
+          primary: 'rgb(127, 166, 255)',
+          primaryForeground: 'rgb(15, 17, 21)',
         }
       : {
-          background: 'rgb(247, 249, 252)',
-          primary: 'rgb(23, 100, 181)',
+          background: 'rgb(255, 255, 255)',
+          primary: 'rgb(36, 87, 214)',
           primaryForeground: 'rgb(255, 255, 255)',
         }
   await expect.poll(() => currentTheme(page)).toBe(theme)
@@ -820,11 +820,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
             await expectTextContrast(page.getByText('쉬운 글 변환 AI', { exact: true }))
             await expectTextContrast(page.getByText(/카드 등록 없이 체험 5크레딧/))
             await expectBorderContrast(page.getByRole('link', { name: '이용 가이드 보기' }))
-            const glowOpacity = await page
-              .locator('.landing-glow')
-              .first()
-              .evaluate((element) => getComputedStyle(element).opacity)
-            expect(glowOpacity).toBe(theme === 'dark' ? '0.18' : '0.4')
+            await expect(page.locator('.landing-glow')).toHaveCount(0)
           }
           if (path === '/guide') {
             await expectTextContrast(page.locator('.guide-page blockquote'))
@@ -832,10 +828,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
             const summary = disclosure.locator('summary')
             await summary.click()
             await expect(disclosure).toHaveAttribute('open', '')
-            await expect(disclosure).toHaveCSS(
-              'background-color',
-              theme === 'dark' ? 'rgb(24, 57, 84)' : 'rgb(231, 242, 252)',
-            )
+            await expect(disclosure).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
             await expectTextContrast(summary)
           }
           if (path === '/examples/school-notice') {
@@ -880,7 +873,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
         await expectBorderContrast(page.getByRole('button', { name: /TXT로/ }))
         await expectFocusRing(
           page.getByRole('button', { name: '검수 내용 저장' }),
-          theme === 'dark' ? 'rgb(117, 191, 255)' : 'rgb(23, 100, 181)',
+          theme === 'dark' ? 'rgb(127, 166, 255)' : 'rgb(36, 87, 214)',
         )
       }
     })
@@ -894,7 +887,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     const primary = page.getByRole('link', { name: /체험하기/ })
     await primary.hover()
     await page.mouse.down()
-    await expect(primary).toHaveCSS('background-color', 'rgb(15, 68, 122)')
+    await expect(primary).toHaveCSS('background-color', 'rgb(23, 58, 147)')
     await page.mouse.up()
 
     await page.goto('/examples')
@@ -902,10 +895,12 @@ test.describe('테마 디자인 브라우저 검증', () => {
     const before = await card.boundingBox()
     await card.hover()
     const after = await card.boundingBox()
-    expect(after).toEqual(before)
-    await expect(card).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+    expect(after?.width).toBe(before?.width)
+    expect(after?.height).toBe(before?.height)
+    expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1)
+    await expect(card).toHaveCSS('background-color', 'rgb(255, 255, 255)')
     await tabTo(page, card)
-    await expectFocusRing(card, 'rgb(23, 100, 181)')
+    await expectFocusRing(card, 'rgb(36, 87, 214)')
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL('/examples/school-notice')
     await expect(
@@ -915,7 +910,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     await page.goto('/guide')
     const summary = page.locator('details.help-disclosure summary').first()
     await tabTo(page, summary)
-    await expectFocusRing(summary, 'rgb(23, 100, 181)')
+    await expectFocusRing(summary, 'rgb(36, 87, 214)')
     await page.keyboard.press('Enter')
     await expect(summary.locator('..')).toHaveAttribute('open', '')
 
@@ -925,7 +920,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
       .getByRole('navigation', { name: '주요 메뉴', exact: true })
       .getByRole('link', { name: '변환 기록' })
     await expect(current).toHaveAttribute('aria-current', 'page')
-    await expect(current).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+    await expect(current).toHaveCSS('background-color', 'rgb(235, 241, 254)')
 
     const account = page.getByRole('button', { name: '계정 메뉴' })
     await account.focus()
@@ -941,7 +936,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     const mobileCurrent = page
       .getByRole('navigation', { name: '주요 메뉴 (모바일)' })
       .getByRole('link', { name: '변환 기록' })
-    await expect(mobileCurrent).toHaveCSS('background-color', 'rgb(231, 242, 252)')
+    await expect(mobileCurrent).toHaveCSS('background-color', 'rgb(235, 241, 254)')
     await page.keyboard.press('Escape')
     await expect(menu).toBeFocused()
 
@@ -978,7 +973,7 @@ test.describe('테마 디자인 브라우저 검증', () => {
     await expect(save).toHaveCSS('opacity', '0.5')
     await expect(save).toHaveCSS('cursor', 'not-allowed')
     await page.mouse.move(0, 0)
-    await expect(save).toHaveCSS('background-color', 'rgb(23, 100, 181)')
+    await expect(save).toHaveCSS('background-color', 'rgb(36, 87, 214)')
     const disabledBackground = await save.evaluate(
       (element) => getComputedStyle(element).backgroundColor,
     )

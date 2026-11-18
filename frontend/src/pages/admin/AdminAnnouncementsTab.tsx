@@ -56,7 +56,7 @@ function CreateAnnouncementForm({
 
   return (
     <form
-      className="flex flex-col gap-3 rounded-[12px] border border-border bg-card p-4"
+      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
       aria-label="공지 만들기"
       onSubmit={(event) => void handleSubmit(event)}
     >
@@ -157,7 +157,7 @@ function AnnouncementRow({
   }
 
   return (
-    <li className="flex flex-col gap-3 rounded-[12px] border border-border bg-card p-4">
+    <li className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
       {error !== null && (
         <p className="form-error" role="alert">
           {error}
@@ -324,7 +324,7 @@ function AnnouncementPreview({ body }: { body: string }) {
   return (
     <section aria-label="공지 노출 미리보기" className="border-b border-border bg-accent/40 p-4">
       <p className="mb-2 text-sm">게시 후 노출 미리보기</p>
-      <div className="flex items-start justify-between gap-3 rounded-[10px] border border-border bg-card px-4 py-3">
+      <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-card px-4 py-3">
         <p className="m-0 text-sm text-foreground">{body}</p>
         <span className="shrink-0 text-sm">닫기</span>
       </div>

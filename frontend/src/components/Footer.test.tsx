@@ -122,7 +122,7 @@ describe('Footer', () => {
     const companyRow = screen.getByText(COMPANY_INFO.name).parentElement
     const policyNavigation = screen.getByRole('navigation', { name: '정책' })
 
-    expect(footerContent).toHaveClass('space-y-0.5', 'py-2', 'sm:py-3')
+    expect(footerContent).toHaveClass('space-y-1', 'py-12')
     expect(companyRow).toHaveClass('flex-col', 'items-start', 'sm:flex-row', 'sm:items-center')
     expect(policyNavigation).toHaveClass('w-full', 'justify-between', 'sm:w-auto')
   })

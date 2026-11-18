@@ -118,24 +118,24 @@ const PDF_EXTRACTION_NOTICE =
 const RADIO_OVERLAY_CLASS =
   'absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0'
 const SEGMENT_CLASS =
-  'relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] px-2 text-sm whitespace-nowrap has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring sm:px-3 sm:text-[15px]'
-const SEGMENT_ON = 'bg-card font-bold text-primary shadow-sm'
+  'relative flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md px-2 text-sm whitespace-nowrap has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring sm:px-3 sm:text-base'
+const SEGMENT_ON = 'bg-card font-semibold text-foreground'
 const SEGMENT_OFF = 'text-muted-foreground'
 
 const READING_LEVEL_OPTIONS = [
   {
     value: 'middle_school',
-    name: '레벨 1',
+    name: '1단계 - 간결',
     description: '익숙한 표현으로 핵심 내용을 쉽게 풀어 써요.',
   },
   {
     value: 'grade_5_6',
-    name: '레벨 2',
+    name: '2단계 - 표준',
     description: '어려운 말을 줄이고 문장을 짧게 나눠요.',
   },
   {
     value: 'grade_3_4',
-    name: '레벨 3',
+    name: '3단계 - 더 쉬움',
     description: '아주 쉬운 말로 풀고 필요한 설명을 덧붙여요.',
   },
 ] as const satisfies readonly {
@@ -218,12 +218,12 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
       aria-labelledby={`${headingId} ${nameId}`}
       className="flex flex-col gap-1.5"
     >
-      <p id={headingId} className="text-[15px] font-semibold text-foreground">
+      <p id={headingId} className="text-base font-semibold text-foreground">
         선택한 파일
       </p>
-      <div className="flex items-center gap-3 rounded-[10px] border border-input bg-card p-3">
+      <div className="flex items-center gap-3 rounded-md border border-input bg-card p-3">
         <span
-          className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground"
+          className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground"
           aria-hidden="true"
         >
           <FileText className="size-[18px]" />
@@ -695,7 +695,7 @@ export function UploadPage() {
 
   return (
     <section aria-labelledby="upload-heading">
-      <h1 id="upload-heading" className="page-title mb-6">
+      <h1 id="upload-heading" className="page-title mb-8">
         문서 변환하기
       </h1>
 
@@ -704,7 +704,7 @@ export function UploadPage() {
       {homeNotice !== null &&
         (homeNoticeTone === 'warning' ? (
           <p
-            className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+            className="mb-6 flex items-center gap-2 rounded-md border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
             role="status"
           >
             <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
@@ -712,7 +712,7 @@ export function UploadPage() {
           </p>
         ) : (
           <p
-            className="mb-6 flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
+            className="mb-6 flex items-center gap-2 rounded-md border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
             role="status"
           >
             <CircleCheck className="size-5 shrink-0" aria-hidden="true" />
@@ -725,7 +725,7 @@ export function UploadPage() {
       읽힌다. */}
       {emailVerificationRequired && (
         <p
-          className="mb-6 flex flex-wrap items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+          className="mb-6 flex flex-wrap items-start gap-2 rounded-md border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
           role="status"
         >
           <MailWarning className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
@@ -746,11 +746,11 @@ export function UploadPage() {
       DOM 순서 그대로 폼 **뒤에** 놓여 입력과 대표 버튼 사이에 끼지 않는다. */}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)]">
         <form
-          className="rounded-2xl border border-border bg-card shadow-card"
+          className="rounded-xl border border-border bg-card"
           onSubmit={(event) => void handleSubmit(event)}
           noValidate
         >
-          <div className="flex flex-col gap-5 px-4 py-5 sm:px-6">
+          <div className="flex flex-col gap-6 p-6 md:p-8">
             <DocumentExamplePicker
               hasInput={title.length > 0 || text.length > 0 || file !== null}
               disabled={submitting}
@@ -768,7 +768,7 @@ export function UploadPage() {
             다시 보낸다 — 값 자체는 바꾸지 않는다(자동 마스킹이 아니다). */}
             {personalDataWarning !== null && (
               <div
-                className="flex flex-col items-start gap-3 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                className="flex flex-col items-start gap-3 rounded-md border border-warning/25 bg-warning-surface px-4 py-3"
                 role="alert"
               >
                 <p className="m-0 flex items-center gap-2 font-semibold text-warning">
@@ -807,7 +807,7 @@ export function UploadPage() {
 
             {/* 탭처럼 보이되 라디오다 — 화살표 키 이동과 그룹 이름(legend)을 지킨다. */}
             <fieldset aria-label="입력 방식">
-              <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
                 <label className={`${SEGMENT_CLASS} ${mode === 'text' ? SEGMENT_ON : SEGMENT_OFF}`}>
                   <input
                     className={RADIO_OVERLAY_CLASS}
@@ -819,7 +819,7 @@ export function UploadPage() {
                   />
                   <FileText className="hidden size-[18px] shrink-0 sm:block" aria-hidden="true" />글
                   붙여넣기
-                  <span className="sr-only rounded-full bg-primary/10 px-1.5 text-xs font-semibold text-primary sm:not-sr-only">
+                  <span className="sr-only rounded-full bg-primary/10 px-1.5 text-sm font-semibold text-primary sm:not-sr-only">
                     권장
                   </span>
                 </label>
@@ -838,17 +838,14 @@ export function UploadPage() {
               </div>
             </fieldset>
 
-            <section
-              aria-label="변환 입력"
-              className={`overflow-hidden rounded-xl border bg-card ${mode === 'text' && (tooLong || tooShort) ? 'border-danger' : 'border-border'}`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/40 px-3 py-3 sm:px-4">
+            <section aria-label="변환 입력" className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 {mode === 'text' ? (
-                  <label htmlFor={textareaId} className="text-[15px] font-semibold">
+                  <label htmlFor={textareaId} className="text-base font-semibold">
                     바꿀 글
                   </label>
                 ) : (
-                  <span className="text-[15px] font-semibold">파일 변환</span>
+                  <span className="text-base font-semibold">파일 변환</span>
                 )}
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <label htmlFor={readingLevelId} className="text-sm font-medium">
@@ -856,7 +853,7 @@ export function UploadPage() {
                   </label>
                   <select
                     id={readingLevelId}
-                    className="min-h-11 max-w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground"
+                    className="min-h-11 max-w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground"
                     value={readingLevel}
                     aria-describedby={
                       readingLevel === 'grade_3_4'
@@ -880,7 +877,7 @@ export function UploadPage() {
                   </select>
                 </div>
               </div>
-              <div className="border-b border-border px-3 py-2 sm:px-4">
+              <div className="flex flex-col gap-1">
                 <p id={readingLevelDescriptionId} className="field-hint" aria-live="polite">
                   {
                     READING_LEVEL_OPTIONS.find((option) => option.value === readingLevel)
@@ -895,10 +892,10 @@ export function UploadPage() {
               </div>
 
               {mode === 'text' ? (
-                <div className="field p-3 sm:p-4">
+                <div className="field">
                   <Textarea
                     id={textareaId}
-                    className="upload-textarea field-sizing-fixed min-h-52 border-0 px-3.5 py-3 leading-relaxed sm:min-h-80"
+                    className="upload-textarea field-sizing-fixed min-h-52 px-3.5 py-3 leading-relaxed sm:min-h-80"
                     value={text}
                     rows={14}
                     aria-describedby={
@@ -949,7 +946,7 @@ export function UploadPage() {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4 p-3 sm:p-4">
+                <div className="space-y-4">
                   {/* 파일을 고르면 이 묶음을 화면에서 내리되 DOM에는 남긴다 — 같은 파일을
                 다시 고를 수 있게 하려면 removeFile이 이 입력의 value를 비워야 한다. */}
                   <div className={file === null ? 'field' : 'hidden'}>
@@ -959,6 +956,7 @@ export function UploadPage() {
                       ref={fileInputRef}
                       type="file"
                       accept={ACCEPTED_EXTENSIONS}
+                      className="block min-h-11 w-full cursor-pointer rounded-xl border-2 border-dashed border-input p-6"
                       aria-describedby={`${fileId}-hint`}
                       onChange={handleFileChange}
                     />
@@ -972,7 +970,7 @@ export function UploadPage() {
                     <SelectedFileCard file={file} onRemove={removeFile} cardRef={fileCardRef} />
                   )}
                   <section
-                    className="rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                    className="rounded-md border border-warning/25 bg-warning-surface px-4 py-3"
                     aria-labelledby={fileFormatGuideId}
                   >
                     <h3 id={fileFormatGuideId} className="text-sm font-semibold text-foreground">
@@ -987,7 +985,7 @@ export function UploadPage() {
               )}
             </section>
 
-            <div className="sticky bottom-0 -mx-4 flex flex-col gap-2 border-t border-border bg-card/95 px-4 pt-3 backdrop-blur [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+            <div className="sticky bottom-0 -mx-6 flex flex-col gap-2 border-t border-border bg-card/95 px-6 pt-3 backdrop-blur [padding-bottom:max(0.75rem,env(safe-area-inset-bottom))] sm:static sm:mx-0 sm:border-t-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
               {mode === 'text' && (
                 <p
                   id={counterId}
@@ -1016,35 +1014,30 @@ export function UploadPage() {
         </form>
 
         <aside>
-          <section
-            className="rounded-2xl border border-border bg-card p-5 sm:p-6"
-            aria-labelledby={guideId}
-          >
+          <section className="rounded-xl bg-muted p-6" aria-labelledby={guideId}>
             {/* 대표 행동은 폼의 제출 버튼 하나뿐이다. 헤더 대신 이 카드가 AI 초안
             이라는 사실을 알린다 — 안내 카드가 그 사실이 필요한 자리다. */}
             <Badge tone="primary" withIcon={false}>
               <FileCheck2 className="size-4" aria-hidden="true" />
               AI 초안 · 사람 검토 필수
             </Badge>
-            <h2 id={guideId} className="mt-4 text-[17px] font-bold leading-6 text-foreground">
+            <h2 id={guideId} className="mt-4 text-lg font-semibold leading-7 text-foreground">
               이 작업에서 일어나는 일
             </h2>
             <ol className="mt-4 flex flex-col gap-4">
               {GUIDE_STEPS.map((step, index) => (
                 <li key={step.title} className="flex items-start gap-3">
                   <span
-                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-bold text-accent-foreground"
+                    className="flex size-7 shrink-0 items-center justify-center rounded-full bg-card text-sm font-semibold text-foreground"
                     aria-hidden="true"
                   >
                     {index + 1}
                   </span>
                   <div className="flex flex-col">
-                    <strong className="text-[15px] font-semibold text-foreground">
+                    <strong className="text-base font-semibold text-foreground">
                       {step.title}
                     </strong>
-                    <small className="text-sm leading-[22px] text-muted-foreground">
-                      {step.detail}
-                    </small>
+                    <small className="text-sm leading-6 text-muted-foreground">{step.detail}</small>
                   </div>
                 </li>
               ))}

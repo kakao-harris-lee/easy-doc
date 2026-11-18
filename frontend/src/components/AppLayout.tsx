@@ -56,7 +56,7 @@ export { CONTAINER } from './layoutStyles'
  */
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return cn(
-    'flex min-h-11 items-center gap-2 rounded-[10px] px-3 text-[15px] transition-colors',
+    'flex min-h-11 items-center gap-2 rounded-md px-3 text-[15px] transition-colors',
     isActive
       ? 'bg-selection font-bold text-selection-foreground'
       : 'font-medium text-muted-foreground hover:bg-secondary hover:text-foreground active:bg-muted',
@@ -161,9 +161,9 @@ function AccountMenu({
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-[12px] border border-border bg-popover p-3 text-popover-foreground shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-md border border-border bg-popover p-3 text-popover-foreground shadow-lg"
         >
-          <p className="text-xs font-semibold text-muted-foreground">로그인 계정</p>
+          <p className="text-sm font-semibold text-muted-foreground">로그인 계정</p>
           {/* 긴 주소는 잘라 보이되 title로 전체를 남긴다. */}
           <p className="mt-1 truncate text-sm font-medium text-foreground" title={email}>
             {email}
@@ -314,9 +314,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       </a>
       <header
         ref={headerRef}
-        className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur"
+        className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-md"
       >
-        <div className={cn(CONTAINER, 'flex min-h-14 items-center gap-2 lg:min-h-16 lg:gap-3')}>
+        <div className={cn(CONTAINER, 'flex min-h-14 items-center gap-2 md:min-h-16 md:gap-3')}>
           <NavLink
             className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md"
             to={HOME_PATH}
@@ -393,7 +393,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   aria-expanded={mobileOpen}
                   aria-controls={mobileOpen ? mobileNavId : undefined}
                   onClick={() => setMobileOpen((open) => !open)}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-[10px] border border-border text-foreground hover:bg-secondary lg:hidden"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-md border border-border text-foreground hover:bg-secondary lg:hidden"
                 >
                   {mobileOpen ? <X className="size-5" /> : <Menu className="size-5" />}
                 </button>

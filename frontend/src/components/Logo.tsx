@@ -11,8 +11,8 @@ export function Logo({ compact = false }: { compact?: boolean }) {
         height={44}
         className={
           compact
-            ? 'size-8 rounded-lg shadow-sm ring-1 ring-primary/15 lg:size-11 lg:rounded-xl'
-            : 'size-11 rounded-xl shadow-sm ring-1 ring-primary/15'
+            ? 'size-8 rounded-lg ring-1 ring-border lg:size-11 lg:rounded-xl'
+            : 'size-11 rounded-xl ring-1 ring-border'
         }
         aria-hidden="true"
       />
@@ -29,8 +29,8 @@ export function Logo({ compact = false }: { compact?: boolean }) {
         <small
           className={
             compact
-              ? 'mt-1 hidden text-xs font-semibold tracking-tight text-foreground/75 lg:block'
-              : 'mt-1 text-xs font-semibold tracking-tight text-foreground/75'
+              ? 'mt-1 hidden text-sm font-semibold tracking-tight text-muted-foreground lg:block'
+              : 'mt-1 text-sm font-semibold tracking-tight text-muted-foreground'
           }
         >
           쉬운 글로 다시 쓰는 도구

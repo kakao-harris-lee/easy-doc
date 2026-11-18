@@ -59,7 +59,7 @@ function SupportedTable({ table, lines }: { table: TableStructure; lines: string
 
   if (!complete || sourceExcerpt(lines, table.source_unit_indexes) === null) {
     return (
-      <p className="mt-3 rounded-[10px] border border-info/25 bg-info-surface p-3 text-sm text-info">
+      <p className="mt-3 rounded-md border border-info/25 bg-info-surface p-3 text-sm text-info">
         표의 원문 위치를 확인할 수 없습니다. 원문에서 직접 확인해 주세요.
       </p>
     )
@@ -67,7 +67,7 @@ function SupportedTable({ table, lines }: { table: TableStructure; lines: string
 
   return (
     <>
-      <div className="mt-3 overflow-x-auto rounded-[10px] border border-border">
+      <div className="mt-3 overflow-x-auto rounded-md border border-border">
         <table className="min-w-full border-collapse text-left text-sm">
           <caption className="sr-only">{table.table_id} 표의 행과 열</caption>
           <thead className="bg-muted">
@@ -126,7 +126,7 @@ export function TableRelationsPanel({ sourceText, tables }: TableRelationsPanelP
 
   return (
     <section
-      className="mt-5 rounded-[12px] border border-border bg-card p-4"
+      className="mt-5 rounded-xl border border-border bg-card p-4"
       aria-labelledby={headingId}
     >
       <h2 id={headingId} className="text-base font-bold">
@@ -148,7 +148,7 @@ export function TableRelationsPanel({ sourceText, tables }: TableRelationsPanelP
               {table.support_status === 'supported' ? (
                 <SupportedTable table={table} lines={lines} />
               ) : (
-                <p className="mt-3 rounded-[10px] border border-info/25 bg-info-surface p-3 text-sm text-info">
+                <p className="mt-3 rounded-md border border-info/25 bg-info-surface p-3 text-sm text-info">
                   {table.support_status === 'unavailable'
                     ? '이 문서의 표 관계 정보를 확인할 수 없습니다. 원문에서 직접 확인해 주세요.'
                     : tableFailureText(table)}

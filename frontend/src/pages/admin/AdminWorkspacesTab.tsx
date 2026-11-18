@@ -126,7 +126,7 @@ function WorkspaceDetailPanel({
     // 않는다 — `section`이라야 region 랜드마크가 되어 이 제목이 실제 접근 가능한
     // 이름으로 쓰인다.
     <section
-      className="flex flex-col gap-4 rounded-[12px] border border-border bg-card p-5"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card p-5"
       aria-labelledby={headingId}
     >
       <h3 id={headingId} className="text-[15px] font-semibold text-foreground">
@@ -314,7 +314,7 @@ export function AdminWorkspacesTab() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="rounded-[10px] border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+      <p className="rounded-md border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
         크레딧·구독·세금계산서는 계정이 아니라 작업 공간(워크스페이스) 단위입니다. 한 계정이 작업
         공간을 여러 개 가지면 잔액도 각각 따로입니다. 사용자의 이메일을 검색한 뒤 작업 공간을 고르고
         「관리」를 누르면 크레딧을 부여할 수 있습니다.
@@ -372,7 +372,7 @@ export function AdminWorkspacesTab() {
       )}
 
       {!loading && error === null && (
-        <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
+        <div className="rounded-xl border border-border bg-card px-5 pb-5">
           <table className="usage-table">
             <caption>
               이 쪽에 실린 워크스페이스를 계정별로 묶었습니다. 작업 공간이 여러 개인 계정은 골라서
@@ -411,7 +411,7 @@ export function AdminWorkspacesTab() {
                         ) : (
                           <select
                             aria-label={`${group.ownerEmail}의 작업 공간 선택`}
-                            className="min-h-11 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
+                            className="min-h-11 rounded-md border border-input bg-card px-3 text-sm text-foreground"
                             value={selected.workspace_id}
                             onChange={(event) => {
                               const nextId = event.target.value
@@ -443,7 +443,7 @@ export function AdminWorkspacesTab() {
                         {selected.selected_month
                           ? formatCredits(selected.selected_month.credits)
                           : '확인 필요'}
-                        <span className="block text-xs text-muted-foreground">
+                        <span className="block text-sm text-muted-foreground">
                           현재 가용 / {month} 사용
                         </span>
                       </td>

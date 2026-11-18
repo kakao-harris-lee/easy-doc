@@ -209,10 +209,7 @@ export function ReviewSupportPanel({
   const checkedCount = items.filter((item) => item.state !== 'needs_review').length
 
   return (
-    <section
-      className="mt-5 rounded-[12px] border border-border bg-card"
-      aria-labelledby={headingId}
-    >
+    <section className="mt-5 rounded-xl border border-border bg-card" aria-labelledby={headingId}>
       <button
         type="button"
         className="flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left"
@@ -293,7 +290,7 @@ export function ReviewSupportPanel({
           {assessment !== null && (
             <>
               {(assessment.coverage === 'limited' || !mappingAvailable) && (
-                <div className="mt-3 rounded-[10px] border border-info/25 bg-info-surface p-3 text-sm text-info">
+                <div className="mt-3 rounded-md border border-info/25 bg-info-surface p-3 text-sm text-info">
                   <p className="flex items-center gap-2 font-semibold">
                     <AlertTriangle className="size-4" aria-hidden="true" />
                     비교에 제한이 있습니다
@@ -398,7 +395,7 @@ function ReviewItemGroup({
             const quote = item.source_anchors.find((anchor) => anchor.quote.trim() !== '')?.quote
             const saving = savingItemId === item.item_id
             return (
-              <li key={item.item_id} className="rounded-[10px] border border-border p-4">
+              <li key={item.item_id} className="border-t border-border pt-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <p className="font-semibold">{copy.label}</p>
@@ -433,7 +430,7 @@ function ReviewItemGroup({
                     </label>
                     <textarea
                       id={`review-reason-${item.item_id}`}
-                      className="mt-1 min-h-24 w-full rounded-[10px] border border-input bg-background px-3 py-2"
+                      className="mt-1 min-h-24 w-full rounded-md border border-input bg-card px-3 py-2"
                       value={reasonDrafts[item.item_id] ?? item.reason ?? ''}
                       onChange={(event) =>
                         onReasonChange(

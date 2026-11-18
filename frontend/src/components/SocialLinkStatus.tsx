@@ -122,7 +122,7 @@ export function SocialLinkStatus({
 
   return (
     <div className={cn('border-t border-border pt-3', className)}>
-      <p className="text-xs font-semibold text-muted-foreground">연결된 계정</p>
+      <p className="text-sm font-semibold text-muted-foreground">연결된 계정</p>
       {SUPPORTED_PROVIDERS.map((provider) => (
         <ProviderLinkRow
           key={provider}
@@ -247,7 +247,7 @@ function ProviderLinkRow({
           </Button>
         </div>
         {disableUnlink && (
-          <p className="mt-1 text-xs text-muted-foreground" id={reasonId}>
+          <p className="mt-1 text-sm text-muted-foreground" id={reasonId}>
             {LAST_LOGIN_METHOD_HINT}
           </p>
         )}

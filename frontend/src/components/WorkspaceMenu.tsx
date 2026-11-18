@@ -171,14 +171,14 @@ export function WorkspaceMenu({
           variant !== 'row' && (align === 'right' ? 'right-0' : 'left-0'),
         )}
       >
-        <p className="px-3 py-2 text-xs font-semibold text-muted-foreground">작업 공간</p>
+        <p className="px-3 py-2 text-sm font-semibold text-muted-foreground">작업 공간</p>
         <div className="max-h-64 overflow-y-auto" role="group" aria-label="작업 공간 목록">
           {workspaces.map((workspace) => (
             <button
               key={workspace.id}
               type="button"
               aria-pressed={workspace.id === currentId}
-              className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-secondary aria-pressed:bg-selection aria-pressed:font-semibold aria-pressed:text-selection-foreground"
+              className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-secondary aria-pressed:bg-selection aria-pressed:font-semibold aria-pressed:text-selection-foreground"
               onClick={() => {
                 select(workspace.id)
                 setExpanded(false)

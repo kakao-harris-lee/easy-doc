@@ -127,7 +127,7 @@ export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProp
 
   return (
     <section
-      className="rounded-[12px] border border-border bg-card p-5"
+      className="rounded-xl border border-border bg-card p-5"
       aria-labelledby="feedback-heading"
     >
       <h2 className="font-bold" id="feedback-heading">
@@ -180,7 +180,7 @@ export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProp
               <label
                 key={option.value}
                 htmlFor={`${intentId}-${option.value}`}
-                className={`flex h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${intent === option.value ? 'border-primary bg-selection text-selection-foreground' : 'border-border bg-background'}`}
+                className={`flex h-12 cursor-pointer items-center gap-2 rounded-md border px-3.5 font-semibold ${intent === option.value ? 'border-primary bg-selection text-selection-foreground' : 'border-border bg-background'}`}
               >
                 <input
                   id={`${intentId}-${option.value}`}
@@ -217,7 +217,7 @@ export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProp
               <label
                 key={value}
                 htmlFor={`${scoreId}-${value}`}
-                className={`flex h-12 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3.5 font-semibold ${score === value ? 'border-primary bg-selection text-selection-foreground' : 'border-border bg-background'}`}
+                className={`flex h-12 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-md border px-3.5 font-semibold ${score === value ? 'border-primary bg-selection text-selection-foreground' : 'border-border bg-background'}`}
               >
                 <input
                   id={`${scoreId}-${value}`}
@@ -265,7 +265,7 @@ export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProp
           <label htmlFor={commentId}>의견 (선택)</label>
           <textarea
             id={commentId}
-            className="w-full rounded-[10px] border border-input bg-card px-3.5 py-3 text-base leading-relaxed text-foreground"
+            className="w-full rounded-md border border-input bg-card px-3.5 py-3 text-base leading-relaxed text-foreground"
             value={comment}
             rows={4}
             maxLength={MAX_COMMENT_LENGTH}

@@ -31,11 +31,9 @@ describe('공개 문서 예시', () => {
         'border',
         'border-border',
         'bg-card',
-        'hover:border-primary',
-        'hover:bg-selection',
-        'active:border-primary-active',
-        'active:bg-selection',
-        'transition-colors',
+        'hover:border-input',
+        'hover:-translate-y-px',
+        'motion-reduce:transform-none',
       )
       expect(screen.getByRole('link', { name: example.title })).not.toHaveClass('hover:bg-accent')
     })
@@ -56,8 +54,11 @@ describe('공개 문서 예시', () => {
       // 검색 결과 설명문과 같은 문장을 머리말에 보여 준다.
       expect(screen.getByText(exampleDescription(example))).toBeVisible()
       expect(screen.getByText(EXAMPLE_NOTICE)).toBeVisible()
-      expect(document.getElementById('example-simplified')).toHaveClass('bg-selection')
-      expect(document.getElementById('example-original')).not.toHaveClass('bg-selection')
+      expect(document.getElementById('example-simplified')).toHaveClass(
+        'border-l-4',
+        'border-l-primary',
+      )
+      expect(document.getElementById('example-original')).not.toHaveClass('border-l-4')
       expect(screen.getByRole('button', { name: '쉬운 글', pressed: true })).toHaveClass(
         'bg-selection',
         'text-selection-foreground',

@@ -15,32 +15,32 @@ export function TrialCreditSteps({ className }: { className?: string }) {
 
   return (
     <section
-      className={cn('rounded-[12px] border border-border bg-accent/40 p-4', className)}
+      className={cn('rounded-xl border border-border bg-accent/40 p-5', className)}
       aria-labelledby={headingId}
     >
-      <h2 id={headingId} className="text-sm font-bold text-accent-foreground">
+      <h2 id={headingId} className="text-base font-bold text-accent-foreground">
         무료 체험 시작 순서
       </h2>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+      <p className="mt-1 text-sm leading-6 text-muted-foreground">
         가입·로그인 후 휴대폰 인증을 완료하면 샘플 변환용 5크레딧을 한 번 드립니다.
       </p>
-      <ol className="mt-3 grid grid-cols-2 gap-2">
+      <ol className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
         {STEPS.map((step, index) => (
-          <li className="flex items-start gap-2" key={step.title}>
+          <li className="flex items-start gap-3" key={step.title}>
             <span
-              className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground"
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground"
               aria-hidden="true"
             >
               {index + 1}
             </span>
             <span className="min-w-0">
-              <span className="block text-xs font-semibold text-foreground">{step.title}</span>
-              <span className="block text-xs leading-5 text-muted-foreground">{step.detail}</span>
+              <span className="block text-sm font-semibold text-foreground">{step.title}</span>
+              <span className="block text-sm leading-6 text-muted-foreground">{step.detail}</span>
             </span>
           </li>
         ))}
       </ol>
-      <p className="mt-3 text-xs leading-5 text-muted-foreground">
+      <p className="mt-4 text-sm leading-6 text-muted-foreground">
         이메일로 가입했거나 소셜 제공자가 이메일을 확인해 주지 않은 경우, 휴대폰 인증 전에 메일로
         받은 인증 코드를 먼저 입력해 주세요.
       </p>

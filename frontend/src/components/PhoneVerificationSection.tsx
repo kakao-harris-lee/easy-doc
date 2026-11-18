@@ -80,11 +80,8 @@ export function PhoneVerificationSection() {
   }
 
   return (
-    <section
-      className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
-      aria-labelledby="phone-verification-heading"
-    >
-      <h2 id="phone-verification-heading" className="text-[15px] font-semibold text-foreground">
+    <section className="py-8" aria-labelledby="phone-verification-heading">
+      <h2 id="phone-verification-heading" className="text-lg font-semibold text-foreground">
         3. 휴대폰 번호 인증
       </h2>
       {user.phone_verified ? (
@@ -122,7 +119,7 @@ export function PhoneVerificationSection() {
             {phoneBusy ? '처리 중…' : phoneCodeSent ? '인증번호 다시 받기' : '인증번호 받기'}
           </Button>
           {cooldown > 0 && (
-            <p className="text-xs text-muted-foreground">{cooldown}초 후 다시 보낼 수 있어요.</p>
+            <p className="text-sm text-muted-foreground">{cooldown}초 후 다시 보낼 수 있어요.</p>
           )}
           {phoneCodeSent && (
             <div className="field">
@@ -160,7 +157,7 @@ export function PhoneVerificationSection() {
         </p>
       )}
       {!user.phone_verified && user.email_verified && (
-        <p className="mt-3 text-xs text-muted-foreground">
+        <p className="mt-3 text-sm text-muted-foreground">
           휴대폰 번호를 최초로 인증하면 샘플 변환용 체험 5크레딧을 한 번 지급합니다.
         </p>
       )}

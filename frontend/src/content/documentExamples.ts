@@ -29,8 +29,7 @@ export const EXAMPLES_DESCRIPTION = '가정통신문·고객 안내문·제품 �
 /** 목록 화면에서 어떤 문서를 다루는지 알려 주는 소개. */
 export const EXAMPLES_INTRO =
   '학교 가정통신문, 고객 안내문, 제품 설명서를 원문과 쉬운 글로 나란히 놓고 비교할 수 있습니다. 예시마다 어떤 표현을 왜 바꿨는지와 공유하기 전에 확인할 내용을 함께 적었습니다.'
-export const EXAMPLE_NOTICE =
-  'AI가 만든 가상 예시입니다. 실제 서비스 변환·사람의 검수 결과가 아닙니다.'
+export const EXAMPLE_NOTICE = 'AI가 만든 가상 예시입니다. 실제 변환 결과가 아닙니다.'
 
 export const DOCUMENT_EXAMPLES: readonly DocumentExample[] = [
   {

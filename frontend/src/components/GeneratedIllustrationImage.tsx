@@ -76,7 +76,7 @@ export function GeneratedIllustrationImage({
     <img
       src={current.url}
       alt={decorative ? '' : asset.alt_text}
-      className="w-full max-w-lg rounded-lg border border-border"
+      className="w-full max-w-lg rounded-md border border-border"
     />
   )
 }
