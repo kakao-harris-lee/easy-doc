@@ -18,7 +18,7 @@ export function AdminPaymentSummary({
       <span>
         {won(paid)} / {won(refunded)}
       </span>
-      <ul className="text-xs text-muted-foreground">
+      <ul className="text-sm text-muted-foreground">
         {events.map((event) => (
           <li key={event.id}>
             {event.kind === 'refund' ? '환불' : '결제'} {won(event.amount_krw)} (
@@ -34,7 +34,7 @@ export function AdminPaymentSummary({
           </li>
         ))}
       </ul>
-      <span className="block text-xs text-muted-foreground">
+      <span className="block text-sm text-muted-foreground">
         {month} 실제 결제 / 환불 · 테스트 제외
       </span>
     </>

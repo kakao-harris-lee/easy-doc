@@ -45,19 +45,16 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl items-center gap-8 py-2 lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-12">
+    <div className="mx-auto grid w-full max-w-5xl items-start gap-8 py-2 lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-12">
       <section
         className="w-full max-w-[440px] justify-self-center lg:order-2"
         aria-labelledby="login-heading"
       >
-        <div className="rounded-[16px] border border-border bg-card p-5 shadow-card sm:p-8">
-          <h1
-            id="login-heading"
-            className="text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
-          >
+        <div className="rounded-xl border border-border bg-card p-6 md:p-8">
+          <h1 id="login-heading" className="section-title">
             로그인
           </h1>
-          <p className="mt-2 text-sm leading-[22px] text-muted-foreground">
+          <p className="supporting-copy mt-2 text-muted-foreground">
             마지막으로 보던 작업 공간에서 문서 변환과 검수를 이어서 합니다.
           </p>
           {/* 실패 사유는 폼 맨 위에 남는 문단으로 표시된다(§6.1) — CredentialsForm이
@@ -86,19 +83,19 @@ export function LoginPage() {
           </p>
           <div className="mt-5 flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">또는</span>
+            <span className="text-sm text-muted-foreground">또는</span>
             <span className="h-px flex-1 bg-border" />
           </div>
           <SocialLoginButton provider="google" returnTo={from} />
           <SocialLoginButton provider="kakao" returnTo={from} />
           <SocialLoginButton provider="naver" returnTo={from} />
           <section aria-labelledby="login-signup-cta" className="mt-6 border-t border-border pt-5">
-            <p id="login-signup-cta" className="text-center text-sm text-muted-foreground">
+            <p id="login-signup-cta" className="text-center text-[15px] text-muted-foreground">
               아직 계정이 없으신가요?
             </p>
             <Link
               to={SIGNUP_PATH}
-              className="mt-3 flex h-12 w-full items-center justify-center rounded-[12px] border-[1.5px] border-primary text-base font-bold text-primary no-underline hover:bg-secondary"
+              className="mt-3 flex min-h-12 w-full items-center justify-center rounded-md border border-primary text-base font-bold text-primary no-underline hover:bg-secondary"
             >
               회원가입
             </Link>

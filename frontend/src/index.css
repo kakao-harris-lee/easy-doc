@@ -21,6 +21,7 @@
   --color-brand-foreground: var(--brand-foreground);
   --color-brand-surface: var(--brand-surface);
   --color-brand-hover: var(--brand-hover);
+  --color-highlight: var(--highlight);
   --color-selection: var(--selection);
   --color-selection-foreground: var(--selection-foreground);
   --color-border: var(--border);
@@ -42,66 +43,63 @@
   --color-admin-foreground: var(--admin-foreground);
   --color-admin-surface: var(--admin-surface);
   --radius-sm: 8px;
-  --radius-md: 10px;
+  --radius-md: 12px;
   --radius-lg: 12px;
-  --radius-xl: 16px;
-  /* 카드 그림자는 파란 잉크를 아주 낮은 농도로 사용해 다크 모드에서도 번지지 않게 한다. */
-  --shadow-2xs: 0 1px 1px rgba(23, 32, 51, 0.03);
-  --shadow-xs: 0 1px 2px rgba(23, 32, 51, 0.04);
-  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.05);
-  --shadow-md: 0 4px 14px rgba(23, 32, 51, 0.06);
-  --shadow-lg: 0 8px 28px rgba(23, 32, 51, 0.08);
-  --shadow-xl: 0 8px 28px rgba(23, 32, 51, 0.08);
-  --shadow-2xl: 0 8px 28px rgba(23, 32, 51, 0.08);
-  --shadow-card: 0 8px 28px rgba(23, 32, 51, 0.08);
+  --radius-xl: 20px;
+  --shadow-2xs: none;
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: 0 12px 32px rgba(15, 17, 21, 0.12);
+  --shadow-xl: 0 12px 32px rgba(15, 17, 21, 0.12);
+  --shadow-2xl: 0 12px 32px rgba(15, 17, 21, 0.12);
+  --shadow-card: none;
   --font-sans: var(--font-pretendard);
 }
 
 :root {
   color-scheme: light;
-  /* 디자인 토큰의 정본. Fluent 테마도 이 값을 읽어 같은 상태를 그린다. */
-  --background: #f7f9fc;
-  --foreground: #172033;
+  --background: #ffffff;
+  --foreground: #14171c;
   --card: #ffffff;
-  --card-foreground: #172033;
+  --card-foreground: #14171c;
   --popover: #ffffff;
-  --popover-foreground: #172033;
-  --muted: #edf2f7;
-  --muted-foreground: #4b5870;
-  --secondary: #e8f0f8;
-  --secondary-foreground: #172033;
-  /* 노란색은 브랜드 장식과 짧은 혜택 강조에만 쓰고, 선택 상태는 selection 토큰을 사용한다. */
-  --accent: #fff4cf;
+  --popover-foreground: #14171c;
+  --muted: #f4f5f7;
+  --muted-foreground: #4d5562;
+  --secondary: #f0f2f5;
+  --secondary-foreground: #14171c;
+  --accent: #fff1c2;
   --accent-foreground: #4a3500;
-  --brand: #c58b1a;
+  --brand: #b7830f;
   --brand-foreground: #4a3500;
-  --brand-surface: #fff4cf;
-  --brand-hover: #a8730d;
-  --selection: #e7f2fc;
-  --selection-foreground: #125493;
-  --border: #d6dee8;
-  /* 컨트롤 외곽선은 카드와 캔버스 모두에서 3:1 이상 식별되도록 유지한다. */
-  --input: #64748b;
-  --ring: #1764b5;
-  --primary: #1764b5;
+  --brand-surface: #fff1c2;
+  --brand-hover: #9a6d0a;
+  --highlight: #ffe27a;
+  --selection: #ebf1fe;
+  --selection-foreground: #1c47b3;
+  --border: #e3e6ea;
+  --input: #7a828f;
+  --ring: #2457d6;
+  --primary: #2457d6;
   --primary-foreground: #ffffff;
-  --primary-hover: #125493;
-  --primary-active: #0f447a;
-  --success: #197a48;
+  --primary-hover: #1c47b3;
+  --primary-active: #173a93;
+  --success: #1a7343;
   --success-foreground: #ffffff;
-  --success-surface: #e8f5ee;
-  --warning: #8c4a00;
+  --success-surface: #e8f3ec;
+  --warning: #8a4b08;
   --warning-foreground: #ffffff;
-  --warning-surface: #fff7e8;
-  --danger: #b4231f;
+  --warning-surface: #fff2e0;
+  --danger: #b3261e;
   --danger-foreground: #ffffff;
-  --danger-surface: #fdecec;
-  --info: #0f6cbd;
+  --danger-surface: #fcecea;
+  --info: #1f5fb8;
   --info-foreground: #ffffff;
-  --info-surface: #e7f2fc;
-  --admin: #4a5268;
+  --info-surface: #e8f0fb;
+  --admin: #474f63;
   --admin-foreground: #ffffff;
-  --admin-surface: #eef1f6;
+  --admin-surface: #f0f2f5;
   --font-pretendard:
     'Pretendard', 'Pretendard Variable', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
     'Malgun Gothic', 'Segoe UI', system-ui, sans-serif;
@@ -109,46 +107,47 @@
 
 html[data-theme='dark'] {
   color-scheme: dark;
-  --background: #111827;
-  --foreground: #e8edf5;
-  --card: #1b2535;
-  --card-foreground: #e8edf5;
-  --popover: #243247;
-  --popover-foreground: #e8edf5;
-  --muted: #243247;
-  --muted-foreground: #b8c4d4;
-  --secondary: #26364c;
-  --secondary-foreground: #e8edf5;
-  --accent: #4b3a17;
+  --background: #0f1115;
+  --foreground: #eceef1;
+  --card: #16191f;
+  --card-foreground: #eceef1;
+  --popover: #1c2027;
+  --popover-foreground: #eceef1;
+  --muted: #1c2027;
+  --muted-foreground: #a8b0bc;
+  --secondary: #222731;
+  --secondary-foreground: #eceef1;
+  --accent: #3a2f12;
   --accent-foreground: #ffe8a8;
-  --brand: #f6c963;
+  --brand: #f2c75c;
   --brand-foreground: #ffe8a8;
-  --brand-surface: #4b3a17;
+  --brand-surface: #3a2f12;
   --brand-hover: #ffda85;
-  --selection: #183954;
-  --selection-foreground: #9cd4ff;
-  --border: #35445a;
-  --input: #8190a6;
-  --ring: #75bfff;
-  --primary: #75bfff;
-  --primary-foreground: #111827;
-  --primary-hover: #9cd4ff;
-  --primary-active: #c2e3ff;
-  --success: #65d6a0;
-  --success-foreground: #0b2518;
-  --success-surface: #163b2a;
-  --warning: #ffbe6e;
-  --warning-foreground: #322300;
-  --warning-surface: #2d281f;
-  --danger: #ff8c86;
-  --danger-foreground: #321010;
-  --danger-surface: #4a2024;
-  --info: #7cc4ff;
-  --info-foreground: #0b2438;
-  --info-surface: #183954;
-  --admin: #c4cddc;
-  --admin-foreground: #172033;
-  --admin-surface: #2a3547;
+  --highlight: #6b5410;
+  --selection: #1b2a4a;
+  --selection-foreground: #a3c0ff;
+  --border: #2a2f38;
+  --input: #7d8694;
+  --ring: #7fa6ff;
+  --primary: #7fa6ff;
+  --primary-foreground: #0f1115;
+  --primary-hover: #a3c0ff;
+  --primary-active: #c3d6ff;
+  --success: #6ccb9d;
+  --success-foreground: #0b2016;
+  --success-surface: #173226;
+  --warning: #f0b070;
+  --warning-foreground: #2a1a05;
+  --warning-surface: #2e2518;
+  --danger: #f08e88;
+  --danger-foreground: #2e0f0d;
+  --danger-surface: #3b1e20;
+  --info: #86b4f5;
+  --info-foreground: #0b1e3a;
+  --info-surface: #1b2a4a;
+  --admin: #b8c0ce;
+  --admin-foreground: #14171c;
+  --admin-surface: #252a33;
 }
 
 @layer base {
@@ -167,8 +166,6 @@ html[data-theme='dark'] {
   :focus-visible {
     outline: 3px solid var(--ring);
     outline-offset: 2px;
-    /* 포커스 링은 대부분 입력·버튼에 걸린다. §8.3 의 컨트롤 모서리(10px)와 맞춰
-       링만 각져 보이지 않게 한다. */
     border-radius: var(--radius-md);
   }
   ::selection {
@@ -178,24 +175,44 @@ html[data-theme='dark'] {
 }
 
 @layer components {
+  .hero-title {
+    @apply font-extrabold text-foreground;
+    font-size: clamp(2.25rem, 1.6rem + 2.8vw, 3.5rem);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+    word-break: keep-all;
+  }
+
   .page-title {
-    @apply font-extrabold tracking-tight text-foreground;
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 1.75rem);
+    @apply font-extrabold text-foreground;
+    font-size: clamp(1.75rem, 1.5rem + 1vw, 2.25rem);
     line-height: 1.3;
+    letter-spacing: -0.02em;
     text-wrap: balance;
     overflow-wrap: anywhere;
   }
 
   .section-title {
-    @apply font-extrabold text-foreground;
-    font-size: clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+    @apply font-bold text-foreground;
+    font-size: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem);
     line-height: 1.35;
+    letter-spacing: -0.02em;
     text-wrap: balance;
     overflow-wrap: anywhere;
   }
 
+  .lead-copy {
+    font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+    line-height: 1.7;
+    text-wrap: pretty;
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
   .body-copy {
-    font-size: clamp(0.9375rem, 0.9rem + 0.15vw, 1rem);
+    font-size: 1.0625rem;
     line-height: 1.75;
     text-wrap: pretty;
     word-break: keep-all;
@@ -203,29 +220,32 @@ html[data-theme='dark'] {
   }
 
   .supporting-copy {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     line-height: 1.6;
     text-wrap: pretty;
     word-break: keep-all;
     overflow-wrap: break-word;
   }
 
+  .eyebrow {
+    @apply font-semibold text-primary;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+
+  .reading-width {
+    max-width: 68ch;
+  }
+
+  .marker {
+    background: linear-gradient(transparent 60%, var(--highlight) 60%);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
   .long-text {
     min-width: 0;
     overflow-wrap: anywhere;
-  }
-
-  .landing-glow {
-    @apply pointer-events-none absolute rounded-full bg-brand-surface opacity-40 blur-xl;
-  }
-  .landing-glow-start {
-    @apply left-0 top-12 size-16;
-  }
-  .landing-glow-end {
-    @apply right-0 bottom-10 size-24;
-  }
-  html[data-theme='dark'] .landing-glow {
-    opacity: 0.18;
   }
 
   .landing-flow-image-dark {
@@ -241,8 +261,7 @@ html[data-theme='dark'] {
   }
 
   .skip-link {
-    /* 버튼이므로 §8.3 의 10px 을 따른다 (이 파일의 다른 버튼과 같은 값). */
-    @apply fixed -left-[9999px] top-2 z-50 inline-flex min-h-11 items-center rounded-[10px] bg-primary px-4 py-2 font-bold text-primary-foreground;
+    @apply fixed -left-[9999px] top-2 z-50 inline-flex min-h-11 items-center rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground;
   }
   .skip-link:focus {
     @apply left-2;
@@ -258,13 +277,13 @@ html[data-theme='dark'] {
   .field select,
   .upload-textarea,
   .review-textarea {
-    @apply w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground;
+    @apply min-h-12 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground;
   }
   .field input:not([type='radio']):not([type='file']) {
-    @apply h-11;
+    @apply h-12;
   }
   .field input[type='file'] {
-    @apply w-full rounded-[10px] border border-dashed border-input bg-background p-3;
+    @apply w-full rounded-md border border-dashed border-input bg-background p-3;
   }
   .upload-textarea,
   .review-textarea {
@@ -281,20 +300,20 @@ html[data-theme='dark'] {
     @apply m-0 text-sm font-medium text-danger;
   }
   .form-error {
-    @apply m-0 rounded-[10px] border border-danger/25 bg-danger-surface px-3 py-2 text-sm font-medium text-danger;
+    @apply m-0 rounded-md border-l-4 border-l-danger bg-danger-surface px-4 py-3 text-[15px] font-medium text-danger;
   }
   .form-success {
-    @apply m-0 rounded-[10px] border border-success/25 bg-success-surface px-3 py-2 text-sm font-medium text-foreground;
+    @apply m-0 rounded-md border-l-4 border-l-success bg-success-surface px-4 py-3 text-[15px] font-medium text-foreground;
   }
   .notice-warning {
-    @apply rounded-[10px] border border-warning/25 bg-warning-surface text-foreground;
+    @apply rounded-md border-l-4 border-l-warning bg-warning-surface text-foreground;
   }
   .notice-warning > svg,
   .notice-warning-title {
     @apply text-warning;
   }
   .notice-success {
-    @apply rounded-[10px] border border-success/25 bg-success-surface text-foreground;
+    @apply rounded-md border-l-4 border-l-success bg-success-surface text-foreground;
   }
   .notice-success > svg,
   .notice-success-title {
@@ -305,13 +324,13 @@ html[data-theme='dark'] {
     @apply min-h-80 resize-y;
   }
   .review-source {
-    @apply bg-secondary;
+    @apply bg-card;
   }
   .review-actions {
     @apply my-4 flex flex-wrap gap-2;
   }
   .review-actions button {
-    @apply inline-flex h-11 items-center justify-center rounded-[10px] bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50;
   }
   .review-actions button:not(:first-child) {
     @apply border border-input bg-card text-foreground hover:bg-secondary;
@@ -333,10 +352,14 @@ html[data-theme='dark'] {
   }
   .history-table thead th,
   .usage-table thead th {
-    @apply bg-background text-sm font-semibold text-muted-foreground;
+    @apply bg-transparent text-sm font-semibold text-muted-foreground;
+  }
+  .history-table tbody tr,
+  .usage-table tbody tr {
+    @apply hover:bg-muted/60;
   }
   .history-table button {
-    @apply inline-flex h-9 items-center rounded-[10px] border border-input bg-card px-3 text-sm font-semibold text-foreground hover:bg-secondary disabled:opacity-50;
+    @apply inline-flex h-9 items-center rounded-md border border-input bg-card px-3 text-sm font-semibold text-foreground hover:bg-secondary disabled:opacity-50;
   }
 
   /*
@@ -347,11 +370,24 @@ html[data-theme='dark'] {
   .legal-document :where(h1, h2, h3) {
     @apply mt-8 mb-3 font-bold text-foreground first:mt-0;
   }
+  .legal-document {
+    max-width: 68ch;
+    font-size: 1.0625rem;
+  }
   .legal-document h1 {
-    @apply text-2xl;
+    @apply font-extrabold text-foreground;
+    font-size: clamp(1.75rem, 1.5rem + 1vw, 2.25rem);
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
   }
   .legal-document h2 {
-    @apply text-xl;
+    @apply font-bold text-foreground;
+    font-size: clamp(1.375rem, 1.2rem + 0.7vw, 1.75rem);
+    line-height: 1.35;
+    letter-spacing: -0.02em;
+    margin-top: 3rem;
   }
   .legal-document h3 {
     @apply text-lg;
@@ -359,7 +395,8 @@ html[data-theme='dark'] {
   .legal-document p,
   .legal-document ul,
   .legal-document ol {
-    @apply my-3 leading-relaxed text-foreground;
+    @apply my-3 text-foreground;
+    line-height: 1.75;
   }
   .legal-document ul {
     @apply list-disc pl-6;
@@ -386,27 +423,26 @@ html[data-theme='dark'] {
 
   /* 가이드와 예시의 부가 설명은 키보드로 여는 native details를 공유한다. */
   .help-disclosure {
-    @apply bg-card text-foreground transition-colors;
-  }
-  .help-disclosure[open] {
-    @apply bg-selection;
+    @apply text-foreground;
   }
   .help-disclosure > summary {
-    @apply min-h-12 cursor-pointer px-4 py-3 font-semibold text-foreground transition-colors hover:text-primary;
+    @apply min-h-12 cursor-pointer py-4 font-semibold text-foreground transition-colors hover:text-primary;
   }
   .help-disclosure[open] > summary {
-    @apply text-selection-foreground;
+    @apply text-primary;
   }
   .help-disclosure > summary h2 {
-    @apply inline text-base font-semibold;
+    @apply inline text-lg font-bold;
   }
   .guide-page {
-    @apply mx-auto max-w-[800px] py-3 sm:py-6;
+    @apply py-6 md:py-12;
+    max-width: 68ch;
   }
   .guide-page .legal-document h1 {
-    @apply font-extrabold tracking-tight text-foreground;
-    font-size: clamp(1.5rem, 1.25rem + 1vw, 1.75rem);
+    @apply font-extrabold text-foreground;
+    font-size: clamp(1.75rem, 1.5rem + 1vw, 2.25rem);
     line-height: 1.3;
+    letter-spacing: -0.02em;
     text-wrap: balance;
     overflow-wrap: anywhere;
   }
@@ -419,7 +455,7 @@ html[data-theme='dark'] {
   }
 
   .guide-page .legal-document blockquote {
-    @apply my-4 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 text-sm text-foreground;
+    @apply my-4 rounded-md border-l-4 border-l-warning bg-warning-surface px-4 py-3 text-[15px] text-foreground;
   }
   .guide-page .legal-document blockquote p {
     @apply my-0 leading-6 text-foreground;
@@ -428,10 +464,11 @@ html[data-theme='dark'] {
     @apply my-4 list-decimal space-y-2 py-2 pl-6;
   }
   .guide-page .help-disclosure .legal-document {
-    @apply text-sm;
+    @apply text-base;
   }
   .guide-page .legal-document li {
-    @apply my-2 leading-6;
+    @apply my-2;
+    line-height: 1.75;
   }
   .guide-page .legal-document a {
     @apply break-words font-medium text-primary underline underline-offset-4;

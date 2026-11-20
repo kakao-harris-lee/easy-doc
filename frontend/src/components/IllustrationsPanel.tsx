@@ -29,14 +29,14 @@ function purposeLabel(purpose: IllustrationPurpose): string {
 /** 목록 항목 하나. 검수자가 대체텍스트·출처·라이선스를 화면에서 바로 확인할 수 있어야 한다. */
 function IllustrationCard({ item }: { item: Illustration }) {
   return (
-    <li className="rounded-[10px] border border-border p-4">
+    <li className="border-t border-border pt-4">
       <div className="flex flex-wrap items-start gap-3">
         <IllustrationImage
           imageUrl={item.image_url}
           alt={item.alt_text}
           width={64}
           height={64}
-          className="size-16 shrink-0 rounded-[6px] border border-border object-contain"
+          className="size-16 shrink-0 rounded-md border border-border object-contain"
         />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="font-semibold">{item.caption}</span>

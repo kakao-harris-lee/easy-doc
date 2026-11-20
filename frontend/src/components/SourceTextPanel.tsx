@@ -252,7 +252,7 @@ const SourceUnitRow = memo(function SourceUnitRow({
         <textarea
           aria-label={`원본 ${index + 1}번째 문단`}
           className={cn(
-            'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 pr-14 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
+            'min-h-11 w-full resize-y rounded-md border border-input bg-card px-3.5 py-2.5 pr-14 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
             highlighted && 'border-primary ring-2 ring-primary/40',
           )}
           value={text}
@@ -380,7 +380,7 @@ export function SourceTextPanel({
           />
           원문 불러오는 중
         </h2>
-        <div className="rounded-[10px] border border-dashed border-input bg-background p-5">
+        <div className="rounded-md border border-dashed border-input bg-background p-5">
           <p className="m-0 font-semibold">원문을 불러오고 있습니다…</p>
           <p className="field-hint mt-2">잠시만 기다려 주세요.</p>
         </div>
@@ -396,7 +396,7 @@ export function SourceTextPanel({
           <FileX2 className="size-[18px] shrink-0" aria-hidden="true" />
           원문을 불러오지 못함
         </h2>
-        <div className="rounded-[10px] border border-dashed border-input bg-background p-5">
+        <div className="rounded-md border border-dashed border-input bg-background p-5">
           <p className="m-0 font-semibold">{reason}</p>
           <p className="field-hint mt-2">{advice}</p>
           {failureNote !== undefined && <p className="field-hint mt-2">{failureNote}</p>}
@@ -457,7 +457,7 @@ export function SourceTextPanel({
                 aria-label={`${KIND_GROUP_LABEL[run.kind]} ${run.length}개`}
                 className={cn(
                   'flex flex-col gap-2',
-                  run.kind === 'table_cell' && 'rounded-[10px] border border-input p-2',
+                  run.kind === 'table_cell' && 'rounded-md border border-input p-2',
                   run.kind === 'list_item' && 'border-l-2 border-input pl-3',
                 )}
               >

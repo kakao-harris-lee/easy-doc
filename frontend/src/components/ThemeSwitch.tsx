@@ -22,7 +22,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
         <span
           aria-hidden="true"
           className={cn(
-            'absolute left-[3px] top-[3px] flex size-7 items-center justify-center rounded-full bg-card shadow-sm transition-transform motion-reduce:transition-none',
+            'absolute left-[3px] top-[3px] flex size-7 items-center justify-center rounded-full bg-card ring-1 ring-border transition-transform motion-reduce:transition-none',
             dark ? 'translate-x-8 text-foreground' : 'translate-x-0 text-primary',
           )}
         >

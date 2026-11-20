@@ -50,7 +50,7 @@ function HistoryEventCard({
   const snapshot = event.snapshot
 
   return (
-    <li className="rounded-[10px] border border-border p-4">
+    <li className="border-t border-border pt-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 className="font-semibold">{EVENT_LABELS[event.event_type]}</h3>
         {stale && <span className="text-sm font-semibold text-warning">현재 본문과 다름</span>}

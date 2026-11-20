@@ -73,7 +73,7 @@ function HandleForm({
 
   return (
     <form
-      className="flex flex-wrap items-end gap-3 rounded-[10px] border border-border p-3"
+      className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3"
       // 같은 상호로 기간이 다른 요청이 여러 건 나란히 나올 수 있다 — 상호만으로는
       // 어떤 요청의 폼인지 구분되지 않으므로 기간을 이름에 싣는다.
       aria-label={`${request.company_name} 요청 처리 (${request.period_from}~${request.period_to})`}
@@ -236,7 +236,7 @@ export function AdminInvoicesTab() {
 
       {!loading && error === null && (
         <div className="flex flex-col gap-4">
-          <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
+          <div className="rounded-xl border border-border bg-card px-5 pb-5">
             <table className="usage-table">
               <caption>세금계산서 요청 목록입니다.</caption>
               <thead>
