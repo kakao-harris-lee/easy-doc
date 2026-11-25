@@ -541,7 +541,7 @@ export function IllustrationGenerationPanel({
   return (
     <section
       aria-labelledby={`${id}-heading`}
-      className="space-y-3 rounded-md border border-border p-4"
+      className="space-y-3 rounded-lg border border-border p-4"
     >
       <h3 id={`${id}-heading`} ref={headingRef} tabIndex={-1} className="font-semibold">
         그림 생성과 적용

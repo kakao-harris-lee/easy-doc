@@ -150,7 +150,7 @@ export function ResetPasswordPage() {
 
   return (
     <section
-      className="mx-auto w-full max-w-[440px] rounded-xl border border-border bg-card p-6 md:p-8"
+      className="mx-auto w-full max-w-[440px] rounded-[16px] border border-border bg-card p-6 shadow-card sm:p-8"
       aria-labelledby="reset-password-heading"
     >
       <h1
@@ -185,7 +185,7 @@ export function ResetPasswordPage() {
           <div className="field">
             <label htmlFor={emailId}>이메일</label>
             <input
-              className="h-11 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={emailId}
               type="email"
               autoComplete="email"
@@ -206,7 +206,7 @@ export function ResetPasswordPage() {
           <div className="field">
             <label htmlFor={emailId}>이메일</label>
             <input
-              className="h-11 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={emailId}
               type="email"
               autoComplete="email"
@@ -217,7 +217,7 @@ export function ResetPasswordPage() {
           <div className="field">
             <label htmlFor={codeId}>인증 코드</label>
             <input
-              className="h-11 w-full rounded-md border border-input bg-card px-3.5 text-base tracking-[0.3em] text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base tracking-[0.3em] text-foreground"
               id={codeId}
               type="text"
               inputMode="numeric"
@@ -232,7 +232,7 @@ export function ResetPasswordPage() {
           <div className="field">
             <label htmlFor={passwordId}>새 비밀번호</label>
             <input
-              className="h-11 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={passwordId}
               type="password"
               autoComplete="new-password"
@@ -247,7 +247,7 @@ export function ResetPasswordPage() {
           <div className="field">
             <label htmlFor={confirmId}>새 비밀번호 확인</label>
             <input
-              className="h-11 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={confirmId}
               type="password"
               autoComplete="new-password"

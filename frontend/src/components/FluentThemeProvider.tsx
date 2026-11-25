@@ -16,12 +16,12 @@ const easyDocBlue: BrandVariants = {
   40: '#104777',
   50: '#12558E',
   60: '#1563A1',
-  70: '#1C47B3',
-  80: '#2457D6',
+  70: '#0F4E91',
+  80: '#1764B5',
   90: '#3B82C6',
   100: '#5B9DD2',
-  110: '#7FA6FF',
-  120: '#A3C0FF',
+  110: '#75BFFF',
+  120: '#94CCFF',
   130: '#B0DAFF',
   140: '#C9E5FF',
   150: '#DCEBFF',
@@ -50,8 +50,8 @@ const lightTheme: Theme = {
   colorNeutralStrokeAccessible: 'var(--input)',
   colorNeutralForegroundDisabled: 'var(--muted-foreground)',
   colorNeutralStrokeDisabled: 'var(--border)',
-  borderRadiusMedium: '12px',
-  borderRadiusLarge: '20px',
+  borderRadiusMedium: '10px',
+  borderRadiusLarge: '16px',
 }
 
 const darkTheme: Theme = {
@@ -76,8 +76,8 @@ const darkTheme: Theme = {
   colorNeutralStrokeAccessible: 'var(--input)',
   colorNeutralForegroundDisabled: 'var(--muted-foreground)',
   colorNeutralStrokeDisabled: 'var(--border)',
-  borderRadiusMedium: '12px',
-  borderRadiusLarge: '20px',
+  borderRadiusMedium: '10px',
+  borderRadiusLarge: '16px',
 }
 
 function ThemedFluentProvider({ children }: { children: ReactNode }) {

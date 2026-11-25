@@ -68,9 +68,9 @@ function stageStates(status: StageStatus): StageState[] {
 /** 상태별 표식. 반복 모션은 화면 전체에서 하나만 사용한다. */
 const MARKER_CLASS: Record<StageState, string> = {
   done: 'border-success bg-success text-success-foreground',
-  current: 'border-primary bg-primary text-primary-foreground',
+  current: 'border-primary bg-selection text-selection-foreground',
   next: 'border-input bg-card text-muted-foreground',
-  waiting: 'border-input bg-card text-muted-foreground',
+  waiting: 'border-border bg-muted text-muted-foreground',
 }
 
 const LABEL_CLASS: Record<StageState, string> = {
@@ -104,7 +104,7 @@ export function ConversionStages({ status }: { status: StageStatus }) {
             <span
               aria-hidden="true"
               className={cn(
-                'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border',
+                'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border',
                 MARKER_CLASS[state],
               )}
             >
@@ -118,14 +118,14 @@ export function ConversionStages({ status }: { status: StageStatus }) {
             </span>
             <span className="min-w-0">
               <span className="flex flex-wrap items-baseline gap-x-2">
-                <span className={cn('text-base font-semibold', LABEL_CLASS[state])}>
+                <span className={cn('text-[15px] font-semibold', LABEL_CLASS[state])}>
                   {stage.label}
                 </span>
                 <span className={cn('text-sm font-medium', STATE_TEXT_CLASS[state])}>
                   {STATE_TEXT[state]}
                 </span>
               </span>
-              <span className="mt-0.5 block text-sm leading-6 text-muted-foreground">
+              <span className="mt-0.5 block text-sm leading-[22px] text-muted-foreground">
                 {stage.hint}
               </span>
             </span>

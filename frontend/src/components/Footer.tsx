@@ -27,14 +27,18 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
   } = company
 
   return (
-    <footer className="border-t border-border bg-muted">
+    <footer className="border-t border-border bg-secondary/40">
       <div
-        className={cn(CONTAINER, 'space-y-1 py-12 text-sm leading-relaxed text-muted-foreground')}
+        className={cn(
+          CONTAINER,
+          'space-y-0.5 py-2 text-xs leading-relaxed text-muted-foreground sm:py-3',
+        )}
       >
-        <div className="flex flex-col items-start gap-y-2 pb-2 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6">
+        <div className="flex flex-col items-start sm:flex-row sm:items-center sm:justify-between sm:gap-x-6">
+          <span className="font-semibold text-foreground">{name}</span>
           <nav
             aria-label="정책"
-            className="flex w-full flex-wrap items-center justify-between gap-x-2 sm:order-last sm:w-auto sm:justify-end sm:gap-x-4"
+            className="flex w-full flex-wrap items-center justify-between gap-x-2 sm:w-auto sm:justify-start sm:gap-x-4"
           >
             <Link to={GUIDE_PATH} className={cn(POLICY_LINK_CLASS, 'whitespace-nowrap')}>
               이용 가이드
@@ -49,7 +53,6 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
               개인정보처리방침
             </Link>
           </nav>
-          <span className="font-semibold text-foreground">{name}</span>
         </div>
         <div className="flex flex-wrap items-center gap-x-4">
           <span className={INFO_TEXT_CLASS}>

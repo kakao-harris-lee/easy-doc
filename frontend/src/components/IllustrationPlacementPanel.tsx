@@ -201,7 +201,7 @@ export function IllustrationPlacementPanel({
               return (
                 <li
                   key={index}
-                  className="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex flex-col gap-2 rounded-[10px] border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="flex items-baseline gap-2 sm:flex-1">
                     <span className="shrink-0 text-sm font-semibold text-muted-foreground">
@@ -280,7 +280,7 @@ export function IllustrationPlacementPanel({
                               alt={item.alt_text}
                               width={64}
                               height={64}
-                              className="size-16 rounded-md border border-border object-contain"
+                              className="size-16 rounded-[6px] border border-border object-contain"
                             />
                             <figcaption className="text-xs text-muted-foreground">
                               {item.caption}

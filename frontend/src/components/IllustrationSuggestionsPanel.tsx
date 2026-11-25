@@ -98,7 +98,7 @@ function SuggestionCard({
     <li
       id={`illustration-suggestion-${suggestion.suggestion_id}`}
       tabIndex={-1}
-      className="rounded-md border border-border p-4"
+      className="rounded-[10px] border border-border p-4"
     >
       <section aria-labelledby={headingId} className="flex flex-col gap-3">
         <h3 id={headingId} className="text-base font-semibold">

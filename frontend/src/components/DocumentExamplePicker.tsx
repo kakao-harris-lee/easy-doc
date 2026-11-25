@@ -52,7 +52,7 @@ export function DocumentExamplePicker({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="px-1 text-sm sm:px-3"
+                className="px-1 text-xs sm:px-3 sm:text-sm"
                 disabled={disabled}
                 onClick={(event) => {
                   triggerRef.current = event.currentTarget
@@ -67,7 +67,7 @@ export function DocumentExamplePicker({
           </div>
           {pending !== null && (
             <div
-              className="mt-4 rounded-md border border-warning/30 bg-warning-surface p-3"
+              className="mt-4 rounded-lg border border-warning/30 bg-warning-surface p-3"
               role="alert"
             >
               <p className="text-sm leading-6 text-foreground">

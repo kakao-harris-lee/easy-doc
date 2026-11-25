@@ -215,7 +215,7 @@ function RowMenu({
       {open && (
         <div
           id={panelId}
-          className="absolute right-0 top-[calc(100%+0.25rem)] z-40 rounded-md border border-border bg-card p-1.5 shadow-lg"
+          className="absolute right-0 top-[calc(100%+0.25rem)] z-40 rounded-[12px] border border-border bg-card p-1.5 shadow-lg"
         >
           <Button
             ref={firstItemRef}
@@ -447,7 +447,7 @@ export function HistoryPage() {
           </p>
         )}
 
-        <div className="rounded-xl border border-border bg-card px-5 pb-5">
+        <div className="rounded-[16px] border border-border bg-card px-5 pb-5 shadow-sm">
           {items.length === 0 && !loading && error === null ? (
             // 빈 상태도 지금 작업 공간의 이야기로 말하고, 다음 할 일 하나를 함께 준다(§6.6).
             <div className="flex flex-col items-center gap-4 py-14 text-center">
@@ -487,7 +487,7 @@ export function HistoryPage() {
                   <tr className="h-[60px]" key={item.id}>
                     <th scope="row">
                       {documentTitle(item)}
-                      <p className="text-sm font-normal leading-5 text-muted-foreground">
+                      <p className="text-[13px] font-normal leading-4 text-muted-foreground">
                         {secondaryInfo(item)}
                       </p>
                     </th>
@@ -504,12 +504,12 @@ export function HistoryPage() {
             <ul aria-label={listDescription} className="flex flex-col gap-3 py-4">
               {items.map((item) => (
                 <li
-                  className="relative flex flex-col items-start gap-2 rounded-md border border-border p-4 pr-16"
+                  className="relative flex flex-col items-start gap-2 rounded-[12px] border border-border p-4 pr-16"
                   key={item.id}
                 >
                   {actionBadge(item)}
                   {documentTitle(item)}
-                  <p className="supporting-copy max-w-full text-sm text-muted-foreground">
+                  <p className="supporting-copy max-w-full text-[13px] text-muted-foreground">
                     {secondaryInfo(item)} · {item.char_count.toLocaleString('ko-KR')}자
                   </p>
                   <div className="absolute right-2 top-2">{rowMenu(item)}</div>

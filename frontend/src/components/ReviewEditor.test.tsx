@@ -314,14 +314,14 @@ describe('검수 에디터', () => {
     expect(panel).toHaveAttribute('readonly')
   })
 
-  it('결과 패널만 카드 배경이고 첫 도구는 항상 주행동이다', async () => {
+  it('결과 패널만 파란 선택 표면이고 첫 도구는 항상 주행동이다', async () => {
     stubViewport(false)
     const user = userEvent.setup()
     render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
 
     await user.click(screen.getByRole('tab', { name: '쉬운 글' }))
     const result = screen.getByRole('tabpanel', { name: '쉬운 글' })
-    expect(result).toHaveClass('border', 'border-primary/40', 'bg-card')
+    expect(result).toHaveClass('border-2', 'border-primary/40', 'bg-selection')
     expect(result).not.toHaveClass('bg-brand-surface')
     expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveClass(
       'bg-primary',
@@ -855,7 +855,7 @@ describe('검수 에디터', () => {
       expect(screen.getByRole('tabpanel', { name: '원문' })).toHaveClass(
         'border',
         'border-border',
-        'bg-muted',
+        'bg-card',
       )
       expect(screen.getByRole('tabpanel', { name: '원문' })).not.toHaveClass('bg-selection')
 

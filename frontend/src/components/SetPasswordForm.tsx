@@ -98,7 +98,7 @@ export function SetPasswordForm({ className, onCreated }: SetPasswordFormProps) 
           <div className="field">
             <label htmlFor={passwordId}>새 비밀번호</label>
             <input
-              className="h-12 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={passwordId}
               type="password"
               autoComplete="new-password"
@@ -122,7 +122,7 @@ export function SetPasswordForm({ className, onCreated }: SetPasswordFormProps) 
           <div className="field">
             <label htmlFor={confirmId}>새 비밀번호 확인</label>
             <input
-              className="h-12 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+              className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
               id={confirmId}
               type="password"
               autoComplete="new-password"

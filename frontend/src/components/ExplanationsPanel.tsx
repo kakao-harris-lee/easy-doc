@@ -31,7 +31,7 @@ function ExplanationCard({
   const hasAnchors = item.source_anchors.length > 0 && sourceAvailable
 
   return (
-    <li className="border-t border-border pt-4">
+    <li className="rounded-[10px] border border-border p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <span className="font-semibold">{item.term}</span>
         <Button
