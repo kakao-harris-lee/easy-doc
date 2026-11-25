@@ -597,7 +597,7 @@ export function TermLookupPopover({
         left: anchor.left,
         maxHeight: Math.min(384, window.innerHeight * 0.6, window.innerHeight - anchor.top - 8),
       }}
-      className="z-50 max-h-[min(60vh,24rem)] w-[min(22rem,90vw)] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-popover-foreground shadow-lg motion-reduce:transition-none"
+      className="z-50 max-h-[min(60vh,24rem)] w-[min(22rem,90vw)] overflow-y-auto rounded-[12px] border border-border bg-popover p-4 text-popover-foreground shadow-lg motion-reduce:transition-none"
       onKeyDown={handlePanelKeyDown}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
@@ -647,7 +647,7 @@ export function TermLookupPopover({
               {candidates.map((candidate, index) => (
                 <li
                   key={`${candidate.term}-${index}`}
-                  className="rounded-md border border-border p-3"
+                  className="rounded-[10px] border border-border p-3"
                 >
                   <div className="mb-1 flex flex-wrap items-center gap-1.5">
                     <Badge tone="primary" withIcon={false}>

@@ -14,8 +14,8 @@ export interface ThemeContextValue {
 }
 
 export const THEME_COLORS: Record<ResolvedTheme, string> = {
-  light: '#FFFFFF',
-  dark: '#0F1115',
+  light: '#F7F9FC',
+  dark: '#111827',
 }
 
 function getLocalStorage(): StorageLike | null {

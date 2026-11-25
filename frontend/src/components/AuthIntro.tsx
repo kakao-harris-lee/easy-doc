@@ -65,24 +65,29 @@ interface AuthIntroProps {
 export function AuthIntro({ headingId, summary, children }: AuthIntroProps) {
   return (
     <aside className="lg:order-1" aria-labelledby={headingId}>
-      <h2 id={headingId} className="section-title lg:text-[2rem] lg:leading-10">
+      <h2
+        id={headingId}
+        className="text-xl font-bold leading-7 text-foreground lg:text-[28px] lg:font-extrabold lg:leading-9 lg:tracking-tight"
+      >
         {AUTH_INTRO_TITLE}
       </h2>
-      <p className="body-copy mt-3 max-w-[68ch] text-muted-foreground">{summary}</p>
-      <ol className="mt-8 hidden flex-col gap-6 md:flex">
+      <p className="mt-3 text-[15px] leading-6 text-muted-foreground lg:text-base lg:leading-7">
+        {summary}
+      </p>
+      <ol className="mt-8 hidden flex-col gap-5 md:flex">
         {STEPS.map((step, index) => (
           <li className="flex items-start gap-4" key={step.title}>
             <span
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-selection text-primary"
+              className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground"
               aria-hidden="true"
             >
               <step.icon className="size-[18px]" />
             </span>
             <div className="min-w-0">
-              <p className="text-base font-semibold text-foreground">
+              <p className="text-[15px] font-semibold text-foreground">
                 {index + 1}. {step.title}
               </p>
-              <p className="supporting-copy mt-1 text-muted-foreground">{step.detail}</p>
+              <p className="mt-1 text-sm leading-[22px] text-muted-foreground">{step.detail}</p>
             </div>
           </li>
         ))}
@@ -90,12 +95,12 @@ export function AuthIntro({ headingId, summary, children }: AuthIntroProps) {
       {children}
       <p
         role="note"
-        className="notice-warning mt-6 flex items-start gap-2 px-4 py-3 text-[15px] font-semibold leading-6"
+        className="mt-6 flex items-start gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-3 py-2.5 text-sm font-semibold leading-[22px] text-warning"
       >
-        <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+        <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         {DRAFT_NOTICE}
       </p>
-      <p className="mt-4 text-sm">
+      <p className="mt-3 text-sm text-muted-foreground">
         <Link to={GUIDE_PATH}>이용 가이드 보기</Link>
       </p>
     </aside>

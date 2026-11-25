@@ -72,7 +72,7 @@ export function CredentialsForm({
       <div className="field">
         <label htmlFor={emailId}>이메일</label>
         <input
-          className="h-12 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+          className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
           id={emailId}
           type="email"
           value={email}
@@ -91,7 +91,7 @@ export function CredentialsForm({
       <div className="field">
         <label htmlFor={passwordId}>비밀번호</label>
         <input
-          className="h-12 w-full rounded-md border border-input bg-card px-3.5 text-base text-foreground"
+          className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
           id={passwordId}
           type="password"
           value={password}

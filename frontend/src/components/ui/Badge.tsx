@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils'
 type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'primary'
 
 const tones: Record<Tone, string> = {
-  neutral: 'border-transparent bg-secondary text-secondary-foreground',
+  neutral: 'border-border bg-secondary text-secondary-foreground',
   success: 'border-success/25 bg-success-surface text-success',
   warning: 'border-warning/25 bg-warning-surface text-warning',
   danger: 'border-danger/25 bg-danger-surface text-danger',

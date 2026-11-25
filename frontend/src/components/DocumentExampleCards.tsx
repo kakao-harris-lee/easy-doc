@@ -3,16 +3,16 @@ import { DOCUMENT_EXAMPLES, examplePath } from '../content/documentExamples'
 export function DocumentExampleCards({ heading = 'h3' }: { readonly heading?: 'h2' | 'h3' }) {
   const Heading = heading
   return (
-    <ul className="grid gap-4 md:grid-cols-3 md:gap-6">
+    <ul className="grid gap-2 md:grid-cols-3 md:gap-4">
       {DOCUMENT_EXAMPLES.map((example) => (
         <li key={example.id}>
           <a
             href={examplePath(example)}
             aria-labelledby={`example-card-${example.id}`}
-            className="flex h-full min-h-16 items-center justify-between gap-3 rounded-xl border border-border bg-card p-5 transition-[border-color,transform] hover:-translate-y-px hover:border-input motion-reduce:transform-none motion-reduce:transition-none"
+            className="flex h-full min-h-16 items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary hover:bg-selection active:border-primary-active active:bg-selection"
           >
             <div className="min-w-0">
-              <p className="eyebrow">{example.category}</p>
+              <p className="text-xs font-semibold text-primary">{example.category}</p>
               <Heading id={`example-card-${example.id}`} className="section-title mt-1">
                 {example.title}
               </Heading>

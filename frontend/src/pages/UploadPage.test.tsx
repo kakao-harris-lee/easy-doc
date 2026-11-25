@@ -243,28 +243,28 @@ describe('업로드 화면', () => {
       )
     })
 
-    it('2단계가 기본이며 기능 플래그가 없으면 3단계는 비활성화한다', () => {
+    it('레벨 2가 기본이며 기능 플래그가 없으면 레벨 3은 비활성화한다', () => {
       renderPage()
 
       expect(screen.getByRole('combobox', { name: '변환 레벨' })).toHaveValue('grade_5_6')
       expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
-        '1단계 - 간결',
-        '2단계 - 표준',
-        '3단계 - 더 쉬움',
+        '레벨 1',
+        '레벨 2',
+        '레벨 3',
       ])
-      expect(screen.getByRole('option', { name: '1단계 - 간결' })).toBeEnabled()
-      expect(screen.getByRole('option', { name: '3단계 - 더 쉬움' })).toBeDisabled()
+      expect(screen.getByRole('option', { name: '레벨 1' })).toBeEnabled()
+      expect(screen.getByRole('option', { name: '레벨 3' })).toBeDisabled()
     })
 
-    it('중등 수준 플래그가 false면 1단계를 선택지에서 숨긴다', () => {
+    it('중등 수준 플래그가 false면 레벨 1을 선택지에서 숨긴다', () => {
       vi.stubEnv('VITE_EASYDOC_MIDDLE_SCHOOL_ENABLED', 'false')
       try {
         renderPage()
 
         const level = screen.getByRole('combobox', { name: '변환 레벨' })
         expect(level).toHaveValue('grade_5_6')
-        expect(screen.queryByRole('option', { name: '1단계 - 간결' })).not.toBeInTheDocument()
-        expect(screen.getByRole('option', { name: '2단계 - 표준' })).toBeEnabled()
+        expect(screen.queryByRole('option', { name: '레벨 1' })).not.toBeInTheDocument()
+        expect(screen.getByRole('option', { name: '레벨 2' })).toBeEnabled()
       } finally {
         vi.unstubAllEnvs()
       }

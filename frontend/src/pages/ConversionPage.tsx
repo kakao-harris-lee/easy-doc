@@ -34,14 +34,14 @@ function stageStatus(conversion: ConversionResponse | null): StageStatus {
 }
 
 /** 카드 공통 모양. 같은 작업군이라 그림자는 §8.3 상한 하나만 쓴다. */
-const CARD_CLASS = 'rounded-xl border border-border bg-card p-6 md:p-8'
+const CARD_CLASS = 'rounded-[16px] border border-border bg-card p-4 shadow-card sm:p-6 lg:p-8'
 
 /** 보조 행동 링크(기록으로 나가기). 대표 행동과 구별되게 테두리형으로 둔다. */
 const QUIET_LINK_CLASS =
-  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md border border-input bg-card px-4 py-2 text-center text-base font-semibold text-foreground no-underline transition-colors hover:bg-secondary'
+  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md border border-input bg-card px-4 py-2 text-center text-[15px] font-semibold text-foreground no-underline transition-colors hover:bg-secondary'
 
 const ACTION_LINK_CLASS =
-  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md bg-primary px-4 py-2 text-center text-base font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover'
+  'inline-flex min-h-11 items-center justify-center gap-2 whitespace-normal rounded-md bg-primary px-4 py-2 text-center text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover'
 
 /**
  * 변환 화면.
@@ -117,7 +117,7 @@ export function ConversionPage() {
           </div>
 
           <div>
-            <h2 className="m-0 text-base font-semibold">다음에 할 일</h2>
+            <h2 className="m-0 text-[15px] font-bold">다음에 할 일</h2>
             {/* **사용자에게 원인을 추론시키지 않는다.** 종전 문구는 "목록에 없다면 보관
                 기간이 지나 파기된 것" 이라고 적었는데 그 추론은 **방향이 거꾸로다** —
                 보관 기간이 지난 문서는 목록 질의에 만료 술어가 없어 **아직 목록에 남아
@@ -170,8 +170,8 @@ export function ConversionPage() {
             </p>
           </div>
 
-          <div className="rounded-md bg-muted p-4">
-            <h2 className="m-0 text-base font-semibold">남아 있는 것</h2>
+          <div className="rounded-[12px] bg-muted p-4">
+            <h2 className="m-0 text-[15px] font-bold">남아 있는 것</h2>
             {/* 확인한 사실만 말한다. 원문을 실제로 불러온 경우에만 §9의 예시 문구
                 `원문은 남아 있습니다.`에 해당하는 말을 덧붙인다 — 아직 불러오는 중이거나
                 못 불러왔는데 「남아 있다」고 적으면 바로 아래 패널과 모순된다. */}
@@ -183,7 +183,7 @@ export function ConversionPage() {
           </div>
 
           <div>
-            <h2 className="m-0 text-base font-semibold">다음에 할 일</h2>
+            <h2 className="m-0 text-[15px] font-bold">다음에 할 일</h2>
             <p className="supporting-copy m-0 mt-1 text-muted-foreground">{failure.advice}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link className={ACTION_LINK_CLASS} to={HOME_PATH}>
@@ -204,7 +204,7 @@ export function ConversionPage() {
               자리는 실패 사유와 「다음에 할 일」보다 **아래**다 — 이 화면의 1순위는 무엇이
               잘못됐고 다음에 뭘 하느냐이지 원문이 아니다. 패널은 live region을 만들지
               않으므로(SourceTextPanel) 위의 실패 사유가 이 화면의 유일한 alert로 남는다. */}
-          <div className="border-t border-border pt-6">
+          <div className="rounded-[12px] border border-border bg-background p-5">
             <SourceTextPanel source={source} textareaId={sourceId} rows={10} />
           </div>
         </div>
@@ -228,7 +228,7 @@ export function ConversionPage() {
         <div role="status" className="flex flex-col gap-2">
           {timedOut ? (
             // 오래 걸리는 것은 실패가 아니다 — 위험 색 대신 정보 색을 쓴다(§6.3).
-            <div className="flex flex-col gap-3 rounded-md bg-info-surface px-4 py-3">
+            <div className="flex flex-col gap-3 rounded-[12px] border border-info/25 bg-info-surface px-4 py-3">
               <p className="supporting-copy m-0 flex items-start gap-2 font-medium text-info">
                 <Clock className="mt-0.5 size-[18px] shrink-0" aria-hidden="true" />
                 변환이 예상보다 오래 걸리고 있습니다. 이 화면을 닫아도 됩니다 — 결과는 변환 기록에서
@@ -258,7 +258,7 @@ export function ConversionPage() {
         {/* 결과가 아직 없을 뿐 **원문은 이미 있다.** 기다리는 동안 무엇이 변환되고 있는지
             볼 수 있어야 한다(§6.3 «같은 URL 안에서 작업 단계가 전개되는 모습»). 읽기
             순서도 검수 화면과 같게 둔다 — 원문 다음에 결과 자리다(§11). */}
-        <div className="border-t border-border pt-6">
+        <div className="rounded-[12px] border border-border bg-background p-5">
           <SourceTextPanel source={source} textareaId={sourceId} rows={12} />
         </div>
 

@@ -185,14 +185,14 @@ function RefundDecisionForm({
 
   return (
     <form
-      className="space-y-3 rounded-md border border-border p-3"
+      className="space-y-3 rounded-lg border border-border p-3"
       onSubmit={(event) => {
         event.preventDefault()
         void submit()
       }}
     >
       <h3 className="font-semibold">환불 판단 기록</h3>
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         이 폼은 판단 기록만 남깁니다. 결제 환불과 크레딧 회수는 별도 운영 조치입니다.
       </p>
       <label className="block text-sm">
@@ -353,14 +353,14 @@ function ComplaintDecisionForm({
 
   return (
     <form
-      className="space-y-3 rounded-md border border-border p-3"
+      className="space-y-3 rounded-lg border border-border p-3"
       onSubmit={(event) => {
         event.preventDefault()
         void submit()
       }}
     >
       <h3 className="font-semibold">소비자 불만 판단 기록</h3>
-      <p className="text-sm text-muted-foreground">이 폼은 처리 판단만 기록합니다.</p>
+      <p className="text-xs text-muted-foreground">이 폼은 처리 판단만 기록합니다.</p>
       <label className="block text-sm">
         판단
         <select
@@ -542,7 +542,7 @@ export function AdminRetainedTransactionsTab() {
                     발생 {formatDate(item.occurred_at)} · 보존 만료{' '}
                     {formatDate(item.retained_until, false)}
                   </p>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     결제 {item.payment_id ?? '식별자 미상'}
                   </p>
                 </div>
@@ -628,7 +628,7 @@ export function AdminRetainedTransactionsTab() {
               </dl>
               <details>
                 <summary className="cursor-pointer text-sm">선별된 기록 내용</summary>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted p-3 text-sm">
+                <pre className="mt-2 max-h-80 overflow-auto rounded bg-muted p-3 text-xs">
                   {JSON.stringify(detail.payload, null, 2)}
                 </pre>
               </details>
@@ -637,7 +637,7 @@ export function AdminRetainedTransactionsTab() {
                   <summary className="cursor-pointer text-sm">
                     판단 기록 {detail.decisions.length}건
                   </summary>
-                  <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-muted p-3 text-sm">
+                  <pre className="mt-2 max-h-80 overflow-auto rounded bg-muted p-3 text-xs">
                     {JSON.stringify(detail.decisions, null, 2)}
                   </pre>
                 </details>

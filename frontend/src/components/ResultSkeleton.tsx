@@ -6,7 +6,7 @@ function Line({ width }: { width: string }) {
 /** 스켈레톤 한 칸(검수 화면의 한 열). 맨 위 짧은 막대는 열 제목 자리다. */
 function Column() {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border p-4">
+    <div className="flex flex-col gap-3 rounded-[12px] border border-border p-4">
       <span className="block h-3 w-20 rounded-full bg-muted-foreground/25" />
       <Line width="100%" />
       <Line width="92%" />

@@ -39,12 +39,12 @@ describe('theme persistence and DOM application', () => {
 
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
     expect(document.documentElement.style.colorScheme).toBe('dark')
-    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#0F1115')
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#111827')
 
     applyResolvedTheme('light')
     expect(document.documentElement).toHaveAttribute('data-theme', 'light')
     expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#FFFFFF')
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute('content', '#F7F9FC')
   })
 
   it('does not throw when storage is unavailable', () => {

@@ -10,13 +10,11 @@ import { HOME_PATH } from '../routes/paths'
  */
 export function NotFoundPage() {
   return (
-    <section aria-labelledby="not-found-heading" className="py-12 md:py-24">
+    <section aria-labelledby="not-found-heading">
       {/* 다른 화면과 같이 본문의 첫 제목은 h1이다(§11) — 주소를 잘못 친 사람도
           낭독기 목차로 "여기가 어디인지"를 물을 수 있어야 한다. */}
-      <h1 id="not-found-heading" className="page-title">
-        찾을 수 없는 화면입니다
-      </h1>
-      <p className="body-copy mt-4">
+      <h1 id="not-found-heading">찾을 수 없는 화면입니다</h1>
+      <p>
         주소를 다시 확인해 주세요. <Link to={HOME_PATH}>홈으로 가기</Link>
       </p>
     </section>

@@ -1387,7 +1387,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         )}
         {showTabs && (
           <div
-            className="mb-3 flex gap-1 rounded-md bg-muted p-1"
+            className="mb-3 flex gap-1 rounded-[12px] border border-border bg-muted p-1"
             role="tablist"
             aria-label="검수 화면"
           >
@@ -1404,9 +1404,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 aria-controls={`${editorId}-${panel.key}-panel`}
                 tabIndex={activePanel === panel.key ? 0 : -1}
                 className={cn(
-                  'flex min-h-11 flex-1 items-center justify-center whitespace-normal rounded-md px-2 py-2 text-center text-base transition-colors sm:px-3',
+                  'flex min-h-11 flex-1 items-center justify-center whitespace-normal rounded-[10px] px-2 py-2 text-center text-[15px] font-semibold transition-colors sm:px-3',
                   activePanel === panel.key
-                    ? 'bg-card font-semibold text-foreground'
+                    ? 'bg-selection text-selection-foreground'
                     : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
                 )}
                 onClick={() => {
@@ -1427,7 +1427,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               그 안의 입력칸과 버튼을 모두 대신한다(위 `focusedPanel`). */}
           <div
             ref={sourcePanelRef}
-            className="min-w-0 rounded-xl border border-border bg-muted p-4 sm:p-5"
+            className="min-w-0 rounded-[12px] border border-border bg-card p-4 sm:p-5"
             onFocus={() => setFocusedPanel('source')}
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('source')}
@@ -1479,7 +1479,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다. */}
           <div
             ref={resultPanelRef}
-            className="min-w-0 rounded-xl border border-primary/40 bg-card p-4 sm:p-5"
+            className="min-w-0 rounded-[12px] border-2 border-primary/40 bg-selection p-4 sm:p-5"
             onFocus={() => setFocusedPanel('result')}
             onBlur={() => setFocusedPanel(null)}
             {...panelProps('result')}
@@ -1569,7 +1569,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                           ? focusedUnlocatedItems
                           : focusedPendingItems
                         ).map((item) => (
-                          <li key={item.item_id} className="rounded-md bg-muted p-3 text-sm">
+                          <li key={item.item_id} className="rounded-[8px] bg-card p-3 text-sm">
                             <p className="font-semibold">
                               {item.kind === 'missing_fact' ? '누락 의심' : '조건 관계 확인'}
                             </p>
@@ -1600,7 +1600,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                     </section>
                   )}
                 {focusedCompletedItems.length > 0 && !dirty && !focusedStale && (
-                  <details className="border-t border-border text-sm">
+                  <details className="rounded-[10px] border border-border px-3 py-1 text-sm">
                     <summary className="min-h-11 cursor-pointer py-3 font-semibold">
                       확인 완료 {focusedCompletedItems.length}개
                     </summary>

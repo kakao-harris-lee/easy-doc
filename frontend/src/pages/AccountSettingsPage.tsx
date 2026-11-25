@@ -157,154 +157,154 @@ export function AccountSettingsPage() {
         description="로그인 계정, 로그인 연결, 비밀번호, 휴대폰 인증과 회원 탈퇴를 관리합니다."
       />
 
-      <div className="flex flex-col divide-y divide-border">
-        <section className="pb-8">
-          <h2 className="text-lg font-semibold text-foreground">로그인 계정</h2>
-          <p className="mt-2 text-sm text-foreground">{user.email}</p>
-        </section>
+      <section className="rounded-[16px] border border-border bg-card p-5 shadow-sm">
+        <h2 className="text-[15px] font-semibold text-foreground">로그인 계정</h2>
+        <p className="mt-2 text-sm text-foreground">{user.email}</p>
+      </section>
 
-        <section className="py-8" aria-labelledby="social-link-heading">
-          <h2 id="social-link-heading" className="text-lg font-semibold text-foreground">
-            로그인 연결
+      <section
+        className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
+        aria-labelledby="social-link-heading"
+      >
+        <h2 id="social-link-heading" className="text-[15px] font-semibold text-foreground">
+          로그인 연결
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">연결한 계정으로도 로그인할 수 있어요.</p>
+        <SocialLinkStatus
+          className="mt-4"
+          identities={user.identities}
+          hasPassword={user.has_password}
+          onUnlinked={() => void refreshMe()}
+        />
+      </section>
+
+      {!user.has_password && (
+        <section
+          className="rounded-[16px] border border-border bg-card p-5 shadow-sm"
+          aria-labelledby="set-password-heading"
+        >
+          <h2 id="set-password-heading" className="text-[15px] font-semibold text-foreground">
+            비밀번호
           </h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            연결한 계정으로도 로그인할 수 있어요.
+            비밀번호를 만들면 이메일로도 로그인할 수 있어요.
           </p>
-          <SocialLinkStatus
-            className="mt-4"
-            identities={user.identities}
-            hasPassword={user.has_password}
-            onUnlinked={() => void refreshMe()}
-          />
-        </section>
-
-        {!user.has_password && (
-          <section className="py-8" aria-labelledby="set-password-heading">
-            <h2 id="set-password-heading" className="text-lg font-semibold text-foreground">
-              비밀번호
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              비밀번호를 만들면 이메일로도 로그인할 수 있어요.
+          {user.email_verified ? (
+            <SetPasswordForm className="mt-4" onCreated={() => void refreshMe()} />
+          ) : (
+            <p className="mt-4 text-sm text-muted-foreground">
+              <Link to={EMAIL_VERIFICATION_PATH} className="inline-block py-3">
+                이메일 인증
+              </Link>{' '}
+              후 비밀번호를 만들 수 있어요.
             </p>
-            {user.email_verified ? (
-              <SetPasswordForm className="mt-4" onCreated={() => void refreshMe()} />
-            ) : (
-              <p className="mt-4 text-sm text-muted-foreground">
-                <Link to={EMAIL_VERIFICATION_PATH} className="inline-block py-3">
-                  이메일 인증
-                </Link>{' '}
-                후 비밀번호를 만들 수 있어요.
-              </p>
-            )}
-          </section>
+          )}
+        </section>
+      )}
+
+      <PhoneVerificationSection />
+
+      <section
+        className="rounded-[16px] border border-danger bg-card p-5 shadow-sm"
+        aria-labelledby="account-deletion-heading"
+      >
+        <h2 id="account-deletion-heading" className="text-[15px] font-semibold text-foreground">
+          회원 탈퇴
+        </h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          계정과 문서, 변환 기록을 파기합니다. 법령상 보존하는 결제·거래 기록은 계정과 분리해 남을
+          수 있습니다. 되돌릴 수 없습니다.
+        </p>
+
+        {!confirming && (
+          <Button variant="danger" type="button" className="mt-4" onClick={openConfirm}>
+            회원 탈퇴
+          </Button>
         )}
 
-        <PhoneVerificationSection />
+        {confirming && (
+          <form
+            className="mt-4 flex flex-col gap-4"
+            noValidate
+            onSubmit={(event) => void handleSubmit(event)}
+          >
+            <div className="form-error flex items-start gap-2" role="alert">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <p className="m-0">
+                <strong>이 작업은 되돌릴 수 없습니다.</strong> 계정을 지우면 모든 작업
+                공간·문서·변환 결과가 즉시 사라지고 복구할 수 없습니다. 법령상 보존하는 결제·거래
+                기록은 계정과 분리해 남을 수 있습니다.
+              </p>
+            </div>
 
-        <section className="pt-8" aria-labelledby="account-deletion-heading">
-          <h2 id="account-deletion-heading" className="text-lg font-semibold text-foreground">
-            회원 탈퇴
-          </h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            계정과 문서, 변환 기록을 파기합니다. 법령상 보존하는 결제·거래 기록은 계정과 분리해 남을
-            수 있습니다. 되돌릴 수 없습니다.
-          </p>
-
-          {!confirming && (
-            <Button variant="danger" type="button" className="mt-4" onClick={openConfirm}>
-              회원 탈퇴
-            </Button>
-          )}
-
-          {confirming && (
-            <form
-              className="mt-4 flex flex-col gap-4"
-              noValidate
-              onSubmit={(event) => void handleSubmit(event)}
-            >
-              <div className="form-error flex items-start gap-2" role="alert">
-                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                <p className="m-0">
-                  <strong>이 작업은 되돌릴 수 없습니다.</strong> 계정을 지우면 모든 작업
-                  공간·문서·변환 결과가 즉시 사라지고 복구할 수 없습니다. 법령상 보존하는 결제·거래
-                  기록은 계정과 분리해 남을 수 있습니다.
-                </p>
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-muted-foreground">남은 이용량</dt>
+                <dd className="font-semibold tabular-nums text-foreground">
+                  {summaryLoading
+                    ? '불러오는 중…'
+                    : `${(summary?.remainingCredits ?? 0).toLocaleString('ko-KR')} 크레딧 (소멸, 환불되지 않음)`}
+                </dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">처리 중인 세금계산서 요청</dt>
+                <dd className="font-semibold tabular-nums text-foreground">
+                  {summaryLoading
+                    ? '불러오는 중…'
+                    : `${(summary?.pendingInvoiceRequests ?? 0).toLocaleString('ko-KR')}건 (함께 취소됨)`}
+                </dd>
+              </div>
+            </dl>
+            {summaryError !== null && (
+              <p className="form-error" role="alert">
+                {summaryError}
+              </p>
+            )}
 
-              <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <dt className="text-muted-foreground">남은 이용량</dt>
-                  <dd className="font-semibold tabular-nums text-foreground">
-                    {summaryLoading
-                      ? '불러오는 중…'
-                      : `${(summary?.remainingCredits ?? 0).toLocaleString('ko-KR')} 크레딧 (소멸, 환불되지 않음)`}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">처리 중인 세금계산서 요청</dt>
-                  <dd className="font-semibold tabular-nums text-foreground">
-                    {summaryLoading
-                      ? '불러오는 중…'
-                      : `${(summary?.pendingInvoiceRequests ?? 0).toLocaleString('ko-KR')}건 (함께 취소됨)`}
-                  </dd>
-                </div>
-              </dl>
-              {summaryError !== null && (
-                <p className="form-error" role="alert">
-                  {summaryError}
-                </p>
-              )}
-
-              {user.has_password && (
-                <div className="field">
-                  <label htmlFor={passwordId}>비밀번호</label>
-                  <input
-                    id={passwordId}
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </div>
-              )}
-
+            {user.has_password && (
               <div className="field">
-                <label htmlFor={confirmationId}>확인 문구</label>
+                <label htmlFor={passwordId}>비밀번호</label>
                 <input
-                  id={confirmationId}
-                  type="text"
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  aria-describedby={`${confirmationId}-hint`}
+                  id={passwordId}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                 />
-                <p className="field-hint" id={`${confirmationId}-hint`}>
-                  계속하려면 &quot;{CONFIRMATION_PHRASE}&quot;를 그대로 입력해 주세요.
-                </p>
               </div>
+            )}
 
-              {submitError !== null && (
-                <p className="form-error" role="alert">
-                  {submitError}
-                </p>
-              )}
+            <div className="field">
+              <label htmlFor={confirmationId}>확인 문구</label>
+              <input
+                id={confirmationId}
+                type="text"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                aria-describedby={`${confirmationId}-hint`}
+              />
+              <p className="field-hint" id={`${confirmationId}-hint`}>
+                계속하려면 &quot;{CONFIRMATION_PHRASE}&quot;를 그대로 입력해 주세요.
+              </p>
+            </div>
 
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  type="button"
-                  disabled={submitting}
-                  onClick={closeConfirm}
-                >
-                  취소
-                </Button>
-                <Button variant="danger" type="submit" loading={submitting}>
-                  {submitting ? '탈퇴하는 중…' : '계정을 영구히 삭제합니다'}
-                </Button>
-              </div>
-            </form>
-          )}
-        </section>
-      </div>
+            {submitError !== null && (
+              <p className="form-error" role="alert">
+                {submitError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" type="button" disabled={submitting} onClick={closeConfirm}>
+                취소
+              </Button>
+              <Button variant="danger" type="submit" loading={submitting}>
+                {submitting ? '탈퇴하는 중…' : '계정을 영구히 삭제합니다'}
+              </Button>
+            </div>
+          </form>
+        )}
+      </section>
     </div>
   )
 }

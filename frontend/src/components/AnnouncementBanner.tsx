@@ -91,7 +91,7 @@ export function AnnouncementBanner() {
         {visible.map((announcement) => (
           <div
             key={announcement.id}
-            className="flex items-start justify-between gap-3 rounded-md border border-border bg-card px-4 py-3"
+            className="flex items-start justify-between gap-3 rounded-[10px] border border-border bg-card px-4 py-3"
           >
             <p className="m-0 text-sm text-foreground">{announcement.body}</p>
             <Button

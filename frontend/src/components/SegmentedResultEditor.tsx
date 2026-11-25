@@ -211,7 +211,7 @@ const UnitRow = memo(function UnitRow({
   return (
     <div
       className={cn(
-        'flex flex-col gap-1 rounded-md',
+        'flex flex-col gap-1 rounded-[10px]',
         hasReviewItems && 'border-2 border-warning/50 bg-warning-surface p-3',
       )}
     >
@@ -274,7 +274,7 @@ const UnitRow = memo(function UnitRow({
         // 전체 draft에서 이 단위의 자리를 찾아 치환할 수 있다.
         data-unit-index={index}
         className={cn(
-          'min-h-11 w-full resize-y rounded-md border border-input bg-card px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
+          'min-h-11 w-full resize-y rounded-[10px] border border-input bg-card px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
           highlighted && 'border-primary ring-2 ring-primary/40',
         )}
         value={text}
@@ -294,7 +294,7 @@ const UnitRow = memo(function UnitRow({
         onMouseLeave={() => onHoverUnit([])}
       />
       {hasReviewItems && (
-        <div className="mt-1 rounded-md bg-muted p-3 text-sm">
+        <div className="mt-1 rounded-[8px] bg-card p-3 text-sm">
           <p className="font-semibold">원문과 뜻이 같은지 확인해 주세요.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
@@ -321,7 +321,7 @@ const UnitRow = memo(function UnitRow({
             <summary className="min-h-11 cursor-pointer py-2 font-semibold">해당 없음 처리</summary>
             <ul className="flex flex-col gap-3">
               {reviewItems.map((item, itemIndex) => (
-                <li key={item.item_id} className="rounded-md border border-border p-3">
+                <li key={item.item_id} className="rounded-[8px] border border-border p-3">
                   <p>
                     {item.kind === 'missing_fact' ? '누락 의심' : '조건 관계 확인'} {itemIndex + 1}
                   </p>
@@ -335,7 +335,7 @@ const UnitRow = memo(function UnitRow({
                       </label>
                       <textarea
                         id={`focused-review-reason-${index}-${item.item_id}`}
-                        className="mt-1 min-h-20 w-full rounded-md border border-input bg-card px-3 py-2"
+                        className="mt-1 min-h-20 w-full rounded-[8px] border border-input bg-background px-3 py-2"
                         value={reasonDrafts[item.item_id] ?? ''}
                         disabled={reviewDisabled}
                         onChange={(event) =>

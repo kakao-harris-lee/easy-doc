@@ -52,17 +52,17 @@ export function ReconvertCandidateCard({
       tabIndex={-1}
       role="region"
       aria-label={`원본 ${sourceUnitIndex + 1}번째 문단 재변환 후보`}
-      className="rounded-md border border-primary/40 bg-selection p-3 text-selection-foreground"
+      className="rounded-[10px] border border-primary/40 bg-selection p-3 text-selection-foreground"
     >
       {/* 카드가 도착했다는 사실 자체를 낭독한다 — 위 초점 이동만으로는
           카드가 뭔지(바꾸기/삽입) 미리 알리지 못한다. `role="status"`는 `aria-live="polite"`와
           같다. */}
-      <p role="status" className="m-0 mb-2 text-sm font-semibold text-primary">
+      <p role="status" className="m-0 mb-2 text-xs font-semibold text-primary">
         재변환 후보가 도착했습니다.{' '}
         {mode === 'replace' ? '바꿀지 확인해 주세요.' : '넣을 위치를 확인해 주세요.'}
       </p>
       <div className="mb-2 flex items-start justify-between gap-2">
-        <p className="m-0 text-base leading-7 whitespace-pre-wrap text-foreground">
+        <p className="m-0 text-[15px] leading-[1.6] whitespace-pre-wrap text-foreground">
           {candidateText}
         </p>
         <button

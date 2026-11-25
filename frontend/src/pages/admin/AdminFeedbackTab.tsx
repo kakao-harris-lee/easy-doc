@@ -164,7 +164,7 @@ function FeedbackPage({
               ? '저장된 의견을 읽을 수 없습니다.'
               : (item.comment ?? '자유 의견이 없거나 보존 기간이 끝났습니다.')}
           </p>
-          <p className="break-all text-sm text-muted-foreground">변환 ID: {item.conversion_id}</p>
+          <p className="break-all text-xs text-muted-foreground">변환 ID: {item.conversion_id}</p>
         </article>
       ))}
       {data && (

@@ -83,7 +83,7 @@ export function AdminPage() {
       />
 
       <div
-        className="mb-4 flex flex-wrap gap-1 rounded-md bg-muted p-1"
+        className="mb-4 flex flex-wrap gap-1 rounded-[12px] border border-border bg-muted p-1"
         role="tablist"
         aria-label="관리자 화면"
       >
@@ -100,9 +100,9 @@ export function AdminPage() {
             aria-controls={`${panelBaseId}-${tab.key}-panel`}
             tabIndex={activeTab === tab.key ? 0 : -1}
             className={cn(
-              'flex h-11 flex-1 items-center justify-center rounded-md px-3 text-base font-medium transition-colors',
+              'flex h-11 flex-1 items-center justify-center rounded-[10px] px-3 text-[15px] font-semibold transition-colors',
               activeTab === tab.key
-                ? 'bg-card font-semibold text-foreground'
+                ? 'bg-card text-primary shadow-sm'
                 : 'text-muted-foreground hover:text-foreground',
             )}
             onClick={() => setActiveTab(tab.key)}
